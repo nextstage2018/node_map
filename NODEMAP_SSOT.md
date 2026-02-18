@@ -46,7 +46,7 @@
 | CSS | Tailwind CSS 3 | ✅ 確定 |
 | ホスティング | Vercel | ✅ 確定 |
 | データベース | Supabase（PostgreSQL） | ✅ 確定（スキーマ作成済・未接続） |
-| AI | OpenAI API（gpt-4o-mini） | ✅ 確定（デモモード対応） |
+| AI | Anthropic Claude API（claude-opus-4-5） | ✅ 確定（デモモード対応） |
 | D&D | @dnd-kit/core + @dnd-kit/sortable | ✅ 確定 |
 | グラフ表示 | D3.js / React Flow | 提案中（Phase 5で確定予定） |
 | API連携 | Gmail API / Slack API / Chatwork API | ✅ 確定（デモモード対応） |
@@ -60,7 +60,7 @@
 | Gmail / メール | ⬜ 未取得 | Gmail APIまたはIMAP/SMTP。設定画面のadmin設定で入力可能 |
 | Slack | ⬜ 未取得 | Bot Token。設定画面のadmin設定で入力可能 |
 | Chatwork | ⬜ 未取得 | APIトークン。設定画面のadmin設定で入力可能 |
-| OpenAI | ⬜ 未取得 | APIキー。設定画面のadmin設定で入力可能 |
+| Anthropic | ⬜ 未取得 | APIキー。設定画面のadmin設定で入力可能 |
 | Supabase | ⬜ 未取得 | URL + Anon Key。設定画面のadmin設定で入力可能 |
 
 > 全サービスがデモモードで動作中。API情報を設定すれば実接続に切り替わる設計。
@@ -149,6 +149,7 @@
 | 2026-02-18 | エッジは3タイプ（共起/順序/因果） | 共起=同時出現、順序=進行フェーズの経路、因果=AI文脈解析 |
 | 2026-02-18 | クラスターは構想面と結果面の2種類 | 差分で「思考の広がり」を計測。discoveredOnPath=経路上の発見 |
 | 2026-02-18 | 既存フローに非同期統合 | メッセージ取得・タスク会話時にバックグラウンドでノード蓄積。エラーは無視 |
+| 2026-02-19 | AI基盤をOpenAIからAnthropic Claudeに全面移行 | ユーザー指示。claude-opus-4-5-20251101を使用。openaiパッケージ削除、@anthropic-ai/sdk採用 |
 
 ---
 
@@ -258,7 +259,7 @@ node_map/
 
 ### Phase 1 → Phase 2 への引き継ぎ
 - **実装したファイル構成：** 上記ファイル構成のinbox系ファイル全て
-- **使用した技術の最終決定：** Next.js 14 (App Router), TypeScript, Tailwind CSS 3, Supabase, OpenAI API
+- **使用した技術の最終決定：** Next.js 14 (App Router), TypeScript, Tailwind CSS 3, Supabase, Anthropic Claude API
 - **注意点・課題：**
   - 全サービスはデモモードで動作（API未設定時はダミーデータ返却）
   - Supabaseは接続未実施（スキーマのみ作成）
@@ -294,7 +295,7 @@ node_map/
   - ノード（点）: keyword/person/projectの3タイプ。頻出度カウント・理解度自動判定付き
   - エッジ（線）: co_occurrence/sequence/causalの3タイプ。重み（weight）で太さを表現
   - クラスター（面）: ideation/resultの2タイプ。差分計算でdiscoveredOnPathを算出
-  - キーワード抽出: OpenAI API（gpt-4o-mini）使用。デモモードではルールベース抽出
+  - キーワード抽出: Anthropic Claude API使用。デモモードではルールベース抽出
 - **既存フローとの統合：**
   - メッセージ取得時（GET /api/messages）→ 全メッセージからキーワード自動抽出
   - タスクAI会話時（POST /api/tasks/chat）→ 会話内容からキーワード抽出 + フェーズに応じたエッジ/クラスター生成
@@ -316,7 +317,7 @@ node_map/
    - 比較モード（2人並列表示）
 
 2. **APIキーの準備**（実運用開始前に必要）
-   - Gmail API / Slack Bot Token / Chatwork APIトークン / OpenAI APIキー / Supabase
+   - Gmail API / Slack Bot Token / Chatwork APIトークン / Anthropic Claude APIキー / Supabase
 
 ---
 
