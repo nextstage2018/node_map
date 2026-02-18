@@ -88,3 +88,94 @@ export interface InboxFilter {
   isRead?: boolean;
   searchQuery?: string;
 }
+
+// ===== Phase 2: タスクボード + AI会話 =====
+
+// タスクの3フェーズ
+export type TaskPhase = 'ideation' | 'progress' | 'result';
+
+// タスクのステータス
+export type TaskStatus = 'todo' | 'in_progress' | 'done';
+
+// タスクの優先度
+export type TaskPriority = 'high' | 'medium' | 'low';
+
+// AI会話メッセージ
+export interface AiConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  phase: TaskPhase;
+}
+
+// タスク
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  phase: TaskPhase;
+  // メッセージ起点の場合
+  sourceMessageId?: string;
+  sourceChannel?: ChannelType;
+  // AI会話履歴
+  conversations: AiConversationMessage[];
+  // 構想フェーズの要約
+  ideationSummary?: string;
+  // 結果フェーズの要約
+  resultSummary?: string;
+  // タイムスタンプ
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+  // メタ情報
+  tags: string[];
+  assignee?: string;
+}
+
+// タスク作成リクエスト
+export interface CreateTaskRequest {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  sourceMessageId?: string;
+  sourceChannel?: ChannelType;
+  tags?: string[];
+}
+
+// タスク更新リクエスト
+export interface UpdateTaskRequest {
+  title?: string;
+  description?: string;
+  status?: TaskStatus;
+  priority?: TaskPriority;
+  phase?: TaskPhase;
+  ideationSummary?: string;
+  resultSummary?: string;
+  tags?: string[];
+}
+
+// AI会話リクエスト
+export interface TaskAiChatRequest {
+  taskId: string;
+  message: string;
+  phase: TaskPhase;
+}
+
+// AI会話レスポンス
+export interface TaskAiChatResponse {
+  reply: string;
+  suggestedPhaseTransition?: TaskPhase; // フェーズ遷移の提案
+}
+
+// タスク提案（メッセージからの自動提案）
+export interface TaskSuggestion {
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  sourceMessageId: string;
+  sourceChannel: ChannelType;
+  reason: string; // なぜ提案するか
+}

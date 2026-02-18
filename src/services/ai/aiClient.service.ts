@@ -1,4 +1,11 @@
-import { UnifiedMessage, AiDraftResponse } from '@/lib/types';
+import {
+  UnifiedMessage,
+  AiDraftResponse,
+  Task,
+  TaskPhase,
+  AiConversationMessage,
+  TaskAiChatResponse,
+} from '@/lib/types';
 
 /**
  * AI連携サービス
@@ -97,4 +104,156 @@ function getDemoDraft(message: UnifiedMessage, instruction?: string): AiDraftRes
     draft: drafts[message.channel] || drafts.email,
     suggestions: ['より丁寧に', 'より簡潔に', '日程を提案'],
   };
+}
+
+// ===== Phase 2: タスクAI会話 =====
+
+/**
+ * タスク内AI会話の応答を生成
+ */
+export async function generateTaskChat(
+  task: Task,
+  userMessage: string,
+  phase: TaskPhase,
+  conversationHistory: AiConversationMessage[]
+): Promise<TaskAiChatResponse> {
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    return getDemoTaskChat(task, userMessage, phase);
+  }
+
+  try {
+    const { default: OpenAI } = await import('openai');
+    const openai = new OpenAI({ apiKey });
+
+    const phaseInstructions: Record<TaskPhase, string> = {
+      ideation: `あなたはタスクの「構想フェーズ」のアシスタントです。
+ユーザーがタスクのゴールイメージや関連要素を整理するのを手伝ってください。
+- 誘導質問は1〜2問に留める（多すぎると面倒になる）
+- ゴール、関連要素、懸念点を引き出す
+- 構想がまとまったら簡潔に要約する
+- 「進行フェーズに移りましょう」と促す`,
+      progress: `あなたはタスクの「進行フェーズ」のアシスタントです。
+ユーザーが自由に作業を進める中で、聞き手・メモ役として機能してください。
+- 進捗や気づきを記録する
+- 質問には的確に答える
+- 新しい発見や方向転換を歓迎する
+- 押しつけがましくならない
+- 必要に応じて整理を手伝う`,
+      result: `あなたはタスクの「結果フェーズ」のアシスタントです。
+ユーザーが最終的なアウトプットや判断を記録して完了するのを支援してください。
+- 「結果をまとめますか？」と促す
+- 構想フェーズとの差分を指摘する
+- 自動で要約を生成する
+- 学びや次のアクションを整理する`,
+    };
+
+    const messages = [
+      {
+        role: 'system' as const,
+        content: `${phaseInstructions[phase]}
+
+タスク情報:
+- タイトル: ${task.title}
+- 説明: ${task.description}
+${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`,
+      },
+      ...conversationHistory.slice(-10).map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+      { role: 'user' as const, content: userMessage },
+    ];
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages,
+      temperature: 0.7,
+      max_tokens: 1000,
+    });
+
+    const reply = response.choices[0]?.message?.content || '';
+
+    return { reply };
+  } catch (error) {
+    console.error('タスクAI会話エラー:', error);
+    return getDemoTaskChat(task, userMessage, phase);
+  }
+}
+
+/**
+ * デモ用タスクAI会話
+ */
+function getDemoTaskChat(
+  task: Task,
+  userMessage: string,
+  phase: TaskPhase
+): TaskAiChatResponse {
+  const demoReplies: Record<TaskPhase, string[]> = {
+    ideation: [
+      `なるほど、「${userMessage.slice(0, 20)}...」ですね。\n\n関連しそうな要素や、気になるポイントはありますか？`,
+      `了解しました。構想をまとめますね。\n\n【ゴール】${task.title}の完了\n【キーポイント】${userMessage.slice(0, 30)}\n\nそれでは作業を進めましょう！気になったことがあれば、いつでも話しかけてください。`,
+    ],
+    progress: [
+      `いい進捗ですね！「${userMessage.slice(0, 20)}...」について、もう少し詳しく教えていただけますか？`,
+      `メモしておきますね。他に気づいたことや、迷っていることはありますか？`,
+      `なるほど、重要なポイントですね。これは最終的な結果にも影響しそうです。`,
+    ],
+    result: [
+      `お疲れ様でした！結果をまとめますね。\n\n【結果】${userMessage.slice(0, 40)}\n【構想との比較】当初の計画に対して、おおむね達成できたようです。\n\nこの内容でタスクを完了にしますか？`,
+      `素晴らしい成果ですね。学びや次のアクションがあれば教えてください。要約に追加します。`,
+    ],
+  };
+
+  const options = demoReplies[phase];
+  const reply = options[Math.floor(Math.random() * options.length)];
+
+  return { reply };
+}
+
+/**
+ * タスク結果の自動要約を生成
+ */
+export async function generateTaskSummary(task: Task): Promise<string> {
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    // デモ用要約
+    return `【結論】${task.title}を完了\n【プロセス】構想→進行→結果の3フェーズで進行\n【学び】タスク内のAI会話を通じて整理ができた`;
+  }
+
+  try {
+    const { default: OpenAI } = await import('openai');
+    const openai = new OpenAI({ apiKey });
+
+    const conversationText = task.conversations
+      .map((c) => `[${c.role}] ${c.content}`)
+      .join('\n');
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content: `タスクの会話履歴から、結果の要約を生成してください。
+以下のフォーマットで出力:
+【結論】...
+【プロセス】...
+【学び】...
+【次のアクション】...（あれば）`,
+        },
+        {
+          role: 'user',
+          content: `タスク: ${task.title}\n構想要約: ${task.ideationSummary || 'なし'}\n\n会話履歴:\n${conversationText}`,
+        },
+      ],
+      temperature: 0.5,
+      max_tokens: 500,
+    });
+
+    return response.choices[0]?.message?.content || '';
+  } catch {
+    return `【結論】${task.title}を完了`;
+  }
 }
