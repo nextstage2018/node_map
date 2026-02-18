@@ -87,7 +87,7 @@ export default function SettingsPage() {
   }
 
   const channelServices: ServiceType[] = ['email', 'slack', 'chatwork'];
-  const infraServices: ServiceType[] = ['openai', 'supabase'];
+  const infraServices: ServiceType[] = ['anthropic', 'supabase'];
 
   const tabs: { key: SettingsTab; label: string; icon: string; description: string }[] = [
     { key: 'admin', label: '管理者設定', icon: '🔧', description: 'API接続・インフラ基盤' },

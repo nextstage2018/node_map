@@ -27,7 +27,7 @@ class SettingsService {
         { type: 'email', status: 'disconnected' },
         { type: 'slack', status: 'disconnected' },
         { type: 'chatwork', status: 'disconnected' },
-        { type: 'openai', status: 'disconnected' },
+        { type: 'anthropic', status: 'disconnected' },
         { type: 'supabase', status: 'disconnected' },
       ],
     };

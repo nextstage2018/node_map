@@ -7,9 +7,9 @@ import {
   ExtractedKeyword,
 } from '@/lib/types';
 
-// OpenAI APIキー取得
+// Anthropic APIキー取得
 function getApiKey(): string | undefined {
-  return process.env.OPENAI_API_KEY;
+  return process.env.ANTHROPIC_API_KEY;
 }
 
 /**
@@ -25,8 +25,8 @@ export async function extractKeywords(
   }
 
   try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey });
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
 
     const systemPrompt = `あなたはテキスト分析の専門家です。
 与えられたテキストから以下の3種類の情報を抽出してください。
@@ -41,25 +41,23 @@ export async function extractKeywords(
 - 同じ意味の表現は正規化して1つにまとめる
 - 最大でkeywords 10個、persons 5個、projects 3個まで
 
-必ず以下のJSON形式で返してください：
+必ず以下のJSON形式のみで返してください（前置きや説明は不要）：
 {
   "keywords": [{"label": "...", "confidence": 0.9}],
   "persons": [{"label": "...", "confidence": 0.95}],
   "projects": [{"label": "...", "confidence": 0.8}]
 }`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 800,
+      system: systemPrompt,
       messages: [
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: `以下のテキストから情報を抽出してください：\n\n${request.text}` },
       ],
-      temperature: 0.3,
-      max_tokens: 800,
-      response_format: { type: 'json_object' },
     });
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.content[0]?.type === 'text' ? response.content[0].text : null;
     if (!content) {
       return getDemoExtraction(request.text);
     }

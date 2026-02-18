@@ -161,14 +161,14 @@ export const SERVICE_CONFIG = {
       { key: 'defaultRoomId', label: 'デフォルトルームID（任意）', type: 'text' as const, placeholder: '123456789', required: false },
     ],
   },
-  openai: {
-    label: 'OpenAI',
-    description: 'AI機能（返信下書き・タスク会話）',
+  anthropic: {
+    label: 'Anthropic',
+    description: 'AI機能（Claude — 返信下書き・タスク会話・キーワード抽出）',
     icon: '🤖',
     color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     fields: [
-      { key: 'apiKey', label: 'APIキー', type: 'password' as const, placeholder: 'sk-xxxx', required: true },
-      { key: 'model', label: 'モデル', type: 'select' as const, placeholder: '', required: true, options: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'] },
+      { key: 'apiKey', label: 'APIキー', type: 'password' as const, placeholder: 'sk-ant-xxxx', required: true },
+      { key: 'model', label: 'モデル', type: 'select' as const, placeholder: '', required: true, options: ['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'] },
     ],
   },
   supabase: {
@@ -206,10 +206,10 @@ export const CONNECTION_STATUS_CONFIG = {
   },
 } as const;
 
-export const OPENAI_MODELS = [
-  { value: 'gpt-4o-mini', label: 'GPT-4o Mini（推奨・低コスト）' },
-  { value: 'gpt-4o', label: 'GPT-4o（高精度）' },
-  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo（バランス）' },
+export const CLAUDE_MODELS = [
+  { value: 'claude-opus-4-5-20251101', label: 'Claude Opus 4.5（最高精度）' },
+  { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5（バランス）' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5（高速・低コスト）' },
 ] as const;
 
 export const TIMEZONE_OPTIONS = [

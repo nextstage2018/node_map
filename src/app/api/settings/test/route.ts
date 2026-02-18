@@ -46,7 +46,7 @@ async function simulateConnectionTest(
     email: !!process.env.GMAIL_CLIENT_ID,
     slack: !!process.env.SLACK_BOT_TOKEN,
     chatwork: !!process.env.CHATWORK_API_TOKEN,
-    openai: !!process.env.OPENAI_API_KEY,
+    anthropic: !!process.env.ANTHROPIC_API_KEY,
     supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
   };
 

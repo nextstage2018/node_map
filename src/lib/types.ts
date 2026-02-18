@@ -188,7 +188,7 @@ export interface TaskSuggestion {
 // ===== Phase 3: 設定画面 / API接続 =====
 
 // サービス接続タイプ
-export type ServiceType = 'email' | 'slack' | 'chatwork' | 'openai' | 'supabase';
+export type ServiceType = 'email' | 'slack' | 'chatwork' | 'anthropic' | 'supabase';
 
 // 接続ステータス
 export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'testing';
@@ -221,8 +221,8 @@ export interface ChatworkSettings {
   defaultRoomId?: string;
 }
 
-// OpenAI設定
-export interface OpenAISettings {
+// Anthropic設定
+export interface AnthropicSettings {
   apiKey: string;
   model: string;
   maxTokens?: number;
@@ -247,7 +247,7 @@ export interface AdminSettings {
   gmail?: GmailSettings;
   slack?: SlackSettings;
   chatwork?: ChatworkSettings;
-  openai?: OpenAISettings;
+  anthropic?: AnthropicSettings;
   supabase?: SupabaseSettings;
   connections: ServiceConnection[];
 }
@@ -285,7 +285,7 @@ export interface AppSettings {
   gmail?: GmailSettings;
   slack?: SlackSettings;
   chatwork?: ChatworkSettings;
-  openai?: OpenAISettings;
+  anthropic?: AnthropicSettings;
   supabase?: SupabaseSettings;
   connections: ServiceConnection[];
 }

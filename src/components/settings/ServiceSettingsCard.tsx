@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ServiceType, ServiceConnection, ConnectionTestResponse } from '@/lib/types';
-import { SERVICE_CONFIG, CONNECTION_STATUS_CONFIG, OPENAI_MODELS } from '@/lib/constants';
+import { SERVICE_CONFIG, CONNECTION_STATUS_CONFIG, CLAUDE_MODELS } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import Button from '@/components/ui/Button';
 
@@ -111,7 +111,7 @@ export default function ServiceSettingsCard({
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                   >
                     <option value="">選択してください</option>
-                    {OPENAI_MODELS.map((m) => (
+                    {CLAUDE_MODELS.map((m) => (
                       <option key={m.value} value={m.value}>
                         {m.label}
                       </option>

@@ -9,11 +9,11 @@ import {
 
 /**
  * AI連携サービス
- * OpenAI APIを使用して返信下書き等を生成する
+ * Anthropic Claude APIを使用して返信下書き等を生成する
  */
 
 function getApiKey(): string {
-  return process.env.OPENAI_API_KEY || '';
+  return process.env.ANTHROPIC_API_KEY || '';
 }
 
 /**
@@ -30,8 +30,8 @@ export async function generateReplyDraft(
   }
 
   try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey });
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
 
     const systemPrompt = `あなたはビジネスメッセージの返信を下書きするアシスタントです。
 以下のルールに従ってください：
@@ -52,17 +52,16 @@ ${instruction ? `【追加指示】${instruction}` : ''}
 
 返信文のみを出力してください（「以下は返信案です」などの前置きは不要です）。`;
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 1000,
+      system: systemPrompt,
       messages: [
-        { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.7,
-      max_tokens: 1000,
     });
 
-    const draft = response.choices[0]?.message?.content || '';
+    const draft = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
     return {
       draft,
@@ -124,8 +123,8 @@ export async function generateTaskChat(
   }
 
   try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey });
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
 
     const phaseInstructions: Record<TaskPhase, string> = {
       ideation: `あなたはタスクの「構想フェーズ」のアシスタントです。
@@ -149,16 +148,15 @@ export async function generateTaskChat(
 - 学びや次のアクションを整理する`,
     };
 
-    const messages = [
-      {
-        role: 'system' as const,
-        content: `${phaseInstructions[phase]}
+    const systemPrompt = `${phaseInstructions[phase]}
 
 タスク情報:
 - タイトル: ${task.title}
 - 説明: ${task.description}
-${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`,
-      },
+${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`;
+
+    // Claude APIのメッセージ形式に変換（system は別パラメータ）
+    const messages = [
       ...conversationHistory.slice(-10).map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
@@ -166,14 +164,14 @@ ${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`,
       { role: 'user' as const, content: userMessage },
     ];
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages,
-      temperature: 0.7,
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
       max_tokens: 1000,
+      system: systemPrompt,
+      messages,
     });
 
-    const reply = response.choices[0]?.message?.content || '';
+    const reply = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
     return { reply };
   } catch (error) {
@@ -224,35 +222,31 @@ export async function generateTaskSummary(task: Task): Promise<string> {
   }
 
   try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey });
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
 
     const conversationText = task.conversations
       .map((c) => `[${c.role}] ${c.content}`)
       .join('\n');
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        {
-          role: 'system',
-          content: `タスクの会話履歴から、結果の要約を生成してください。
+    const response = await client.messages.create({
+      model: 'claude-opus-4-5-20251101',
+      max_tokens: 500,
+      system: `タスクの会話履歴から、結果の要約を生成してください。
 以下のフォーマットで出力:
 【結論】...
 【プロセス】...
 【学び】...
 【次のアクション】...（あれば）`,
-        },
+      messages: [
         {
           role: 'user',
           content: `タスク: ${task.title}\n構想要約: ${task.ideationSummary || 'なし'}\n\n会話履歴:\n${conversationText}`,
         },
       ],
-      temperature: 0.5,
-      max_tokens: 500,
     });
 
-    return response.choices[0]?.message?.content || '';
+    return response.content[0]?.type === 'text' ? response.content[0].text : '';
   } catch {
     return `【結論】${task.title}を完了`;
   }

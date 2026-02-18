@@ -27,8 +27,8 @@ let appSettings: AppSettings = {
       status: (process.env.CHATWORK_API_TOKEN ? 'connected' : 'disconnected') as ConnectionStatus,
     },
     {
-      type: 'openai',
-      status: (process.env.OPENAI_API_KEY ? 'connected' : 'disconnected') as ConnectionStatus,
+      type: 'anthropic',
+      status: (process.env.ANTHROPIC_API_KEY ? 'connected' : 'disconnected') as ConnectionStatus,
     },
     {
       type: 'supabase',
@@ -47,7 +47,7 @@ export async function GET() {
     email: process.env.GMAIL_CLIENT_ID || savedServiceSettings.email?.clientId,
     slack: process.env.SLACK_BOT_TOKEN || savedServiceSettings.slack?.botToken,
     chatwork: process.env.CHATWORK_API_TOKEN || savedServiceSettings.chatwork?.apiToken,
-    openai: process.env.OPENAI_API_KEY || savedServiceSettings.openai?.apiKey,
+    anthropic: process.env.ANTHROPIC_API_KEY || savedServiceSettings.anthropic?.apiKey,
     supabase: process.env.NEXT_PUBLIC_SUPABASE_URL || savedServiceSettings.supabase?.url,
   };
 
