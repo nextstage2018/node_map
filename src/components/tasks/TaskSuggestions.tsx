@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { TaskSuggestion, CreateTaskRequest } from '@/lib/types';
 import { CHANNEL_CONFIG, TASK_PRIORITY_CONFIG } from '@/lib/constants';
-import { cn } from '@/lib/utils';
+import { cn, formatRelativeTime } from '@/lib/utils';
 import Image from 'next/image';
 import Button from '@/components/ui/Button';
 
@@ -64,7 +64,10 @@ export default function TaskSuggestions({
                     className="shrink-0"
                   />
                   <span className="text-[10px] text-gray-400">
-                    {channelConfig.label}から
+                    {channelConfig.label}
+                  </span>
+                  <span className="text-[10px] text-gray-300">
+                    {formatRelativeTime(suggestion.sourceDate)}
                   </span>
                   <span className="ml-auto text-xs">{priorityConfig.icon}</span>
                 </div>
@@ -74,9 +77,14 @@ export default function TaskSuggestions({
                   {suggestion.title}
                 </h4>
 
-                {/* 提案理由 */}
-                <p className="text-[10px] text-purple-500">
-                  🤖 {suggestion.reason}
+                {/* 誰から */}
+                <p className="text-[10px] text-gray-500 mb-1 truncate">
+                  📨 {suggestion.sourceFrom}
+                </p>
+
+                {/* 元メッセージ抜粋 */}
+                <p className="text-[10px] text-gray-400 line-clamp-2 leading-relaxed">
+                  {suggestion.sourceExcerpt}
                 </p>
               </div>
             );
@@ -91,9 +99,10 @@ export default function TaskSuggestions({
           onClick={() => setSelectedIdx(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4"
+            className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* ヘッダー */}
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-2 mb-2">
                 <Image
@@ -107,7 +116,7 @@ export default function TaskSuggestions({
                 </span>
                 <span className="ml-auto text-sm">
                   {TASK_PRIORITY_CONFIG[selected.priority].icon}{' '}
-                  {TASK_PRIORITY_CONFIG[selected.priority].label}
+                  優先度: {TASK_PRIORITY_CONFIG[selected.priority].label}
                 </span>
               </div>
               <h2 className="text-lg font-bold text-gray-900">
@@ -115,37 +124,81 @@ export default function TaskSuggestions({
               </h2>
             </div>
 
-            <div className="px-6 py-4 space-y-3">
-              {/* 説明 */}
+            <div className="px-6 py-4 space-y-4">
+              {/* ソース元の情報 */}
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">
+                  元メッセージ
+                </h3>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400 shrink-0 w-12">送信者</span>
+                    <span className="font-medium text-gray-800">{selected.sourceFrom}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400 shrink-0 w-12">日時</span>
+                    <span className="text-gray-700">
+                      {new Date(selected.sourceDate).toLocaleString('ja-JP', {
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      （{formatRelativeTime(selected.sourceDate)}）
+                    </span>
+                  </div>
+                  {selected.sourceSubject && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-400 shrink-0 w-12">件名</span>
+                      <span className="text-gray-700">{selected.sourceSubject}</span>
+                    </div>
+                  )}
+                </div>
+                {/* メッセージ本文抜粋 */}
+                <div className="mt-3 p-2.5 bg-white rounded border border-gray-100">
+                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                    {selected.sourceExcerpt}
+                  </p>
+                </div>
+              </div>
+
+              {/* タスク内容 */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                  内容
+                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+                  提案タスク内容
                 </h3>
                 <p className="text-sm text-gray-700">{selected.description}</p>
               </div>
 
               {/* 提案理由 */}
               <div>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-                  提案理由
+                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+                  AIの提案理由
                 </h3>
                 <div className="flex items-start gap-2 p-2.5 bg-purple-50 rounded-lg">
-                  <span className="text-sm">🤖</span>
+                  <span className="text-sm shrink-0">🤖</span>
                   <p className="text-sm text-purple-700">{selected.reason}</p>
                 </div>
               </div>
             </div>
 
-            {/* ボタン */}
+            {/* ボタン（3つ：却下・スキップ・タスクに追加） */}
             <div className="px-6 py-4 border-t border-gray-200 flex gap-2">
               <button
                 onClick={() => {
                   onDismiss(selectedIdx);
                   setSelectedIdx(null);
                 }}
-                className="flex-1 px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-sm text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors"
               >
-                スキップ
+                却下
+              </button>
+              <div className="flex-1" />
+              <button
+                onClick={() => setSelectedIdx(null)}
+                className="px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                あとで
               </button>
               <Button
                 onClick={async () => {
@@ -159,7 +212,6 @@ export default function TaskSuggestions({
                   onDismiss(selectedIdx);
                   setSelectedIdx(null);
                 }}
-                className="flex-1"
               >
                 タスクに追加
               </Button>

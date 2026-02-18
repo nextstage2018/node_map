@@ -178,4 +178,9 @@ export interface TaskSuggestion {
   sourceMessageId: string;
   sourceChannel: ChannelType;
   reason: string; // なぜ提案するか
+  // ソース元の判断材料
+  sourceFrom: string; // 誰から
+  sourceDate: string; // いつ（ISO文字列）
+  sourceSubject?: string; // 件名
+  sourceExcerpt: string; // 元メッセージの抜粋
 }
