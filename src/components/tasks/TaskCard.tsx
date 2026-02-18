@@ -1,5 +1,7 @@
 'use client';
 
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Task } from '@/lib/types';
 import { TASK_PRIORITY_CONFIG, TASK_PHASE_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, cn } from '@/lib/utils';
@@ -14,14 +16,37 @@ export default function TaskCard({ task, isSelected, onClick }: TaskCardProps) {
   const priority = TASK_PRIORITY_CONFIG[task.priority];
   const phase = TASK_PHASE_CONFIG[task.phase];
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: task.id,
+    data: { type: 'task', task },
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
   return (
     <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
       onClick={onClick}
       className={cn(
-        'p-3 rounded-lg border cursor-pointer transition-all hover:shadow-sm',
+        'p-3 rounded-lg border cursor-grab active:cursor-grabbing transition-all hover:shadow-sm',
         isSelected
           ? 'border-blue-400 bg-blue-50 shadow-sm'
-          : 'border-gray-200 bg-white hover:border-gray-300'
+          : 'border-gray-200 bg-white hover:border-gray-300',
+        isDragging && 'shadow-lg ring-2 ring-blue-300'
       )}
     >
       {/* タイトル行 */}
