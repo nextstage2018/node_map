@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { generateTaskChat, generateTaskSummary } from '@/services/ai/aiClient.service';
-import { TaskAiChatRequest } from '@/lib/types';
+import { NodeService } from '@/services/nodemap/nodeClient.service';
+import { EdgeService } from '@/services/nodemap/edgeClient.service';
+import { ClusterService } from '@/services/nodemap/clusterClient.service';
+import { TaskAiChatRequest, NodeData } from '@/lib/types';
 
 // タスクAI会話
 export async function POST(request: NextRequest) {
@@ -46,6 +49,54 @@ export async function POST(request: NextRequest) {
       phase: body.phase,
     });
 
+    // 【Phase 4】会話内容からキーワードを抽出してノードに蓄積
+    const sourceType = body.phase === 'ideation' ? 'task_ideation' as const
+      : body.phase === 'result' ? 'task_result' as const
+      : 'task_conversation' as const;
+
+    // ユーザーメッセージとAI応答の両方から抽出（非同期・エラー無視）
+    Promise.allSettled([
+      NodeService.processText({
+        text: body.message,
+        sourceType,
+        sourceId: body.taskId,
+        direction: 'self',
+        userId: 'demo-user',
+        phase: body.phase,
+      }),
+      NodeService.processText({
+        text: response.reply,
+        sourceType,
+        sourceId: body.taskId,
+        direction: 'received',
+        userId: 'demo-user',
+        phase: body.phase,
+      }),
+    ]).then(async (results) => {
+      // 抽出されたノード群から経路エッジを生成
+      const allNodes = results
+        .filter((r) => r.status === 'fulfilled')
+        .flatMap((r) => (r as PromiseFulfilledResult<NodeData[]>).value || []);
+
+      if (allNodes.length >= 2) {
+        // 進行フェーズ → 順序エッジ（思考経路）
+        if (body.phase === 'progress') {
+          await EdgeService.createSequenceEdges(allNodes, 'demo-user', body.taskId);
+        }
+        // 構想/結果フェーズ → 共起エッジ + クラスター
+        if (body.phase === 'ideation') {
+          await EdgeService.createCoOccurrenceEdges(allNodes, 'demo-user', body.taskId);
+          await ClusterService.buildIdeationCluster(body.taskId, 'demo-user', allNodes);
+        }
+        if (body.phase === 'result') {
+          await EdgeService.createCoOccurrenceEdges(allNodes, 'demo-user', body.taskId);
+          await ClusterService.buildResultCluster(body.taskId, 'demo-user', allNodes);
+        }
+      }
+    }).catch(() => {
+      // ノード蓄積エラーはチャット応答に影響させない
+    });
+
     return NextResponse.json({ success: true, data: response });
   } catch (error) {
     console.error('タスクAI会話エラー:', error);
@@ -73,6 +124,22 @@ export async function PUT(request: NextRequest) {
 
     // タスクに要約を保存
     await TaskService.updateTask(body.taskId, { resultSummary: summary });
+
+    // 【Phase 4】要約からキーワードを抽出して結果クラスターを構築
+    NodeService.processText({
+      text: summary,
+      sourceType: 'task_result',
+      sourceId: body.taskId,
+      direction: 'self',
+      userId: 'demo-user',
+      phase: 'result',
+    }).then(async (nodes) => {
+      if (nodes.length > 0) {
+        await ClusterService.buildResultCluster(body.taskId, 'demo-user', nodes);
+      }
+    }).catch(() => {
+      // エラーは要約レスポンスに影響させない
+    });
 
     return NextResponse.json({ success: true, data: { summary } });
   } catch (error) {

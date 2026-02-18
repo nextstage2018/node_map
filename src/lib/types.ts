@@ -302,3 +302,112 @@ export interface ConnectionTestResponse {
   message: string;
   latencyMs?: number;
 }
+
+// ===== Phase 4: データ収集基盤（点・線・面） =====
+
+// 理解度レベル（認知→理解→習熟）
+export type UnderstandingLevel = 'recognition' | 'understanding' | 'mastery';
+
+// ノードの種類
+export type NodeType = 'keyword' | 'person' | 'project';
+
+// ノード（点）：知識・情報の単位
+export interface NodeData {
+  id: string;
+  label: string;           // キーワード・人名・案件名
+  type: NodeType;
+  userId: string;           // このノードの所有ユーザー
+  frequency: number;        // 頻出度（触れた回数）
+  understandingLevel: UnderstandingLevel;
+  // 出現コンテキスト
+  firstSeenAt: string;      // 初めて触れた日時
+  lastSeenAt: string;       // 最後に触れた日時
+  sourceContexts: NodeSourceContext[]; // どこで出現したか
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ノードの出現コンテキスト
+export interface NodeSourceContext {
+  sourceType: 'message' | 'task_conversation' | 'task_ideation' | 'task_result';
+  sourceId: string;         // メッセージIDまたはタスクID
+  direction: 'received' | 'sent' | 'self'; // 受信/送信/自分のメモ
+  phase?: TaskPhase;        // タスク会話の場合のフェーズ
+  timestamp: string;
+}
+
+// エッジ（線）：ノード間の思考のつながり
+export interface EdgeData {
+  id: string;
+  sourceNodeId: string;     // 始点ノード
+  targetNodeId: string;     // 終点ノード
+  userId: string;
+  weight: number;           // 線の太さ（共起頻度）
+  taskIds: string[];        // 関連するタスクID群
+  edgeType: 'co_occurrence' | 'causal' | 'sequence'; // 共起/因果/順序
+  createdAt: string;
+  updatedAt: string;
+}
+
+// クラスター（面）：タスクに対する認識範囲
+export interface ClusterData {
+  id: string;
+  taskId: string;           // 対応するタスク
+  userId: string;
+  clusterType: 'ideation' | 'result'; // 構想面 or 結果面
+  nodeIds: string[];        // 含まれるノードID群
+  summary?: string;         // AIによる要約
+  createdAt: string;
+}
+
+// 面の差分データ
+export interface ClusterDiff {
+  taskId: string;
+  userId: string;
+  ideationNodeIds: string[];
+  resultNodeIds: string[];
+  addedNodeIds: string[];   // 結果にあって構想になかったノード
+  removedNodeIds: string[]; // 構想にあって結果になかったノード
+  discoveredOnPath: string[]; // 経路上で発見されたノード
+}
+
+// キーワード抽出リクエスト
+export interface KeywordExtractionRequest {
+  text: string;
+  sourceType: NodeSourceContext['sourceType'];
+  sourceId: string;
+  direction: NodeSourceContext['direction'];
+  userId: string;
+  phase?: TaskPhase;
+}
+
+// キーワード抽出レスポンス
+export interface KeywordExtractionResponse {
+  keywords: ExtractedKeyword[];
+  persons: ExtractedKeyword[];
+  projects: ExtractedKeyword[];
+}
+
+// 抽出されたキーワード
+export interface ExtractedKeyword {
+  label: string;
+  type: NodeType;
+  confidence: number;       // 信頼度 0.0〜1.0
+}
+
+// ノードマップ全体ビュー（Phase 5 UI用の事前定義）
+export interface NodeMapView {
+  nodes: NodeData[];
+  edges: EdgeData[];
+  clusters: ClusterData[];
+  selectedTaskId?: string;
+}
+
+// ノード取得フィルター
+export interface NodeFilter {
+  userId?: string;
+  type?: NodeType;
+  understandingLevel?: UnderstandingLevel;
+  minFrequency?: number;
+  searchQuery?: string;
+}
