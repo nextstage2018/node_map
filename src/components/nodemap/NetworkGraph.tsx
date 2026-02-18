@@ -1,0 +1,327 @@
+'use client';
+
+import { useRef, useEffect, useCallback } from 'react';
+import * as d3 from 'd3';
+import type { NodeData, EdgeData, ClusterData, MapViewMode } from '@/lib/types';
+
+interface NetworkGraphProps {
+  nodes: NodeData[];
+  edges: EdgeData[];
+  clusters: ClusterData[];
+  viewMode: MapViewMode;
+  selectedTaskId: string | null;
+  width?: number;
+  height?: number;
+  userColor?: string;
+}
+
+// 理解度レベルに応じたサイズ
+const LEVEL_SIZE: Record<string, number> = {
+  recognition: 6,
+  understanding: 10,
+  mastery: 15,
+};
+
+// ノードタイプに応じた形状（circle / diamond / square）
+const NODE_SHAPE: Record<string, string> = {
+  keyword: 'circle',
+  person: 'diamond',
+  project: 'square',
+};
+
+// 理解度の色
+const LEVEL_COLOR: Record<string, string> = {
+  recognition: '#94A3B8',  // gray
+  understanding: '#3B82F6', // blue
+  mastery: '#10B981',       // green
+};
+
+export default function NetworkGraph({
+  nodes,
+  edges,
+  clusters,
+  viewMode,
+  selectedTaskId,
+  width = 800,
+  height = 600,
+  userColor = '#3B82F6',
+}: NetworkGraphProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
+
+  // タスクに関連するノードIDを計算
+  const getHighlightedNodeIds = useCallback((): Set<string> => {
+    if (!selectedTaskId) return new Set();
+    const taskClusters = clusters.filter((c) => c.taskId === selectedTaskId);
+
+    if (viewMode === 'ideation') {
+      const ideation = taskClusters.find((c) => c.clusterType === 'ideation');
+      return new Set(ideation?.nodeIds || []);
+    }
+    if (viewMode === 'result') {
+      const result = taskClusters.find((c) => c.clusterType === 'result');
+      return new Set(result?.nodeIds || []);
+    }
+    if (viewMode === 'path') {
+      // パス：タスクに関連するエッジの両端ノード
+      const taskEdges = edges.filter((e) => e.taskIds.includes(selectedTaskId));
+      const ids = new Set<string>();
+      taskEdges.forEach((e) => {
+        ids.add(typeof e.sourceNodeId === 'string' ? e.sourceNodeId : e.sourceNodeId);
+        ids.add(typeof e.targetNodeId === 'string' ? e.targetNodeId : e.targetNodeId);
+      });
+      return ids;
+    }
+    return new Set();
+  }, [selectedTaskId, viewMode, clusters, edges]);
+
+  // ハイライトされるエッジIDを計算
+  const getHighlightedEdgeIds = useCallback((): Set<string> => {
+    if (!selectedTaskId || viewMode !== 'path') return new Set();
+    return new Set(
+      edges.filter((e) => e.taskIds.includes(selectedTaskId)).map((e) => e.id)
+    );
+  }, [selectedTaskId, viewMode, edges]);
+
+  useEffect(() => {
+    if (!svgRef.current || nodes.length === 0) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+    const highlightedNodeIds = getHighlightedNodeIds();
+    const highlightedEdgeIds = getHighlightedEdgeIds();
+    const hasSelection = selectedTaskId && viewMode !== 'base';
+
+    // クラスターの描画用データ
+    const clustersToDraw = selectedTaskId
+      ? clusters.filter((c) => c.taskId === selectedTaskId)
+      : [];
+
+    // D3用データ準備
+    type SimNode = d3.SimulationNodeDatum & NodeData;
+    type SimLink = d3.SimulationLinkDatum<SimNode> & EdgeData;
+
+    const simNodes: SimNode[] = nodes.map((n) => ({ ...n }));
+    const nodeMap = new Map(simNodes.map((n) => [n.id, n]));
+
+    const simLinks: SimLink[] = edges
+      .filter((e) => nodeMap.has(e.sourceNodeId) && nodeMap.has(e.targetNodeId))
+      .map((e) => ({
+        ...e,
+        source: e.sourceNodeId,
+        target: e.targetNodeId,
+      }));
+
+    // ズーム
+    const g = svg.append('g');
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.3, 3])
+      .on('zoom', (event) => {
+        g.attr('transform', event.transform);
+      });
+    svg.call(zoom);
+
+    // クラスター描画（半透明の円で囲む）
+    if (clustersToDraw.length > 0) {
+      const clusterGroup = g.append('g').attr('class', 'clusters');
+      clustersToDraw.forEach((cluster) => {
+        const clusterNodes = simNodes.filter((n) => cluster.nodeIds.includes(n.id));
+        if (clusterNodes.length === 0) return;
+
+        const color = cluster.clusterType === 'ideation' ? '#3B82F6' : '#10B981';
+        const opacity = cluster.clusterType === 'ideation' ? 0.08 : 0.12;
+
+        // フォースシミュレーション後に位置更新
+        clusterGroup.append('circle')
+          .attr('class', `cluster-${cluster.id}`)
+          .attr('fill', color)
+          .attr('fill-opacity', opacity)
+          .attr('stroke', color)
+          .attr('stroke-opacity', 0.3)
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', cluster.clusterType === 'ideation' ? '5,5' : 'none');
+      });
+    }
+
+    // エッジ描画
+    const linkGroup = g.append('g').attr('class', 'links');
+    const link = linkGroup
+      .selectAll('line')
+      .data(simLinks)
+      .join('line')
+      .attr('stroke', (d) =>
+        hasSelection && highlightedEdgeIds.has(d.id)
+          ? userColor
+          : '#E2E8F0'
+      )
+      .attr('stroke-opacity', (d) =>
+        hasSelection ? (highlightedEdgeIds.has(d.id) ? 0.8 : 0.1) : 0.4
+      )
+      .attr('stroke-width', (d) => Math.max(1, Math.min(d.weight, 5)));
+
+    // ノード描画
+    const nodeGroup = g.append('g').attr('class', 'nodes');
+    const node = nodeGroup
+      .selectAll('g')
+      .data(simNodes)
+      .join('g')
+      .attr('cursor', 'pointer');
+
+    // ノード形状の描画
+    node.each(function (d) {
+      const el = d3.select(this);
+      const size = LEVEL_SIZE[d.understandingLevel] || 8;
+      const isHighlighted = !hasSelection || highlightedNodeIds.has(d.id);
+      const fillColor = isHighlighted
+        ? LEVEL_COLOR[d.understandingLevel] || '#94A3B8'
+        : '#E2E8F0';
+      const opacity = isHighlighted ? 1 : 0.3;
+      const shape = NODE_SHAPE[d.type] || 'circle';
+
+      if (shape === 'circle') {
+        el.append('circle')
+          .attr('r', size)
+          .attr('fill', fillColor)
+          .attr('fill-opacity', opacity)
+          .attr('stroke', isHighlighted ? '#fff' : 'none')
+          .attr('stroke-width', isHighlighted ? 1.5 : 0);
+      } else if (shape === 'diamond') {
+        el.append('rect')
+          .attr('width', size * 1.6)
+          .attr('height', size * 1.6)
+          .attr('x', -size * 0.8)
+          .attr('y', -size * 0.8)
+          .attr('transform', 'rotate(45)')
+          .attr('fill', fillColor)
+          .attr('fill-opacity', opacity)
+          .attr('stroke', isHighlighted ? '#fff' : 'none')
+          .attr('stroke-width', isHighlighted ? 1.5 : 0);
+      } else {
+        el.append('rect')
+          .attr('width', size * 1.8)
+          .attr('height', size * 1.8)
+          .attr('x', -size * 0.9)
+          .attr('y', -size * 0.9)
+          .attr('rx', 3)
+          .attr('fill', fillColor)
+          .attr('fill-opacity', opacity)
+          .attr('stroke', isHighlighted ? '#fff' : 'none')
+          .attr('stroke-width', isHighlighted ? 1.5 : 0);
+      }
+
+      // ラベル
+      if (isHighlighted || !hasSelection) {
+        el.append('text')
+          .text(d.label)
+          .attr('text-anchor', 'middle')
+          .attr('dy', size + 14)
+          .attr('font-size', '11px')
+          .attr('fill', '#475569')
+          .attr('fill-opacity', isHighlighted ? 1 : 0.5)
+          .attr('pointer-events', 'none');
+      }
+    });
+
+    // ツールチップ
+    const tooltip = d3.select('body').append('div')
+      .attr('class', 'nodemap-tooltip')
+      .style('position', 'absolute')
+      .style('visibility', 'hidden')
+      .style('background', '#1E293B')
+      .style('color', '#F8FAFC')
+      .style('padding', '8px 12px')
+      .style('border-radius', '8px')
+      .style('font-size', '12px')
+      .style('pointer-events', 'none')
+      .style('z-index', '9999')
+      .style('box-shadow', '0 4px 12px rgba(0,0,0,0.3)');
+
+    node.on('mouseover', (event, d) => {
+      const levelLabel =
+        d.understandingLevel === 'recognition' ? '認知' :
+        d.understandingLevel === 'understanding' ? '理解' : '習熟';
+      const typeLabel =
+        d.type === 'keyword' ? 'キーワード' :
+        d.type === 'person' ? '人物' : 'プロジェクト';
+      tooltip
+        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回`)
+        .style('visibility', 'visible')
+        .style('top', `${event.pageY - 10}px`)
+        .style('left', `${event.pageX + 15}px`);
+    }).on('mouseout', () => {
+      tooltip.style('visibility', 'hidden');
+    });
+
+    // ドラッグ
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const drag = d3.drag<any, SimNode>()
+      .on('start', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      })
+      .on('drag', (event, d) => {
+        d.fx = event.x;
+        d.fy = event.y;
+      })
+      .on('end', (event, d) => {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      });
+    node.call(drag);
+
+    // フォースシミュレーション
+    const simulation = d3.forceSimulation(simNodes as d3.SimulationNodeDatum[])
+      .force('link', d3.forceLink(simLinks as d3.SimulationLinkDatum<d3.SimulationNodeDatum>[])
+        .id((d: d3.SimulationNodeDatum) => (d as SimNode).id)
+        .distance(80)
+      )
+      .force('charge', d3.forceManyBody().strength(-200))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide().radius(25))
+      .on('tick', () => {
+        link
+          .attr('x1', (d) => (d.source as SimNode).x || 0)
+          .attr('y1', (d) => (d.source as SimNode).y || 0)
+          .attr('x2', (d) => (d.target as SimNode).x || 0)
+          .attr('y2', (d) => (d.target as SimNode).y || 0);
+
+        node.attr('transform', (d) => `translate(${d.x || 0},${d.y || 0})`);
+
+        // クラスター円の位置を更新
+        clustersToDraw.forEach((cluster) => {
+          const clusterNodes = simNodes.filter((n) => cluster.nodeIds.includes(n.id));
+          if (clusterNodes.length === 0) return;
+          const cx = d3.mean(clusterNodes, (n) => n.x) || 0;
+          const cy = d3.mean(clusterNodes, (n) => n.y) || 0;
+          const maxDist = d3.max(clusterNodes, (n) =>
+            Math.sqrt(Math.pow((n.x || 0) - cx, 2) + Math.pow((n.y || 0) - cy, 2))
+          ) || 0;
+
+          svg.select(`.cluster-${cluster.id}`)
+            .attr('cx', cx)
+            .attr('cy', cy)
+            .attr('r', maxDist + 40);
+        });
+      });
+
+    simulationRef.current = simulation;
+
+    return () => {
+      simulation.stop();
+      tooltip.remove();
+    };
+  }, [nodes, edges, clusters, viewMode, selectedTaskId, width, height, userColor, getHighlightedNodeIds, getHighlightedEdgeIds]);
+
+  return (
+    <svg
+      ref={svgRef}
+      width={width}
+      height={height}
+      className="bg-gray-50 rounded-xl border border-gray-200"
+      style={{ minHeight: '400px' }}
+    />
+  );
+}

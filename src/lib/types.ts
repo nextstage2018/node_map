@@ -411,3 +411,43 @@ export interface NodeFilter {
   minFrequency?: number;
   searchQuery?: string;
 }
+
+// ===== Phase 5: 思考マップUI =====
+
+// マップの表示モード
+export type MapViewMode = 'base' | 'ideation' | 'path' | 'result';
+
+// 比較モード用ユーザー情報
+export interface MapUser {
+  id: string;
+  displayName: string;
+  avatarColor: string;
+}
+
+// D3用のノード拡張型
+export interface D3Node extends NodeData {
+  x?: number;
+  y?: number;
+  fx?: number | null;
+  fy?: number | null;
+  // 表示用
+  isHighlighted: boolean;
+  isInCluster: boolean;
+  clusterType?: 'ideation' | 'result';
+}
+
+// D3用のエッジ拡張型
+export interface D3Edge extends EdgeData {
+  source: string | D3Node;
+  target: string | D3Node;
+  isHighlighted: boolean;
+}
+
+// マップ操作の状態
+export interface MapState {
+  viewMode: MapViewMode;
+  selectedTaskId: string | null;
+  selectedUserId: string;
+  compareUserId: string | null;
+  isCompareMode: boolean;
+}

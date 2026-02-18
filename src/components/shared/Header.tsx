@@ -11,7 +11,7 @@ export default function Header() {
     { href: '/inbox', label: '📥 インボックス', enabled: true },
     { href: '/tasks', label: '📋 タスク', enabled: true },
     { href: '/settings', label: '⚙️ 設定', enabled: true },
-    { href: '/map', label: '🧠 思考マップ（次期）', enabled: false },
+    { href: '/nodemap', label: '🧠 思考マップ', enabled: true },
   ];
 
   return (
