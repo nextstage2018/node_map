@@ -29,7 +29,7 @@
 | Phase 1：統合インボックス | ✅ 完了 | 2026-02-18 | デモモード動作確認済み |
 | Phase 2：タスクボード + AI会話 | ✅ 完了 | 2026-02-18 | D&D・AI提案・構造化メモ対応済み |
 | Phase 3：設定画面 / API接続 ※追加 | ✅ 完了 | 2026-02-18 | 2層構造（admin/個人）で実装 |
-| Phase 4：データ収集基盤（設計書Phase 3） | ⬜ 未着手 | - | キーワード抽出・ノード蓄積 |
+| Phase 4：データ収集基盤（設計書Phase 3） | ✅ 完了 | 2026-02-18 | キーワード抽出・ノード蓄積・理解度判定・エッジ/クラスター管理 |
 | Phase 5：思考マップUI（設計書Phase 4） | ⬜ 未着手 | - | ネットワークグラフ・比較モード |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
@@ -107,8 +107,19 @@
   - 個人: プロフィール設定 → OK
   - 個人: 表示・通知設定 → OK
 
-### CP8〜CP9
-- （Phase 4〜5完了時に追記）
+### CP8：Phase 4完了確認（データ収集基盤）
+- **結果：** ⏳ 確認待ち
+- **日付：** 2026-02-18
+- **確認事項：**
+  - キーワード抽出エンジン（AI/デモモード両対応）→ 実装済み
+  - ノード（点）蓄積・頻出度カウント → 実装済み
+  - 理解度レベル自動判定（認知/理解/習熟）→ 実装済み
+  - エッジ（線）記録（共起/順序/因果の3タイプ）→ 実装済み
+  - クラスター（面）管理（構想面/結果面/差分計算）→ 実装済み
+  - 既存フローへの統合（メッセージ取得・タスク会話）→ 実装済み
+
+### CP9
+- （Phase 5完了時に追記）
 
 ---
 
@@ -133,6 +144,11 @@
 | 2026-02-18 | 判断材料の充実化 | 誰から/いつ/何のメッセージか分からないとタスク化判断不可 |
 | 2026-02-18 | 設計書Phase 3の前に設定画面を追加 | 実運用にはAPI接続設定が必要 |
 | 2026-02-18 | 設定を2層構造に | admin(API基盤)と個人(OAuth認証)は分離すべき。admin未設定時は個人認証不可 |
+| 2026-02-18 | キーワード抽出はAI（gpt-4o-mini）+ルールベースのハイブリッド | API未接続時はルールベース（カタカナ・漢字・人名パターン）で動作 |
+| 2026-02-18 | 理解度3段階の判定ロジック確定 | received only=認知、sent/self=理解、sent×2+received=習熟 |
+| 2026-02-18 | エッジは3タイプ（共起/順序/因果） | 共起=同時出現、順序=進行フェーズの経路、因果=AI文脈解析 |
+| 2026-02-18 | クラスターは構想面と結果面の2種類 | 差分で「思考の広がり」を計測。discoveredOnPath=経路上の発見 |
+| 2026-02-18 | 既存フローに非同期統合 | メッセージ取得・タスク会話時にバックグラウンドでノード蓄積。エラーは無視 |
 
 ---
 
@@ -166,10 +182,19 @@ node_map/
 │   │       │   ├── route.ts           ← タスクCRUD
 │   │       │   ├── chat/route.ts      ← AI会話・要約生成
 │   │       │   └── suggestions/route.ts ← タスク提案
-│   │       └── settings/
-│   │           ├── route.ts           ← 設定取得・保存
-│   │           ├── profile/route.ts   ← プロフィール更新
-│   │           └── test/route.ts      ← 接続テスト
+│   │       ├── settings/
+│   │       │   ├── route.ts           ← 設定取得・保存
+│   │       │   ├── profile/route.ts   ← プロフィール更新
+│   │       │   └── test/route.ts      ← 接続テスト
+│   │       ├── nodes/
+│   │       │   ├── route.ts           ← ノードCRUD
+│   │       │   ├── extract/route.ts   ← キーワード抽出→ノード蓄積
+│   │       │   └── stats/route.ts     ← ノード統計
+│   │       ├── edges/
+│   │       │   └── route.ts           ← エッジCRUD
+│   │       └── clusters/
+│   │           ├── route.ts           ← クラスターCRUD
+│   │           └── diff/route.ts      ← クラスター差分計算
 │   ├── components/
 │   │   ├── inbox/
 │   │   │   ├── MessageList.tsx
@@ -200,7 +225,8 @@ node_map/
 │   ├── hooks/
 │   │   ├── useMessages.ts
 │   │   ├── useTasks.ts
-│   │   └── useSettings.ts
+│   │   ├── useSettings.ts
+│   │   └── useNodes.ts              ← ノード・エッジ・クラスター取得Hook
 │   ├── lib/
 │   │   ├── types.ts                   ← 全型定義
 │   │   ├── constants.ts               ← 全定数
@@ -210,12 +236,19 @@ node_map/
 │       ├── email/emailClient.service.ts
 │       ├── slack/slackClient.service.ts
 │       ├── chatwork/chatworkClient.service.ts
-│       ├── ai/aiClient.service.ts
+│       ├── ai/
+│       │   ├── aiClient.service.ts
+│       │   └── keywordExtractor.service.ts ← キーワード抽出エンジン
 │       ├── task/taskClient.service.ts
-│       └── settings/settingsClient.service.ts
+│       ├── settings/settingsClient.service.ts
+│       └── nodemap/
+│           ├── nodeClient.service.ts      ← ノード（点）管理
+│           ├── edgeClient.service.ts      ← エッジ（線）管理
+│           └── clusterClient.service.ts   ← クラスター（面）管理
 ├── supabase/
 │   ├── 001_initial_schema.sql
-│   └── 002_tasks_schema.sql
+│   ├── 002_tasks_schema.sql
+│   └── 003_nodemap_schema.sql        ← ノード・エッジ・クラスターDB
 └── package.json
 ```
 
@@ -255,16 +288,32 @@ node_map/
   - OAuth認証フローはシミュレーション（本番は実際のOAuth2実装が必要）
   - 接続テストもシミュレーション
 
+### Phase 4（データ収集基盤）→ Phase 5（思考マップUI）への引き継ぎ
+- **実装したファイル構成：** nodemap系サービス全て + ノードAPI + キーワード抽出エンジン
+- **データ収集基盤の設計：**
+  - ノード（点）: keyword/person/projectの3タイプ。頻出度カウント・理解度自動判定付き
+  - エッジ（線）: co_occurrence/sequence/causalの3タイプ。重み（weight）で太さを表現
+  - クラスター（面）: ideation/resultの2タイプ。差分計算でdiscoveredOnPathを算出
+  - キーワード抽出: OpenAI API（gpt-4o-mini）使用。デモモードではルールベース抽出
+- **既存フローとの統合：**
+  - メッセージ取得時（GET /api/messages）→ 全メッセージからキーワード自動抽出
+  - タスクAI会話時（POST /api/tasks/chat）→ 会話内容からキーワード抽出 + フェーズに応じたエッジ/クラスター生成
+  - タスク要約生成時（PUT /api/tasks/chat）→ 要約から結果クラスターを自動構築
+- **注意点：**
+  - 全データはインメモリ保存（本番はSupabase。003_nodemap_schema.sql準備済み）
+  - デモ用の初期データ（12ノード・8エッジ・4クラスター）が組み込み済み
+  - キーワード抽出のエラーは既存フローに影響させない（非同期・エラー無視パターン）
+  - useNodesフックでフロントから全データにアクセス可能
+
 ---
 
 ## 次にやること
 
-1. **Phase 4（設計書Phase 3）：データ収集基盤を実装する**
-   - メッセージ・タスク会話からのキーワード抽出エンジン
-   - ノード（点）の蓄積・頻出度カウント
-   - 理解度レベルの自動判定
-   - タスク3フェーズから「面」データを抽出
-   - 経路（線）データの記録
+1. **Phase 5（設計書Phase 4）：思考マップUIを実装する**
+   - ネットワークグラフの表示画面（D3.js or React Flow）
+   - タスク選択 → 構想・経路・結果の段階表示
+   - 人物切り替え機能
+   - 比較モード（2人並列表示）
 
 2. **APIキーの準備**（実運用開始前に必要）
    - Gmail API / Slack Bot Token / Chatwork APIトークン / OpenAI APIキー / Supabase
