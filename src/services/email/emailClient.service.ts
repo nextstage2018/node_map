@@ -158,6 +158,29 @@ function getDemoEmails(): UnifiedMessage[] {
       isRead: false,
       status: 'unread' as const,
       metadata: { messageId: 'demo-msg-1@example.com' },
+      threadMessages: [
+        {
+          id: 'email-thread-1a',
+          from: { name: 'あなた', address: 'you@example.com' },
+          body: '田中さん\nお疲れ様です。来週の打ち合わせの件、了解しました。\n火曜日であれば午前中が都合が良いです。',
+          timestamp: new Date(now.getTime() - 2 * 86400000).toISOString(),
+          isOwn: true,
+        },
+        {
+          id: 'email-thread-1b',
+          from: { name: '田中太郎', address: 'tanaka@example.com' },
+          body: 'ありがとうございます。\nでは火曜日の10時ではいかがでしょうか？\n会議室を押さえておきます。',
+          timestamp: new Date(now.getTime() - 1.5 * 86400000).toISOString(),
+          isOwn: false,
+        },
+        {
+          id: 'email-thread-1c',
+          from: { name: 'あなた', address: 'you@example.com' },
+          body: '10時で問題ありません。よろしくお願いします。',
+          timestamp: new Date(now.getTime() - 86400000).toISOString(),
+          isOwn: true,
+        },
+      ],
     },
     {
       id: 'email-demo-2',
@@ -171,6 +194,15 @@ function getDemoEmails(): UnifiedMessage[] {
       isRead: true,
       status: 'replied' as const,
       metadata: { messageId: 'demo-msg-2@example.com' },
+      threadMessages: [
+        {
+          id: 'email-thread-2a',
+          from: { name: 'あなた', address: 'you@example.com' },
+          body: '佐藤さん\nプロジェクトAの進捗報告をお願いできますでしょうか。\n今週末の状況を共有いただけると助かります。',
+          timestamp: new Date(now.getTime() - 3 * 86400000).toISOString(),
+          isOwn: true,
+        },
+      ],
     },
     {
       id: 'email-demo-3',

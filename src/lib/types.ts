@@ -26,6 +26,7 @@ export interface UnifiedMessage {
   isRead: boolean;
   status: MessageStatus;
   threadId?: string;
+  threadMessages?: ThreadMessage[]; // スレッド内の前後メッセージ
   // Channel-specific metadata
   metadata: {
     // Email
@@ -40,6 +41,18 @@ export interface UnifiedMessage {
     chatworkRoomName?: string;
     chatworkMessageId?: string;
   };
+}
+
+// スレッド内の個別メッセージ
+export interface ThreadMessage {
+  id: string;
+  from: {
+    name: string;
+    address: string;
+  };
+  body: string;
+  timestamp: string;
+  isOwn: boolean; // 自分の送信か
 }
 
 // 返信リクエスト

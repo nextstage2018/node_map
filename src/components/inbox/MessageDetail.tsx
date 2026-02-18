@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { UnifiedMessage } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 import ChannelBadge from '@/components/ui/ChannelBadge';
+import StatusBadge from '@/components/ui/StatusBadge';
 import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
+import ThreadView from '@/components/inbox/ThreadView';
 
 interface MessageDetailProps {
   message: UnifiedMessage | null;
@@ -25,12 +27,15 @@ export default function MessageDetail({ message }: MessageDetailProps) {
     );
   }
 
+  const hasThread = message.threadMessages && message.threadMessages.length > 0;
+
   return (
     <div className="flex flex-col h-full">
       {/* ヘッダー */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center gap-2 mb-2">
           <ChannelBadge channel={message.channel} />
+          <StatusBadge status={message.status} />
           {message.metadata.slackChannelName && (
             <span className="text-xs text-gray-400">
               #{message.metadata.slackChannelName}
@@ -38,7 +43,7 @@ export default function MessageDetail({ message }: MessageDetailProps) {
           )}
           {message.metadata.chatworkRoomName && (
             <span className="text-xs text-gray-400">
-              📁 {message.metadata.chatworkRoomName}
+              {message.metadata.chatworkRoomName}
             </span>
           )}
         </div>
@@ -68,6 +73,11 @@ export default function MessageDetail({ message }: MessageDetailProps) {
           {message.body}
         </div>
       </div>
+
+      {/* スレッド履歴 */}
+      {hasThread && (
+        <ThreadView messages={message.threadMessages!} />
+      )}
 
       {/* アクションバー */}
       <div className="p-4 border-t border-gray-200 bg-gray-50">

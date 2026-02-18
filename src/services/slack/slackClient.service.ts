@@ -130,6 +130,29 @@ function getDemoSlackMessages(): UnifiedMessage[] {
       isRead: false,
       status: 'unread' as const,
       metadata: { slackChannel: 'C001', slackChannelName: 'general', slackTs: '1700000001.000001' },
+      threadMessages: [
+        {
+          id: 'slack-thread-1a',
+          from: { name: '伊藤美咲', address: 'U003' },
+          body: '木曜15時、OKです！',
+          timestamp: new Date(now.getTime() - 10 * 60000).toISOString(),
+          isOwn: false,
+        },
+        {
+          id: 'slack-thread-1b',
+          from: { name: 'あなた', address: 'U000' },
+          body: '了解です。会議室はどこにしますか？',
+          timestamp: new Date(now.getTime() - 8 * 60000).toISOString(),
+          isOwn: true,
+        },
+        {
+          id: 'slack-thread-1c',
+          from: { name: '山田次郎', address: 'U001' },
+          body: 'A会議室を押さえました :thumbsup:',
+          timestamp: new Date(now.getTime() - 5 * 60000).toISOString(),
+          isOwn: false,
+        },
+      ],
     },
     {
       id: 'slack-demo-2',
@@ -152,6 +175,15 @@ function getDemoSlackMessages(): UnifiedMessage[] {
       isRead: false,
       status: 'unread' as const,
       metadata: { slackChannel: 'C003', slackChannelName: 'project-x', slackTs: '1700000003.000001' },
+      threadMessages: [
+        {
+          id: 'slack-thread-3a',
+          from: { name: 'あなた', address: 'U000' },
+          body: '了解しました。追加要件の詳細を共有してもらえますか？',
+          timestamp: new Date(now.getTime() - 1 * 3600000).toISOString(),
+          isOwn: true,
+        },
+      ],
     },
   ];
 }

@@ -133,6 +133,22 @@ function getDemoChatworkMessages(): UnifiedMessage[] {
       isRead: true,
       status: 'replied' as const,
       metadata: { chatworkRoomId: 'R002', chatworkRoomName: 'プロジェクトY', chatworkMessageId: 'M002' },
+      threadMessages: [
+        {
+          id: 'cw-thread-2a',
+          from: { name: 'あなた', address: '4000' },
+          body: '小林さん、納品物を確認しました。\n2点修正をお願いしたい箇所があります。',
+          timestamp: new Date(now.getTime() - 2 * 3600000).toISOString(),
+          isOwn: true,
+        },
+        {
+          id: 'cw-thread-2b',
+          from: { name: '小林五郎', address: '4002' },
+          body: '承知しました。修正箇所を教えていただけますか？',
+          timestamp: new Date(now.getTime() - 1.5 * 3600000).toISOString(),
+          isOwn: false,
+        },
+      ],
     },
     {
       id: 'chatwork-demo-3',
