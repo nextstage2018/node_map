@@ -242,7 +242,44 @@ export interface ProfileSettings {
   language: string;
 }
 
-// アプリ全体の設定
+// ===== Admin設定（管理者のみ） =====
+export interface AdminSettings {
+  gmail?: GmailSettings;
+  slack?: SlackSettings;
+  chatwork?: ChatworkSettings;
+  openai?: OpenAISettings;
+  supabase?: SupabaseSettings;
+  connections: ServiceConnection[];
+}
+
+// ===== 個人認証状態 =====
+export type ChannelAuthType = 'email' | 'slack' | 'chatwork';
+
+export type AuthStatus = 'authenticated' | 'unauthenticated' | 'expired';
+
+export interface ChannelAuth {
+  channel: ChannelAuthType;
+  status: AuthStatus;
+  accountName?: string; // 認証済みアカウント名（例: tanaka@company.com）
+  accountIcon?: string; // アバターURL
+  authenticatedAt?: string;
+  expiresAt?: string;
+}
+
+export interface UserSettings {
+  profile: ProfileSettings;
+  channelAuths: ChannelAuth[];
+  preferences: UserPreferences;
+}
+
+export interface UserPreferences {
+  notificationsEnabled: boolean;
+  emailDigest: 'none' | 'daily' | 'weekly';
+  defaultInboxFilter: ChannelType | 'all';
+  aiAutoSuggest: boolean;
+}
+
+// アプリ全体の設定（後方互換）
 export interface AppSettings {
   profile: ProfileSettings;
   gmail?: GmailSettings;

@@ -220,6 +220,54 @@ export const TIMEZONE_OPTIONS = [
   { value: 'UTC', label: '協定世界時（UTC）' },
 ] as const;
 
+export const AUTH_STATUS_CONFIG = {
+  authenticated: {
+    label: '認証済み',
+    color: 'bg-green-100 text-green-700',
+    dotColor: 'bg-green-500',
+  },
+  unauthenticated: {
+    label: '未認証',
+    color: 'bg-gray-100 text-gray-500',
+    dotColor: 'bg-gray-300',
+  },
+  expired: {
+    label: '期限切れ',
+    color: 'bg-amber-100 text-amber-700',
+    dotColor: 'bg-amber-500',
+  },
+} as const;
+
+export const CHANNEL_AUTH_CONFIG = {
+  email: {
+    label: 'Gmail',
+    description: 'Googleアカウントでログインして、メールを取得・送信します',
+    icon: '📧',
+    authMethod: 'OAuth 2.0',
+    authButtonLabel: 'Googleアカウントで認証',
+  },
+  slack: {
+    label: 'Slack',
+    description: 'Slackワークスペースにサインインして、メッセージを取得します',
+    icon: '💬',
+    authMethod: 'OAuth 2.0',
+    authButtonLabel: 'Slackにサインイン',
+  },
+  chatwork: {
+    label: 'Chatwork',
+    description: 'Chatworkアカウントでログインして、メッセージを取得します',
+    icon: '🗨️',
+    authMethod: 'OAuth 2.0',
+    authButtonLabel: 'Chatworkにログイン',
+  },
+} as const;
+
+export const EMAIL_DIGEST_OPTIONS = [
+  { value: 'none', label: 'なし' },
+  { value: 'daily', label: '毎日' },
+  { value: 'weekly', label: '毎週' },
+] as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },
