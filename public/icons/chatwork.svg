@@ -1,11 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
-  <!-- Chatwork official logo: 4 petal flower shape -->
-  <!-- Top-left petal (red) -->
-  <path d="M11.2 3.5C11.2 3.5 7.5 5.5 7.5 9.2C7.5 11 8.8 12 10.2 12C10.2 12 11.2 12 11.2 11V3.5Z" fill="#C4161C"/>
-  <!-- Top-right petal (dark navy) -->
-  <path d="M12.8 3.5C12.8 3.5 16.5 5.5 16.5 9.2C16.5 11 15.2 12 13.8 12C13.8 12 12.8 12 12.8 11V3.5Z" fill="#283040"/>
-  <!-- Bottom-left petal (dark navy) -->
-  <path d="M11.2 20.5C11.2 20.5 7.5 18.5 7.5 14.8C7.5 13 8.8 12 10.2 12C10.2 12 11.2 12 11.2 13V20.5Z" fill="#283040"/>
-  <!-- Bottom-right petal (red) -->
-  <path d="M12.8 20.5C12.8 20.5 16.5 18.5 16.5 14.8C16.5 13 15.2 12 13.8 12C13.8 12 12.8 12 12.8 13V20.5Z" fill="#C4161C"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
+  <!-- Chatwork official logo: 3 red bubbles + 1 dark bubble in clover arrangement -->
+  <!-- Top-left bubble (red) - with tail pointing top-left -->
+  <ellipse cx="16" cy="16" rx="7.5" ry="6.5" fill="#C4161C"/>
+  <path d="M9.5 13 L6 8 L12 12.5Z" fill="#C4161C"/>
+  <!-- Top-right bubble (red) - with tail pointing top-right -->
+  <ellipse cx="32" cy="16" rx="7.5" ry="6.5" fill="#C4161C"/>
+  <path d="M38.5 13 L42 8 L36 12.5Z" fill="#C4161C"/>
+  <!-- Bottom-left bubble (dark) - with tail pointing bottom-left -->
+  <ellipse cx="16" cy="32" rx="7.5" ry="6.5" fill="#283040"/>
+  <path d="M9.5 35 L6 40 L12 35.5Z" fill="#283040"/>
+  <!-- Bottom-right bubble (red) - with tail pointing bottom-right -->
+  <ellipse cx="32" cy="32" rx="7.5" ry="6.5" fill="#C4161C"/>
+  <path d="M38.5 35 L42 40 L36 35.5Z" fill="#C4161C"/>
 </svg>
