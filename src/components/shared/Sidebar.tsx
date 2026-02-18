@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { CHANNEL_CONFIG } from '@/lib/constants';
 import { ChannelType } from '@/lib/types';
 
@@ -34,8 +35,15 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
                 key={ch}
                 className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-white transition-colors"
               >
-                <span>
-                  {config.icon} {config.label}
+                <span className="inline-flex items-center gap-2">
+                  <Image
+                    src={config.icon}
+                    alt={config.label}
+                    width={16}
+                    height={16}
+                    className="shrink-0"
+                  />
+                  {config.label}
                 </span>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400">

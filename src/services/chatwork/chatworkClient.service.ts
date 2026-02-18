@@ -59,6 +59,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
             body: msg.body || '',
             timestamp: new Date(msg.send_time * 1000).toISOString(),
             isRead: false,
+            status: 'unread' as const,
             metadata: {
               chatworkRoomId: String(room.room_id),
               chatworkRoomName: room.name || '',
@@ -119,6 +120,7 @@ function getDemoChatworkMessages(): UnifiedMessage[] {
       body: '[info][title]週次報告[/title]今週の進捗を共有します。タスクAは完了、タスクBは80%、タスクCは来週着手予定です。[/info]',
       timestamp: new Date(now.getTime() - 20 * 60000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { chatworkRoomId: 'R001', chatworkRoomName: '週次定例', chatworkMessageId: 'M001' },
     },
     {
@@ -129,6 +131,7 @@ function getDemoChatworkMessages(): UnifiedMessage[] {
       body: '納品物の最終チェックお願いします。修正点があれば今日中にフィードバックいただけると助かります。',
       timestamp: new Date(now.getTime() - 3 * 3600000).toISOString(),
       isRead: true,
+      status: 'replied' as const,
       metadata: { chatworkRoomId: 'R002', chatworkRoomName: 'プロジェクトY', chatworkMessageId: 'M002' },
     },
     {
@@ -139,6 +142,7 @@ function getDemoChatworkMessages(): UnifiedMessage[] {
       body: '請求書の件でご相談です。先月分の処理がまだ完了していないようです。経理から確認の連絡が来ています。',
       timestamp: new Date(now.getTime() - 6 * 3600000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { chatworkRoomId: 'R003', chatworkRoomName: '総務・経理', chatworkMessageId: 'M003' },
     },
   ];

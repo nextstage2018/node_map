@@ -78,6 +78,7 @@ export async function fetchEmails(limit: number = 50): Promise<UnifiedMessage[]>
           body: message.source?.toString() || '',
           timestamp: envelope.date?.toISOString() || new Date().toISOString(),
           isRead: false,
+          status: 'unread' as const,
           threadId: envelope.inReplyTo || undefined,
           metadata: {
             messageId: envelope.messageId || undefined,
@@ -155,6 +156,7 @@ function getDemoEmails(): UnifiedMessage[] {
       body: 'お疲れ様です。来週火曜日の打ち合わせですが、14時からに変更可能でしょうか？会議室Aを押さえております。ご確認よろしくお願いいたします。',
       timestamp: new Date(now.getTime() - 30 * 60000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { messageId: 'demo-msg-1@example.com' },
     },
     {
@@ -167,6 +169,7 @@ function getDemoEmails(): UnifiedMessage[] {
       body: 'お疲れ様です。プロジェクトAの進捗ですが、予定通り今週末までにデザインが完成します。来週からコーディングに入る予定です。添付の資料もご確認ください。',
       timestamp: new Date(now.getTime() - 2 * 3600000).toISOString(),
       isRead: true,
+      status: 'replied' as const,
       metadata: { messageId: 'demo-msg-2@example.com' },
     },
     {
@@ -179,6 +182,7 @@ function getDemoEmails(): UnifiedMessage[] {
       body: '平素よりお世話になっております。先日お送りいただいた見積書について、2点確認事項がございます。お手すきの際にご連絡いただけますと幸いです。',
       timestamp: new Date(now.getTime() - 5 * 3600000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { messageId: 'demo-msg-3@client.co.jp' },
     },
   ];

@@ -61,6 +61,7 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
             body: msg.text || '',
             timestamp: new Date(Number(msg.ts) * 1000).toISOString(),
             isRead: false,
+            status: 'unread' as const,
             threadId: msg.thread_ts || undefined,
             metadata: {
               slackChannel: channel.id,
@@ -127,6 +128,7 @@ function getDemoSlackMessages(): UnifiedMessage[] {
       body: '#general で共有です。来週のスプリントレビューの日程を確定させたいのですが、木曜15時はいかがでしょうか？',
       timestamp: new Date(now.getTime() - 15 * 60000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { slackChannel: 'C001', slackChannelName: 'general', slackTs: '1700000001.000001' },
     },
     {
@@ -137,6 +139,7 @@ function getDemoSlackMessages(): UnifiedMessage[] {
       body: 'デザインレビューの件、Figmaのリンク共有します。特にヘッダー部分のフィードバックをお願いしたいです。',
       timestamp: new Date(now.getTime() - 45 * 60000).toISOString(),
       isRead: true,
+      status: 'replied' as const,
       metadata: { slackChannel: 'C002', slackChannelName: 'design', slackTs: '1700000002.000001' },
     },
     {
@@ -147,6 +150,7 @@ function getDemoSlackMessages(): UnifiedMessage[] {
       body: 'クライアントから追加要件が来ました。急ぎで対応方針を相談させてください。今日中にお時間ありますか？',
       timestamp: new Date(now.getTime() - 1.5 * 3600000).toISOString(),
       isRead: false,
+      status: 'unread' as const,
       metadata: { slackChannel: 'C003', slackChannelName: 'project-x', slackTs: '1700000003.000001' },
     },
   ];

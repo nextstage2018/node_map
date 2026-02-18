@@ -3,6 +3,9 @@
 // メッセージのソースチャネル
 export type ChannelType = 'email' | 'slack' | 'chatwork';
 
+// メッセージのステータス
+export type MessageStatus = 'unread' | 'read' | 'replied';
+
 // 統合メッセージの共通型
 export interface UnifiedMessage {
   id: string;
@@ -21,6 +24,7 @@ export interface UnifiedMessage {
   bodyHtml?: string;
   timestamp: string; // ISO 8601
   isRead: boolean;
+  status: MessageStatus;
   threadId?: string;
   // Channel-specific metadata
   metadata: {

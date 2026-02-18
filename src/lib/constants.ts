@@ -2,8 +2,8 @@
 
 export const CHANNEL_CONFIG = {
   email: {
-    label: 'メール',
-    icon: '📧',
+    label: 'Gmail',
+    icon: '/icons/gmail.svg',
     color: '#EA4335',
     bgColor: 'bg-red-50',
     textColor: 'text-red-700',
@@ -11,7 +11,7 @@ export const CHANNEL_CONFIG = {
   },
   slack: {
     label: 'Slack',
-    icon: '💬',
+    icon: '/icons/slack.svg',
     color: '#4A154B',
     bgColor: 'bg-purple-50',
     textColor: 'text-purple-700',
@@ -19,11 +19,33 @@ export const CHANNEL_CONFIG = {
   },
   chatwork: {
     label: 'Chatwork',
-    icon: '🔵',
+    icon: '/icons/chatwork.svg',
     color: '#DE5246',
+    bgColor: 'bg-orange-50',
+    textColor: 'text-orange-700',
+    borderColor: 'border-orange-200',
+  },
+} as const;
+
+// メッセージステータスの表示設定
+export const STATUS_CONFIG = {
+  unread: {
+    label: '未読',
+    dotColor: 'bg-blue-500',
+    textColor: 'text-blue-600',
     bgColor: 'bg-blue-50',
-    textColor: 'text-blue-700',
-    borderColor: 'border-blue-200',
+  },
+  read: {
+    label: '既読',
+    dotColor: 'bg-gray-300',
+    textColor: 'text-gray-400',
+    bgColor: 'bg-gray-50',
+  },
+  replied: {
+    label: '返信済み',
+    dotColor: 'bg-green-500',
+    textColor: 'text-green-600',
+    bgColor: 'bg-green-50',
   },
 } as const;
 
