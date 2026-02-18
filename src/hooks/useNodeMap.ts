@@ -138,12 +138,13 @@ export function useNodeMap() {
     loadMainData('user_self');
   }, [fetchUsers, loadMainData]);
 
-  // タスク一覧（クラスターから抽出）
+  // タスク一覧（クラスターから抽出。構想面のsummaryをタスク名として使用）
   const availableTasks = Array.from(
     new Set(data.clusters.map((c) => c.taskId))
   ).map((taskId) => {
-    const cluster = data.clusters.find((c) => c.taskId === taskId);
-    return { id: taskId, label: cluster?.summary || taskId };
+    const ideation = data.clusters.find((c) => c.taskId === taskId && c.clusterType === 'ideation');
+    const anyCluster = data.clusters.find((c) => c.taskId === taskId);
+    return { id: taskId, label: ideation?.summary || anyCluster?.summary || taskId };
   });
 
   return {

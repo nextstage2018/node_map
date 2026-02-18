@@ -16,173 +16,87 @@ import { extractKeywords, assessUnderstandingLevel } from '@/services/ai/keyword
 let nodesStore: NodeData[] = [];
 let contextStore: (NodeSourceContext & { nodeId: string })[] = [];
 
+// ヘルパー：ノード生成
+function makeNode(
+  id: string, label: string, type: NodeType, userId: string,
+  frequency: number, level: 'recognition' | 'understanding' | 'mastery',
+  firstSeen: string
+): NodeData {
+  const now = new Date().toISOString();
+  return {
+    id, label, type, userId, frequency,
+    understandingLevel: level,
+    firstSeenAt: firstSeen, lastSeenAt: now,
+    sourceContexts: [],
+    createdAt: firstSeen, updatedAt: now,
+  };
+}
+
 // デモ用初期データ
 function initDemoData(): void {
   if (nodesStore.length > 0) return;
 
-  const now = new Date().toISOString();
-  const userId = 'demo-user';
-
-  const demoNodes: NodeData[] = [
-    {
-      id: 'node-1',
-      label: 'マーケティング',
-      type: 'keyword',
-      userId,
-      frequency: 12,
-      understandingLevel: 'mastery',
-      firstSeenAt: '2026-02-01T09:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-01T09:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-2',
-      label: 'SEO対策',
-      type: 'keyword',
-      userId,
-      frequency: 8,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-05T10:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-05T10:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-3',
-      label: 'コンテンツ戦略',
-      type: 'keyword',
-      userId,
-      frequency: 6,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-08T11:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-08T11:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-4',
-      label: 'リスティング広告',
-      type: 'keyword',
-      userId,
-      frequency: 4,
-      understandingLevel: 'recognition',
-      firstSeenAt: '2026-02-10T14:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-10T14:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-5',
-      label: 'LTV分析',
-      type: 'keyword',
-      userId,
-      frequency: 3,
-      understandingLevel: 'recognition',
-      firstSeenAt: '2026-02-12T09:30:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-12T09:30:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-6',
-      label: '田中',
-      type: 'person',
-      userId,
-      frequency: 15,
-      understandingLevel: 'mastery',
-      firstSeenAt: '2026-02-01T09:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-01T09:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-7',
-      label: '鈴木',
-      type: 'person',
-      userId,
-      frequency: 10,
-      understandingLevel: 'mastery',
-      firstSeenAt: '2026-02-02T10:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-02T10:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-8',
-      label: '佐藤',
-      type: 'person',
-      userId,
-      frequency: 5,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-05T11:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-05T11:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-9',
-      label: 'WebリニューアルPJ',
-      type: 'project',
-      userId,
-      frequency: 9,
-      understandingLevel: 'mastery',
-      firstSeenAt: '2026-02-01T09:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-01T09:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-10',
-      label: '新規顧客獲得施策',
-      type: 'project',
-      userId,
-      frequency: 7,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-03T14:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-03T14:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-11',
-      label: 'ユーザーリサーチ',
-      type: 'keyword',
-      userId,
-      frequency: 5,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-06T10:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-06T10:00:00Z',
-      updatedAt: now,
-    },
-    {
-      id: 'node-12',
-      label: 'コンバージョン率',
-      type: 'keyword',
-      userId,
-      frequency: 6,
-      understandingLevel: 'understanding',
-      firstSeenAt: '2026-02-07T15:00:00Z',
-      lastSeenAt: now,
-      sourceContexts: [],
-      createdAt: '2026-02-07T15:00:00Z',
-      updatedAt: now,
-    },
+  // ===== user_self（自分）のノード =====
+  const selfNodes: NodeData[] = [
+    makeNode('node-1', 'マーケティング', 'keyword', 'user_self', 12, 'mastery', '2026-02-01T09:00:00Z'),
+    makeNode('node-2', 'SEO対策', 'keyword', 'user_self', 8, 'understanding', '2026-02-05T10:00:00Z'),
+    makeNode('node-3', 'コンテンツ戦略', 'keyword', 'user_self', 6, 'understanding', '2026-02-08T11:00:00Z'),
+    makeNode('node-4', 'リスティング広告', 'keyword', 'user_self', 4, 'recognition', '2026-02-10T14:00:00Z'),
+    makeNode('node-5', 'LTV分析', 'keyword', 'user_self', 3, 'recognition', '2026-02-12T09:30:00Z'),
+    makeNode('node-6', '田中', 'person', 'user_self', 15, 'mastery', '2026-02-01T09:00:00Z'),
+    makeNode('node-7', '鈴木', 'person', 'user_self', 10, 'mastery', '2026-02-02T10:00:00Z'),
+    makeNode('node-8', '佐藤', 'person', 'user_self', 5, 'understanding', '2026-02-05T11:00:00Z'),
+    makeNode('node-9', 'WebリニューアルPJ', 'project', 'user_self', 9, 'mastery', '2026-02-01T09:00:00Z'),
+    makeNode('node-10', '新規顧客獲得施策', 'project', 'user_self', 7, 'understanding', '2026-02-03T14:00:00Z'),
+    makeNode('node-11', 'ユーザーリサーチ', 'keyword', 'user_self', 5, 'understanding', '2026-02-06T10:00:00Z'),
+    makeNode('node-12', 'コンバージョン率', 'keyword', 'user_self', 6, 'understanding', '2026-02-07T15:00:00Z'),
+    makeNode('node-13', 'ブランディング', 'keyword', 'user_self', 3, 'recognition', '2026-02-14T10:00:00Z'),
+    makeNode('node-14', 'SNS運用', 'keyword', 'user_self', 4, 'recognition', '2026-02-15T11:00:00Z'),
   ];
 
-  nodesStore = demoNodes;
+  // ===== user_tanaka（田中部長）のノード =====
+  const tanakaNodes: NodeData[] = [
+    makeNode('t-node-1', '経営戦略', 'keyword', 'user_tanaka', 20, 'mastery', '2026-01-15T09:00:00Z'),
+    makeNode('t-node-2', 'マーケティング', 'keyword', 'user_tanaka', 15, 'mastery', '2026-01-20T10:00:00Z'),
+    makeNode('t-node-3', 'KPI設計', 'keyword', 'user_tanaka', 12, 'mastery', '2026-01-22T11:00:00Z'),
+    makeNode('t-node-4', '予算管理', 'keyword', 'user_tanaka', 10, 'mastery', '2026-01-25T14:00:00Z'),
+    makeNode('t-node-5', 'SEO対策', 'keyword', 'user_tanaka', 6, 'understanding', '2026-02-01T09:00:00Z'),
+    makeNode('t-node-6', 'コンバージョン率', 'keyword', 'user_tanaka', 8, 'understanding', '2026-02-03T10:00:00Z'),
+    makeNode('t-node-7', 'LTV分析', 'keyword', 'user_tanaka', 7, 'understanding', '2026-02-05T11:00:00Z'),
+    makeNode('t-node-8', '鈴木', 'person', 'user_tanaka', 12, 'mastery', '2026-01-15T09:00:00Z'),
+    makeNode('t-node-9', '佐藤', 'person', 'user_tanaka', 8, 'mastery', '2026-01-20T10:00:00Z'),
+    makeNode('t-node-10', 'WebリニューアルPJ', 'project', 'user_tanaka', 14, 'mastery', '2026-01-15T09:00:00Z'),
+    makeNode('t-node-11', '新規顧客獲得施策', 'project', 'user_tanaka', 11, 'mastery', '2026-01-25T14:00:00Z'),
+    makeNode('t-node-12', '競合分析', 'keyword', 'user_tanaka', 9, 'mastery', '2026-01-28T09:00:00Z'),
+    makeNode('t-node-13', 'ROI', 'keyword', 'user_tanaka', 11, 'mastery', '2026-01-18T10:00:00Z'),
+  ];
+
+  // ===== user_sato（佐藤さん）のノード =====
+  const satoNodes: NodeData[] = [
+    makeNode('s-node-1', 'デザイン', 'keyword', 'user_sato', 14, 'mastery', '2026-01-20T09:00:00Z'),
+    makeNode('s-node-2', 'UI/UX', 'keyword', 'user_sato', 12, 'mastery', '2026-01-22T10:00:00Z'),
+    makeNode('s-node-3', 'プロトタイプ', 'keyword', 'user_sato', 8, 'understanding', '2026-02-01T11:00:00Z'),
+    makeNode('s-node-4', 'ユーザーリサーチ', 'keyword', 'user_sato', 10, 'mastery', '2026-01-25T14:00:00Z'),
+    makeNode('s-node-5', 'コンバージョン率', 'keyword', 'user_sato', 4, 'recognition', '2026-02-10T09:00:00Z'),
+    makeNode('s-node-6', 'WebリニューアルPJ', 'project', 'user_sato', 11, 'mastery', '2026-01-20T09:00:00Z'),
+    makeNode('s-node-7', 'フィグマ', 'keyword', 'user_sato', 9, 'mastery', '2026-01-20T09:00:00Z'),
+    makeNode('s-node-8', '田中', 'person', 'user_sato', 7, 'understanding', '2026-02-01T10:00:00Z'),
+    makeNode('s-node-9', 'アクセシビリティ', 'keyword', 'user_sato', 5, 'understanding', '2026-02-05T11:00:00Z'),
+  ];
+
+  // ===== user_yamada（山田さん）のノード =====
+  const yamadaNodes: NodeData[] = [
+    makeNode('y-node-1', 'バックエンド', 'keyword', 'user_yamada', 16, 'mastery', '2026-01-18T09:00:00Z'),
+    makeNode('y-node-2', 'API設計', 'keyword', 'user_yamada', 12, 'mastery', '2026-01-20T10:00:00Z'),
+    makeNode('y-node-3', 'データベース', 'keyword', 'user_yamada', 10, 'mastery', '2026-01-22T11:00:00Z'),
+    makeNode('y-node-4', 'セキュリティ', 'keyword', 'user_yamada', 7, 'understanding', '2026-02-01T14:00:00Z'),
+    makeNode('y-node-5', 'WebリニューアルPJ', 'project', 'user_yamada', 9, 'understanding', '2026-02-01T09:00:00Z'),
+    makeNode('y-node-6', 'CI/CD', 'keyword', 'user_yamada', 8, 'mastery', '2026-01-25T10:00:00Z'),
+    makeNode('y-node-7', 'パフォーマンス最適化', 'keyword', 'user_yamada', 5, 'understanding', '2026-02-08T11:00:00Z'),
+    makeNode('y-node-8', '鈴木', 'person', 'user_yamada', 6, 'understanding', '2026-02-01T10:00:00Z'),
+  ];
+
+  nodesStore = [...selfNodes, ...tanakaNodes, ...satoNodes, ...yamadaNodes];
 }
 
 // ===== CRUD操作 =====

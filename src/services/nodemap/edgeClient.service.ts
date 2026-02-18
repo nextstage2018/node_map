@@ -6,110 +6,61 @@ import { EdgeData, NodeData } from '@/lib/types';
 // インメモリストア（本番はSupabase）
 let edgesStore: EdgeData[] = [];
 
+// ヘルパー：エッジ生成
+function makeEdge(
+  id: string, src: string, tgt: string, userId: string,
+  weight: number, taskIds: string[], edgeType: EdgeData['edgeType'],
+  created: string
+): EdgeData {
+  return {
+    id, sourceNodeId: src, targetNodeId: tgt, userId, weight, taskIds, edgeType,
+    createdAt: created, updatedAt: new Date().toISOString(),
+  };
+}
+
 // デモ用初期データ
 function initDemoData(): void {
   if (edgesStore.length > 0) return;
 
-  const now = new Date().toISOString();
-  const userId = 'demo-user';
-
   edgesStore = [
-    // マーケティング ↔ SEO対策（強い関連）
-    {
-      id: 'edge-1',
-      sourceNodeId: 'node-1',
-      targetNodeId: 'node-2',
-      userId,
-      weight: 8,
-      taskIds: ['task-demo-1', 'task-demo-2'],
-      edgeType: 'co_occurrence',
-      createdAt: '2026-02-05T10:00:00Z',
-      updatedAt: now,
-    },
-    // マーケティング → コンテンツ戦略（因果）
-    {
-      id: 'edge-2',
-      sourceNodeId: 'node-1',
-      targetNodeId: 'node-3',
-      userId,
-      weight: 5,
-      taskIds: ['task-demo-1'],
-      edgeType: 'causal',
-      createdAt: '2026-02-08T11:00:00Z',
-      updatedAt: now,
-    },
-    // SEO対策 → コンバージョン率（順序）
-    {
-      id: 'edge-3',
-      sourceNodeId: 'node-2',
-      targetNodeId: 'node-12',
-      userId,
-      weight: 4,
-      taskIds: ['task-demo-2'],
-      edgeType: 'sequence',
-      createdAt: '2026-02-10T14:00:00Z',
-      updatedAt: now,
-    },
-    // コンテンツ戦略 ↔ ユーザーリサーチ
-    {
-      id: 'edge-4',
-      sourceNodeId: 'node-3',
-      targetNodeId: 'node-11',
-      userId,
-      weight: 3,
-      taskIds: ['task-demo-1'],
-      edgeType: 'co_occurrence',
-      createdAt: '2026-02-08T11:00:00Z',
-      updatedAt: now,
-    },
-    // WebリニューアルPJ ↔ マーケティング
-    {
-      id: 'edge-5',
-      sourceNodeId: 'node-9',
-      targetNodeId: 'node-1',
-      userId,
-      weight: 7,
-      taskIds: ['task-demo-1', 'task-demo-2'],
-      edgeType: 'co_occurrence',
-      createdAt: '2026-02-01T09:00:00Z',
-      updatedAt: now,
-    },
-    // 田中 ↔ WebリニューアルPJ
-    {
-      id: 'edge-6',
-      sourceNodeId: 'node-6',
-      targetNodeId: 'node-9',
-      userId,
-      weight: 6,
-      taskIds: ['task-demo-1'],
-      edgeType: 'co_occurrence',
-      createdAt: '2026-02-01T09:00:00Z',
-      updatedAt: now,
-    },
-    // リスティング広告 → LTV分析（順序）
-    {
-      id: 'edge-7',
-      sourceNodeId: 'node-4',
-      targetNodeId: 'node-5',
-      userId,
-      weight: 2,
-      taskIds: ['task-demo-2'],
-      edgeType: 'sequence',
-      createdAt: '2026-02-12T09:30:00Z',
-      updatedAt: now,
-    },
-    // 新規顧客獲得施策 ↔ コンバージョン率
-    {
-      id: 'edge-8',
-      sourceNodeId: 'node-10',
-      targetNodeId: 'node-12',
-      userId,
-      weight: 4,
-      taskIds: ['task-demo-2'],
-      edgeType: 'co_occurrence',
-      createdAt: '2026-02-07T15:00:00Z',
-      updatedAt: now,
-    },
+    // ===== user_self =====
+    makeEdge('edge-1', 'node-1', 'node-2', 'user_self', 8, ['task-demo-1', 'task-demo-2'], 'co_occurrence', '2026-02-05T10:00:00Z'),
+    makeEdge('edge-2', 'node-1', 'node-3', 'user_self', 5, ['task-demo-1'], 'causal', '2026-02-08T11:00:00Z'),
+    makeEdge('edge-3', 'node-2', 'node-12', 'user_self', 4, ['task-demo-2'], 'sequence', '2026-02-10T14:00:00Z'),
+    makeEdge('edge-4', 'node-3', 'node-11', 'user_self', 3, ['task-demo-1'], 'co_occurrence', '2026-02-08T11:00:00Z'),
+    makeEdge('edge-5', 'node-9', 'node-1', 'user_self', 7, ['task-demo-1', 'task-demo-2'], 'co_occurrence', '2026-02-01T09:00:00Z'),
+    makeEdge('edge-6', 'node-6', 'node-9', 'user_self', 6, ['task-demo-1'], 'co_occurrence', '2026-02-01T09:00:00Z'),
+    makeEdge('edge-7', 'node-4', 'node-5', 'user_self', 2, ['task-demo-2'], 'sequence', '2026-02-12T09:30:00Z'),
+    makeEdge('edge-8', 'node-10', 'node-12', 'user_self', 4, ['task-demo-2'], 'co_occurrence', '2026-02-07T15:00:00Z'),
+    makeEdge('edge-9', 'node-10', 'node-4', 'user_self', 3, ['task-demo-2'], 'co_occurrence', '2026-02-10T14:00:00Z'),
+    makeEdge('edge-10', 'node-7', 'node-1', 'user_self', 4, ['task-demo-1'], 'co_occurrence', '2026-02-02T10:00:00Z'),
+    makeEdge('edge-11', 'node-8', 'node-11', 'user_self', 2, ['task-demo-1'], 'co_occurrence', '2026-02-06T10:00:00Z'),
+    makeEdge('edge-12', 'node-13', 'node-14', 'user_self', 2, ['task-demo-1'], 'co_occurrence', '2026-02-15T11:00:00Z'),
+    makeEdge('edge-13', 'node-1', 'node-14', 'user_self', 2, ['task-demo-1'], 'causal', '2026-02-15T11:00:00Z'),
+    // ===== user_tanaka =====
+    makeEdge('t-edge-1', 't-node-1', 't-node-2', 'user_tanaka', 10, ['task-tanaka-1'], 'co_occurrence', '2026-01-20T10:00:00Z'),
+    makeEdge('t-edge-2', 't-node-1', 't-node-3', 'user_tanaka', 8, ['task-tanaka-1'], 'causal', '2026-01-22T11:00:00Z'),
+    makeEdge('t-edge-3', 't-node-3', 't-node-13', 'user_tanaka', 7, ['task-tanaka-1'], 'co_occurrence', '2026-01-22T11:00:00Z'),
+    makeEdge('t-edge-4', 't-node-10', 't-node-2', 'user_tanaka', 9, ['task-tanaka-1', 'task-tanaka-2'], 'co_occurrence', '2026-01-20T10:00:00Z'),
+    makeEdge('t-edge-5', 't-node-11', 't-node-6', 'user_tanaka', 6, ['task-tanaka-2'], 'co_occurrence', '2026-02-03T10:00:00Z'),
+    makeEdge('t-edge-6', 't-node-11', 't-node-7', 'user_tanaka', 5, ['task-tanaka-2'], 'sequence', '2026-02-05T11:00:00Z'),
+    makeEdge('t-edge-7', 't-node-4', 't-node-13', 'user_tanaka', 7, ['task-tanaka-1'], 'co_occurrence', '2026-01-25T14:00:00Z'),
+    makeEdge('t-edge-8', 't-node-12', 't-node-5', 'user_tanaka', 4, ['task-tanaka-2'], 'causal', '2026-01-28T09:00:00Z'),
+    makeEdge('t-edge-9', 't-node-8', 't-node-10', 'user_tanaka', 5, ['task-tanaka-1'], 'co_occurrence', '2026-01-20T10:00:00Z'),
+    // ===== user_sato =====
+    makeEdge('s-edge-1', 's-node-1', 's-node-2', 'user_sato', 9, ['task-sato-1'], 'co_occurrence', '2026-01-22T10:00:00Z'),
+    makeEdge('s-edge-2', 's-node-2', 's-node-4', 'user_sato', 7, ['task-sato-1'], 'causal', '2026-01-25T14:00:00Z'),
+    makeEdge('s-edge-3', 's-node-3', 's-node-7', 'user_sato', 6, ['task-sato-1'], 'co_occurrence', '2026-02-01T11:00:00Z'),
+    makeEdge('s-edge-4', 's-node-6', 's-node-1', 'user_sato', 8, ['task-sato-1'], 'co_occurrence', '2026-01-20T09:00:00Z'),
+    makeEdge('s-edge-5', 's-node-4', 's-node-5', 'user_sato', 3, ['task-sato-1'], 'sequence', '2026-02-10T09:00:00Z'),
+    makeEdge('s-edge-6', 's-node-9', 's-node-2', 'user_sato', 4, ['task-sato-1'], 'co_occurrence', '2026-02-05T11:00:00Z'),
+    // ===== user_yamada =====
+    makeEdge('y-edge-1', 'y-node-1', 'y-node-2', 'user_yamada', 10, ['task-yamada-1'], 'co_occurrence', '2026-01-20T10:00:00Z'),
+    makeEdge('y-edge-2', 'y-node-2', 'y-node-3', 'user_yamada', 8, ['task-yamada-1'], 'causal', '2026-01-22T11:00:00Z'),
+    makeEdge('y-edge-3', 'y-node-1', 'y-node-4', 'user_yamada', 5, ['task-yamada-1'], 'co_occurrence', '2026-02-01T14:00:00Z'),
+    makeEdge('y-edge-4', 'y-node-5', 'y-node-1', 'user_yamada', 6, ['task-yamada-1'], 'co_occurrence', '2026-02-01T09:00:00Z'),
+    makeEdge('y-edge-5', 'y-node-6', 'y-node-1', 'user_yamada', 5, ['task-yamada-1'], 'co_occurrence', '2026-01-25T10:00:00Z'),
+    makeEdge('y-edge-6', 'y-node-7', 'y-node-3', 'user_yamada', 4, ['task-yamada-1'], 'sequence', '2026-02-08T11:00:00Z'),
   ];
 }
 
