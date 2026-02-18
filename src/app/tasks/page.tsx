@@ -231,7 +231,9 @@ function DragOverlayCard({ task }: { task: Task }) {
         <h3 className="text-sm font-medium text-gray-900 leading-tight line-clamp-2">
           {task.title}
         </h3>
-        <span className="text-xs shrink-0">{priority.icon}</span>
+        <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0', priority.badgeColor)}>
+          {priority.label}
+        </span>
       </div>
       {task.description && (
         <p className="text-xs text-gray-500 mb-2 line-clamp-2">

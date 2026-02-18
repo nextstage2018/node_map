@@ -69,7 +69,9 @@ export default function TaskSuggestions({
                   <span className="text-[10px] text-gray-300">
                     {formatRelativeTime(suggestion.sourceDate)}
                   </span>
-                  <span className="ml-auto text-xs">{priorityConfig.icon}</span>
+                  <span className={cn('ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold', priorityConfig.badgeColor)}>
+                    {priorityConfig.label}
+                  </span>
                 </div>
 
                 {/* タイトル */}
@@ -114,8 +116,7 @@ export default function TaskSuggestions({
                 <span className="text-xs text-gray-400">
                   {CHANNEL_CONFIG[selected.sourceChannel].label}からの提案
                 </span>
-                <span className="ml-auto text-sm">
-                  {TASK_PRIORITY_CONFIG[selected.priority].icon}{' '}
+                <span className={cn('ml-auto text-xs px-2 py-0.5 rounded font-bold', TASK_PRIORITY_CONFIG[selected.priority].badgeColor)}>
                   優先度: {TASK_PRIORITY_CONFIG[selected.priority].label}
                 </span>
               </div>

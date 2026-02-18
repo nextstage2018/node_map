@@ -61,8 +61,8 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', statusConfig.color)}>
               {statusConfig.label}
             </span>
-            <span className="text-xs">
-              {priorityConfig.icon} {priorityConfig.label}
+            <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-bold', priorityConfig.badgeColor)}>
+              {priorityConfig.label}
             </span>
             {task.sourceChannel && (
               <span className="text-[10px] text-gray-400">
@@ -123,34 +123,81 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
         />
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {/* 進捗サマリー */}
+          <div className="p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
+            <div className="flex items-center justify-between mb-2">
+              <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', phaseConfig.color)}>
+                {phaseConfig.icon} {phaseConfig.label}
+              </span>
+              <span className="text-[10px] text-gray-400">
+                作成 {formatRelativeTime(task.createdAt)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 mb-1.5">
+              {(['ideation', 'progress', 'result'] as const).map((p, idx) => {
+                const isPast =
+                  (task.phase === 'progress' && p === 'ideation') ||
+                  (task.phase === 'result' && p !== 'result');
+                const isCurrent = task.phase === p;
+                return (
+                  <div
+                    key={p}
+                    className={cn(
+                      'flex-1 h-1.5 rounded-full',
+                      isCurrent ? 'bg-blue-500' : isPast ? 'bg-blue-400' : 'bg-gray-200'
+                    )}
+                  />
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-gray-500">
+              {phaseConfig.description}
+            </p>
+          </div>
+
           {/* 説明 */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-              説明
+            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+              📄 概要
             </h3>
-            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
               {task.description || '説明なし'}
             </p>
           </div>
 
-          {/* フェーズ */}
-          <div>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-              現在のフェーズ
-            </h3>
-            <span className={cn('text-xs px-2 py-1 rounded-full', phaseConfig.color)}>
-              {phaseConfig.icon} {phaseConfig.label} - {phaseConfig.description}
-            </span>
-          </div>
-
-          {/* 構想メモ */}
+          {/* 構想メモ（構造化表示） */}
           {task.ideationSummary && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
                 💡 構想メモ
               </h3>
-              <div className="p-3 bg-amber-50 rounded-lg text-sm text-amber-800 whitespace-pre-wrap">
-                {task.ideationSummary}
+              <div className="space-y-2">
+                {task.ideationSummary.split('\n').map((line, idx) => {
+                  const match = line.match(/^【(.+?)】(.+)$/);
+                  if (match) {
+                    const label = match[1];
+                    const value = match[2];
+                    const iconMap: Record<string, string> = {
+                      'ゴール': '🎯',
+                      '主な内容': '📝',
+                      '気になる点': '⚠️',
+                      '期限日': '📅',
+                    };
+                    return (
+                      <div key={idx} className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
+                        <div className="text-[10px] font-semibold text-amber-600 mb-0.5">
+                          {iconMap[label] || '📌'} {label}
+                        </div>
+                        <p className="text-sm text-amber-900">{value}</p>
+                      </div>
+                    );
+                  }
+                  return line.trim() ? (
+                    <div key={idx} className="p-2.5 bg-amber-50 rounded-lg text-sm text-amber-800">
+                      {line}
+                    </div>
+                  ) : null;
+                })}
               </div>
             </div>
           )}
@@ -158,26 +205,46 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
           {/* 結果要約 */}
           {task.resultSummary && (
             <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
                 ✅ 結果要約
               </h3>
-              <div className="p-3 bg-green-50 rounded-lg text-sm text-green-800 whitespace-pre-wrap">
+              <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-800 whitespace-pre-wrap leading-relaxed">
                 {task.resultSummary}
+              </div>
+            </div>
+          )}
+
+          {/* ソース情報 */}
+          {task.sourceChannel && (
+            <div>
+              <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+                📨 起点メッセージ
+              </h3>
+              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-medium',
+                    CHANNEL_CONFIG[task.sourceChannel].bgColor,
+                    CHANNEL_CONFIG[task.sourceChannel].textColor
+                  )}>
+                    {CHANNEL_CONFIG[task.sourceChannel].label}
+                  </span>
+                  <span className="text-gray-400">から作成</span>
+                </div>
               </div>
             </div>
           )}
 
           {/* タグ */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-              タグ
+            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+              🏷️ タグ
             </h3>
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {task.tags.length > 0 ? (
                 task.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600"
+                    className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-600 font-medium"
                   >
                     {tag}
                   </span>
@@ -188,22 +255,54 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             </div>
           </div>
 
-          {/* 会話統計 */}
+          {/* タイムライン & 会話統計 */}
           <div>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase mb-1">
-              会話統計
+            <h3 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">
+              📊 アクティビティ
             </h3>
-            <div className="text-sm text-gray-600">
-              <p>
-                構想: {task.conversations.filter((c) => c.phase === 'ideation').length}件
-              </p>
-              <p>
-                進行: {task.conversations.filter((c) => c.phase === 'progress').length}件
-              </p>
-              <p>
-                結果: {task.conversations.filter((c) => c.phase === 'result').length}件
-              </p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  <span className="text-xs text-gray-600">構想</span>
+                </div>
+                <span className="text-xs font-medium text-gray-700">
+                  {task.conversations.filter((c) => c.phase === 'ideation').length}件
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                  <span className="text-xs text-gray-600">進行</span>
+                </div>
+                <span className="text-xs font-medium text-gray-700">
+                  {task.conversations.filter((c) => c.phase === 'progress').length}件
+                </span>
+              </div>
+              <div className="flex items-center justify-between p-2 rounded-lg bg-gray-50">
+                <div className="flex items-center gap-2">
+                  <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  <span className="text-xs text-gray-600">結果</span>
+                </div>
+                <span className="text-xs font-medium text-gray-700">
+                  {task.conversations.filter((c) => c.phase === 'result').length}件
+                </span>
+              </div>
             </div>
+            <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between">
+              <span className="text-[10px] text-gray-400">最終更新</span>
+              <span className="text-[10px] text-gray-500 font-medium">
+                {formatRelativeTime(task.updatedAt)}
+              </span>
+            </div>
+            {task.completedAt && (
+              <div className="flex items-center justify-between mt-1">
+                <span className="text-[10px] text-gray-400">完了日</span>
+                <span className="text-[10px] text-green-600 font-medium">
+                  {formatRelativeTime(task.completedAt)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}

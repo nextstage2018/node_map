@@ -76,18 +76,18 @@ export const TASK_STATUS_CONFIG = {
 export const TASK_PRIORITY_CONFIG = {
   high: {
     label: '高',
-    color: 'bg-red-100 text-red-700',
-    icon: '🔴',
+    color: 'bg-red-50 text-red-600 border border-red-200',
+    badgeColor: 'bg-red-600 text-white',
   },
   medium: {
     label: '中',
-    color: 'bg-yellow-100 text-yellow-700',
-    icon: '🟡',
+    color: 'bg-amber-50 text-amber-600 border border-amber-200',
+    badgeColor: 'bg-amber-500 text-white',
   },
   low: {
     label: '低',
-    color: 'bg-green-100 text-green-700',
-    icon: '🟢',
+    color: 'bg-gray-50 text-gray-500 border border-gray-200',
+    badgeColor: 'bg-gray-400 text-white',
   },
 } as const;
 
@@ -116,4 +116,20 @@ export const TASK_PHASE_CONFIG = {
 export const IDEATION_PROMPTS = [
   'このタスクのゴールイメージを教えてください。どんな状態になれば完了ですか？',
   '関連しそうな要素や、気になるポイントはありますか？',
+] as const;
+
+// 構想メモのテンプレートフィールド
+export const IDEATION_MEMO_FIELDS = [
+  { key: 'goal', label: 'ゴール', placeholder: '完了条件・達成イメージ', icon: '🎯' },
+  { key: 'content', label: '主な内容', placeholder: 'やるべきこと・作業の範囲', icon: '📝' },
+  { key: 'concerns', label: '気になる点', placeholder: 'リスク・不明点・依存事項', icon: '⚠️' },
+  { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '📅' },
+] as const;
+
+// 進行フェーズのクイックアクション
+export const PROGRESS_QUICK_ACTIONS = [
+  { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },
+  { label: '次のステップ', prompt: '現時点での情報を踏まえて、次にやるべきことを提案してください。' },
+  { label: '懸念点チェック', prompt: '構想メモの「気になる点」に照らして、見落としがないか確認してください。' },
+  { label: '進捗まとめ', prompt: 'ここまでの進捗を構想メモのゴールに対してどの程度達成しているか評価してください。' },
 ] as const;
