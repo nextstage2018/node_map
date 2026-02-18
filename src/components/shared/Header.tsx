@@ -10,7 +10,8 @@ export default function Header() {
   const navItems = [
     { href: '/inbox', label: '📥 インボックス', enabled: true },
     { href: '/tasks', label: '📋 タスク', enabled: true },
-    { href: '/map', label: '🧠 思考マップ（Phase 4）', enabled: false },
+    { href: '/settings', label: '⚙️ 設定', enabled: true },
+    { href: '/map', label: '🧠 思考マップ（次期）', enabled: false },
   ];
 
   return (

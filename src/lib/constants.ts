@@ -126,6 +126,100 @@ export const IDEATION_MEMO_FIELDS = [
   { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '📅' },
 ] as const;
 
+// ===== Phase 3: 設定関連定数 =====
+
+export const SERVICE_CONFIG = {
+  email: {
+    label: 'Gmail',
+    description: 'Googleメール連携',
+    icon: '📧',
+    color: 'bg-red-50 text-red-700 border-red-200',
+    fields: [
+      { key: 'clientId', label: 'Client ID', type: 'text' as const, placeholder: 'Google Cloud Console で取得', required: true },
+      { key: 'clientSecret', label: 'Client Secret', type: 'password' as const, placeholder: '●●●●●●●●', required: true },
+      { key: 'refreshToken', label: 'Refresh Token', type: 'password' as const, placeholder: 'OAuth2認証で取得', required: true },
+    ],
+  },
+  slack: {
+    label: 'Slack',
+    description: 'Slackワークスペース連携',
+    icon: '💬',
+    color: 'bg-purple-50 text-purple-700 border-purple-200',
+    fields: [
+      { key: 'botToken', label: 'Bot Token', type: 'password' as const, placeholder: 'xoxb-xxxx', required: true },
+      { key: 'appToken', label: 'App Token（任意）', type: 'password' as const, placeholder: 'xapp-xxxx', required: false },
+      { key: 'defaultChannel', label: 'デフォルトチャネル', type: 'text' as const, placeholder: '#general', required: false },
+    ],
+  },
+  chatwork: {
+    label: 'Chatwork',
+    description: 'Chatworkアカウント連携',
+    icon: '🗨️',
+    color: 'bg-orange-50 text-orange-700 border-orange-200',
+    fields: [
+      { key: 'apiToken', label: 'APIトークン', type: 'password' as const, placeholder: 'Chatwork設定から取得', required: true },
+      { key: 'defaultRoomId', label: 'デフォルトルームID（任意）', type: 'text' as const, placeholder: '123456789', required: false },
+    ],
+  },
+  openai: {
+    label: 'OpenAI',
+    description: 'AI機能（返信下書き・タスク会話）',
+    icon: '🤖',
+    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    fields: [
+      { key: 'apiKey', label: 'APIキー', type: 'password' as const, placeholder: 'sk-xxxx', required: true },
+      { key: 'model', label: 'モデル', type: 'select' as const, placeholder: '', required: true, options: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo'] },
+    ],
+  },
+  supabase: {
+    label: 'Supabase',
+    description: 'データベース・認証',
+    icon: '🗄️',
+    color: 'bg-teal-50 text-teal-700 border-teal-200',
+    fields: [
+      { key: 'url', label: 'Project URL', type: 'text' as const, placeholder: 'https://xxxxx.supabase.co', required: true },
+      { key: 'anonKey', label: 'Anon Key', type: 'password' as const, placeholder: 'eyJxxxx', required: true },
+    ],
+  },
+} as const;
+
+export const CONNECTION_STATUS_CONFIG = {
+  connected: {
+    label: '接続済み',
+    color: 'bg-green-100 text-green-700',
+    dotColor: 'bg-green-500',
+  },
+  disconnected: {
+    label: '未接続',
+    color: 'bg-gray-100 text-gray-500',
+    dotColor: 'bg-gray-300',
+  },
+  error: {
+    label: 'エラー',
+    color: 'bg-red-100 text-red-700',
+    dotColor: 'bg-red-500',
+  },
+  testing: {
+    label: 'テスト中',
+    color: 'bg-blue-100 text-blue-700',
+    dotColor: 'bg-blue-500',
+  },
+} as const;
+
+export const OPENAI_MODELS = [
+  { value: 'gpt-4o-mini', label: 'GPT-4o Mini（推奨・低コスト）' },
+  { value: 'gpt-4o', label: 'GPT-4o（高精度）' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo（バランス）' },
+] as const;
+
+export const TIMEZONE_OPTIONS = [
+  { value: 'Asia/Tokyo', label: '日本標準時（JST）' },
+  { value: 'America/New_York', label: '東部標準時（EST）' },
+  { value: 'America/Los_Angeles', label: '太平洋標準時（PST）' },
+  { value: 'Europe/London', label: 'グリニッジ標準時（GMT）' },
+  { value: 'UTC', label: '協定世界時（UTC）' },
+] as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },

@@ -184,3 +184,84 @@ export interface TaskSuggestion {
   sourceSubject?: string; // 件名
   sourceExcerpt: string; // 元メッセージの抜粋
 }
+
+// ===== Phase 3: 設定画面 / API接続 =====
+
+// サービス接続タイプ
+export type ServiceType = 'email' | 'slack' | 'chatwork' | 'openai' | 'supabase';
+
+// 接続ステータス
+export type ConnectionStatus = 'connected' | 'disconnected' | 'error' | 'testing';
+
+// サービス接続情報
+export interface ServiceConnection {
+  type: ServiceType;
+  status: ConnectionStatus;
+  lastTested?: string;
+  errorMessage?: string;
+}
+
+// Gmail設定
+export interface GmailSettings {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}
+
+// Slack設定
+export interface SlackSettings {
+  botToken: string;
+  appToken?: string;
+  defaultChannel?: string;
+}
+
+// Chatwork設定
+export interface ChatworkSettings {
+  apiToken: string;
+  defaultRoomId?: string;
+}
+
+// OpenAI設定
+export interface OpenAISettings {
+  apiKey: string;
+  model: string;
+  maxTokens?: number;
+}
+
+// Supabase設定
+export interface SupabaseSettings {
+  url: string;
+  anonKey: string;
+}
+
+// プロフィール設定
+export interface ProfileSettings {
+  displayName: string;
+  email: string;
+  timezone: string;
+  language: string;
+}
+
+// アプリ全体の設定
+export interface AppSettings {
+  profile: ProfileSettings;
+  gmail?: GmailSettings;
+  slack?: SlackSettings;
+  chatwork?: ChatworkSettings;
+  openai?: OpenAISettings;
+  supabase?: SupabaseSettings;
+  connections: ServiceConnection[];
+}
+
+// 設定更新リクエスト
+export interface UpdateSettingsRequest {
+  service: ServiceType;
+  settings: Record<string, string | number | boolean>;
+}
+
+// 接続テストレスポンス
+export interface ConnectionTestResponse {
+  success: boolean;
+  message: string;
+  latencyMs?: number;
+}
