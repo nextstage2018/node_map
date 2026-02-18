@@ -21,7 +21,7 @@ AI支援付きタスク管理と、裏側での思考マップデータ収集を
 |-------|------|-----------|
 | Phase 1 | 統合インボックス | ✅ 完了 |
 | Phase 2 | タスクボード + AI会話 | ✅ 完了 |
-| Phase 3 | 設定画面 / API接続 | 🔄 次のフェーズ |
+| Phase 3 | 設定画面 / API接続 | ✅ 完了 |
 | Phase 4 | 思考マップ（NodeMap本体） | ⏳ 未着手 |
 
 ---
@@ -78,41 +78,36 @@ AI支援付きタスク管理と、裏側での思考マップデータ収集を
 
 ---
 
-## 5. Phase 3 設計 — 設定画面 / API接続
+## 5. Phase 3 完了サマリー — 設定画面 / API接続
 
-### 目的
-現在デモモードで動作している各サービス（Gmail/Slack/Chatwork/OpenAI/Supabase）を、
-ユーザーが設定画面から実際のAPI情報を入力して接続できるようにする。
+### 設計方針: 2層構造
+- **管理者設定（admin）**: API基盤設定（Client ID/Secret, Bot Token, APIキー等）
+- **個人設定（personal）**: OAuth認証（各チャネルへのログイン）、プロフィール、表示・通知設定
 
-### 計画する機能
-1. **設定ページ** (`/settings`)
-   - API接続ステータス一覧（接続済み/未接続の可視化）
-   - 各サービスの接続設定フォーム
+### 実装済み機能
+- 設定ページ（/settings）にタブ切り替え（管理者設定 / 個人設定）
+- 管理者タブ:
+  - 接続ステータス概要（5サービスのプログレスバー + 状態カード）
+  - チャネル連携（Gmail/Slack/Chatwork）アコーディオンフォーム
+  - インフラ連携（OpenAI/Supabase）アコーディオンフォーム
+  - 接続テスト機能（疎通確認 + レイテンシ表示）
+- 個人タブ:
+  - チャネルOAuth認証カード（Gmail/Slack/Chatwork）
+  - admin未設定時は認証ボタン無効化 + 案内表示
+  - 認証済み時はアカウント名表示 + 解除ボタン
+  - プロフィール設定（表示名/メール/タイムゾーン）
+  - 表示・通知設定（通知ON/OFF, メールダイジェスト, デフォルトフィルタ, AI自動提案）
 
-2. **チャネル接続設定**
-   - Gmail: OAuth2認証フロー or APIキー設定
-   - Slack: Bot Token / App Token設定
-   - Chatwork: APIトークン設定
-
-3. **AI設定**
-   - OpenAI APIキー設定
-   - モデル選択（gpt-4o-mini / gpt-4o等）
-
-4. **データベース接続**
-   - Supabase URL / Anon Key設定
-
-5. **プロフィール設定**
-   - ユーザー名、メールアドレス
-   - 通知設定
-
-6. **接続テスト機能**
-   - 各サービスへの疎通確認ボタン
-   - 成功/失敗のフィードバック表示
-
-### 技術方針
-- 環境変数 or Supabaseへの暗号化保存
-- サーバーサイドでのAPI検証
-- 接続状態のリアルタイム表示
+### 主要ファイル
+- `src/app/settings/page.tsx` — 設定ページ（2タブ構成）
+- `src/components/settings/ConnectionOverview.tsx` — 接続ステータス概要
+- `src/components/settings/ServiceSettingsCard.tsx` — サービス設定カード
+- `src/components/settings/ProfileSettings.tsx` — プロフィール設定
+- `src/components/settings/ChannelAuthCard.tsx` — チャネル認証カード
+- `src/components/settings/UserPreferencesCard.tsx` — ユーザー設定
+- `src/services/settings/settingsClient.service.ts` — 設定サービス
+- `src/hooks/useSettings.ts` — 設定Hook
+- `src/app/api/settings/`, `settings/profile/`, `settings/test/` — APIルート
 
 ---
 
@@ -128,6 +123,7 @@ AI支援付きタスク管理と、裏側での思考マップデータ収集を
 | CP6 | Phase 1 改善完了（アイコン/ステータス/スレッド） | — |
 | CP7 | Phase 2 基盤レイヤー完了 | — |
 | CP8 | Phase 2 全機能完了（D&D/提案/AI会話/詳細改善） | 2026-02-18 |
+| CP9 | Phase 3 設定画面完了（2層構造: admin/個人） | 2026-02-18 |
 
 ---
 
@@ -142,3 +138,4 @@ AI支援付きタスク管理と、裏側での思考マップデータ収集を
 | 構想メモの構造化フォーム | 一定品質のメモを担保（ゴール/内容/懸念/期限） |
 | 優先度をテキストバッジに | 絵文字より明確で好み対応 |
 | 判断材料の充実化 | 誰から/いつ/何のメッセージか分からないとタスク化判断不可 |
+| 設定を2層構造に | admin(API基盤)と個人(OAuth認証)は分離すべき。admin未設定時は個人認証不可 |
