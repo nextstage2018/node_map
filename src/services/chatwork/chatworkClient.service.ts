@@ -1,0 +1,145 @@
+import { UnifiedMessage } from '@/lib/types';
+
+/**
+ * Chatwork連携サービス
+ * Chatwork APIを使用してメッセージの取得・送信を行う
+ */
+
+const CHATWORK_API_BASE = 'https://api.chatwork.com/v2';
+
+function getToken(): string {
+  return process.env.CHATWORK_API_TOKEN || '';
+}
+
+async function chatworkFetch(endpoint: string, options?: RequestInit) {
+  const token = getToken();
+  return fetch(`${CHATWORK_API_BASE}${endpoint}`, {
+    ...options,
+    headers: {
+      'X-ChatWorkToken': token,
+      ...options?.headers,
+    },
+  });
+}
+
+/**
+ * Chatworkメッセージを取得し、UnifiedMessage形式に変換
+ */
+export async function fetchChatworkMessages(limit: number = 50): Promise<UnifiedMessage[]> {
+  const token = getToken();
+
+  if (!token) {
+    return getDemoChatworkMessages();
+  }
+
+  try {
+    // ルーム一覧を取得
+    const roomsRes = await chatworkFetch('/rooms');
+    const rooms = await roomsRes.json();
+
+    const messages: UnifiedMessage[] = [];
+
+    for (const room of rooms.slice(0, 10)) {
+      try {
+        const msgRes = await chatworkFetch(`/rooms/${room.room_id}/messages?force=1`);
+        if (!msgRes.ok) continue;
+        const roomMessages = await msgRes.json();
+
+        if (!Array.isArray(roomMessages)) continue;
+
+        for (const msg of roomMessages.slice(-Math.ceil(limit / rooms.length))) {
+          messages.push({
+            id: `chatwork-${room.room_id}-${msg.message_id}`,
+            channel: 'chatwork',
+            channelIcon: '🔵',
+            from: {
+              name: msg.account?.name || '不明',
+              address: String(msg.account?.account_id || ''),
+            },
+            body: msg.body || '',
+            timestamp: new Date(msg.send_time * 1000).toISOString(),
+            isRead: false,
+            metadata: {
+              chatworkRoomId: String(room.room_id),
+              chatworkRoomName: room.name || '',
+              chatworkMessageId: String(msg.message_id),
+            },
+          });
+        }
+      } catch {
+        // room message fetch failed
+      }
+    }
+
+    return messages.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  } catch (error) {
+    console.error('Chatwork取得エラー:', error);
+    return getDemoChatworkMessages();
+  }
+}
+
+/**
+ * Chatworkメッセージを送信（返信）
+ */
+export async function sendChatworkMessage(
+  roomId: string,
+  body: string
+): Promise<boolean> {
+  const token = getToken();
+
+  if (!token) {
+    console.log('[デモモード] Chatwork送信:', { roomId, body });
+    return true;
+  }
+
+  try {
+    const res = await chatworkFetch(`/rooms/${roomId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `body=${encodeURIComponent(body)}`,
+    });
+
+    return res.ok;
+  } catch (error) {
+    console.error('Chatwork送信エラー:', error);
+    return false;
+  }
+}
+
+function getDemoChatworkMessages(): UnifiedMessage[] {
+  const now = new Date();
+  return [
+    {
+      id: 'chatwork-demo-1',
+      channel: 'chatwork',
+      channelIcon: '🔵',
+      from: { name: '中村四郎', address: '4001' },
+      body: '[info][title]週次報告[/title]今週の進捗を共有します。タスクAは完了、タスクBは80%、タスクCは来週着手予定です。[/info]',
+      timestamp: new Date(now.getTime() - 20 * 60000).toISOString(),
+      isRead: false,
+      metadata: { chatworkRoomId: 'R001', chatworkRoomName: '週次定例', chatworkMessageId: 'M001' },
+    },
+    {
+      id: 'chatwork-demo-2',
+      channel: 'chatwork',
+      channelIcon: '🔵',
+      from: { name: '小林五郎', address: '4002' },
+      body: '納品物の最終チェックお願いします。修正点があれば今日中にフィードバックいただけると助かります。',
+      timestamp: new Date(now.getTime() - 3 * 3600000).toISOString(),
+      isRead: true,
+      metadata: { chatworkRoomId: 'R002', chatworkRoomName: 'プロジェクトY', chatworkMessageId: 'M002' },
+    },
+    {
+      id: 'chatwork-demo-3',
+      channel: 'chatwork',
+      channelIcon: '🔵',
+      from: { name: '渡辺六子', address: '4003' },
+      body: '請求書の件でご相談です。先月分の処理がまだ完了していないようです。経理から確認の連絡が来ています。',
+      timestamp: new Date(now.getTime() - 6 * 3600000).toISOString(),
+      isRead: false,
+      metadata: { chatworkRoomId: 'R003', chatworkRoomName: '総務・経理', chatworkMessageId: 'M003' },
+    },
+  ];
+}
