@@ -14,6 +14,7 @@ export default function Header() {
     { href: '/settings', label: '設定', icon: '/icons/nav-settings.svg', enabled: true },
     { href: '/nodemap', label: '思考マップ', icon: '/icons/nav-map.svg', enabled: true },
     { href: '/master', label: 'ナレッジマスタ', icon: '/icons/nav-master.svg', enabled: true },
+    { href: '/contacts', label: 'コンタクト', icon: '/icons/nav-contacts.svg', enabled: true },
   ];
 
   return (

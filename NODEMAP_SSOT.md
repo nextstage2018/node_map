@@ -36,6 +36,7 @@
 | Phase 6：UI統一（配色・アイコン） | ✅ 完了 | 2026-02-19 | 3色システム・SVGアイコン13個・gray→slate全置換 |
 | Phase 7：タスクボード改修 | ✅ 完了 | 2026-02-19 | ジョブ/タスク分離・種ボックス・ステータス/タイムライン切り替え |
 | Phase 8：ナレッジマスタ基盤 | ✅ 完了 | 2026-02-19 | 3階層分類体系・AI自動分類・管理画面・マップ統合 |
+| Phase 9：関係値情報基盤 | ✅ 完了 | 2026-02-19 | コンタクト統合管理・関係属性AI推定・管理画面・マップ統合 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -255,6 +256,11 @@
 | 2026-02-19 | processText()にAI自動分類を統合 | キーワード抽出後にclassifyKeyword()→linkNodeToMaster()を自動実行。NodeDataにdomainId/fieldIdをキャッシュ |
 | 2026-02-19 | /master管理画面を新規作成 | ツリー表示（DomainTree）・統計カード（MasterStats）・分類バッジ（ClassificationBadge）・検索機能 |
 | 2026-02-19 | 思考マップに領域フィルター・ドメイン色分けを追加 | MapControlsに領域ボタン、NetworkGraphにcolorByDomain、MapStatsに領域分布表示 |
+| 2026-02-19 | Phase 9: コンタクト統合管理を導入 | 8名のデモコンタクト（Email/Slack/Chatwork跨ぎ）。関係属性3種（自社/クライアント/パートナー） |
+| 2026-02-19 | contactPerson.service.tsを新規作成 | getContacts/getContactById/updateRelationship/extractFromMessages/predictRelationship/getStats |
+| 2026-02-19 | /contacts管理画面を新規作成 | 統計カード(ContactStats)・一覧(ContactList)・個別カード(ContactCard)・関係バッジ(RelationshipBadge)・検索・フィルター |
+| 2026-02-19 | 思考マップに関係属性色・統計を追加 | 人物ノードに関係色（青=自社/橙=クライアント/紫=パートナー）、MapStatsに関係属性分布、ツールチップに関係情報 |
+| 2026-02-19 | NodeDataにrelationshipType/contactIdを追加 | 人物ノードとコンタクトのリンク。デモデータで7ノード紐付け済み |
 
 ---
 
@@ -283,7 +289,8 @@ node_map/
 │       ├── nav-tasks.svg
 │       ├── nav-settings.svg
 │       ├── nav-map.svg
-│       └── nav-master.svg            ← Phase 8: ナレッジマスタナビ
+│       ├── nav-master.svg            ← Phase 8: ナレッジマスタナビ
+│       └── nav-contacts.svg         ← Phase 9: コンタクトナビ
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx                 ← ルートレイアウト
@@ -294,6 +301,7 @@ node_map/
 │   │   ├── settings/page.tsx          ← 設定画面（2タブ構成）
 │   │   ├── nodemap/page.tsx          ← 画面③④思考マップ（D3.jsグラフ）
 │   │   ├── master/page.tsx           ← Phase 8: ナレッジマスタ管理画面
+│   │   ├── contacts/page.tsx        ← Phase 9: コンタクト管理画面
 │   │   └── api/
 │   │       ├── messages/
 │   │       │   ├── route.ts           ← メッセージ一覧取得
@@ -328,6 +336,11 @@ node_map/
 │   │       │   ├── fields/route.ts   ← 分野一覧/追加
 │   │       │   ├── entries/route.ts  ← マスタキーワード一覧
 │   │       │   └── classify/route.ts ← キーワード自動分類
+│   │       ├── contacts/              ← Phase 9: コンタクトAPI
+│   │       │   ├── route.ts          ← 一覧取得（フィルター対応）
+│   │       │   ├── stats/route.ts    ← 統計
+│   │       │   ├── [id]/route.ts     ← 関係属性更新
+│   │       │   └── extract/route.ts  ← メッセージから自動抽出
 │   │       └── clusters/
 │   │           ├── route.ts           ← クラスターCRUD
 │   │           └── diff/route.ts      ← クラスター差分計算
@@ -370,6 +383,11 @@ node_map/
 │   │   │   ├── DomainTree.tsx         ← 3階層ツリー表示（検索対応）
 │   │   │   ├── MasterStats.tsx        ← 統計カード（領域別ノード数等）
 │   │   │   └── ClassificationBadge.tsx ← 分類バッジ（領域色ドット付き）
+│   │   ├── contacts/                  ← Phase 9: コンタクトUI
+│   │   │   ├── ContactList.tsx        ← コンタクト一覧
+│   │   │   ├── ContactCard.tsx        ← 個別コンタクトカード
+│   │   │   ├── ContactStats.tsx       ← 関係属性別・チャネル別統計
+│   │   │   └── RelationshipBadge.tsx  ← 関係属性バッジ
 │   │   └── nodemap/
 │   │       ├── NetworkGraph.tsx       ← D3.jsネットワークグラフ本体（+ドメイン色分け対応）
 │   │       ├── MapControls.tsx        ← 操作パネル（+領域フィルター追加）
@@ -379,7 +397,8 @@ node_map/
 │   │   ├── useTasks.ts
 │   │   ├── useSettings.ts
 │   │   ├── useNodes.ts              ← ノード・エッジ・クラスター取得Hook
-│   │   └── useNodeMap.ts            ← 思考マップUI用データ管理Hook
+│   │   ├── useNodeMap.ts            ← 思考マップUI用データ管理Hook
+│   │   └── useContacts.ts          ← Phase 9: コンタクト管理Hook
 │   ├── lib/
 │   │   ├── types.ts                   ← 全型定義
 │   │   ├── constants.ts               ← 全定数
@@ -399,6 +418,8 @@ node_map/
 │           ├── edgeClient.service.ts      ← エッジ（線）管理
 │           ├── clusterClient.service.ts   ← クラスター（面）管理
 │           └── knowledgeMaster.service.ts ← Phase 8: ナレッジマスタ管理
+│       └── contact/
+│           └── contactPerson.service.ts  ← Phase 9: コンタクト統合管理
 ├── supabase/
 │   ├── 001_initial_schema.sql
 │   ├── 002_tasks_schema.sql
@@ -484,6 +505,23 @@ node_map/
   - マスタキーワードの追加/編集UIは未実装（APIは準備済み）
   - NodeMasterLinkの確認（confirmed）UIは未実装
 
+### Phase 8 → Phase 9（関係値情報基盤）への引き継ぎ
+- **実装したファイル構成：** contactPerson.service.ts + api/contacts/* + components/contacts/* + contacts/page.tsx + useContacts.ts
+- **コンタクト管理の設計：**
+  - コンタクト統合：Email/Slack/Chatworkの送受信者を1人のContactPersonに統合
+  - デモデータ8名：田中太郎(Email+Slack, 自社)、佐藤花子(Email, 自社)、鈴木一郎(Email, クライアント)、山田次郎(Slack, 自社)、伊藤美咲(Slack, 自社)、中村四郎(Chatwork, パートナー)、小林五郎(Chatwork, クライアント)、渡辺六子(Chatwork, 自社)
+  - 関係属性3種：internal(自社,青)/client(クライアント,橙)/partner(パートナー,紫)
+  - AI推定：メールドメイン・Slack UID・Chatwork IDパターンから関係属性を推定。confidence付き
+  - 管理画面：/contactsで統計カード・一覧表示・検索・関係属性/チャネル別フィルター
+  - 未確認コンタクトはカード内ドロップダウンで関係属性を手動確定可能
+  - マップ統合：人物ノードに関係属性色を反映、MapStatsに関係属性分布、ツールチップに関係情報
+  - nodeClient.service.tsのデモ人物ノード7個にcontactId/relationshipTypeを紐付け
+- **注意点：**
+  - 全データはインメモリ保存（本番はSupabase）
+  - コンタクト自動抽出（extractFromMessages）は基本ロジックのみ。本番はAI API活用
+  - 関係属性のバッチ一括確認UIは未実装（個別確認のみ）
+  - チャネル登録フロー（設定画面連携）は未実装
+
 ---
 
 ## 次にやること
@@ -497,7 +535,7 @@ node_map/
 4. **UI修正** — ✅完了（2026-02-19）配色3色統一、SVGアイコン13個、gray→slate全置換
 5. **タスクボード改修** — ✅完了（2026-02-19）ジョブ/タスク分離、種ボックス、ステータス/タイムライン切り替え
 6. **ナレッジマスタ基盤** — ✅完了（2026-02-19）3階層体系（領域→分野→キーワード）、AI自動分類、管理画面、マップ統合
-7. **関係値情報基盤** — チャネル登録フロー、コンタクトリスト、関係属性
+7. **関係値情報基盤** — ✅完了（2026-02-19）コンタクト統合管理・関係属性AI推定・管理画面・マップ統合
 8. **思考マップUI改修** — ノード純化、フィルター、本流/支流、チェックポイント
 9. **Supabase接続** — インメモリからDBへの切り替え
 10. **APIキー準備・実データ検証**

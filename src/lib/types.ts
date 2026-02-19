@@ -402,6 +402,9 @@ export interface NodeData {
   masterEntryId?: string;   // マスタキーワードへの参照
   domainId?: string;        // 分類された領域ID
   fieldId?: string;         // 分類された分野ID
+  // Phase 9: コンタクト連携（人物ノードのみ）
+  contactId?: string;       // 紐付くContactPersonのID
+  relationshipType?: PersonRelationshipType; // コンタクトの関係属性（キャッシュ）
 }
 
 // ノードの出現コンテキスト
@@ -590,4 +593,47 @@ export interface ClassificationResult {
   fieldName: string;
   masterEntryId?: string;  // 既存マスタにマッチした場合
   confidence: number;
+}
+
+// ===== Phase 9: 関係値情報基盤 =====
+
+// 関係属性（自社メンバー / クライアント / パートナー）
+export type PersonRelationshipType = 'internal' | 'client' | 'partner';
+
+// コンタクトのチャネル別アドレス
+export interface ContactChannel {
+  channel: ChannelType;
+  address: string;        // メールアドレス / Slack UID / Chatwork AID
+  frequency: number;      // このチャネルでの通信回数
+}
+
+// 統合コンタクト情報
+export interface ContactPerson {
+  id: string;
+  name: string;
+  channels: ContactChannel[];
+  relationshipType: PersonRelationshipType;
+  confidence: number;     // AI推定の信頼度 0.0〜1.0
+  confirmed: boolean;     // ユーザーが関係属性を確認済みか
+  mainChannel: ChannelType; // 最頻出チャネル
+  associatedNodeIds: string[]; // 紐付く人物ノードID群
+  messageCount: number;   // 全チャネル合計の通信回数
+  lastContactAt: string;  // 最終接触日時
+  createdAt: string;
+  updatedAt: string;
+}
+
+// コンタクトフィルター
+export interface ContactFilter {
+  relationshipType?: PersonRelationshipType;
+  channel?: ChannelType;
+  searchQuery?: string;
+}
+
+// コンタクト統計
+export interface ContactStats {
+  total: number;
+  byRelationship: Record<PersonRelationshipType, number>;
+  byChannel: Record<ChannelType, number>;
+  unconfirmedCount: number;
 }

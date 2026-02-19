@@ -12,6 +12,7 @@ import {
 } from '@/lib/types';
 import { extractKeywords, assessUnderstandingLevel } from '@/services/ai/keywordExtractor.service';
 import { KnowledgeMasterService } from './knowledgeMaster.service';
+import { ContactPersonService } from '@/services/contact/contactPerson.service';
 
 // インメモリストア（本番はSupabase）
 let nodesStore: NodeData[] = [];
@@ -98,6 +99,23 @@ function initDemoData(): void {
   ];
 
   nodesStore = [...selfNodes, ...tanakaNodes, ...satoNodes, ...yamadaNodes];
+
+  // Phase 9: 人物ノードにコンタクトIDと関係属性を紐付け
+  const contactMapping: Record<string, { contactId: string; relationshipType: 'internal' | 'client' | 'partner' }> = {
+    'node-6':  { contactId: 'contact-tanaka', relationshipType: 'internal' },
+    'node-7':  { contactId: 'contact-suzuki', relationshipType: 'client' },
+    'node-8':  { contactId: 'contact-sato', relationshipType: 'internal' },
+    't-node-8': { contactId: 'contact-suzuki', relationshipType: 'client' },
+    't-node-9': { contactId: 'contact-sato', relationshipType: 'internal' },
+    's-node-8': { contactId: 'contact-tanaka', relationshipType: 'internal' },
+    'y-node-8': { contactId: 'contact-suzuki', relationshipType: 'client' },
+  };
+  for (const node of nodesStore) {
+    if (node.type === 'person' && contactMapping[node.id]) {
+      node.contactId = contactMapping[node.id].contactId;
+      node.relationshipType = contactMapping[node.id].relationshipType;
+    }
+  }
 }
 
 // ===== CRUD操作 =====

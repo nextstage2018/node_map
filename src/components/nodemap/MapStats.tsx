@@ -1,7 +1,7 @@
 'use client';
 
 import type { NodeData, EdgeData, ClusterData, ClusterDiff } from '@/lib/types';
-import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
+import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG } from '@/lib/constants';
 
 interface MapStatsProps {
   nodes: NodeData[];
@@ -148,6 +148,46 @@ export default function MapStats({
           })()}
         </div>
       </div>
+
+      {/* 関係属性分布（人物ノード） */}
+      {personCount > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-slate-500 mb-2">関係属性</h4>
+          <div className="space-y-1.5">
+            {(Object.entries(RELATIONSHIP_TYPE_CONFIG) as [string, typeof RELATIONSHIP_TYPE_CONFIG[keyof typeof RELATIONSHIP_TYPE_CONFIG]][]).map(
+              ([key, cfg]) => {
+                const count = nodes.filter(
+                  (n) => n.type === 'person' && n.relationshipType === key
+                ).length;
+                if (count === 0) return null;
+                return (
+                  <div key={key} className="flex items-center gap-2 text-xs">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: cfg.color }}
+                    />
+                    <span className="flex-1 text-slate-600">{cfg.label}</span>
+                    <span className="font-medium text-slate-900">{count}</span>
+                  </div>
+                );
+              }
+            )}
+            {(() => {
+              const unlinked = nodes.filter(
+                (n) => n.type === 'person' && !n.relationshipType
+              ).length;
+              if (unlinked === 0) return null;
+              return (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="w-2 h-2 rounded-full shrink-0 bg-slate-300" />
+                  <span className="flex-1 text-slate-400">未分類</span>
+                  <span className="font-medium text-slate-400">{unlinked}</span>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* クラスター差分（タスク選択時） */}
       {selectedTaskId && clusterDiff && (

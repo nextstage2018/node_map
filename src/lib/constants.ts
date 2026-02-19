@@ -383,6 +383,35 @@ export const KNOWLEDGE_DOMAIN_CONFIG: Record<string, {
   },
 } as const;
 
+// ===== Phase 9: 関係値情報基盤 =====
+
+export const RELATIONSHIP_TYPE_CONFIG = {
+  internal: {
+    label: '自社メンバー',
+    color: '#2563EB',     // primary blue
+    bgColor: 'bg-blue-50',
+    textColor: 'text-blue-700',
+    borderColor: 'border-blue-200',
+    dotColor: 'bg-blue-500',
+  },
+  client: {
+    label: 'クライアント',
+    color: '#D97706',     // amber
+    bgColor: 'bg-amber-50',
+    textColor: 'text-amber-700',
+    borderColor: 'border-amber-200',
+    dotColor: 'bg-amber-500',
+  },
+  partner: {
+    label: 'パートナー',
+    color: '#9333EA',     // purple
+    bgColor: 'bg-purple-50',
+    textColor: 'text-purple-700',
+    borderColor: 'border-purple-200',
+    dotColor: 'bg-purple-500',
+  },
+} as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },

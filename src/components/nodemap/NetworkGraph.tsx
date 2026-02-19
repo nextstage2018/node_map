@@ -3,7 +3,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import type { NodeData, EdgeData, ClusterData, MapViewMode } from '@/lib/types';
-import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
+import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG } from '@/lib/constants';
 
 interface NetworkGraphProps {
   nodes: NodeData[];
@@ -177,9 +177,13 @@ export default function NetworkGraph({
       const size = LEVEL_SIZE[d.understandingLevel] || 8;
       const isHighlighted = !hasSelection || highlightedNodeIds.has(d.id);
       // ドメイン色分けモード時はドメイン色を使う
+      // Phase 9: 人物ノードは関係属性色を適用
       let fillColor: string;
       if (!isHighlighted) {
         fillColor = '#E2E8F0';
+      } else if (d.type === 'person' && d.contactId && d.relationshipType
+        && RELATIONSHIP_TYPE_CONFIG[d.relationshipType]) {
+        fillColor = RELATIONSHIP_TYPE_CONFIG[d.relationshipType].color;
       } else if (colorByDomain && d.domainId && KNOWLEDGE_DOMAIN_CONFIG[d.domainId]) {
         fillColor = KNOWLEDGE_DOMAIN_CONFIG[d.domainId].color;
       } else {
@@ -253,8 +257,10 @@ export default function NetworkGraph({
       const typeLabel =
         d.type === 'keyword' ? 'キーワード' :
         d.type === 'person' ? '人物' : 'プロジェクト';
+      const relationLabel = d.type === 'person' && d.relationshipType && RELATIONSHIP_TYPE_CONFIG[d.relationshipType]
+        ? `<br/>関係: ${RELATIONSHIP_TYPE_CONFIG[d.relationshipType].label}` : '';
       tooltip
-        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回`)
+        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回${relationLabel}`)
         .style('visibility', 'visible')
         .style('top', `${event.pageY - 10}px`)
         .style('left', `${event.pageX + 15}px`);
