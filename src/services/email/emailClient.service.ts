@@ -48,22 +48,47 @@ function parseEmailBody(rawSource: string): string {
 }
 
 /**
+ * MIMEヘッダーの折り返し（continuation）を展開する
+ * RFC 2822: 行頭がスペースまたはタブの行は前の行の続き
+ */
+function unfoldHeaders(headers: string): string {
+  return headers.replace(/\r?\n[ \t]+/g, ' ');
+}
+
+/**
  * メール本文をデコードする
  */
 function decodeEmailContent(body: string, headers: string): string {
-  // Content-Typeヘッダーを解析
-  const contentTypeMatch = headers.match(/Content-Type:\s*([^\r\n;]+)/i);
-  const contentType = contentTypeMatch ? contentTypeMatch[1].trim().toLowerCase() : 'text/plain';
+  // ヘッダーの折り返しを展開してから解析
+  const unfolded = unfoldHeaders(headers);
+
+  // Content-Typeヘッダーを解析（展開済みヘッダーから取得）
+  const contentTypeLineMatch = unfolded.match(/Content-Type:\s*([^\r\n]+)/i);
+  const contentTypeLine = contentTypeLineMatch ? contentTypeLineMatch[1].trim() : 'text/plain';
+  const contentType = contentTypeLine.split(';')[0].trim().toLowerCase();
 
   // Transfer-Encodingを取得
-  const encodingMatch = headers.match(/Content-Transfer-Encoding:\s*([^\r\n]+)/i);
+  const encodingMatch = unfolded.match(/Content-Transfer-Encoding:\s*([^\r\n;]+)/i);
   const encoding = encodingMatch ? encodingMatch[1].trim().toLowerCase() : '7bit';
 
   // multipart の場合
   if (contentType.startsWith('multipart/')) {
-    const boundaryMatch = headers.match(/boundary="?([^"\r\n;]+)"?/i);
+    // boundary を Content-Type行全体から探す
+    const boundaryMatch = contentTypeLine.match(/boundary="?([^"\s;]+)"?/i);
     if (boundaryMatch) {
-      return extractFromMultipart(body, boundaryMatch[1]);
+      return extractFromMultipart(body, boundaryMatch[1].replace(/^"+|"+$/g, ''));
+    }
+  }
+
+  // multipart検出に失敗したが、本文にMIME boundaryパターンが見つかる場合のフォールバック
+  if (body.match(/^--[\w=_.-]+\r?\n/m) && !contentType.startsWith('multipart/')) {
+    const boundaryLineMatch = body.match(/^--([\w=_.-]+)\r?\n/m);
+    if (boundaryLineMatch) {
+      const guessedBoundary = boundaryLineMatch[1];
+      const result = extractFromMultipart(body, guessedBoundary);
+      if (result && result !== '[本文を取得できませんでした]') {
+        return result;
+      }
     }
   }
 
@@ -119,17 +144,18 @@ function extractFromMultipart(body: string, boundary: string): string {
 
     if (splitPos === -1) continue;
 
-    const partHeaders = part.substring(0, splitPos);
+    const partHeaders = unfoldHeaders(part.substring(0, splitPos));
     const partBody = part.substring(splitPos + splitLen);
 
-    const partContentType = partHeaders.match(/Content-Type:\s*([^\r\n;]+)/i);
-    const partType = partContentType ? partContentType[1].trim().toLowerCase() : '';
+    const partContentTypeLine = partHeaders.match(/Content-Type:\s*([^\r\n]+)/i);
+    const partTypeFull = partContentTypeLine ? partContentTypeLine[1].trim() : '';
+    const partType = partTypeFull.split(';')[0].trim().toLowerCase();
 
     // ネストされたmultipartの場合
     if (partType.startsWith('multipart/')) {
-      const nestedBoundary = partHeaders.match(/boundary="?([^"\r\n;]+)"?/i);
+      const nestedBoundary = partTypeFull.match(/boundary="?([^"\s;]+)"?/i);
       if (nestedBoundary) {
-        const nested = extractFromMultipart(partBody, nestedBoundary[1]);
+        const nested = extractFromMultipart(partBody, nestedBoundary[1].replace(/^"+|"+$/g, ''));
         if (nested) return nested;
       }
       continue;
