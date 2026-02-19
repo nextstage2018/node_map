@@ -3,6 +3,7 @@
 // Phase 10: 本流（分野レベル）/ 支流（キーワードレベル）の区別を追加
 
 import { EdgeData, NodeData } from '@/lib/types';
+import { getSupabase } from '@/lib/supabase';
 
 // インメモリストア（本番はSupabase）
 let edgesStore: EdgeData[] = [];
@@ -106,6 +107,43 @@ export class EdgeService {
    * ユーザーのエッジ一覧を取得
    */
   static async getEdges(userId: string, taskId?: string): Promise<EdgeData[]> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        let query = sb
+          .from('node_edges')
+          .select('id, source_node_id, target_node_id, user_id, weight, edge_type, flow_type, direction, checkpoint_id, created_at, updated_at, edge_tasks(task_id)');
+
+        query = query.eq('user_id', userId);
+
+        const { data, error } = await query.order('weight', { ascending: false });
+        if (error) throw error;
+
+        const edges = (data || []).map((row: any) => ({
+          id: row.id,
+          sourceNodeId: row.source_node_id,
+          targetNodeId: row.target_node_id,
+          userId: row.user_id,
+          weight: row.weight,
+          taskIds: (row.edge_tasks || []).map((et: any) => et.task_id),
+          edgeType: row.edge_type as EdgeData['edgeType'],
+          flowType: row.flow_type as EdgeData['flowType'],
+          direction: row.direction as EdgeData['direction'],
+          checkpointId: row.checkpoint_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+
+        if (taskId) {
+          return edges.filter((e) => e.taskIds.includes(taskId));
+        }
+        return edges;
+      } catch (error) {
+        console.error('Error fetching edges from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = edgesStore.filter((e) => e.userId === userId);
 
@@ -128,10 +166,77 @@ export class EdgeService {
     flowType: EdgeData['flowType'] = 'tributary',
     direction: EdgeData['direction'] = 'bidirectional'
   ): Promise<EdgeData> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const now = new Date().toISOString();
+
+        // Upsert edge on (source_node_id, target_node_id, user_id, edge_type) conflict
+        const { data, error } = await sb
+          .from('node_edges')
+          .upsert(
+            {
+              source_node_id: sourceNodeId,
+              target_node_id: targetNodeId,
+              user_id: userId,
+              weight: 1,
+              edge_type: edgeType,
+              flow_type: flowType,
+              direction,
+              updated_at: now,
+            },
+            { onConflict: 'source_node_id,target_node_id,user_id,edge_type' }
+          )
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        if (data) {
+          // Increment weight
+          const { data: updated } = await sb
+            .from('node_edges')
+            .update({
+              weight: (data.weight || 0) + 1,
+              updated_at: now,
+            })
+            .eq('id', data.id)
+            .select()
+            .single();
+
+          // Add task association
+          await sb.from('edge_tasks').upsert(
+            {
+              edge_id: data.id,
+              task_id: taskId,
+            },
+            { onConflict: 'edge_id,task_id' }
+          );
+
+          return {
+            id: data.id,
+            sourceNodeId: data.source_node_id,
+            targetNodeId: data.target_node_id,
+            userId: data.user_id,
+            weight: (updated?.weight || data.weight || 0) + 1,
+            taskIds: [taskId],
+            edgeType: data.edge_type as EdgeData['edgeType'],
+            flowType: data.flow_type as EdgeData['flowType'],
+            direction: data.direction as EdgeData['direction'],
+            checkpointId: data.checkpoint_id,
+            createdAt: data.created_at,
+            updatedAt: updated?.updated_at || now,
+          };
+        }
+      } catch (error) {
+        console.error('Error upserting edge to Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const now = new Date().toISOString();
 
-    // 既存エッジ検索（方向問わず）
     const existing = edgesStore.find(
       (e) =>
         e.userId === userId &&

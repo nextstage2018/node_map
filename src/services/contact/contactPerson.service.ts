@@ -9,6 +9,7 @@ import type {
   ContactStats,
   ChannelType,
 } from '@/lib/types';
+import { getSupabase } from '@/lib/supabase';
 
 // ===== インメモリストア（本番はSupabase） =====
 let contactsStore: ContactPerson[] = [];
@@ -165,6 +166,58 @@ export class ContactPersonService {
    * コンタクト一覧を取得（フィルター対応）
    */
   static async getContacts(filter?: ContactFilter): Promise<ContactPerson[]> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        let query = sb.from('contact_persons').select('*, contact_channels(*)');
+
+        if (filter?.relationshipType) {
+          query = query.eq('relationship_type', filter.relationshipType);
+        }
+        if (filter?.channel) {
+          query = query.eq('contact_channels.channel', filter.channel);
+        }
+
+        const { data, error } = await query.order('message_count', { ascending: false });
+
+        if (!error && data) {
+          let result: ContactPerson[] = data.map((row: Record<string, unknown>) => ({
+            id: row.id as string,
+            name: row.name as string,
+            relationshipType: row.relationship_type as PersonRelationshipType,
+            confidence: row.confidence as number,
+            confirmed: row.confirmed as boolean,
+            mainChannel: row.main_channel as ChannelType,
+            associatedNodeIds: (row.associated_node_ids || []) as string[],
+            messageCount: row.message_count as number,
+            lastContactAt: row.last_contact_at as string,
+            createdAt: row.created_at as string,
+            updatedAt: row.updated_at as string,
+            channels: ((row.contact_channels || []) as Array<{ channel: ChannelType; address: string; frequency: number }>).map((ch) => ({
+              channel: ch.channel,
+              address: ch.address,
+              frequency: ch.frequency,
+            })),
+          }));
+
+          if (filter?.searchQuery) {
+            const q = filter.searchQuery.toLowerCase();
+            result = result.filter(
+              (c) =>
+                c.name.toLowerCase().includes(q) ||
+                c.channels.some((ch) => ch.address.toLowerCase().includes(q))
+            );
+          }
+
+          return result.sort((a, b) => b.messageCount - a.messageCount);
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = [...contactsStore];
 
@@ -195,6 +248,42 @@ export class ContactPersonService {
    * コンタクトをIDで取得
    */
   static async getContactById(id: string): Promise<ContactPerson | null> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('contact_persons')
+          .select('*, contact_channels(*)')
+          .eq('id', id)
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            relationshipType: data.relationship_type,
+            confidence: data.confidence,
+            confirmed: data.confirmed,
+            mainChannel: data.main_channel,
+            associatedNodeIds: data.associated_node_ids || [],
+            messageCount: data.message_count,
+            lastContactAt: data.last_contact_at,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            channels: (data.contact_channels || []).map((ch: { channel: ChannelType; address: string; frequency: number }) => ({
+              channel: ch.channel,
+              address: ch.address,
+              frequency: ch.frequency,
+            })),
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return contactsStore.find((c) => c.id === id) || null;
   }
@@ -206,6 +295,49 @@ export class ContactPersonService {
     id: string,
     relationshipType: PersonRelationshipType
   ): Promise<ContactPerson | null> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('contact_persons')
+          .update({
+            relationship_type: relationshipType,
+            confirmed: true,
+            confidence: 1.0,
+            updated_at: now,
+          })
+          .eq('id', id)
+          .select('*, contact_channels(*)')
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            relationshipType: data.relationship_type,
+            confidence: data.confidence,
+            confirmed: data.confirmed,
+            mainChannel: data.main_channel,
+            associatedNodeIds: data.associated_node_ids || [],
+            messageCount: data.message_count,
+            lastContactAt: data.last_contact_at,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            channels: (data.contact_channels || []).map((ch: { channel: ChannelType; address: string; frequency: number }) => ({
+              channel: ch.channel,
+              address: ch.address,
+              frequency: ch.frequency,
+            })),
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const contact = contactsStore.find((c) => c.id === id);
     if (!contact) return null;
@@ -213,7 +345,7 @@ export class ContactPersonService {
     contact.relationshipType = relationshipType;
     contact.confirmed = true;
     contact.confidence = 1.0;
-    contact.updatedAt = new Date().toISOString();
+    contact.updatedAt = now;
     return contact;
   }
 
@@ -265,6 +397,55 @@ export class ContactPersonService {
    * コンタクト統計
    */
   static async getStats(): Promise<ContactStats> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('contact_persons')
+          .select('*, contact_channels(*)');
+
+        if (!error && data) {
+          const contacts: ContactPerson[] = data.map((row: Record<string, unknown>) => ({
+            id: row.id as string,
+            name: row.name as string,
+            relationshipType: row.relationship_type as PersonRelationshipType,
+            confidence: row.confidence as number,
+            confirmed: row.confirmed as boolean,
+            mainChannel: row.main_channel as ChannelType,
+            associatedNodeIds: (row.associated_node_ids || []) as string[],
+            messageCount: row.message_count as number,
+            lastContactAt: row.last_contact_at as string,
+            createdAt: row.created_at as string,
+            updatedAt: row.updated_at as string,
+            channels: ((row.contact_channels || []) as Array<{ channel: ChannelType; address: string; frequency: number }>).map((ch) => ({
+              channel: ch.channel,
+              address: ch.address,
+              frequency: ch.frequency,
+            })),
+          }));
+
+          return {
+            total: contacts.length,
+            byRelationship: {
+              internal: contacts.filter((c) => c.relationshipType === 'internal').length,
+              client: contacts.filter((c) => c.relationshipType === 'client').length,
+              partner: contacts.filter((c) => c.relationshipType === 'partner').length,
+            },
+            byChannel: {
+              email: contacts.filter((c) => c.channels.some((ch) => ch.channel === 'email')).length,
+              slack: contacts.filter((c) => c.channels.some((ch) => ch.channel === 'slack')).length,
+              chatwork: contacts.filter((c) => c.channels.some((ch) => ch.channel === 'chatwork')).length,
+            },
+            unconfirmedCount: contacts.filter((c) => !c.confirmed).length,
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
 
     return {
@@ -287,6 +468,43 @@ export class ContactPersonService {
    * コンタクトIDでノードIDを取得（人物ノード↔コンタクト逆引き）
    */
   static async getContactByNodeId(nodeId: string): Promise<ContactPerson | null> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('contact_persons')
+          .select('*, contact_channels(*)')
+          .contains('associated_node_ids', [nodeId])
+          .limit(1)
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            relationshipType: data.relationship_type,
+            confidence: data.confidence,
+            confirmed: data.confirmed,
+            mainChannel: data.main_channel,
+            associatedNodeIds: data.associated_node_ids || [],
+            messageCount: data.message_count,
+            lastContactAt: data.last_contact_at,
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+            channels: (data.contact_channels || []).map((ch: { channel: ChannelType; address: string; frequency: number }) => ({
+              channel: ch.channel,
+              address: ch.address,
+              frequency: ch.frequency,
+            })),
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return contactsStore.find((c) => c.associatedNodeIds.includes(nodeId)) || null;
   }

@@ -17,6 +17,7 @@ import {
   CreateJobRequest,
   CreateSeedRequest,
 } from '@/lib/types';
+import { getSupabase } from '@/lib/supabase';
 
 // === デモデータ ===
 
@@ -291,34 +292,160 @@ const demoSeeds: Seed[] = [
   },
 ];
 
+// === Helper functions for snake_case <-> camelCase mapping ===
+
+function mapTaskFromDb(dbRow: any): Task {
+  return {
+    id: dbRow.id,
+    title: dbRow.title,
+    description: dbRow.description,
+    status: dbRow.status,
+    priority: dbRow.priority,
+    phase: dbRow.phase,
+    sourceMessageId: dbRow.source_message_id,
+    sourceChannel: dbRow.source_channel,
+    ideationSummary: dbRow.ideation_summary,
+    resultSummary: dbRow.result_summary,
+    tags: dbRow.tags || [],
+    assignee: dbRow.assignee,
+    conversations: [],
+    createdAt: dbRow.created_at,
+    updatedAt: dbRow.updated_at,
+    completedAt: dbRow.completed_at,
+  };
+}
+
+function mapConversationFromDb(dbRow: any): AiConversationMessage {
+  return {
+    id: dbRow.id,
+    role: dbRow.role,
+    content: dbRow.content,
+    phase: dbRow.phase,
+    timestamp: dbRow.created_at,
+  };
+}
+
+function mapJobFromDb(dbRow: any): Job {
+  return {
+    id: dbRow.id,
+    type: dbRow.type,
+    title: dbRow.title,
+    description: dbRow.description,
+    status: dbRow.status,
+    priority: dbRow.priority,
+    draftContent: dbRow.draft_content,
+    sourceMessageId: dbRow.source_message_id,
+    sourceChannel: dbRow.source_channel,
+    createdAt: dbRow.created_at,
+    updatedAt: dbRow.updated_at,
+    executedAt: dbRow.executed_at,
+    dismissedAt: dbRow.dismissed_at,
+  };
+}
+
+function mapSeedFromDb(dbRow: any): Seed {
+  return {
+    id: dbRow.id,
+    content: dbRow.content,
+    sourceChannel: dbRow.source_channel,
+    sourceMessageId: dbRow.source_message_id,
+    status: dbRow.status,
+    structured: dbRow.structured,
+    createdAt: dbRow.created_at,
+  };
+}
+
 // === サービスクラス ===
 
 export class TaskService {
-  private static isDemo(): boolean {
-    return !process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY;
-  }
-
   // タスク一覧取得
   static async getTasks(): Promise<Task[]> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       return [...demoTasks].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
     }
-    // TODO: Supabase連携
-    return demoTasks;
+
+    try {
+      // Query tasks ordered by updated_at DESC
+      const { data: tasks, error } = await sb
+        .from('tasks')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      // For each task, fetch its conversations
+      const tasksWithConversations = await Promise.all(
+        (tasks || []).map(async (task) => {
+          const mappedTask = mapTaskFromDb(task);
+          const { data: conversations, error: convError } = await sb
+            .from('task_conversations')
+            .select('*')
+            .eq('task_id', task.id)
+            .order('created_at', { ascending: true });
+
+          if (!convError && conversations) {
+            mappedTask.conversations = conversations.map(mapConversationFromDb);
+          }
+
+          return mappedTask;
+        })
+      );
+
+      return tasksWithConversations;
+    } catch (error) {
+      console.error('Error fetching tasks from Supabase:', error);
+      return [];
+    }
   }
 
   // タスク取得（単体）
   static async getTask(id: string): Promise<Task | null> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       return demoTasks.find((t) => t.id === id) || null;
     }
-    return null;
+
+    try {
+      const { data: task, error } = await sb
+        .from('tasks')
+        .select('*')
+        .eq('id', id)
+        .single();
+
+      if (error || !task) return null;
+
+      const mappedTask = mapTaskFromDb(task);
+
+      // Fetch conversations
+      const { data: conversations, error: convError } = await sb
+        .from('task_conversations')
+        .select('*')
+        .eq('task_id', id)
+        .order('created_at', { ascending: true });
+
+      if (!convError && conversations) {
+        mappedTask.conversations = conversations.map(mapConversationFromDb);
+      }
+
+      return mappedTask;
+    } catch (error) {
+      console.error('Error fetching task from Supabase:', error);
+      return null;
+    }
   }
 
   // タスク作成
   static async createTask(req: CreateTaskRequest): Promise<Task> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
     const newTask: Task = {
       id: `task-${Date.now()}`,
       title: req.title,
@@ -329,22 +456,54 @@ export class TaskService {
       sourceMessageId: req.sourceMessageId,
       sourceChannel: req.sourceChannel,
       conversations: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       tags: req.tags || [],
     };
 
-    if (this.isDemo()) {
+    if (!sb) {
+      // Demo mode
       demoTasks.unshift(newTask);
       return newTask;
     }
-    // TODO: Supabase連携
-    return newTask;
+
+    try {
+      const { data, error } = await sb
+        .from('tasks')
+        .insert({
+          id: newTask.id,
+          title: newTask.title,
+          description: newTask.description,
+          status: newTask.status,
+          priority: newTask.priority,
+          phase: newTask.phase,
+          source_message_id: newTask.sourceMessageId,
+          source_channel: newTask.sourceChannel,
+          tags: newTask.tags,
+          created_at: newTask.createdAt,
+          updated_at: newTask.updatedAt,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating task in Supabase:', error);
+        return newTask;
+      }
+
+      return mapTaskFromDb(data);
+    } catch (error) {
+      console.error('Error creating task:', error);
+      return newTask;
+    }
   }
 
   // タスク更新
   static async updateTask(id: string, req: UpdateTaskRequest): Promise<Task | null> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       const idx = demoTasks.findIndex((t) => t.id === id);
       if (idx === -1) return null;
 
@@ -361,7 +520,63 @@ export class TaskService {
       demoTasks[idx] = updated;
       return updated;
     }
-    return null;
+
+    try {
+      const now = new Date().toISOString();
+      const updateData: any = {
+        ...req,
+        updated_at: now,
+      };
+
+      // Map camelCase to snake_case
+      if (req.ideationSummary !== undefined) {
+        updateData.ideation_summary = req.ideationSummary;
+        delete updateData.ideationSummary;
+      }
+      if (req.resultSummary !== undefined) {
+        updateData.result_summary = req.resultSummary;
+        delete updateData.resultSummary;
+      }
+      if (req.dueDate !== undefined) {
+        updateData.due_date = req.dueDate;
+        delete updateData.dueDate;
+      }
+
+      // Set completedAt if marking as done
+      if (req.status === 'done') {
+        updateData.completed_at = now;
+      }
+
+      const { data, error } = await sb
+        .from('tasks')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating task in Supabase:', error);
+        return null;
+      }
+
+      const updatedTask = mapTaskFromDb(data);
+
+      // Fetch conversations
+      const { data: conversations } = await sb
+        .from('task_conversations')
+        .select('*')
+        .eq('task_id', id)
+        .order('created_at', { ascending: true });
+
+      if (conversations) {
+        updatedTask.conversations = conversations.map(mapConversationFromDb);
+      }
+
+      return updatedTask;
+    } catch (error) {
+      console.error('Error updating task:', error);
+      return null;
+    }
   }
 
   // 会話メッセージ追加
@@ -369,40 +584,96 @@ export class TaskService {
     taskId: string,
     message: Omit<AiConversationMessage, 'id' | 'timestamp'>
   ): Promise<AiConversationMessage | null> {
-    const task = demoTasks.find((t) => t.id === taskId);
-    if (!task) return null;
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+    const newId = `conv-${Date.now()}`;
 
-    const newMsg: AiConversationMessage = {
-      ...message,
-      id: `conv-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-    };
+    if (!sb) {
+      // Demo mode
+      const task = demoTasks.find((t) => t.id === taskId);
+      if (!task) return null;
 
-    task.conversations.push(newMsg);
-    task.updatedAt = new Date().toISOString();
-    return newMsg;
+      const newMsg: AiConversationMessage = {
+        ...message,
+        id: newId,
+        timestamp: now,
+      };
+
+      task.conversations.push(newMsg);
+      task.updatedAt = now;
+      return newMsg;
+    }
+
+    try {
+      // Insert conversation
+      const { data, error } = await sb
+        .from('task_conversations')
+        .insert({
+          id: newId,
+          task_id: taskId,
+          role: message.role,
+          content: message.content,
+          phase: message.phase,
+          created_at: now,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding conversation in Supabase:', error);
+        return null;
+      }
+
+      // Update task's updated_at
+      await sb
+        .from('tasks')
+        .update({ updated_at: now })
+        .eq('id', taskId);
+
+      return mapConversationFromDb(data);
+    } catch (error) {
+      console.error('Error adding conversation:', error);
+      return null;
+    }
   }
 
   // タスク提案取得
   static async getTaskSuggestions(): Promise<TaskSuggestion[]> {
-    if (this.isDemo()) {
-      return demoSuggestions;
-    }
-    return [];
+    // No DB table for suggestions yet, always return demo
+    return demoSuggestions;
   }
 
   // ===== ジョブ管理 =====
 
   static async getJobs(): Promise<Job[]> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       return [...demoJobs].sort(
         (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
       );
     }
-    return [];
+
+    try {
+      const { data: jobs, error } = await sb
+        .from('jobs')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (jobs || []).map(mapJobFromDb);
+    } catch (error) {
+      console.error('Error fetching jobs from Supabase:', error);
+      return [];
+    }
   }
 
   static async createJob(req: CreateJobRequest): Promise<Job> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
     const newJob: Job = {
       id: `job-${Date.now()}`,
       type: req.type,
@@ -413,57 +684,173 @@ export class TaskService {
       draftContent: req.draftContent,
       sourceMessageId: req.sourceMessageId,
       sourceChannel: req.sourceChannel,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
     };
-    if (this.isDemo()) {
+
+    if (!sb) {
+      // Demo mode
       demoJobs.unshift(newJob);
+      return newJob;
     }
-    return newJob;
+
+    try {
+      const { data, error } = await sb
+        .from('jobs')
+        .insert({
+          id: newJob.id,
+          type: newJob.type,
+          title: newJob.title,
+          description: newJob.description,
+          status: newJob.status,
+          priority: newJob.priority,
+          draft_content: newJob.draftContent,
+          source_message_id: newJob.sourceMessageId,
+          source_channel: newJob.sourceChannel,
+          created_at: newJob.createdAt,
+          updated_at: newJob.updatedAt,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating job in Supabase:', error);
+        return newJob;
+      }
+
+      return mapJobFromDb(data);
+    } catch (error) {
+      console.error('Error creating job:', error);
+      return newJob;
+    }
   }
 
   static async updateJobStatus(id: string, status: JobStatus): Promise<Job | null> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
+    if (!sb) {
+      // Demo mode
       const idx = demoJobs.findIndex((j) => j.id === id);
       if (idx === -1) return null;
       demoJobs[idx] = {
         ...demoJobs[idx],
         status,
-        updatedAt: new Date().toISOString(),
-        ...(status === 'executed' ? { executedAt: new Date().toISOString() } : {}),
-        ...(status === 'dismissed' ? { dismissedAt: new Date().toISOString() } : {}),
+        updatedAt: now,
+        ...(status === 'executed' ? { executedAt: now } : {}),
+        ...(status === 'dismissed' ? { dismissedAt: now } : {}),
       };
       return demoJobs[idx];
     }
-    return null;
+
+    try {
+      const updateData: any = {
+        status,
+        updated_at: now,
+      };
+
+      if (status === 'executed') {
+        updateData.executed_at = now;
+      } else if (status === 'dismissed') {
+        updateData.dismissed_at = now;
+      }
+
+      const { data, error } = await sb
+        .from('jobs')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating job status in Supabase:', error);
+        return null;
+      }
+
+      return mapJobFromDb(data);
+    } catch (error) {
+      console.error('Error updating job status:', error);
+      return null;
+    }
   }
 
   // ===== 種ボックス管理 =====
 
   static async getSeeds(): Promise<Seed[]> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       return demoSeeds.filter((s) => s.status === 'pending');
     }
-    return [];
+
+    try {
+      const { data: seeds, error } = await sb
+        .from('seeds')
+        .select('*')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      return (seeds || []).map(mapSeedFromDb);
+    } catch (error) {
+      console.error('Error fetching seeds from Supabase:', error);
+      return [];
+    }
   }
 
   static async createSeed(req: CreateSeedRequest): Promise<Seed> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
     const newSeed: Seed = {
       id: `seed-${Date.now()}`,
       content: req.content,
       sourceChannel: req.sourceChannel,
       sourceMessageId: req.sourceMessageId,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
       status: 'pending',
     };
-    if (this.isDemo()) {
+
+    if (!sb) {
+      // Demo mode
       demoSeeds.unshift(newSeed);
+      return newSeed;
     }
-    return newSeed;
+
+    try {
+      const { data, error } = await sb
+        .from('seeds')
+        .insert({
+          id: newSeed.id,
+          content: newSeed.content,
+          source_channel: newSeed.sourceChannel,
+          source_message_id: newSeed.sourceMessageId,
+          status: newSeed.status,
+          created_at: newSeed.createdAt,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error creating seed in Supabase:', error);
+        return newSeed;
+      }
+
+      return mapSeedFromDb(data);
+    } catch (error) {
+      console.error('Error creating seed:', error);
+      return newSeed;
+    }
   }
 
   static async confirmSeed(seedId: string): Promise<Task | null> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
+    if (!sb) {
+      // Demo mode
       const seed = demoSeeds.find((s) => s.id === seedId);
       if (!seed || seed.status === 'confirmed') return null;
 
@@ -488,8 +875,8 @@ export class TaskService {
         sourceChannel: seed.sourceChannel,
         conversations: [],
         ideationSummary: `【ゴール】${seed.structured.goal}\n【主な内容】${seed.structured.content}\n【気になる点】${seed.structured.concerns}\n【期限】${seed.structured.deadline}`,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         tags: [],
         seedId: seed.id,
         dueDate: seed.structured.deadline,
@@ -497,12 +884,76 @@ export class TaskService {
       demoTasks.unshift(newTask);
       return newTask;
     }
-    return null;
+
+    try {
+      // Fetch the seed
+      const { data: seed, error: seedError } = await sb
+        .from('seeds')
+        .select('*')
+        .eq('id', seedId)
+        .single();
+
+      if (seedError || !seed) return null;
+      if (seed.status === 'confirmed') return null;
+
+      // AI構造化をシミュレート
+      const structured = {
+        goal: `${seed.content.slice(0, 30)}... のゴール達成`,
+        content: seed.content,
+        concerns: '詳細な要件の整理が必要',
+        deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      };
+
+      // Update seed status
+      await sb
+        .from('seeds')
+        .update({
+          status: 'confirmed',
+          structured,
+        })
+        .eq('id', seedId);
+
+      // Create new task
+      const taskId = `task-${Date.now()}`;
+      const newTaskData = {
+        id: taskId,
+        title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
+        description: seed.content,
+        status: 'todo',
+        priority: 'medium',
+        phase: 'ideation',
+        source_message_id: seed.source_message_id,
+        source_channel: seed.source_channel,
+        ideation_summary: `【ゴール】${structured.goal}\n【主な内容】${structured.content}\n【気になる点】${structured.concerns}\n【期限】${structured.deadline}`,
+        tags: [],
+        created_at: now,
+        updated_at: now,
+      };
+
+      const { data: createdTask, error: taskError } = await sb
+        .from('tasks')
+        .insert(newTaskData)
+        .select()
+        .single();
+
+      if (taskError || !createdTask) {
+        console.error('Error creating task from seed:', taskError);
+        return null;
+      }
+
+      return mapTaskFromDb(createdTask);
+    } catch (error) {
+      console.error('Error confirming seed:', error);
+      return null;
+    }
   }
 
   // 種の詳細取得（AI構造化プレビュー用）
   static async getSeedStructured(seedId: string): Promise<Seed | null> {
-    if (this.isDemo()) {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
       const seed = demoSeeds.find((s) => s.id === seedId);
       if (!seed) return null;
       // 未構造化の場合はプレビュー生成
@@ -519,6 +970,33 @@ export class TaskService {
       }
       return seed;
     }
-    return null;
+
+    try {
+      const { data: seed, error } = await sb
+        .from('seeds')
+        .select('*')
+        .eq('id', seedId)
+        .single();
+
+      if (error || !seed) return null;
+
+      // 未構造化の場合はプレビュー生成
+      if (!seed.structured) {
+        return {
+          ...mapSeedFromDb(seed),
+          structured: {
+            goal: `${seed.content.slice(0, 30)}... のゴール達成`,
+            content: seed.content,
+            concerns: '詳細な要件の整理が必要',
+            deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+          },
+        };
+      }
+
+      return mapSeedFromDb(seed);
+    } catch (error) {
+      console.error('Error fetching seed:', error);
+      return null;
+    }
   }
 }

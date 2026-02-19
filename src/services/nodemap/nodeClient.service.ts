@@ -13,6 +13,7 @@ import {
 import { extractKeywords, assessUnderstandingLevel } from '@/services/ai/keywordExtractor.service';
 import { KnowledgeMasterService } from './knowledgeMaster.service';
 import { ContactPersonService } from '@/services/contact/contactPerson.service';
+import { getSupabase } from '@/lib/supabase';
 
 // インメモリストア（本番はSupabase）
 let nodesStore: NodeData[] = [];
@@ -125,6 +126,53 @@ export class NodeService {
    * ノード一覧を取得
    */
   static async getNodes(filter?: NodeFilter): Promise<NodeData[]> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        let query = sb.from('user_nodes').select('*');
+
+        if (filter?.userId) {
+          query = query.eq('user_id', filter.userId);
+        }
+        if (filter?.type) {
+          query = query.eq('type', filter.type);
+        }
+        if (filter?.understandingLevel) {
+          query = query.eq('understanding_level', filter.understandingLevel);
+        }
+        if (filter?.minFrequency) {
+          query = query.gte('frequency', filter.minFrequency);
+        }
+        if (filter?.searchQuery) {
+          query = query.ilike('label', `%${filter.searchQuery}%`);
+        }
+
+        const { data, error } = await query.order('frequency', { ascending: false });
+        if (error) throw error;
+
+        return (data || []).map((row) => ({
+          id: row.id,
+          label: row.label,
+          type: row.type as NodeType,
+          userId: row.user_id,
+          frequency: row.frequency,
+          understandingLevel: row.understanding_level as UnderstandingLevel,
+          domainId: row.domain_id,
+          fieldId: row.field_id,
+          relationshipType: row.relationship_type as any,
+          contactId: row.contact_id,
+          firstSeenAt: row.first_seen_at,
+          lastSeenAt: row.last_seen_at,
+          sourceContexts: [],
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+      } catch (error) {
+        console.error('Error fetching nodes from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = [...nodesStore];
 
@@ -147,7 +195,6 @@ export class NodeService {
       }
     }
 
-    // 頻出度降順で返す
     return result.sort((a, b) => b.frequency - a.frequency);
   }
 
@@ -155,6 +202,41 @@ export class NodeService {
    * ノードをIDで取得
    */
   static async getNodeById(id: string): Promise<NodeData | null> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('user_nodes')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data) {
+          return {
+            id: data.id,
+            label: data.label,
+            type: data.type as NodeType,
+            userId: data.user_id,
+            frequency: data.frequency,
+            understandingLevel: data.understanding_level as UnderstandingLevel,
+            domainId: data.domain_id,
+            fieldId: data.field_id,
+            relationshipType: data.relationship_type as any,
+            contactId: data.contact_id,
+            firstSeenAt: data.first_seen_at,
+            lastSeenAt: data.last_seen_at,
+            sourceContexts: [],
+            createdAt: data.created_at,
+            updatedAt: data.updated_at,
+          };
+        }
+      } catch (error) {
+        console.error('Error fetching node from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return nodesStore.find((n) => n.id === id) || null;
   }
@@ -168,35 +250,120 @@ export class NodeService {
     userId: string,
     context: NodeSourceContext
   ): Promise<NodeData> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const now = new Date().toISOString();
+
+        // Upsert on (user_id, label, type) conflict
+        const { data, error } = await sb
+          .from('user_nodes')
+          .upsert(
+            {
+              label,
+              type,
+              user_id: userId,
+              frequency: 1,
+              understanding_level: 'recognition',
+              first_seen_at: now,
+              last_seen_at: now,
+              updated_at: now,
+            },
+            { onConflict: 'user_id,label,type' }
+          )
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        // Increment frequency if it was an existing record
+        if (data) {
+          const { data: updated, error: updateError } = await sb
+            .from('user_nodes')
+            .update({
+              frequency: sb.rpc('increment_frequency', { node_id: data.id }),
+              last_seen_at: now,
+              updated_at: now,
+            })
+            .eq('id', data.id)
+            .select()
+            .single();
+
+          if (updateError) {
+            // Fallback: manually increment
+            const { data: current } = await sb
+              .from('user_nodes')
+              .select('frequency')
+              .eq('id', data.id)
+              .single();
+            if (current) {
+              await sb
+                .from('user_nodes')
+                .update({
+                  frequency: current.frequency + 1,
+                  last_seen_at: now,
+                  updated_at: now,
+                })
+                .eq('id', data.id);
+            }
+          }
+
+          // Insert context record
+          await sb.from('node_source_contexts').insert({
+            node_id: data.id,
+            source_type: context.sourceType,
+            source_id: context.sourceId,
+            direction: context.direction,
+            phase: context.phase,
+            timestamp: context.timestamp,
+          });
+
+          return {
+            id: data.id,
+            label: data.label,
+            type: data.type as NodeType,
+            userId: data.user_id,
+            frequency: (updated?.frequency || data.frequency) + 1,
+            understandingLevel: (updated?.understanding_level || data.understanding_level) as UnderstandingLevel,
+            domainId: updated?.domain_id || data.domain_id,
+            fieldId: updated?.field_id || data.field_id,
+            firstSeenAt: updated?.first_seen_at || data.first_seen_at,
+            lastSeenAt: updated?.last_seen_at || now,
+            sourceContexts: [context],
+            createdAt: data.created_at,
+            updatedAt: updated?.updated_at || now,
+          };
+        }
+      } catch (error) {
+        console.error('Error upserting node to Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const now = new Date().toISOString();
 
-    // 既存ノードを検索
     const existing = nodesStore.find(
       (n) => n.label === label && n.type === type && n.userId === userId
     );
 
     if (existing) {
-      // 頻出度を加算
       existing.frequency += 1;
       existing.lastSeenAt = now;
       existing.updatedAt = now;
       existing.sourceContexts.push(context);
 
-      // 理解度を再判定
       const allContexts = contextStore
         .filter((c) => c.nodeId === existing.id)
         .map((c) => ({ direction: c.direction, sourceType: c.sourceType }));
       allContexts.push({ direction: context.direction, sourceType: context.sourceType });
       existing.understandingLevel = assessUnderstandingLevel(allContexts);
 
-      // コンテキスト記録
       contextStore.push({ ...context, nodeId: existing.id });
 
       return existing;
     }
 
-    // 新規ノード作成
     const newNode: NodeData = {
       id: `node-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       label,
@@ -293,6 +460,55 @@ export class NodeService {
     byLevel: Record<UnderstandingLevel, number>;
     topKeywords: NodeData[];
   }> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('user_nodes')
+          .select('*')
+          .eq('user_id', userId)
+          .order('frequency', { ascending: false });
+
+        if (error) throw error;
+
+        const nodes = (data || []).map((row) => ({
+          id: row.id,
+          label: row.label,
+          type: row.type as NodeType,
+          userId: row.user_id,
+          frequency: row.frequency,
+          understandingLevel: row.understanding_level as UnderstandingLevel,
+          domainId: row.domain_id,
+          fieldId: row.field_id,
+          relationshipType: row.relationship_type as any,
+          contactId: row.contact_id,
+          firstSeenAt: row.first_seen_at,
+          lastSeenAt: row.last_seen_at,
+          sourceContexts: [],
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+        }));
+
+        return {
+          totalNodes: nodes.length,
+          byType: {
+            keyword: nodes.filter((n) => n.type === 'keyword').length,
+            person: nodes.filter((n) => n.type === 'person').length,
+            project: nodes.filter((n) => n.type === 'project').length,
+          },
+          byLevel: {
+            recognition: nodes.filter((n) => n.understandingLevel === 'recognition').length,
+            understanding: nodes.filter((n) => n.understandingLevel === 'understanding').length,
+            mastery: nodes.filter((n) => n.understandingLevel === 'mastery').length,
+          },
+          topKeywords: nodes.slice(0, 10),
+        };
+      } catch (error) {
+        console.error('Error fetching stats from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const userNodes = nodesStore.filter((n) => n.userId === userId);
 

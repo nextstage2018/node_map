@@ -11,6 +11,7 @@ import {
   ClassificationResult,
 } from '@/lib/types';
 import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
+import { getSupabase } from '@/lib/supabase';
 
 // ===== インメモリストア（本番はSupabase） =====
 let domainsStore: KnowledgeDomain[] = [];
@@ -175,6 +176,27 @@ export class KnowledgeMasterService {
    * 領域一覧を取得
    */
   static async getDomains(): Promise<KnowledgeDomain[]> {
+    const sb = getSupabase();
+
+    if (sb) {
+      const { data, error } = await sb
+        .from('knowledge_domains')
+        .select('*')
+        .order('sort_order', { ascending: true });
+
+      if (!error && data) {
+        return data.map(row => ({
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          color: row.color,
+          sortOrder: row.sort_order,
+          createdAt: row.created_at,
+        }));
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return [...domainsStore].sort((a, b) => a.sortOrder - b.sortOrder);
   }
@@ -183,6 +205,30 @@ export class KnowledgeMasterService {
    * 分野一覧を取得（領域フィルター対応）
    */
   static async getFields(domainId?: string): Promise<KnowledgeField[]> {
+    const sb = getSupabase();
+
+    if (sb) {
+      let query = sb.from('knowledge_fields').select('*');
+
+      if (domainId) {
+        query = query.eq('domain_id', domainId);
+      }
+
+      const { data, error } = await query.order('sort_order', { ascending: true });
+
+      if (!error && data) {
+        return data.map(row => ({
+          id: row.id,
+          domainId: row.domain_id,
+          name: row.name,
+          description: row.description,
+          sortOrder: row.sort_order,
+          createdAt: row.created_at,
+        }));
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = [...fieldsStore];
     if (domainId) {
@@ -195,6 +241,30 @@ export class KnowledgeMasterService {
    * マスタキーワード一覧を取得（分野フィルター対応）
    */
   static async getMasterEntries(fieldId?: string): Promise<KnowledgeMasterEntry[]> {
+    const sb = getSupabase();
+
+    if (sb) {
+      let query = sb.from('knowledge_master_entries').select('*');
+
+      if (fieldId) {
+        query = query.eq('field_id', fieldId);
+      }
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        return data.map(row => ({
+          id: row.id,
+          fieldId: row.field_id,
+          label: row.label,
+          synonyms: row.synonyms || [],
+          description: row.description,
+          createdAt: row.created_at,
+        }));
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = [...entriesStore];
     if (fieldId) {
@@ -207,6 +277,29 @@ export class KnowledgeMasterService {
    * ノード↔マスタのリンク一覧
    */
   static async getLinks(nodeId?: string): Promise<NodeMasterLink[]> {
+    const sb = getSupabase();
+
+    if (sb) {
+      let query = sb.from('node_master_links').select('*');
+
+      if (nodeId) {
+        query = query.eq('node_id', nodeId);
+      }
+
+      const { data, error } = await query;
+
+      if (!error && data) {
+        return data.map(row => ({
+          nodeId: row.node_id,
+          masterEntryId: row.master_entry_id,
+          confidence: row.confidence,
+          confirmed: row.confirmed,
+          createdAt: row.created_at,
+        }));
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     if (nodeId) {
       return linksStore.filter((l) => l.nodeId === nodeId);
@@ -218,6 +311,78 @@ export class KnowledgeMasterService {
    * ナレッジマスタの全階層ツリーを取得
    */
   static async getHierarchy(): Promise<KnowledgeHierarchy> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const [domainsRes, fieldsRes, entriesRes, linksRes] = await Promise.all([
+          sb.from('knowledge_domains').select('*').order('sort_order', { ascending: true }),
+          sb.from('knowledge_fields').select('*').order('sort_order', { ascending: true }),
+          sb.from('knowledge_master_entries').select('*'),
+          sb.from('node_master_links').select('*'),
+        ]);
+
+        if (
+          !domainsRes.error && domainsRes.data &&
+          !fieldsRes.error && fieldsRes.data &&
+          !entriesRes.error && entriesRes.data &&
+          !linksRes.error && linksRes.data
+        ) {
+          const domainMap = new Map(domainsRes.data.map(d => [d.id, d]));
+          const fieldMap = new Map(fieldsRes.data.map(f => [f.id, f]));
+          const entries = entriesRes.data;
+          const links = linksRes.data;
+
+          const domains = domainsRes.data
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((domain) => {
+              const domainFields = fieldsRes.data
+                .filter((f) => f.domain_id === domain.id)
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map((field) => {
+                  const fieldEntries = entries.filter((e) => e.field_id === field.id);
+                  const entryIds = new Set(fieldEntries.map((e) => e.id));
+                  const nodeCount = links.filter((l) => entryIds.has(l.master_entry_id)).length;
+                  return {
+                    id: field.id,
+                    domainId: field.domain_id,
+                    name: field.name,
+                    description: field.description,
+                    sortOrder: field.sort_order,
+                    createdAt: field.created_at,
+                    entries: fieldEntries.map(e => ({
+                      id: e.id,
+                      fieldId: e.field_id,
+                      label: e.label,
+                      synonyms: e.synonyms || [],
+                      description: e.description,
+                      createdAt: e.created_at,
+                    })),
+                    nodeCount,
+                  };
+                });
+              return {
+                id: domain.id,
+                name: domain.name,
+                description: domain.description,
+                color: domain.color,
+                sortOrder: domain.sort_order,
+                createdAt: domain.created_at,
+                fields: domainFields,
+              };
+            });
+
+          const totalEntries = entries.length;
+          const unclassifiedCount = 0;
+
+          return { domains, totalEntries, unclassifiedCount };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
 
     const domains = domainsStore
@@ -228,7 +393,6 @@ export class KnowledgeMasterService {
           .sort((a, b) => a.sortOrder - b.sortOrder)
           .map((field) => {
             const fieldEntries = entriesStore.filter((e) => e.fieldId === field.id);
-            // この分野にリンクされたノード数を計算
             const entryIds = new Set(fieldEntries.map((e) => e.id));
             const nodeCount = linksStore.filter((l) => entryIds.has(l.masterEntryId)).length;
             return { ...field, entries: fieldEntries, nodeCount };
@@ -237,13 +401,7 @@ export class KnowledgeMasterService {
       });
 
     const totalEntries = entriesStore.length;
-
-    // 全ノード数からリンク済みノード数を引いて未分類数を算出
-    // ※ここではリンクストアのユニークnodeId数を使う
-    const linkedNodeIds = new Set(linksStore.map((l) => l.nodeId));
-    // デモでは全ノード44個中、リンクされていないものが未分類
-    // 人名ノード（person）はマスタ対象外なので除外して計算
-    const unclassifiedCount = 0; // デモではキーワード/プロジェクトは全てリンク済み
+    const unclassifiedCount = 0;
 
     return { domains, totalEntries, unclassifiedCount };
   }
@@ -253,13 +411,86 @@ export class KnowledgeMasterService {
    * （本番ではAI API呼び出しに置き換え）
    */
   static async classifyKeyword(label: string): Promise<ClassificationResult | null> {
-    initDemoData();
-
+    const sb = getSupabase();
     const normalizedLabel = label.toLowerCase().trim();
+
+    if (sb) {
+      try {
+        const [entriesRes, fieldsRes, domainsRes] = await Promise.all([
+          sb.from('knowledge_master_entries').select('*'),
+          sb.from('knowledge_fields').select('*'),
+          sb.from('knowledge_domains').select('*'),
+        ]);
+
+        if (
+          !entriesRes.error && entriesRes.data &&
+          !fieldsRes.error && fieldsRes.data &&
+          !domainsRes.error && domainsRes.data
+        ) {
+          const entries = entriesRes.data;
+          const fieldMap = new Map(fieldsRes.data.map(f => [f.id, f]));
+          const domainMap = new Map(domainsRes.data.map(d => [d.id, d]));
+
+          // 完全一致
+          for (const entry of entries) {
+            const candidates = [
+              entry.label.toLowerCase(),
+              ...(entry.synonyms || []).map((s: string) => s.toLowerCase()),
+            ];
+            if (candidates.includes(normalizedLabel)) {
+              const field = fieldMap.get(entry.field_id);
+              const domain = field ? domainMap.get(field.domain_id) : null;
+              if (field && domain) {
+                return {
+                  domainId: domain.id,
+                  domainName: domain.name,
+                  fieldId: field.id,
+                  fieldName: field.name,
+                  masterEntryId: entry.id,
+                  confidence: 0.95,
+                };
+              }
+            }
+          }
+
+          // 部分一致
+          for (const entry of entries) {
+            const candidates = [
+              entry.label.toLowerCase(),
+              ...(entry.synonyms || []).map((s: string) => s.toLowerCase()),
+            ];
+            const partialMatch = candidates.some(
+              (c) => c.includes(normalizedLabel) || normalizedLabel.includes(c)
+            );
+            if (partialMatch) {
+              const field = fieldMap.get(entry.field_id);
+              const domain = field ? domainMap.get(field.domain_id) : null;
+              if (field && domain) {
+                return {
+                  domainId: domain.id,
+                  domainName: domain.name,
+                  fieldId: field.id,
+                  fieldName: field.name,
+                  masterEntryId: entry.id,
+                  confidence: 0.7,
+                };
+              }
+            }
+          }
+
+          return null;
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
+    initDemoData();
 
     // マスタキーワードの完全一致・同義語マッチ
     for (const entry of entriesStore) {
-      const candidates = [entry.label.toLowerCase(), ...entry.synonyms.map((s) => s.toLowerCase())];
+      const candidates = [entry.label.toLowerCase(), ...entry.synonyms.map((s: string) => s.toLowerCase())];
       if (candidates.includes(normalizedLabel)) {
         const field = fieldsStore.find((f) => f.id === entry.fieldId);
         const domain = field ? domainsStore.find((d) => d.id === field.domainId) : null;
@@ -278,7 +509,7 @@ export class KnowledgeMasterService {
 
     // 部分一致（同義語に含まれるか）
     for (const entry of entriesStore) {
-      const candidates = [entry.label.toLowerCase(), ...entry.synonyms.map((s) => s.toLowerCase())];
+      const candidates = [entry.label.toLowerCase(), ...entry.synonyms.map((s: string) => s.toLowerCase())];
       const partialMatch = candidates.some(
         (c) => c.includes(normalizedLabel) || normalizedLabel.includes(c)
       );
@@ -309,9 +540,43 @@ export class KnowledgeMasterService {
     masterEntryId: string,
     confidence: number = 0.9
   ): Promise<NodeMasterLink> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('node_master_links')
+          .upsert(
+            {
+              node_id: nodeId,
+              master_entry_id: masterEntryId,
+              confidence,
+              confirmed: false,
+              created_at: now,
+            },
+            { onConflict: 'node_id,master_entry_id' }
+          )
+          .select()
+          .single();
+
+        if (!error && data) {
+          return {
+            nodeId: data.node_id,
+            masterEntryId: data.master_entry_id,
+            confidence: data.confidence,
+            confirmed: data.confirmed,
+            createdAt: data.created_at,
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
 
-    // 既存リンクを更新または新規作成
     const existing = linksStore.find(
       (l) => l.nodeId === nodeId && l.masterEntryId === masterEntryId
     );
@@ -325,7 +590,7 @@ export class KnowledgeMasterService {
       masterEntryId,
       confidence,
       confirmed: false,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     linksStore.push(link);
     return link;
@@ -335,6 +600,33 @@ export class KnowledgeMasterService {
    * リンクをユーザー確認済みにする
    */
   static async confirmLink(nodeId: string, masterEntryId: string): Promise<NodeMasterLink | null> {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('node_master_links')
+          .update({ confirmed: true })
+          .eq('node_id', nodeId)
+          .eq('master_entry_id', masterEntryId)
+          .select()
+          .single();
+
+        if (!error && data) {
+          return {
+            nodeId: data.node_id,
+            masterEntryId: data.master_entry_id,
+            confidence: data.confidence,
+            confirmed: data.confirmed,
+            createdAt: data.created_at,
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const link = linksStore.find(
       (l) => l.nodeId === nodeId && l.masterEntryId === masterEntryId
@@ -354,14 +646,58 @@ export class KnowledgeMasterService {
     description: string,
     color: string
   ): Promise<KnowledgeDomain> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+    const id = `domain_${Date.now()}`;
+
+    if (sb) {
+      try {
+        const { data: maxData } = await sb
+          .from('knowledge_domains')
+          .select('sort_order')
+          .order('sort_order', { ascending: false })
+          .limit(1)
+          .single();
+
+        const sortOrder = (maxData?.sort_order || 0) + 1;
+
+        const { data, error } = await sb
+          .from('knowledge_domains')
+          .insert({
+            id,
+            name,
+            description,
+            color,
+            sort_order: sortOrder,
+            created_at: now,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            color: data.color,
+            sortOrder: data.sort_order,
+            createdAt: data.created_at,
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const domain: KnowledgeDomain = {
-      id: `domain_${Date.now()}`,
+      id,
       name,
       description,
       color,
       sortOrder: domainsStore.length + 1,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     domainsStore.push(domain);
     return domain;
@@ -375,15 +711,60 @@ export class KnowledgeMasterService {
     name: string,
     description: string
   ): Promise<KnowledgeField> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+    const id = `field_${Date.now()}`;
+
+    if (sb) {
+      try {
+        const { data: maxData } = await sb
+          .from('knowledge_fields')
+          .select('sort_order')
+          .eq('domain_id', domainId)
+          .order('sort_order', { ascending: false })
+          .limit(1)
+          .single();
+
+        const sortOrder = (maxData?.sort_order || 0) + 1;
+
+        const { data, error } = await sb
+          .from('knowledge_fields')
+          .insert({
+            id,
+            domain_id: domainId,
+            name,
+            description,
+            sort_order: sortOrder,
+            created_at: now,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          return {
+            id: data.id,
+            domainId: data.domain_id,
+            name: data.name,
+            description: data.description,
+            sortOrder: data.sort_order,
+            createdAt: data.created_at,
+          };
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const existingFields = fieldsStore.filter((f) => f.domainId === domainId);
     const field: KnowledgeField = {
-      id: `field_${Date.now()}`,
+      id,
       domainId,
       name,
       description,
       sortOrder: existingFields.length + 1,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
     };
     fieldsStore.push(field);
     return field;
@@ -395,6 +776,49 @@ export class KnowledgeMasterService {
   static async getDomainStats(): Promise<
     { domainId: string; domainName: string; color: string; nodeCount: number; fieldCount: number }[]
   > {
+    const sb = getSupabase();
+
+    if (sb) {
+      try {
+        const [domainsRes, fieldsRes, entriesRes, linksRes] = await Promise.all([
+          sb.from('knowledge_domains').select('*').order('sort_order', { ascending: true }),
+          sb.from('knowledge_fields').select('*'),
+          sb.from('knowledge_master_entries').select('*'),
+          sb.from('node_master_links').select('*'),
+        ]);
+
+        if (
+          !domainsRes.error && domainsRes.data &&
+          !fieldsRes.error && fieldsRes.data &&
+          !entriesRes.error && entriesRes.data &&
+          !linksRes.error && linksRes.data
+        ) {
+          return domainsRes.data
+            .sort((a, b) => a.sort_order - b.sort_order)
+            .map((domain) => {
+              const domainFields = fieldsRes.data.filter((f) => f.domain_id === domain.id);
+              const fieldIds = new Set(domainFields.map((f) => f.id));
+              const domainEntryIds = new Set(
+                entriesRes.data.filter((e) => fieldIds.has(e.field_id)).map((e) => e.id)
+              );
+              const nodeCount = linksRes.data.filter((l) =>
+                domainEntryIds.has(l.master_entry_id)
+              ).length;
+              return {
+                domainId: domain.id,
+                domainName: domain.name,
+                color: domain.color,
+                nodeCount,
+                fieldCount: domainFields.length,
+              };
+            });
+        }
+      } catch (err) {
+        // Fall through to demo data
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return domainsStore
       .sort((a, b) => a.sortOrder - b.sortOrder)

@@ -2,6 +2,7 @@
 // タスクに対する認識範囲（構想面・結果面）を管理する
 
 import { ClusterData, ClusterDiff, NodeData } from '@/lib/types';
+import { getSupabase } from '@/lib/supabase';
 
 // インメモリストア（本番はSupabase）
 let clustersStore: ClusterData[] = [];
@@ -135,6 +136,36 @@ export class ClusterService {
    * クラスター一覧取得
    */
   static async getClusters(userId: string, taskId?: string): Promise<ClusterData[]> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        let query = sb
+          .from('node_clusters')
+          .select('id, task_id, user_id, cluster_type, summary, created_at, cluster_nodes(node_id)');
+
+        query = query.eq('user_id', userId);
+        if (taskId) {
+          query = query.eq('task_id', taskId);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        return (data || []).map((row: any) => ({
+          id: row.id,
+          taskId: row.task_id,
+          userId: row.user_id,
+          clusterType: row.cluster_type as 'ideation' | 'result',
+          nodeIds: (row.cluster_nodes || []).map((cn: any) => cn.node_id),
+          summary: row.summary,
+          createdAt: row.created_at,
+        }));
+      } catch (error) {
+        console.error('Error fetching clusters from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = clustersStore.filter((c) => c.userId === userId);
     if (taskId) {
@@ -153,16 +184,84 @@ export class ClusterService {
     nodeIds: string[],
     summary?: string
   ): Promise<ClusterData> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const now = new Date().toISOString();
+        const uniqueNodeIds = Array.from(new Set(nodeIds));
+
+        // Try to find existing cluster
+        const { data: existing } = await sb
+          .from('node_clusters')
+          .select('id')
+          .eq('task_id', taskId)
+          .eq('user_id', userId)
+          .eq('cluster_type', clusterType)
+          .single();
+
+        let clusterId: string;
+        let createdAt: string = now;
+
+        if (existing) {
+          clusterId = existing.id;
+          // Update existing cluster
+          await sb
+            .from('node_clusters')
+            .update({ summary })
+            .eq('id', clusterId);
+
+          // Clear and re-add cluster nodes
+          await sb.from('cluster_nodes').delete().eq('cluster_id', clusterId);
+        } else {
+          // Insert new cluster
+          const { data: newCluster, error: insertError } = await sb
+            .from('node_clusters')
+            .insert({
+              task_id: taskId,
+              user_id: userId,
+              cluster_type: clusterType,
+              summary,
+              created_at: now,
+            })
+            .select()
+            .single();
+
+          if (insertError) throw insertError;
+          clusterId = newCluster.id;
+          createdAt = newCluster.created_at;
+        }
+
+        // Insert cluster node relationships
+        const clusterNodeRows = uniqueNodeIds.map((nodeId) => ({
+          cluster_id: clusterId,
+          node_id: nodeId,
+        }));
+
+        await sb.from('cluster_nodes').insert(clusterNodeRows);
+
+        return {
+          id: clusterId,
+          taskId,
+          userId,
+          clusterType,
+          nodeIds: uniqueNodeIds,
+          summary,
+          createdAt,
+        };
+      } catch (error) {
+        console.error('Error upserting cluster to Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const now = new Date().toISOString();
 
-    // 既存クラスター検索
     const existing = clustersStore.find(
       (c) => c.taskId === taskId && c.userId === userId && c.clusterType === clusterType
     );
 
     if (existing) {
-      // ノードIDをマージ（重複除去）
       existing.nodeIds = Array.from(new Set([...existing.nodeIds, ...nodeIds]));
       if (summary) {
         existing.summary = summary;
@@ -188,6 +287,46 @@ export class ClusterService {
    * タスクの構想面と結果面の差分を計算する
    */
   static async getClusterDiff(taskId: string, userId: string): Promise<ClusterDiff | null> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data: clusters, error } = await sb
+          .from('node_clusters')
+          .select('id, cluster_type, cluster_nodes(node_id)')
+          .eq('task_id', taskId)
+          .eq('user_id', userId);
+
+        if (error) throw error;
+
+        const ideation = (clusters || []).find((c) => c.cluster_type === 'ideation');
+        const result = (clusters || []).find((c) => c.cluster_type === 'result');
+
+        if (!ideation) return null;
+
+        const ideationNodeIds = (ideation.cluster_nodes || []).map((cn: any) => cn.node_id);
+        const resultNodeIds = (result?.cluster_nodes || []).map((cn: any) => cn.node_id);
+
+        const ideationSet = new Set(ideationNodeIds);
+        const resultSet = new Set(resultNodeIds);
+
+        const addedNodeIds = Array.from(resultSet).filter((id) => !ideationSet.has(id));
+        const removedNodeIds = Array.from(ideationSet).filter((id) => !resultSet.has(id));
+
+        return {
+          taskId,
+          userId,
+          ideationNodeIds,
+          resultNodeIds,
+          addedNodeIds,
+          removedNodeIds,
+          discoveredOnPath: addedNodeIds,
+        };
+      } catch (error) {
+        console.error('Error fetching cluster diff from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
 
     const ideation = clustersStore.find(
@@ -202,10 +341,7 @@ export class ClusterService {
     const ideationSet = new Set(ideation.nodeIds);
     const resultSet = new Set(result?.nodeIds || []);
 
-    // 結果にあって構想になかったノード（広がった範囲）
     const addedNodeIds = Array.from(resultSet).filter((id) => !ideationSet.has(id));
-
-    // 構想にあって結果になかったノード（狭まった範囲）
     const removedNodeIds = Array.from(ideationSet).filter((id) => !resultSet.has(id));
 
     return {
@@ -215,7 +351,7 @@ export class ClusterService {
       resultNodeIds: result?.nodeIds || [],
       addedNodeIds,
       removedNodeIds,
-      discoveredOnPath: addedNodeIds, // 経路上の発見 ≈ 追加されたノード
+      discoveredOnPath: addedNodeIds,
     };
   }
 

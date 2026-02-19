@@ -3,6 +3,7 @@
 // AI自動記録＋ユーザー手動記録の2方式
 
 import type { CheckpointData } from '@/lib/types';
+import { getSupabase } from '@/lib/supabase';
 
 // インメモリストア（本番はSupabase）
 let checkpointsStore: CheckpointData[] = [];
@@ -85,6 +86,37 @@ export class CheckpointService {
    * タスクのチェックポイント一覧を取得
    */
   static async getCheckpoints(taskId?: string, userId?: string): Promise<CheckpointData[]> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        let query = sb.from('checkpoints').select('*');
+
+        if (taskId) {
+          query = query.eq('task_id', taskId);
+        }
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+
+        const { data, error } = await query.order('timestamp', { ascending: true });
+        if (error) throw error;
+
+        return (data || []).map((row) => ({
+          id: row.id,
+          taskId: row.task_id,
+          userId: row.user_id,
+          nodeIds: row.node_ids || [],
+          timestamp: row.timestamp,
+          source: row.source as 'auto' | 'manual',
+          summary: row.summary,
+          createdAt: row.created_at,
+        }));
+      } catch (error) {
+        console.error('Error fetching checkpoints from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     let result = [...checkpointsStore];
 
@@ -110,6 +142,43 @@ export class CheckpointService {
     source: 'auto' | 'manual',
     summary?: string
   ): Promise<CheckpointData> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const now = new Date().toISOString();
+
+        const { data, error } = await sb
+          .from('checkpoints')
+          .insert({
+            task_id: taskId,
+            user_id: userId,
+            node_ids: nodeIds,
+            timestamp: now,
+            source,
+            summary,
+            created_at: now,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        return {
+          id: data.id,
+          taskId: data.task_id,
+          userId: data.user_id,
+          nodeIds: data.node_ids || [],
+          timestamp: data.timestamp,
+          source: data.source as 'auto' | 'manual',
+          summary: data.summary,
+          createdAt: data.created_at,
+        };
+      } catch (error) {
+        console.error('Error adding checkpoint to Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     const now = new Date().toISOString();
 
@@ -132,6 +201,34 @@ export class CheckpointService {
    * チェックポイントをIDで取得
    */
   static async getCheckpointById(id: string): Promise<CheckpointData | null> {
+    const sb = getSupabase();
+    if (sb) {
+      try {
+        const { data, error } = await sb
+          .from('checkpoints')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (error && error.code !== 'PGRST116') throw error;
+        if (data) {
+          return {
+            id: data.id,
+            taskId: data.task_id,
+            userId: data.user_id,
+            nodeIds: data.node_ids || [],
+            timestamp: data.timestamp,
+            source: data.source as 'auto' | 'manual',
+            summary: data.summary,
+            createdAt: data.created_at,
+          };
+        }
+      } catch (error) {
+        console.error('Error fetching checkpoint from Supabase:', error);
+      }
+    }
+
+    // Fallback to demo data
     initDemoData();
     return checkpointsStore.find((cp) => cp.id === id) || null;
   }

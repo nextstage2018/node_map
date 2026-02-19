@@ -38,6 +38,7 @@
 | Phase 8：ナレッジマスタ基盤 | ✅ 完了 | 2026-02-19 | 3階層分類体系・AI自動分類・管理画面・マップ統合 |
 | Phase 9：関係値情報基盤 | ✅ 完了 | 2026-02-19 | コンタクト統合管理・関係属性AI推定・管理画面・マップ統合 |
 | Phase 10：思考マップUI改修 | ✅ 完了 | 2026-02-19 | ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示 |
+| Phase 11：Supabase接続 | ✅ 完了 | 2026-02-19 | 16テーブル作成・全7サービスのDB切り替え・デモモード併存 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -267,6 +268,10 @@
 | 2026-02-19 | チェックポイントサービスを新規作成 | checkpoint.service.ts + /api/checkpoints。デモ6件。手動記録ボタン+自動記録対応 |
 | 2026-02-19 | ノード表示フィルターを導入 | NodeFilterMode: keyword_only(デフォルト)/with_person/with_project/all。再定義v2の純化原則に基づく |
 | 2026-02-19 | filteredDataロジックをfilterMode+領域フィルターの二重適用に変更 | エッジもフィルタリング後のノードIDに基づいて絞り込み |
+| 2026-02-19 | Phase 11: Supabase接続を実装 | 16テーブル作成（004_phase7_10_schema.sql追加）。全7サービスにSupabase切り替え対応 |
+| 2026-02-19 | supabase.tsにisSupabaseConfigured()/getSupabase()を追加 | Supabase未設定時はnullを返し、デモモードにフォールバック |
+| 2026-02-19 | 全サービスに「Supabase有→DB / 無→デモデータ」パターンを適用 | taskClient, nodeClient, edgeClient, clusterClient, checkpoint, knowledgeMaster, contactPerson |
+| 2026-02-19 | Vercel+Supabase連携で環境変数自動設定済み | NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY |
 
 ---
 
@@ -432,7 +437,8 @@ node_map/
 ├── supabase/
 │   ├── 001_initial_schema.sql
 │   ├── 002_tasks_schema.sql
-│   └── 003_nodemap_schema.sql        ← ノード・エッジ・クラスターDB
+│   ├── 003_nodemap_schema.sql        ← ノード・エッジ・クラスターDB
+│   └── 004_phase7_10_schema.sql     ← Phase 7-10追加テーブル・カラム
 └── package.json
 ```
 
@@ -533,6 +539,31 @@ node_map/
   - AI自動チェックポイント記録は基本構造のみ（source='auto'のデモデータあり、実際のAI記録ロジックは未実装）
   - 比較モード時のNetworkGraphにはcheckpointsを未渡し（通常モードのみ対応）
 
+### Phase 10 → Phase 11（Supabase接続）への引き継ぎ
+- **実装したファイル構成：** supabase.ts（ヘルパー追加）, supabase/004_phase7_10_schema.sql, supabase_full_schema.sql, 全7サービスファイル
+- **Supabase接続の設計：**
+  - supabase.tsに`isSupabaseConfigured()`/`getSupabase()`ヘルパーを追加
+  - `getSupabase()`がnullならデモモード、SupabaseClientならDB接続という分岐パターン
+  - 16テーブルをSQL Editorで一括作成（supabase_full_schema.sql）
+  - マイグレーションファイルは004_phase7_10_schema.sqlを追加（Phase 7-10で追加されたテーブル・カラム）
+  - DB側はsnake_case、TypeScript側はcamelCaseで、各サービスにマッピング関数を配置
+- **変更した7サービスファイル：**
+  - taskClient.service.ts — tasks/task_conversations/jobs/seeds
+  - nodeClient.service.ts — user_nodes/node_source_contexts
+  - edgeClient.service.ts — node_edges/edge_tasks
+  - clusterClient.service.ts — node_clusters/cluster_nodes
+  - checkpoint.service.ts — checkpoints
+  - knowledgeMaster.service.ts — knowledge_domains/knowledge_fields/knowledge_master_entries/node_master_links
+  - contactPerson.service.ts — contact_persons/contact_channels
+- **環境変数：**
+  - Vercel+Supabase連携により自動設定済み（NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY）
+  - ローカル開発時は.env.localに設定（未設定ならデモモードで動作）
+- **注意点：**
+  - RLS（Row Level Security）は未設定。本番運用前に要設定
+  - user_idは全テーブルに存在するが、認証(Auth)連携は未実装。現在はデモ用固定ID
+  - デモデータはサービスファイル内にハードコードで残存（Supabase未接続時のフォールバック用）
+  - settingsClient.service.tsは未変更（設定データの暗号化保存は別途対応要）
+
 ### Phase 8 → Phase 9（関係値情報基盤）への引き継ぎ
 - **実装したファイル構成：** contactPerson.service.ts + api/contacts/* + components/contacts/* + contacts/page.tsx + useContacts.ts
 - **コンタクト管理の設計：**
@@ -565,7 +596,7 @@ node_map/
 6. **ナレッジマスタ基盤** — ✅完了（2026-02-19）3階層体系（領域→分野→キーワード）、AI自動分類、管理画面、マップ統合
 7. **関係値情報基盤** — ✅完了（2026-02-19）コンタクト統合管理・関係属性AI推定・管理画面・マップ統合
 8. **思考マップUI改修** — ✅完了（2026-02-19）ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示
-9. **Supabase接続** — インメモリからDBへの切り替え
+9. **Supabase接続** — ✅完了（2026-02-19）16テーブル作成・全7サービスのDB切り替え・デモモード併存
 10. **APIキー準備・実データ検証**
 
 ---
