@@ -4,6 +4,9 @@ import { fetchSlackMessages } from '@/services/slack/slackClient.service';
 import { fetchChatworkMessages } from '@/services/chatwork/chatworkClient.service';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { UnifiedMessage } from '@/lib/types';
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 
 export async function GET() {
   try {
