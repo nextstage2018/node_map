@@ -14,9 +14,9 @@ export default function ThreadView({ messages }: ThreadViewProps) {
   }
 
   return (
-    <div className="border-t border-gray-200 bg-gray-50">
-      <div className="px-6 py-3 border-b border-gray-200">
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+    <div className="border-t border-slate-200 bg-slate-50">
+      <div className="px-6 py-3 border-b border-slate-200">
+        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
           💬 会話の履歴（{messages.length}件）
         </h3>
       </div>
@@ -34,14 +34,14 @@ export default function ThreadView({ messages }: ThreadViewProps) {
                 'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
                 msg.isOwn
                   ? 'bg-blue-600 text-white rounded-br-sm'
-                  : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                  : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
               )}
             >
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className={cn(
                     'text-xs font-semibold',
-                    msg.isOwn ? 'text-blue-100' : 'text-gray-500'
+                    msg.isOwn ? 'text-blue-100' : 'text-slate-500'
                   )}
                 >
                   {msg.isOwn ? 'あなた' : msg.from.name}
@@ -49,7 +49,7 @@ export default function ThreadView({ messages }: ThreadViewProps) {
                 <span
                   className={cn(
                     'text-[10px]',
-                    msg.isOwn ? 'text-blue-200' : 'text-gray-400'
+                    msg.isOwn ? 'text-blue-200' : 'text-slate-400'
                   )}
                 >
                   {formatRelativeTime(msg.timestamp)}

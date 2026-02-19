@@ -29,11 +29,11 @@ const NODE_SHAPE: Record<string, string> = {
   project: 'square',
 };
 
-// 理解度の色
+// 理解度の色（3色システム準拠：slate / primary-blue / success-green）
 const LEVEL_COLOR: Record<string, string> = {
-  recognition: '#94A3B8',  // gray
-  understanding: '#3B82F6', // blue
-  mastery: '#10B981',       // green
+  recognition: '#94A3B8',   // nm-text-muted (slate-400)
+  understanding: '#2563EB', // nm-primary (blue-600)
+  mastery: '#16A34A',       // nm-success (green-600)
 };
 
 export default function NetworkGraph({
@@ -44,7 +44,7 @@ export default function NetworkGraph({
   selectedTaskId,
   width = 800,
   height = 600,
-  userColor = '#3B82F6',
+  userColor = '#2563EB',
 }: NetworkGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
@@ -129,7 +129,7 @@ export default function NetworkGraph({
         const clusterNodes = simNodes.filter((n) => cluster.nodeIds.includes(n.id));
         if (clusterNodes.length === 0) return;
 
-        const color = cluster.clusterType === 'ideation' ? '#3B82F6' : '#10B981';
+        const color = cluster.clusterType === 'ideation' ? '#2563EB' : '#16A34A';
         const opacity = cluster.clusterType === 'ideation' ? 0.08 : 0.12;
 
         // フォースシミュレーション後に位置更新
@@ -320,7 +320,7 @@ export default function NetworkGraph({
       ref={svgRef}
       width={width}
       height={height}
-      className="bg-gray-50 rounded-xl border border-gray-200"
+      className="bg-slate-50 rounded-xl border border-slate-200"
       style={{ minHeight: '400px' }}
     />
   );

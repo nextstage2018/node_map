@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 import type { ChannelAuth, ChannelAuthType } from '@/lib/types';
 import { CHANNEL_AUTH_CONFIG, AUTH_STATUS_CONFIG } from '@/lib/constants';
@@ -35,15 +36,15 @@ export default function ChannelAuthCard({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+    <div className="bg-white rounded-2xl border border-slate-200 p-5">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gray-50 flex items-center justify-center text-xl">
-            {config.icon}
+          <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center">
+            <Image src={config.icon} alt={config.label} width={24} height={24} />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-gray-900">{config.label}</h3>
-            <p className="text-xs text-gray-500">{config.description}</p>
+            <h3 className="text-sm font-bold text-slate-900">{config.label}</h3>
+            <p className="text-xs text-slate-500">{config.description}</p>
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -112,7 +113,7 @@ export default function ChannelAuthCard({
               config.authButtonLabel
             )}
           </Button>
-          <p className="text-[10px] text-gray-400 mt-1.5 text-center">
+          <p className="text-[10px] text-slate-400 mt-1.5 text-center">
             {config.authMethod} で認証します
           </p>
         </div>

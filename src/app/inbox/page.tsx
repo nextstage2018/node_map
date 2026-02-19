@@ -23,9 +23,9 @@ export default function InboxPage() {
         <Sidebar messageCounts={messageCounts} unreadCounts={unreadCounts} />
         <div className="flex flex-1 overflow-hidden">
           {/* メッセージ一覧 */}
-          <div className="w-96 border-r border-gray-200 flex flex-col">
-            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-900">
+          <div className="w-96 border-r border-slate-200 flex flex-col">
+            <div className="p-3 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-slate-900">
                 📥 統合インボックス
               </h2>
               <button
@@ -44,7 +44,7 @@ export default function InboxPage() {
             )}
 
             {isLoading && messages.length === 0 ? (
-              <div className="flex-1 flex items-center justify-center text-gray-400">
+              <div className="flex-1 flex items-center justify-center text-slate-400">
                 <div className="text-center">
                   <div className="animate-spin text-2xl mb-2">⏳</div>
                   <p className="text-sm">メッセージを読み込み中...</p>

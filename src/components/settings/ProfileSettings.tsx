@@ -43,12 +43,12 @@ export default function ProfileSettings({ profile, onSave }: ProfileSettingsProp
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6">
-      <h2 className="text-base font-bold text-gray-900 mb-4">プロフィール設定</h2>
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+      <h2 className="text-base font-bold text-slate-900 mb-4">プロフィール設定</h2>
 
       <div className="space-y-4 max-w-md">
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
             表示名
           </label>
           <input
@@ -56,12 +56,12 @@ export default function ProfileSettings({ profile, onSave }: ProfileSettingsProp
             value={form.displayName}
             onChange={(e) => setForm((prev) => ({ ...prev, displayName: e.target.value }))}
             placeholder="あなたの名前"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
             メールアドレス
           </label>
           <input
@@ -69,18 +69,18 @@ export default function ProfileSettings({ profile, onSave }: ProfileSettingsProp
             value={form.email}
             onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
             placeholder="email@example.com"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">
+          <label className="block text-xs font-semibold text-slate-600 mb-1">
             タイムゾーン
           </label>
           <select
             value={form.timezone}
             onChange={(e) => setForm((prev) => ({ ...prev, timezone: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
           >
             {TIMEZONE_OPTIONS.map((tz) => (
               <option key={tz.value} value={tz.value}>

@@ -121,19 +121,19 @@ export default function TasksPage() {
     visibleSuggestions.length > 0 ? visibleSuggestions : suggestions;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
+    <div className="flex flex-col h-screen bg-slate-100">
       <Header />
 
       <div className="flex flex-1 overflow-hidden">
         {/* 左：タスクボード */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* ツールバー */}
-          <div className="px-4 py-3 flex items-center justify-between bg-white border-b border-gray-200">
+          <div className="px-4 py-3 flex items-center justify-between bg-white border-b border-slate-200">
             <div className="flex items-center gap-3">
-              <h2 className="text-sm font-semibold text-gray-900">
+              <h2 className="text-sm font-semibold text-slate-900">
                 📋 タスクボード
               </h2>
-              <div className="flex items-center gap-2 text-xs text-gray-400">
+              <div className="flex items-center gap-2 text-xs text-slate-400">
                 <span>未着手 {statusCounts.todo}</span>
                 <span>・</span>
                 <span>進行中 {statusCounts.in_progress}</span>
@@ -200,7 +200,7 @@ export default function TasksPage() {
         </div>
 
         {/* 右：タスク詳細 + AI会話 */}
-        <div className="w-[480px] border-l border-gray-200 bg-white shrink-0">
+        <div className="w-[480px] border-l border-slate-200 bg-white shrink-0">
           <TaskDetail
             task={selectedTask}
             onUpdate={updateTask}
@@ -228,7 +228,7 @@ function DragOverlayCard({ task }: { task: Task }) {
   return (
     <div className="p-3 rounded-lg border border-blue-400 bg-white shadow-xl w-[280px] rotate-2 opacity-90">
       <div className="flex items-start justify-between gap-2 mb-2">
-        <h3 className="text-sm font-medium text-gray-900 leading-tight line-clamp-2">
+        <h3 className="text-sm font-medium text-slate-900 leading-tight line-clamp-2">
           {task.title}
         </h3>
         <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0', priority.badgeColor)}>
@@ -236,7 +236,7 @@ function DragOverlayCard({ task }: { task: Task }) {
         </span>
       </div>
       {task.description && (
-        <p className="text-xs text-gray-500 mb-2 line-clamp-2">
+        <p className="text-xs text-slate-500 mb-2 line-clamp-2">
           {task.description}
         </p>
       )}
@@ -249,7 +249,7 @@ function DragOverlayCard({ task }: { task: Task }) {
         >
           {phase.icon} {phase.label}
         </span>
-        <span className="text-[10px] text-gray-400">
+        <span className="text-[10px] text-slate-400">
           {formatRelativeTime(task.updatedAt)}
         </span>
       </div>

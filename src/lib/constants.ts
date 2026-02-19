@@ -1,33 +1,38 @@
-// NodeMap 定数定義
+// NodeMap 定数定義（v2: 配色3色統一・アイコン公式ロゴ統一）
+
+// ===== 配色ルール =====
+// 基本3色: primary(青) / neutral(グレー) / dark(ネイビー)
+// 例外4色: success(緑) / warning(橙) / danger(赤) / info(水色)
+// チャネルブランド色はSVGロゴ内のみ（UI背景・テキストには使わない）
 
 export const CHANNEL_CONFIG = {
   email: {
     label: 'Gmail',
     icon: '/icons/gmail.svg',
-    color: '#EA4335',
-    bgColor: 'bg-red-50',
-    textColor: 'text-red-700',
-    borderColor: 'border-red-200',
+    color: '#EA4335', // SVGロゴ用のみ
+    bgColor: 'bg-slate-50',
+    textColor: 'text-slate-700',
+    borderColor: 'border-slate-200',
   },
   slack: {
     label: 'Slack',
     icon: '/icons/slack.svg',
-    color: '#4A154B',
-    bgColor: 'bg-purple-50',
-    textColor: 'text-purple-700',
-    borderColor: 'border-purple-200',
+    color: '#611F69', // SVGロゴ用のみ
+    bgColor: 'bg-slate-50',
+    textColor: 'text-slate-700',
+    borderColor: 'border-slate-200',
   },
   chatwork: {
     label: 'Chatwork',
     icon: '/icons/chatwork.svg',
-    color: '#DE5246',
-    bgColor: 'bg-orange-50',
-    textColor: 'text-orange-700',
-    borderColor: 'border-orange-200',
+    color: '#C4161C', // SVGロゴ用のみ
+    bgColor: 'bg-slate-50',
+    textColor: 'text-slate-700',
+    borderColor: 'border-slate-200',
   },
 } as const;
 
-// メッセージステータスの表示設定
+// メッセージステータスの表示設定（例外色: ステータス専用）
 export const STATUS_CONFIG = {
   unread: {
     label: '未読',
@@ -37,9 +42,9 @@ export const STATUS_CONFIG = {
   },
   read: {
     label: '既読',
-    dotColor: 'bg-gray-300',
-    textColor: 'text-gray-400',
-    bgColor: 'bg-gray-50',
+    dotColor: 'bg-slate-300',
+    textColor: 'text-slate-400',
+    bgColor: 'bg-slate-50',
   },
   replied: {
     label: '返信済み',
@@ -58,8 +63,8 @@ export const ITEMS_PER_PAGE = 50;
 export const TASK_STATUS_CONFIG = {
   todo: {
     label: '未着手',
-    color: 'bg-gray-100 text-gray-700',
-    dotColor: 'bg-gray-400',
+    color: 'bg-slate-100 text-slate-700',
+    dotColor: 'bg-slate-400',
   },
   in_progress: {
     label: '進行中',
@@ -86,8 +91,8 @@ export const TASK_PRIORITY_CONFIG = {
   },
   low: {
     label: '低',
-    color: 'bg-gray-50 text-gray-500 border border-gray-200',
-    badgeColor: 'bg-gray-400 text-white',
+    color: 'bg-slate-50 text-slate-500 border border-slate-200',
+    badgeColor: 'bg-slate-400 text-white',
   },
 } as const;
 
@@ -95,19 +100,19 @@ export const TASK_PHASE_CONFIG = {
   ideation: {
     label: '構想',
     description: 'ゴールイメージと関連要素を整理',
-    icon: '💡',
+    icon: '/icons/phase-ideation.svg',
     color: 'bg-amber-100 text-amber-700',
   },
   progress: {
     label: '進行',
     description: '自由に作業・AIと会話',
-    icon: '🔄',
+    icon: '/icons/phase-progress.svg',
     color: 'bg-blue-100 text-blue-700',
   },
   result: {
     label: '結果',
     description: 'アウトプットをまとめて完了',
-    icon: '✅',
+    icon: '/icons/phase-result.svg',
     color: 'bg-green-100 text-green-700',
   },
 } as const;
@@ -118,12 +123,12 @@ export const IDEATION_PROMPTS = [
   '関連しそうな要素や、気になるポイントはありますか？',
 ] as const;
 
-// 構想メモのテンプレートフィールド
+// 構想メモのテンプレートフィールド（アイコンをSVGパスに変更）
 export const IDEATION_MEMO_FIELDS = [
-  { key: 'goal', label: 'ゴール', placeholder: '完了条件・達成イメージ', icon: '🎯' },
-  { key: 'content', label: '主な内容', placeholder: 'やるべきこと・作業の範囲', icon: '📝' },
-  { key: 'concerns', label: '気になる点', placeholder: 'リスク・不明点・依存事項', icon: '⚠️' },
-  { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '📅' },
+  { key: 'goal', label: 'ゴール', placeholder: '完了条件・達成イメージ', icon: '/icons/memo-goal.svg' },
+  { key: 'content', label: '主な内容', placeholder: 'やるべきこと・作業の範囲', icon: '/icons/memo-content.svg' },
+  { key: 'concerns', label: '気になる点', placeholder: 'リスク・不明点・依存事項', icon: '/icons/memo-concerns.svg' },
+  { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '/icons/memo-deadline.svg' },
 ] as const;
 
 // ===== Phase 3: 設定関連定数 =====
@@ -132,8 +137,8 @@ export const SERVICE_CONFIG = {
   email: {
     label: 'Gmail',
     description: 'Googleメール連携',
-    icon: '📧',
-    color: 'bg-red-50 text-red-700 border-red-200',
+    icon: '/icons/gmail.svg',
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
     fields: [
       { key: 'clientId', label: 'Client ID', type: 'text' as const, placeholder: 'Google Cloud Console で取得', required: true },
       { key: 'clientSecret', label: 'Client Secret', type: 'password' as const, placeholder: '●●●●●●●●', required: true },
@@ -143,8 +148,8 @@ export const SERVICE_CONFIG = {
   slack: {
     label: 'Slack',
     description: 'Slackワークスペース連携',
-    icon: '💬',
-    color: 'bg-purple-50 text-purple-700 border-purple-200',
+    icon: '/icons/slack.svg',
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
     fields: [
       { key: 'botToken', label: 'Bot Token', type: 'password' as const, placeholder: 'xoxb-xxxx', required: true },
       { key: 'appToken', label: 'App Token（任意）', type: 'password' as const, placeholder: 'xapp-xxxx', required: false },
@@ -154,8 +159,8 @@ export const SERVICE_CONFIG = {
   chatwork: {
     label: 'Chatwork',
     description: 'Chatworkアカウント連携',
-    icon: '🗨️',
-    color: 'bg-orange-50 text-orange-700 border-orange-200',
+    icon: '/icons/chatwork.svg',
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
     fields: [
       { key: 'apiToken', label: 'APIトークン', type: 'password' as const, placeholder: 'Chatwork設定から取得', required: true },
       { key: 'defaultRoomId', label: 'デフォルトルームID（任意）', type: 'text' as const, placeholder: '123456789', required: false },
@@ -164,8 +169,8 @@ export const SERVICE_CONFIG = {
   anthropic: {
     label: 'Anthropic',
     description: 'AI機能（Claude — 返信下書き・タスク会話・キーワード抽出）',
-    icon: '🤖',
-    color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    icon: '/icons/anthropic.svg',
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
     fields: [
       { key: 'apiKey', label: 'APIキー', type: 'password' as const, placeholder: 'sk-ant-xxxx', required: true },
       { key: 'model', label: 'モデル', type: 'select' as const, placeholder: '', required: true, options: ['claude-opus-4-5-20251101', 'claude-sonnet-4-5-20250929', 'claude-haiku-4-5-20251001'] },
@@ -174,8 +179,8 @@ export const SERVICE_CONFIG = {
   supabase: {
     label: 'Supabase',
     description: 'データベース・認証',
-    icon: '🗄️',
-    color: 'bg-teal-50 text-teal-700 border-teal-200',
+    icon: '/icons/supabase.svg',
+    color: 'bg-slate-50 text-slate-700 border-slate-200',
     fields: [
       { key: 'url', label: 'Project URL', type: 'text' as const, placeholder: 'https://xxxxx.supabase.co', required: true },
       { key: 'anonKey', label: 'Anon Key', type: 'password' as const, placeholder: 'eyJxxxx', required: true },
@@ -191,8 +196,8 @@ export const CONNECTION_STATUS_CONFIG = {
   },
   disconnected: {
     label: '未接続',
-    color: 'bg-gray-100 text-gray-500',
-    dotColor: 'bg-gray-300',
+    color: 'bg-slate-100 text-slate-500',
+    dotColor: 'bg-slate-300',
   },
   error: {
     label: 'エラー',
@@ -228,8 +233,8 @@ export const AUTH_STATUS_CONFIG = {
   },
   unauthenticated: {
     label: '未認証',
-    color: 'bg-gray-100 text-gray-500',
-    dotColor: 'bg-gray-300',
+    color: 'bg-slate-100 text-slate-500',
+    dotColor: 'bg-slate-300',
   },
   expired: {
     label: '期限切れ',
@@ -242,21 +247,21 @@ export const CHANNEL_AUTH_CONFIG = {
   email: {
     label: 'Gmail',
     description: 'Googleアカウントでログインして、メールを取得・送信します',
-    icon: '📧',
+    icon: '/icons/gmail.svg',
     authMethod: 'OAuth 2.0',
     authButtonLabel: 'Googleアカウントで認証',
   },
   slack: {
     label: 'Slack',
     description: 'Slackワークスペースにサインインして、メッセージを取得します',
-    icon: '💬',
+    icon: '/icons/slack.svg',
     authMethod: 'OAuth 2.0',
     authButtonLabel: 'Slackにサインイン',
   },
   chatwork: {
     label: 'Chatwork',
     description: 'Chatworkアカウントでログインして、メッセージを取得します',
-    icon: '🗨️',
+    icon: '/icons/chatwork.svg',
     authMethod: 'OAuth 2.0',
     authButtonLabel: 'Chatworkにログイン',
   },

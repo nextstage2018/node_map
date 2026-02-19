@@ -38,7 +38,7 @@ export default function MessageList({
   return (
     <div className="flex flex-col h-full">
       {/* フィルターバー */}
-      <div className="flex gap-1 p-3 border-b border-gray-200 bg-gray-50">
+      <div className="flex gap-1 p-3 border-b border-slate-200 bg-slate-50">
         {filters.map((f) => (
           <button
             key={f.value}
@@ -47,7 +47,7 @@ export default function MessageList({
               'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
               filter === f.value
                 ? 'bg-blue-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
             )}
           >
             {f.icon && (
@@ -61,7 +61,7 @@ export default function MessageList({
       {/* メッセージ一覧 */}
       <div className="flex-1 overflow-y-auto">
         {filteredMessages.length === 0 ? (
-          <div className="p-8 text-center text-gray-400">
+          <div className="p-8 text-center text-slate-400">
             メッセージがありません
           </div>
         ) : (
@@ -70,7 +70,7 @@ export default function MessageList({
               key={message.id}
               onClick={() => onSelect(message)}
               className={cn(
-                'w-full text-left p-4 border-b border-gray-100 hover:bg-blue-50 transition-colors',
+                'w-full text-left p-4 border-b border-slate-100 hover:bg-blue-50 transition-colors',
                 selectedId === message.id && 'bg-blue-50 border-l-2 border-l-blue-600',
                 message.status === 'unread' && 'bg-white'
               )}
@@ -79,7 +79,7 @@ export default function MessageList({
                 <div className="flex items-center gap-2">
                   <ChannelBadge channel={message.channel} />
                   <span className={cn(
-                    'text-sm text-gray-900',
+                    'text-sm text-slate-900',
                     message.status === 'unread' ? 'font-bold' : 'font-normal'
                   )}>
                     {message.from.name}
@@ -87,7 +87,7 @@ export default function MessageList({
                 </div>
                 <div className="flex items-center gap-2">
                   <StatusBadge status={message.status} />
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-slate-400">
                     {formatRelativeTime(message.timestamp)}
                   </span>
                 </div>
@@ -95,22 +95,22 @@ export default function MessageList({
               {message.subject && (
                 <div className={cn(
                   'text-sm mb-0.5',
-                  message.status === 'unread' ? 'text-gray-900 font-semibold' : 'text-gray-700'
+                  message.status === 'unread' ? 'text-slate-900 font-semibold' : 'text-slate-700'
                 )}>
                   {truncate(message.subject, 40)}
                 </div>
               )}
               {message.metadata.slackChannelName && (
-                <div className="text-xs text-gray-400 mb-0.5">
+                <div className="text-xs text-slate-400 mb-0.5">
                   #{message.metadata.slackChannelName}
                 </div>
               )}
               {message.metadata.chatworkRoomName && (
-                <div className="text-xs text-gray-400 mb-0.5">
+                <div className="text-xs text-slate-400 mb-0.5">
                   {message.metadata.chatworkRoomName}
                 </div>
               )}
-              <div className="text-xs text-gray-500 line-clamp-2">
+              <div className="text-xs text-slate-500 line-clamp-2">
                 {truncate(stripHtml(message.body), 80)}
               </div>
             </button>

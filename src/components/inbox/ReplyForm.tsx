@@ -101,7 +101,7 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
           placeholder="例：丁寧に断る、日程を提案する"
-          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       )}
 
@@ -111,12 +111,12 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
         onChange={(e) => setReplyText(e.target.value)}
         placeholder="返信を入力..."
         rows={6}
-        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
+        className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-sm"
       />
 
       {/* ステータスメッセージ */}
       {statusMessage && (
-        <p className="text-sm text-gray-600">{statusMessage}</p>
+        <p className="text-sm text-slate-600">{statusMessage}</p>
       )}
 
       {/* ボタン */}

@@ -33,6 +33,7 @@
 | Phase 4：データ収集基盤（設計書Phase 3） | ✅ 完了 | 2026-02-18 | キーワード抽出・ノード蓄積・理解度判定・エッジ/クラスター管理 |
 | Phase 5：思考マップUI（設計書Phase 4） | ✅ 完了 | 2026-02-19 | D3.jsネットワークグラフ・段階表示・比較モード |
 | **再定義v2：根本整理** | **✅ 完了** | **2026-02-19** | **ノード純化・ナレッジマスタ・ジョブ/タスク分離等** |
+| Phase 6：UI統一（配色・アイコン） | ✅ 完了 | 2026-02-19 | 3色システム・SVGアイコン13個・gray→slate全置換 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -238,6 +239,10 @@
 | **2026-02-19** | **アイコンを公式ロゴに全画面統一** | **インボックス以外で別アイコンが使われていた問題を解消** |
 | **2026-02-19** | **DB処理速度対策が必要** | **インデックス設計（user_id/キーワード/案件ID/理解度）。将来はキャッシュ層** |
 | **2026-02-19** | **ローカルフォルダ運用を導入** | **current/（最新版）+ history/（差分保存）。ローカルが正、GitHubはコピー** |
+| 2026-02-19 | Phase 6: UI配色を3色システムに統一 | Primary=#2563EB, Neutral=slate, Dark=#1E293B + 例外4色（success/warning/danger/primary-light） |
+| 2026-02-19 | 絵文字アイコンをSVG13個に全面置換 | public/icons/に格納。サービス2個+フェーズ3個+メモ4個+ナビ4個 |
+| 2026-02-19 | Tailwindのgray系をslate系に全統一 | 20ファイル244箇所を一括置換。ブルー系と調和するslateに統一 |
+| 2026-02-19 | NetworkGraph D3色をCSS変数準拠に | LEVEL_COLORをnm-primary/nm-success/nm-text-mutedに合わせて修正 |
 
 ---
 
@@ -249,10 +254,23 @@ node_map/
 ├── docs/
 │   └── README.md
 ├── public/
-│   └── icons/                         ← チャネル公式ロゴSVG
-│       ├── gmail.svg
+│   └── icons/                         ← SVGアイコン（Phase 6で13個に拡充）
+│       ├── gmail.svg                  ← チャネル公式ロゴ
 │       ├── slack.svg
-│       └── chatwork.svg
+│       ├── chatwork.svg
+│       ├── anthropic.svg              ← サービスアイコン
+│       ├── supabase.svg
+│       ├── phase-ideation.svg         ← タスクフェーズ
+│       ├── phase-progress.svg
+│       ├── phase-result.svg
+│       ├── memo-goal.svg              ← 構想メモフィールド
+│       ├── memo-content.svg
+│       ├── memo-concerns.svg
+│       ├── memo-deadline.svg
+│       ├── nav-inbox.svg              ← ナビゲーション
+│       ├── nav-tasks.svg
+│       ├── nav-settings.svg
+│       └── nav-map.svg
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx                 ← ルートレイアウト
@@ -423,7 +441,7 @@ node_map/
 3. **SSOT/設計書のGitHub同期** — ローカルが正、GitHubはコピーの運用を開始
 
 ### 再定義v2の実装（Phase 6以降）
-4. **UI修正** — 配色3色統一、アイコン公式ロゴ統一
+4. **UI修正** — ✅完了（2026-02-19）配色3色統一、SVGアイコン13個、gray→slate全置換
 5. **タスクボード改修** — ジョブ/タスク分離、種ボックス、表示切り替え
 6. **ナレッジマスタ基盤** — 組織共通の3階層分類体系＋AI自動分類
 7. **関係値情報基盤** — チャネル登録フロー、コンタクトリスト、関係属性
@@ -489,10 +507,11 @@ ai-agent/
 | ブランチ | main |
 | user.name | sjinji |
 | user.email | suzuki@next-stage.biz |
-| 認証方式 | Fine-grained personal access token（7日間ローテーション） |
-| トークン | **ローカルのcurrent/NODEMAP_SSOT.mdに記載（GitHub非公開）** |
+| 認証方式 | Fine-grained personal access token |
+| トークン | ローカルのcurrent/NODEMAP_SSOT.mdに記載（GitHub非公開） |
+| 有効期限 | 7日間（短期ローテーション運用） |
 
-> **運用ルール：** トークンはGitHubにプッシュするとSecret Scanningでブロックされるため、ローカルのSSOTにのみ記載。エージェントはローカルSSOTからトークンを取得してプッシュを実行。トークンは7日で期限切れ→新しいトークンを発行しローカルSSOTを更新。
+> **運用ルール：** トークンは7日で期限切れになります。期限が切れたら新しいトークンを発行し、このセクションを更新してください。エージェントはこのトークンを使ってGitHubにプッシュします。
 
 ---
 

@@ -34,19 +34,19 @@ export default function UserPreferencesCard({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 p-6">
-      <h2 className="text-base font-bold text-gray-900 mb-4">表示・通知設定</h2>
+    <div className="bg-white rounded-2xl border border-slate-200 p-6">
+      <h2 className="text-base font-bold text-slate-900 mb-4">表示・通知設定</h2>
       <div className="space-y-4 max-w-md">
         {/* 通知 */}
         <label className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-gray-700">通知</div>
-            <div className="text-xs text-gray-400">新着メッセージの通知を受け取る</div>
+            <div className="text-sm font-medium text-slate-700">通知</div>
+            <div className="text-xs text-slate-400">新着メッセージの通知を受け取る</div>
           </div>
           <button
             onClick={() => setForm((p) => ({ ...p, notificationsEnabled: !p.notificationsEnabled }))}
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              form.notificationsEnabled ? 'bg-blue-600' : 'bg-gray-300'
+              form.notificationsEnabled ? 'bg-blue-600' : 'bg-slate-300'
             }`}
           >
             <div
@@ -59,7 +59,7 @@ export default function UserPreferencesCard({
 
         {/* メールダイジェスト */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
             メールダイジェスト
           </label>
           <select
@@ -67,7 +67,7 @@ export default function UserPreferencesCard({
             onChange={(e) =>
               setForm((p) => ({ ...p, emailDigest: e.target.value as UserPreferences['emailDigest'] }))
             }
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             {EMAIL_DIGEST_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -79,7 +79,7 @@ export default function UserPreferencesCard({
 
         {/* デフォルトフィルタ */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-slate-700 mb-1">
             インボックスのデフォルト表示
           </label>
           <select
@@ -87,7 +87,7 @@ export default function UserPreferencesCard({
             onChange={(e) =>
               setForm((p) => ({ ...p, defaultInboxFilter: e.target.value as UserPreferences['defaultInboxFilter'] }))
             }
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="all">すべて</option>
             <option value="email">Gmail のみ</option>
@@ -99,13 +99,13 @@ export default function UserPreferencesCard({
         {/* AIオートサジェスト */}
         <label className="flex items-center justify-between">
           <div>
-            <div className="text-sm font-medium text-gray-700">AI自動提案</div>
-            <div className="text-xs text-gray-400">メッセージからタスクを自動提案</div>
+            <div className="text-sm font-medium text-slate-700">AI自動提案</div>
+            <div className="text-xs text-slate-400">メッセージからタスクを自動提案</div>
           </div>
           <button
             onClick={() => setForm((p) => ({ ...p, aiAutoSuggest: !p.aiAutoSuggest }))}
             className={`relative w-11 h-6 rounded-full transition-colors ${
-              form.aiAutoSuggest ? 'bg-blue-600' : 'bg-gray-300'
+              form.aiAutoSuggest ? 'bg-blue-600' : 'bg-slate-300'
             }`}
           >
             <div

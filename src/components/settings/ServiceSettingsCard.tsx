@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import { useState } from 'react';
 import type { ServiceType, ServiceConnection, ConnectionTestResponse } from '@/lib/types';
 import { SERVICE_CONFIG, CONNECTION_STATUS_CONFIG, CLAUDE_MODELS } from '@/lib/constants';
@@ -56,19 +57,19 @@ export default function ServiceSettingsCard({
     .every((f) => formValues[f.key]?.trim());
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
       {/* カードヘッダー（クリックで展開） */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-5 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between p-5 hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-3">
-          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center text-xl', config.color.split(' ')[0])}>
-            {config.icon}
+          <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', config.color.split(' ')[0])}>
+            <Image src={config.icon} alt={config.label} width={24} height={24} />
           </div>
           <div className="text-left">
-            <h3 className="text-sm font-bold text-gray-900">{config.label}</h3>
-            <p className="text-xs text-gray-500">{config.description}</p>
+            <h3 className="text-sm font-bold text-slate-900">{config.label}</h3>
+            <p className="text-xs text-slate-500">{config.description}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -80,7 +81,7 @@ export default function ServiceSettingsCard({
           </div>
           <svg
             className={cn(
-              'w-5 h-5 text-gray-400 transition-transform',
+              'w-5 h-5 text-slate-400 transition-transform',
               isOpen && 'rotate-180'
             )}
             fill="none"
@@ -94,11 +95,11 @@ export default function ServiceSettingsCard({
 
       {/* 展開フォーム */}
       {isOpen && (
-        <div className="px-5 pb-5 border-t border-gray-100">
+        <div className="px-5 pb-5 border-t border-slate-100">
           <div className="pt-4 space-y-3">
             {config.fields.map((field) => (
               <div key={field.key}>
-                <label className="block text-xs font-semibold text-gray-600 mb-1">
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
                   {field.label}
                   {field.required && <span className="text-red-500 ml-0.5">*</span>}
                 </label>
@@ -108,7 +109,7 @@ export default function ServiceSettingsCard({
                     onChange={(e) =>
                       setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                     }
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
                   >
                     <option value="">選択してください</option>
                     {CLAUDE_MODELS.map((m) => (
@@ -125,7 +126,7 @@ export default function ServiceSettingsCard({
                       setFormValues((prev) => ({ ...prev, [field.key]: e.target.value }))
                     }
                     placeholder={field.placeholder}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
                 )}
               </div>
@@ -144,7 +145,7 @@ export default function ServiceSettingsCard({
             >
               {testResult.success ? '✅' : '❌'} {testResult.message}
               {testResult.latencyMs && (
-                <span className="ml-2 text-gray-400">({testResult.latencyMs}ms)</span>
+                <span className="ml-2 text-slate-400">({testResult.latencyMs}ms)</span>
               )}
             </div>
           )}

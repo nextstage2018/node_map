@@ -31,8 +31,8 @@ export default function TaskSuggestions({
         {/* カラムヘッダー */}
         <div className="flex items-center gap-2 px-3 py-2 mb-2">
           <div className="w-2 h-2 rounded-full bg-purple-400" />
-          <h3 className="text-sm font-semibold text-gray-700">AI提案</h3>
-          <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+          <h3 className="text-sm font-semibold text-slate-700">AI提案</h3>
+          <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
             {suggestions.length}
           </span>
         </div>
@@ -63,10 +63,10 @@ export default function TaskSuggestions({
                     height={14}
                     className="shrink-0"
                   />
-                  <span className="text-[10px] text-gray-400">
+                  <span className="text-[10px] text-slate-400">
                     {channelConfig.label}
                   </span>
-                  <span className="text-[10px] text-gray-300">
+                  <span className="text-[10px] text-slate-300">
                     {formatRelativeTime(suggestion.sourceDate)}
                   </span>
                   <span className={cn('ml-auto text-[10px] px-1.5 py-0.5 rounded font-bold', priorityConfig.badgeColor)}>
@@ -75,17 +75,17 @@ export default function TaskSuggestions({
                 </div>
 
                 {/* タイトル */}
-                <h4 className="text-sm font-medium text-gray-900 leading-tight line-clamp-2 mb-1">
+                <h4 className="text-sm font-medium text-slate-900 leading-tight line-clamp-2 mb-1">
                   {suggestion.title}
                 </h4>
 
                 {/* 誰から */}
-                <p className="text-[10px] text-gray-500 mb-1 truncate">
+                <p className="text-[10px] text-slate-500 mb-1 truncate">
                   📨 {suggestion.sourceFrom}
                 </p>
 
                 {/* 元メッセージ抜粋 */}
-                <p className="text-[10px] text-gray-400 line-clamp-2 leading-relaxed">
+                <p className="text-[10px] text-slate-400 line-clamp-2 leading-relaxed">
                   {suggestion.sourceExcerpt}
                 </p>
               </div>
@@ -105,7 +105,7 @@ export default function TaskSuggestions({
             onClick={(e) => e.stopPropagation()}
           >
             {/* ヘッダー */}
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-slate-200">
               <div className="flex items-center gap-2 mb-2">
                 <Image
                   src={CHANNEL_CONFIG[selected.sourceChannel].icon}
@@ -113,32 +113,32 @@ export default function TaskSuggestions({
                   width={18}
                   height={18}
                 />
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-slate-400">
                   {CHANNEL_CONFIG[selected.sourceChannel].label}からの提案
                 </span>
                 <span className={cn('ml-auto text-xs px-2 py-0.5 rounded font-bold', TASK_PRIORITY_CONFIG[selected.priority].badgeColor)}>
                   優先度: {TASK_PRIORITY_CONFIG[selected.priority].label}
                 </span>
               </div>
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-lg font-bold text-slate-900">
                 {selected.title}
               </h2>
             </div>
 
             <div className="px-6 py-4 space-y-4">
               {/* ソース元の情報 */}
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-2">
+              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-2">
                   元メッセージ
                 </h3>
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-400 shrink-0 w-12">送信者</span>
-                    <span className="font-medium text-gray-800">{selected.sourceFrom}</span>
+                    <span className="text-slate-400 shrink-0 w-12">送信者</span>
+                    <span className="font-medium text-slate-800">{selected.sourceFrom}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
-                    <span className="text-gray-400 shrink-0 w-12">日時</span>
-                    <span className="text-gray-700">
+                    <span className="text-slate-400 shrink-0 w-12">日時</span>
+                    <span className="text-slate-700">
                       {new Date(selected.sourceDate).toLocaleString('ja-JP', {
                         month: 'long',
                         day: 'numeric',
@@ -150,14 +150,14 @@ export default function TaskSuggestions({
                   </div>
                   {selected.sourceSubject && (
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="text-gray-400 shrink-0 w-12">件名</span>
-                      <span className="text-gray-700">{selected.sourceSubject}</span>
+                      <span className="text-slate-400 shrink-0 w-12">件名</span>
+                      <span className="text-slate-700">{selected.sourceSubject}</span>
                     </div>
                   )}
                 </div>
                 {/* メッセージ本文抜粋 */}
-                <div className="mt-3 p-2.5 bg-white rounded border border-gray-100">
-                  <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
+                <div className="mt-3 p-2.5 bg-white rounded border border-slate-100">
+                  <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
                     {selected.sourceExcerpt}
                   </p>
                 </div>
@@ -165,15 +165,15 @@ export default function TaskSuggestions({
 
               {/* タスク内容 */}
               <div>
-                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+                <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-1">
                   提案タスク内容
                 </h3>
-                <p className="text-sm text-gray-700">{selected.description}</p>
+                <p className="text-sm text-slate-700">{selected.description}</p>
               </div>
 
               {/* 提案理由 */}
               <div>
-                <h3 className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+                <h3 className="text-[10px] font-semibold text-slate-400 uppercase mb-1">
                   AIの提案理由
                 </h3>
                 <div className="flex items-start gap-2 p-2.5 bg-purple-50 rounded-lg">
@@ -184,7 +184,7 @@ export default function TaskSuggestions({
             </div>
 
             {/* ボタン（3つ：却下・スキップ・タスクに追加） */}
-            <div className="px-6 py-4 border-t border-gray-200 flex gap-2">
+            <div className="px-6 py-4 border-t border-slate-200 flex gap-2">
               <button
                 onClick={() => {
                   onDismiss(selectedIdx);
@@ -197,7 +197,7 @@ export default function TaskSuggestions({
               <div className="flex-1" />
               <button
                 onClick={() => setSelectedIdx(null)}
-                className="px-4 py-2 text-sm text-gray-500 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-sm text-slate-500 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors"
               >
                 あとで
               </button>

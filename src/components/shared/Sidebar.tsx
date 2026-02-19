@@ -14,14 +14,17 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
   return (
-    <aside className="w-56 border-r border-gray-200 bg-gray-50 p-4 shrink-0">
+    <aside className="w-56 border-r border-slate-200 bg-slate-50 p-4 shrink-0">
       <div className="mb-6">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
           チャネル
         </h2>
         <ul className="space-y-1">
-          <li className="flex items-center justify-between px-3 py-2 rounded-lg bg-white text-sm font-medium text-gray-900">
-            <span>📥 すべて</span>
+          <li className="flex items-center justify-between px-3 py-2 rounded-lg bg-white text-sm font-medium text-slate-900">
+            <span className="inline-flex items-center gap-2">
+              <Image src="/icons/nav-inbox.svg" alt="すべて" width={16} height={16} />
+              すべて
+            </span>
             {totalUnread > 0 && (
               <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
                 {totalUnread}
@@ -33,7 +36,7 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
             return (
               <li
                 key={ch}
-                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-gray-600 hover:bg-white transition-colors"
+                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-white transition-colors"
               >
                 <span className="inline-flex items-center gap-2">
                   <Image
@@ -46,7 +49,7 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
                   {config.label}
                 </span>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-slate-400">
                     {messageCounts[ch]}
                   </span>
                   {unreadCounts[ch] > 0 && (
@@ -62,12 +65,12 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
       </div>
 
       <div>
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
           ステータス
         </h2>
-        <div className="text-xs text-gray-400 px-3">
-          <p>📡 API連携: デモモード</p>
-          <p className="mt-1">💡 APIキーを設定すると実データに切り替わります</p>
+        <div className="text-xs text-slate-400 px-3">
+          <p>API連携: デモモード</p>
+          <p className="mt-1">APIキーを設定すると実データに切り替わります</p>
         </div>
       </div>
     </aside>

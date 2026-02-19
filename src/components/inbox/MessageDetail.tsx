@@ -18,7 +18,7 @@ export default function MessageDetail({ message }: MessageDetailProps) {
 
   if (!message) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-400">
+      <div className="flex items-center justify-center h-full text-slate-400">
         <div className="text-center">
           <div className="text-4xl mb-3">📬</div>
           <p>メッセージを選択してください</p>
@@ -32,36 +32,36 @@ export default function MessageDetail({ message }: MessageDetailProps) {
   return (
     <div className="flex flex-col h-full">
       {/* ヘッダー */}
-      <div className="p-6 border-b border-gray-200">
+      <div className="p-6 border-b border-slate-200">
         <div className="flex items-center gap-2 mb-2">
           <ChannelBadge channel={message.channel} />
           <StatusBadge status={message.status} />
           {message.metadata.slackChannelName && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               #{message.metadata.slackChannelName}
             </span>
           )}
           {message.metadata.chatworkRoomName && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-slate-400">
               {message.metadata.chatworkRoomName}
             </span>
           )}
         </div>
         {message.subject && (
-          <h2 className="text-lg font-bold text-gray-900 mb-2">
+          <h2 className="text-lg font-bold text-slate-900 mb-2">
             {message.subject}
           </h2>
         )}
         <div className="flex items-center justify-between">
           <div>
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-slate-900">
               {message.from.name}
             </span>
-            <span className="text-sm text-gray-400 ml-2">
+            <span className="text-sm text-slate-400 ml-2">
               {message.from.address}
             </span>
           </div>
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-slate-400">
             {formatRelativeTime(message.timestamp)}
           </span>
         </div>
@@ -69,7 +69,7 @@ export default function MessageDetail({ message }: MessageDetailProps) {
 
       {/* 本文 */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+        <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">
           {message.body}
         </div>
       </div>
@@ -80,7 +80,7 @@ export default function MessageDetail({ message }: MessageDetailProps) {
       )}
 
       {/* アクションバー */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
+      <div className="p-4 border-t border-slate-200 bg-slate-50">
         {showReply ? (
           <ReplyForm
             message={message}

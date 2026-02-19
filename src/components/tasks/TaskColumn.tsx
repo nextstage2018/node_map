@@ -32,8 +32,8 @@ export default function TaskColumn({
       {/* カラムヘッダー */}
       <div className="flex items-center gap-2 px-3 py-2 mb-2">
         <div className={cn('w-2 h-2 rounded-full', config.dotColor)} />
-        <h3 className="text-sm font-semibold text-gray-700">{config.label}</h3>
-        <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">
+        <h3 className="text-sm font-semibold text-slate-700">{config.label}</h3>
+        <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
           {tasks.length}
         </span>
       </div>
@@ -51,7 +51,7 @@ export default function TaskColumn({
           strategy={verticalListSortingStrategy}
         >
           {tasks.length === 0 ? (
-            <div className="text-center py-8 text-gray-300 text-sm">
+            <div className="text-center py-8 text-slate-300 text-sm">
               タスクがありません
             </div>
           ) : (

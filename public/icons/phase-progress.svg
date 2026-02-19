@@ -1,0 +1,9 @@
+<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <g fill="none" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Circular refresh arrows -->
+    <circle cx="12" cy="12" r="9" />
+    <path d="M16.5 7.5c1.657 1.657 1.657 4.243 0 5.9" />
+    <path d="M19 5l-2.5 2.5M7.5 16.5c-1.657-1.657-1.657-4.243 0-5.9" />
+    <path d="M5 19l2.5-2.5" />
+  </g>
+</svg>

@@ -158,7 +158,7 @@ export default function TaskAiChat({
   return (
     <div className="flex flex-col h-full">
       {/* フェーズインジケータ */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-white">
+      <div className="px-4 py-3 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-1">
           {(Object.keys(TASK_PHASE_CONFIG) as TaskPhase[]).map((p, idx) => {
             const config = TASK_PHASE_CONFIG[p];
@@ -174,7 +174,7 @@ export default function TaskAiChat({
                   <div
                     className={cn(
                       'w-8 h-0.5 mx-1',
-                      isPast ? 'bg-blue-400' : 'bg-gray-200'
+                      isPast ? 'bg-blue-400' : 'bg-slate-200'
                     )}
                   />
                 )}
@@ -188,7 +188,7 @@ export default function TaskAiChat({
                       ? config.color
                       : isPast
                       ? 'bg-blue-50 text-blue-500'
-                      : 'bg-gray-50 text-gray-400'
+                      : 'bg-slate-50 text-slate-400'
                   )}
                 >
                   {config.icon} {config.label}
@@ -234,15 +234,15 @@ export default function TaskAiChat({
           <div className="bg-white border border-amber-200 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-3">
               <span className="text-sm">💡</span>
-              <h3 className="text-sm font-bold text-gray-800">構想メモを入力</h3>
+              <h3 className="text-sm font-bold text-slate-800">構想メモを入力</h3>
             </div>
-            <p className="text-xs text-gray-500 mb-4">
+            <p className="text-xs text-slate-500 mb-4">
               各項目を埋めると、AIがタスクの進め方を一緒に考えます。
             </p>
             <div className="space-y-3">
               {IDEATION_MEMO_FIELDS.map((field) => (
                 <div key={field.key}>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 mb-1">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1">
                     <span>{field.icon}</span>
                     {field.label}
                   </label>
@@ -256,7 +256,7 @@ export default function TaskAiChat({
                           [field.key]: e.target.value,
                         }))
                       }
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
                     />
                   ) : (
                     <textarea
@@ -269,7 +269,7 @@ export default function TaskAiChat({
                       }
                       placeholder={field.placeholder}
                       rows={field.key === 'goal' ? 2 : 1}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none"
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none"
                     />
                   )}
                 </div>
@@ -278,7 +278,7 @@ export default function TaskAiChat({
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => setShowIdeationForm(false)}
-                className="text-xs text-gray-400 hover:text-gray-600"
+                className="text-xs text-slate-400 hover:text-slate-600"
               >
                 フリー入力にする
               </button>
@@ -307,14 +307,14 @@ export default function TaskAiChat({
                 'max-w-[85%] rounded-2xl px-4 py-2.5',
                 msg.role === 'user'
                   ? 'bg-blue-600 text-white rounded-br-sm'
-                  : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                  : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
               )}
             >
               <div className="flex items-center gap-2 mb-1">
                 <span
                   className={cn(
                     'text-[10px] font-semibold',
-                    msg.role === 'user' ? 'text-blue-100' : 'text-gray-400'
+                    msg.role === 'user' ? 'text-blue-100' : 'text-slate-400'
                   )}
                 >
                   {msg.role === 'user' ? 'あなた' : '🤖 AI'}
@@ -322,7 +322,7 @@ export default function TaskAiChat({
                 <span
                   className={cn(
                     'text-[10px]',
-                    msg.role === 'user' ? 'text-blue-200' : 'text-gray-300'
+                    msg.role === 'user' ? 'text-blue-200' : 'text-slate-300'
                   )}
                 >
                   {formatRelativeTime(msg.timestamp)}
@@ -338,8 +338,8 @@ export default function TaskAiChat({
         {/* 送信中インジケータ */}
         {isSending && (
           <div className="flex justify-start">
-            <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex items-center gap-1 text-gray-400">
+            <div className="bg-white border border-slate-200 rounded-2xl rounded-bl-sm px-4 py-3">
+              <div className="flex items-center gap-1 text-slate-400">
                 <span className="animate-pulse">●</span>
                 <span className="animate-pulse" style={{ animationDelay: '0.2s' }}>●</span>
                 <span className="animate-pulse" style={{ animationDelay: '0.4s' }}>●</span>
@@ -353,15 +353,15 @@ export default function TaskAiChat({
 
       {/* ===== 進行フェーズ：クイックアクション ===== */}
       {phase === 'progress' && conversations.length > 0 && (
-        <div className="px-4 py-2 border-t border-gray-100 bg-gray-50">
+        <div className="px-4 py-2 border-t border-slate-100 bg-slate-50">
           <div className="flex items-center gap-1.5 overflow-x-auto">
-            <span className="text-[10px] text-gray-400 shrink-0">AI補助:</span>
+            <span className="text-[10px] text-slate-400 shrink-0">AI補助:</span>
             {PROGRESS_QUICK_ACTIONS.map((action) => (
               <button
                 key={action.label}
                 onClick={() => handleQuickAction(action.prompt)}
                 disabled={isSending}
-                className="shrink-0 text-[11px] px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors disabled:opacity-50"
+                className="shrink-0 text-[11px] px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors disabled:opacity-50"
               >
                 {action.label}
               </button>
@@ -429,7 +429,7 @@ export default function TaskAiChat({
       )}
 
       {/* 入力エリア */}
-      <div className="px-4 py-3 border-t border-gray-200 bg-white">
+      <div className="px-4 py-3 border-t border-slate-200 bg-white">
         <div className="flex gap-2">
           <textarea
             value={input}
@@ -443,7 +443,7 @@ export default function TaskAiChat({
                 : '結果や学びを入力...'
             }
             rows={1}
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
           />
           <Button
             onClick={handleSend}

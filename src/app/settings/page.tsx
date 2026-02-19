@@ -80,7 +80,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin text-2xl mb-2">⚙️</div>
-          <p className="text-sm text-gray-500">設定を読み込み中...</p>
+          <p className="text-sm text-slate-500">設定を読み込み中...</p>
         </div>
       </div>
     );
@@ -99,8 +99,8 @@ export default function SettingsPage() {
       <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
         {/* ページヘッダー */}
         <div>
-          <h1 className="text-xl font-bold text-gray-900">設定</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-xl font-bold text-slate-900">設定</h1>
+          <p className="text-sm text-slate-500 mt-1">
             API接続・認証・プロフィールを管理します
           </p>
         </div>
@@ -115,7 +115,7 @@ export default function SettingsPage() {
                 'flex-1 p-4 rounded-2xl border-2 transition-all text-left',
                 activeTab === tab.key
                   ? 'border-blue-500 bg-blue-50'
-                  : 'border-gray-200 bg-white hover:border-gray-300'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
               )}
             >
               <div className="flex items-center gap-2 mb-1">
@@ -123,13 +123,13 @@ export default function SettingsPage() {
                 <span
                   className={cn(
                     'text-sm font-bold',
-                    activeTab === tab.key ? 'text-blue-700' : 'text-gray-700'
+                    activeTab === tab.key ? 'text-blue-700' : 'text-slate-700'
                   )}
                 >
                   {tab.label}
                 </span>
               </div>
-              <p className="text-xs text-gray-500">{tab.description}</p>
+              <p className="text-xs text-slate-500">{tab.description}</p>
             </button>
           ))}
         </div>
@@ -146,10 +146,10 @@ export default function SettingsPage() {
 
             {/* チャネル連携設定 */}
             <div>
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
                 📨 チャネル連携（API基盤）
               </h2>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 各サービスのClient ID/Secret、Bot Token等を設定します。ユーザーの個人認証はこの設定が完了した後に行えます。
               </p>
               <div className="space-y-3">
@@ -167,7 +167,7 @@ export default function SettingsPage() {
 
             {/* インフラ設定 */}
             <div>
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-3">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
                 🤖 AI・データベース
               </h2>
               <div className="space-y-3">
@@ -204,10 +204,10 @@ export default function SettingsPage() {
           <div className="space-y-6">
             {/* チャネル認証 */}
             <div>
-              <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider mb-1">
+              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-1">
                 🔑 アカウント認証
               </h2>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-slate-500 mb-3">
                 各チャネルに自分のアカウントでログインします。管理者によるAPI基盤設定が完了している必要があります。
               </p>
               <div className="space-y-3">
