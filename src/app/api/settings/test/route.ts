@@ -43,7 +43,7 @@ async function simulateConnectionTest(
 
   // 環境変数が設定されているかチェック
   const envChecks: Record<ServiceType, boolean> = {
-    email: !!process.env.GMAIL_CLIENT_ID,
+    email: !!(process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID),
     slack: !!process.env.SLACK_BOT_TOKEN,
     chatwork: !!process.env.CHATWORK_API_TOKEN,
     anthropic: !!process.env.ANTHROPIC_API_KEY,

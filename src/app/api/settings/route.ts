@@ -16,7 +16,7 @@ let appSettings: AppSettings = {
   connections: [
     {
       type: 'email',
-      status: (process.env.GMAIL_CLIENT_ID ? 'connected' : 'disconnected') as ConnectionStatus,
+      status: ((process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID) ? 'connected' : 'disconnected') as ConnectionStatus,
     },
     {
       type: 'slack',
@@ -44,7 +44,7 @@ const savedServiceSettings: Record<string, Record<string, string>> = {};
 export async function GET() {
   // 環境変数から接続状態を再評価
   const envChecks: Record<ServiceType, string | undefined> = {
-    email: process.env.GMAIL_CLIENT_ID || savedServiceSettings.email?.clientId,
+    email: process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID || savedServiceSettings.email?.clientId,
     slack: process.env.SLACK_BOT_TOKEN || savedServiceSettings.slack?.botToken,
     chatwork: process.env.CHATWORK_API_TOKEN || savedServiceSettings.chatwork?.apiToken,
     anthropic: process.env.ANTHROPIC_API_KEY || savedServiceSettings.anthropic?.apiKey,
