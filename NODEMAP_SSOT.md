@@ -16,7 +16,7 @@
 | リポジトリ | https://github.com/nextstage2018/node_map |
 | デプロイ先 | https://node-map-eight.vercel.app |
 | ホスティング | Vercel |
-| 設計書 | NodeMap_設計書_v1.docx（v2更新予定） |
+| 設計書 | NodeMap_設計書_v2.docx |
 | 定型文 | PROMPT_TEMPLATE.md |
 | 再定義資料 | NODEMAP_再定義v2_議論まとめ.md |
 
