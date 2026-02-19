@@ -6,9 +6,11 @@ import type {
   EdgeData,
   ClusterData,
   ClusterDiff,
+  CheckpointData,
   MapUser,
   MapViewMode,
   MapState,
+  NodeFilterMode,
 } from '@/lib/types';
 
 interface NodeMapData {
@@ -22,6 +24,8 @@ export function useNodeMap() {
   const [compareData, setCompareData] = useState<NodeMapData>({ nodes: [], edges: [], clusters: [] });
   const [users, setUsers] = useState<MapUser[]>([]);
   const [clusterDiff, setClusterDiff] = useState<ClusterDiff | null>(null);
+  const [checkpoints, setCheckpoints] = useState<CheckpointData[]>([]);
+  const [filterMode, setFilterMode] = useState<NodeFilterMode>('keyword_only');
   const [isLoading, setIsLoading] = useState(false);
 
   const [mapState, setMapState] = useState<MapState>({
@@ -83,6 +87,17 @@ export function useNodeMap() {
     }
   }, []);
 
+  // チェックポイント取得
+  const fetchCheckpoints = useCallback(async (taskId: string, userId: string) => {
+    try {
+      const res = await fetch(`/api/checkpoints?taskId=${taskId}&userId=${userId}`);
+      const json = await res.json();
+      if (Array.isArray(json)) setCheckpoints(json);
+    } catch {
+      // fallback
+    }
+  }, []);
+
   // 表示モード切替
   const setViewMode = useCallback((mode: MapViewMode) => {
     setMapState((prev) => ({ ...prev, viewMode: mode }));
@@ -97,10 +112,12 @@ export function useNodeMap() {
     }));
     if (taskId) {
       fetchClusterDiff(taskId, mapState.selectedUserId);
+      fetchCheckpoints(taskId, mapState.selectedUserId);
     } else {
       setClusterDiff(null);
+      setCheckpoints([]);
     }
-  }, [fetchClusterDiff, mapState.selectedUserId]);
+  }, [fetchClusterDiff, fetchCheckpoints, mapState.selectedUserId]);
 
   // ユーザー切替
   const selectUser = useCallback(async (userId: string) => {
@@ -132,6 +149,35 @@ export function useNodeMap() {
     }
   }, [loadCompareData]);
 
+  // チェックポイント追加
+  const addCheckpoint = useCallback(async (nodeIds: string[], summary?: string) => {
+    if (!mapState.selectedTaskId) return;
+    try {
+      const res = await fetch('/api/checkpoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: mapState.selectedTaskId,
+          userId: mapState.selectedUserId,
+          nodeIds,
+          source: 'manual',
+          summary,
+        }),
+      });
+      const json = await res.json();
+      if (json.id) {
+        setCheckpoints((prev) => [...prev, json]);
+      }
+    } catch {
+      // fallback
+    }
+  }, [mapState.selectedTaskId, mapState.selectedUserId]);
+
+  // フィルターモード変更
+  const changeFilterMode = useCallback((mode: NodeFilterMode) => {
+    setFilterMode(mode);
+  }, []);
+
   // 初期データ読み込み
   useEffect(() => {
     fetchUsers();
@@ -153,11 +199,15 @@ export function useNodeMap() {
     users,
     mapState,
     clusterDiff,
+    checkpoints,
+    filterMode,
     isLoading,
     availableTasks,
     setViewMode,
     selectTask,
     selectUser,
     toggleCompareMode,
+    addCheckpoint,
+    changeFilterMode,
   };
 }

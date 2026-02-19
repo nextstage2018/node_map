@@ -425,6 +425,10 @@ export interface EdgeData {
   weight: number;           // 線の太さ（共起頻度）
   taskIds: string[];        // 関連するタスクID群
   edgeType: 'co_occurrence' | 'causal' | 'sequence'; // 共起/因果/順序
+  // Phase 10: 本流/支流・方向性
+  flowType: 'main' | 'tributary';                     // 本流/支流
+  direction: 'forward' | 'backward' | 'bidirectional'; // 方向性
+  checkpointId?: string;                               // 関連するチェックポイント
   createdAt: string;
   updatedAt: string;
 }
@@ -637,3 +641,20 @@ export interface ContactStats {
   byChannel: Record<ChannelType, number>;
   unconfirmedCount: number;
 }
+
+// ===== Phase 10: 思考マップUI改修 =====
+
+// チェックポイント（タスク進行中のスナップショット）
+export interface CheckpointData {
+  id: string;
+  taskId: string;
+  userId: string;
+  nodeIds: string[];        // スナップショット時のノードID群
+  timestamp: string;
+  source: 'auto' | 'manual'; // AI自動記録 or ユーザー手動
+  summary?: string;         // AI要約
+  createdAt: string;
+}
+
+// ノード表示フィルターモード
+export type NodeFilterMode = 'keyword_only' | 'with_person' | 'with_project' | 'all';

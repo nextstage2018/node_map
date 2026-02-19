@@ -37,6 +37,7 @@
 | Phase 7：タスクボード改修 | ✅ 完了 | 2026-02-19 | ジョブ/タスク分離・種ボックス・ステータス/タイムライン切り替え |
 | Phase 8：ナレッジマスタ基盤 | ✅ 完了 | 2026-02-19 | 3階層分類体系・AI自動分類・管理画面・マップ統合 |
 | Phase 9：関係値情報基盤 | ✅ 完了 | 2026-02-19 | コンタクト統合管理・関係属性AI推定・管理画面・マップ統合 |
+| Phase 10：思考マップUI改修 | ✅ 完了 | 2026-02-19 | ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -261,6 +262,11 @@
 | 2026-02-19 | /contacts管理画面を新規作成 | 統計カード(ContactStats)・一覧(ContactList)・個別カード(ContactCard)・関係バッジ(RelationshipBadge)・検索・フィルター |
 | 2026-02-19 | 思考マップに関係属性色・統計を追加 | 人物ノードに関係色（青=自社/橙=クライアント/紫=パートナー）、MapStatsに関係属性分布、ツールチップに関係情報 |
 | 2026-02-19 | NodeDataにrelationshipType/contactIdを追加 | 人物ノードとコンタクトのリンク。デモデータで7ノード紐付け済み |
+| 2026-02-19 | Phase 10: エッジに本流/支流フロータイプを導入 | flowType='main'(同分野,太い実線+矢印)/flowType='tributary'(異分野,細い破線)。FLOW_TYPE_CONFIGで定義 |
+| 2026-02-19 | エッジに方向性(direction)を導入 | forward/backward/bidirectional。SVG arrowhead markerで矢印表示 |
+| 2026-02-19 | チェックポイントサービスを新規作成 | checkpoint.service.ts + /api/checkpoints。デモ6件。手動記録ボタン+自動記録対応 |
+| 2026-02-19 | ノード表示フィルターを導入 | NodeFilterMode: keyword_only(デフォルト)/with_person/with_project/all。再定義v2の純化原則に基づく |
+| 2026-02-19 | filteredDataロジックをfilterMode+領域フィルターの二重適用に変更 | エッジもフィルタリング後のノードIDに基づいて絞り込み |
 
 ---
 
@@ -341,6 +347,8 @@ node_map/
 │   │       │   ├── stats/route.ts    ← 統計
 │   │       │   ├── [id]/route.ts     ← 関係属性更新
 │   │       │   └── extract/route.ts  ← メッセージから自動抽出
+│   │       ├── checkpoints/          ← Phase 10: チェックポイントAPI
+│   │       │   └── route.ts         ← GET(一覧)/POST(追加)
 │   │       └── clusters/
 │   │           ├── route.ts           ← クラスターCRUD
 │   │           └── diff/route.ts      ← クラスター差分計算
@@ -389,9 +397,9 @@ node_map/
 │   │   │   ├── ContactStats.tsx       ← 関係属性別・チャネル別統計
 │   │   │   └── RelationshipBadge.tsx  ← 関係属性バッジ
 │   │   └── nodemap/
-│   │       ├── NetworkGraph.tsx       ← D3.jsネットワークグラフ本体（+ドメイン色分け対応）
-│   │       ├── MapControls.tsx        ← 操作パネル（+領域フィルター追加）
-│   │       └── MapStats.tsx           ← 統計情報パネル（+領域分布追加）
+│   │       ├── NetworkGraph.tsx       ← D3.jsネットワークグラフ本体（+本流/支流・矢印・CP描画）
+│   │       ├── MapControls.tsx        ← 操作パネル（+ノードフィルター・CP記録ボタン）
+│   │       └── MapStats.tsx           ← 統計情報パネル（+エッジ種別・CP一覧）
 │   ├── hooks/
 │   │   ├── useMessages.ts
 │   │   ├── useTasks.ts
@@ -417,7 +425,8 @@ node_map/
 │           ├── nodeClient.service.ts      ← ノード（点）管理（+自動分類統合）
 │           ├── edgeClient.service.ts      ← エッジ（線）管理
 │           ├── clusterClient.service.ts   ← クラスター（面）管理
-│           └── knowledgeMaster.service.ts ← Phase 8: ナレッジマスタ管理
+│           ├── knowledgeMaster.service.ts ← Phase 8: ナレッジマスタ管理
+│           └── checkpoint.service.ts    ← Phase 10: チェックポイント管理
 │       └── contact/
 │           └── contactPerson.service.ts  ← Phase 9: コンタクト統合管理
 ├── supabase/
@@ -505,6 +514,25 @@ node_map/
   - マスタキーワードの追加/編集UIは未実装（APIは準備済み）
   - NodeMasterLinkの確認（confirmed）UIは未実装
 
+### Phase 9 → Phase 10（思考マップUI改修）への引き継ぎ
+- **実装したファイル構成：** types.ts, constants.ts, edgeClient.service.ts, checkpoint.service.ts, api/checkpoints/route.ts, NetworkGraph.tsx, MapControls.tsx, MapStats.tsx, useNodeMap.ts, nodemap/page.tsx
+- **思考マップUI改修の設計：**
+  - エッジ再定義：flowType='main'(本流:同分野,太い実線+矢印)/flowType='tributary'(支流:異分野,細い破線)
+  - 方向性：direction='forward'/'backward'/'bidirectional'。SVG arrowhead markerで矢印描画
+  - チェックポイント：checkpoint.service.ts + /api/checkpoints。デモ6件（4ユーザー分）
+  - 手動記録：MapControlsに📍ボタン → 現在表示中ノードをスナップショット保存
+  - ノードフィルター：NodeFilterMode 4モード（keyword_only/with_person/with_project/all）
+  - デフォルトは'keyword_only'（再定義v2の純化原則）
+  - filteredData：filterMode→領域フィルターの二重適用。エッジもノードIDで絞り込み
+  - MapStats：エッジ種別（本流/支流カウント）、チェックポイント一覧（タスク選択時）
+  - FLOW_TYPE_CONFIG：main(#2563EB,3px,実線)/tributary(#CBD5E1,1px,破線)
+  - NODE_FILTER_CONFIG：4モードのラベル・説明定義
+  - 全28エッジにflowType/directionを付与済み（デモデータ）
+- **注意点：**
+  - チェックポイントは現在インメモリ保存（本番はSupabase）
+  - AI自動チェックポイント記録は基本構造のみ（source='auto'のデモデータあり、実際のAI記録ロジックは未実装）
+  - 比較モード時のNetworkGraphにはcheckpointsを未渡し（通常モードのみ対応）
+
 ### Phase 8 → Phase 9（関係値情報基盤）への引き継ぎ
 - **実装したファイル構成：** contactPerson.service.ts + api/contacts/* + components/contacts/* + contacts/page.tsx + useContacts.ts
 - **コンタクト管理の設計：**
@@ -536,7 +564,7 @@ node_map/
 5. **タスクボード改修** — ✅完了（2026-02-19）ジョブ/タスク分離、種ボックス、ステータス/タイムライン切り替え
 6. **ナレッジマスタ基盤** — ✅完了（2026-02-19）3階層体系（領域→分野→キーワード）、AI自動分類、管理画面、マップ統合
 7. **関係値情報基盤** — ✅完了（2026-02-19）コンタクト統合管理・関係属性AI推定・管理画面・マップ統合
-8. **思考マップUI改修** — ノード純化、フィルター、本流/支流、チェックポイント
+8. **思考マップUI改修** — ✅完了（2026-02-19）ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示
 9. **Supabase接続** — インメモリからDBへの切り替え
 10. **APIキー準備・実データ検証**
 

@@ -1,7 +1,7 @@
 'use client';
 
-import type { NodeData, EdgeData, ClusterData, ClusterDiff } from '@/lib/types';
-import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG } from '@/lib/constants';
+import type { NodeData, EdgeData, ClusterData, ClusterDiff, CheckpointData } from '@/lib/types';
+import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG, FLOW_TYPE_CONFIG } from '@/lib/constants';
 
 interface MapStatsProps {
   nodes: NodeData[];
@@ -9,6 +9,7 @@ interface MapStatsProps {
   clusters: ClusterData[];
   clusterDiff: ClusterDiff | null;
   selectedTaskId: string | null;
+  checkpoints?: CheckpointData[];
 }
 
 export default function MapStats({
@@ -17,6 +18,7 @@ export default function MapStats({
   clusters,
   clusterDiff,
   selectedTaskId,
+  checkpoints = [],
 }: MapStatsProps) {
   const keywordCount = nodes.filter((n) => n.type === 'keyword').length;
   const personCount = nodes.filter((n) => n.type === 'person').length;
@@ -46,6 +48,56 @@ export default function MapStats({
           </div>
         </div>
       </div>
+
+      {/* エッジ種別（Phase 10） */}
+      <div>
+        <h4 className="text-xs font-semibold text-slate-500 mb-2">エッジ種別</h4>
+        <div className="space-y-1.5">
+          {(Object.entries(FLOW_TYPE_CONFIG) as [string, typeof FLOW_TYPE_CONFIG[keyof typeof FLOW_TYPE_CONFIG]][]).map(
+            ([key, cfg]) => {
+              const count = edges.filter((e) => e.flowType === key).length;
+              return (
+                <div key={key} className="flex items-center gap-2 text-xs">
+                  <div
+                    className="w-4 h-0 shrink-0"
+                    style={{
+                      borderTop: `${cfg.width}px ${cfg.dashArray === 'none' ? 'solid' : 'dashed'} ${cfg.color}`,
+                    }}
+                  />
+                  <span className="flex-1 text-slate-600">{cfg.label}</span>
+                  <span className="font-medium text-slate-900">{count}</span>
+                </div>
+              );
+            }
+          )}
+        </div>
+      </div>
+
+      {/* チェックポイント（タスク選択時） */}
+      {selectedTaskId && checkpoints.length > 0 && (
+        <div>
+          <h4 className="text-xs font-semibold text-slate-500 mb-2">チェックポイント</h4>
+          <div className="space-y-1.5">
+            {checkpoints.map((cp, i) => (
+              <div key={cp.id} className="p-2 bg-amber-50 rounded-lg border border-amber-100">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-amber-500 text-xs">◆</span>
+                  <span className="text-[10px] font-medium text-amber-700">CP {i + 1}</span>
+                  <span className="text-[10px] text-amber-500 ml-auto">
+                    {cp.source === 'auto' ? '自動' : '手動'}
+                  </span>
+                </div>
+                {cp.summary && (
+                  <p className="text-[10px] text-slate-500 leading-relaxed">{cp.summary}</p>
+                )}
+                <div className="text-[10px] text-slate-400 mt-0.5">
+                  {cp.nodeIds.length}ノード · {new Date(cp.timestamp).toLocaleDateString('ja-JP')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 種別内訳 */}
       <div>

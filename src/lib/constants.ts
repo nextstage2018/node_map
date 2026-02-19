@@ -412,6 +412,36 @@ export const RELATIONSHIP_TYPE_CONFIG = {
   },
 } as const;
 
+// ===== Phase 10: 思考マップUI改修 =====
+
+// 本流/支流のエッジ表示設定
+export const FLOW_TYPE_CONFIG = {
+  main: {
+    label: '本流',
+    color: '#2563EB',        // primary blue
+    width: 3,
+    dashArray: 'none',       // 実線
+    opacity: 0.7,
+    arrowSize: 8,
+  },
+  tributary: {
+    label: '支流',
+    color: '#CBD5E1',        // slate-300
+    width: 1,
+    dashArray: '4,4',        // 破線
+    opacity: 0.4,
+    arrowSize: 4,
+  },
+} as const;
+
+// ノード表示フィルターモード設定
+export const NODE_FILTER_CONFIG = {
+  keyword_only: { label: 'キーワードのみ', description: 'キーワード（名詞）のみ表示' },
+  with_person: { label: '＋人物', description: 'キーワード＋人物ノードを表示' },
+  with_project: { label: '＋プロジェクト', description: 'キーワード＋プロジェクトを表示' },
+  all: { label: 'すべて', description: '全ノードを表示' },
+} as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },

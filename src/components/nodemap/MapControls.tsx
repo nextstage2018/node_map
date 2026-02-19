@@ -1,8 +1,8 @@
 'use client';
 
-import type { MapViewMode, MapUser } from '@/lib/types';
+import type { MapViewMode, MapUser, NodeFilterMode } from '@/lib/types';
 import { cn } from '@/lib/utils';
-import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
+import { KNOWLEDGE_DOMAIN_CONFIG, NODE_FILTER_CONFIG } from '@/lib/constants';
 
 interface MapControlsProps {
   viewMode: MapViewMode;
@@ -13,11 +13,14 @@ interface MapControlsProps {
   isCompareMode: boolean;
   compareUserId: string | null;
   selectedDomainId: string | null;
+  filterMode: NodeFilterMode;
   onViewModeChange: (mode: MapViewMode) => void;
   onTaskSelect: (taskId: string | null) => void;
   onUserSelect: (userId: string) => void;
   onCompareToggle: (userId: string | null) => void;
   onDomainFilter: (domainId: string | null) => void;
+  onFilterModeChange: (mode: NodeFilterMode) => void;
+  onCheckpointRecord?: () => void;
 }
 
 const VIEW_MODES: { key: MapViewMode; label: string; icon: string; description: string }[] = [
@@ -36,11 +39,14 @@ export default function MapControls({
   isCompareMode,
   compareUserId,
   selectedDomainId,
+  filterMode,
   onViewModeChange,
   onTaskSelect,
   onUserSelect,
   onCompareToggle,
   onDomainFilter,
+  onFilterModeChange,
+  onCheckpointRecord,
 }: MapControlsProps) {
   const currentUser = users.find((u) => u.id === selectedUserId);
 
@@ -87,6 +93,16 @@ export default function MapControls({
             </option>
           ))}
         </select>
+        {/* チェックポイント記録ボタン（タスク選択時のみ） */}
+        {selectedTaskId && onCheckpointRecord && (
+          <button
+            onClick={onCheckpointRecord}
+            className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 transition-all"
+          >
+            <span>📍</span>
+            チェックポイント記録
+          </button>
+        )}
       </div>
 
       {/* 表示モード */}
@@ -113,6 +129,29 @@ export default function MapControls({
               </div>
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* ノード表示フィルター（Phase 10） */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-500 mb-2">ノード表示</label>
+        <div className="flex flex-wrap gap-1.5">
+          {(Object.entries(NODE_FILTER_CONFIG) as [NodeFilterMode, typeof NODE_FILTER_CONFIG[keyof typeof NODE_FILTER_CONFIG]][]).map(
+            ([key, cfg]) => (
+              <button
+                key={key}
+                onClick={() => onFilterModeChange(key)}
+                className={cn(
+                  'px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                  filterMode === key
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'
+                )}
+              >
+                {cfg.label}
+              </button>
+            )
+          )}
         </div>
       </div>
 
@@ -212,6 +251,7 @@ export default function MapControls({
       <div className="border-t border-slate-100 pt-4">
         <label className="block text-xs font-semibold text-slate-500 mb-2">凡例</label>
         <div className="space-y-1.5">
+          {/* 理解度 */}
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <div className="w-3 h-3 rounded-full bg-slate-400" />
             <span>認知（受信のみ）</span>
@@ -224,6 +264,7 @@ export default function MapControls({
             <div className="w-3 h-3 rounded-full bg-green-500" />
             <span>習熟（他人に説明）</span>
           </div>
+          {/* ノード形状 */}
           <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
             <div className="w-3 h-3 rounded-full border-2 border-slate-300" />
             <span>キーワード</span>
@@ -235,6 +276,19 @@ export default function MapControls({
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <div className="w-3 h-3 rounded-sm bg-slate-400" />
             <span>プロジェクト</span>
+          </div>
+          {/* エッジタイプ（Phase 10） */}
+          <div className="flex items-center gap-2 text-xs text-slate-500 mt-2">
+            <div className="w-6 h-0 border-t-2 border-blue-500" />
+            <span>本流（同分野）</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="w-6 h-0 border-t border-dashed border-slate-300" />
+            <span>支流（異分野）</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <div className="w-2 h-2 bg-amber-400" style={{ clipPath: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)' }} />
+            <span>チェックポイント</span>
           </div>
         </div>
       </div>

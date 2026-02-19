@@ -2,8 +2,8 @@
 
 import { useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
-import type { NodeData, EdgeData, ClusterData, MapViewMode } from '@/lib/types';
-import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG } from '@/lib/constants';
+import type { NodeData, EdgeData, ClusterData, MapViewMode, CheckpointData } from '@/lib/types';
+import { KNOWLEDGE_DOMAIN_CONFIG, RELATIONSHIP_TYPE_CONFIG, FLOW_TYPE_CONFIG } from '@/lib/constants';
 
 interface NetworkGraphProps {
   nodes: NodeData[];
@@ -15,6 +15,7 @@ interface NetworkGraphProps {
   height?: number;
   userColor?: string;
   colorByDomain?: boolean;
+  checkpoints?: CheckpointData[];
 }
 
 // 理解度レベルに応じたサイズ
@@ -48,6 +49,7 @@ export default function NetworkGraph({
   height = 600,
   userColor = '#2563EB',
   colorByDomain = false,
+  checkpoints = [],
 }: NetworkGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
@@ -66,7 +68,6 @@ export default function NetworkGraph({
       return new Set(result?.nodeIds || []);
     }
     if (viewMode === 'path') {
-      // パス：タスクに関連するエッジの両端ノード
       const taskEdges = edges.filter((e) => e.taskIds.includes(selectedTaskId));
       const ids = new Set<string>();
       taskEdges.forEach((e) => {
@@ -86,6 +87,15 @@ export default function NetworkGraph({
     );
   }, [selectedTaskId, viewMode, edges]);
 
+  // チェックポイントに含まれるノードIDセットを計算
+  const getCheckpointNodeIds = useCallback((): Set<string> => {
+    if (!selectedTaskId || checkpoints.length === 0) return new Set();
+    const taskCps = checkpoints.filter((cp) => cp.taskId === selectedTaskId);
+    const ids = new Set<string>();
+    taskCps.forEach((cp) => cp.nodeIds.forEach((id) => ids.add(id)));
+    return ids;
+  }, [selectedTaskId, checkpoints]);
+
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
 
@@ -94,7 +104,53 @@ export default function NetworkGraph({
 
     const highlightedNodeIds = getHighlightedNodeIds();
     const highlightedEdgeIds = getHighlightedEdgeIds();
+    const checkpointNodeIds = getCheckpointNodeIds();
     const hasSelection = selectedTaskId && viewMode !== 'base';
+
+    // SVG defs: 矢印マーカー定義
+    const defs = svg.append('defs');
+
+    // 本流用矢印（青、大きめ）
+    defs.append('marker')
+      .attr('id', 'arrow-main')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 20)
+      .attr('refY', 5)
+      .attr('markerWidth', FLOW_TYPE_CONFIG.main.arrowSize)
+      .attr('markerHeight', FLOW_TYPE_CONFIG.main.arrowSize)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', FLOW_TYPE_CONFIG.main.color)
+      .attr('fill-opacity', 0.7);
+
+    // 支流用矢印（グレー、小さめ）
+    defs.append('marker')
+      .attr('id', 'arrow-tributary')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 20)
+      .attr('refY', 5)
+      .attr('markerWidth', FLOW_TYPE_CONFIG.tributary.arrowSize)
+      .attr('markerHeight', FLOW_TYPE_CONFIG.tributary.arrowSize)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', FLOW_TYPE_CONFIG.tributary.color)
+      .attr('fill-opacity', 0.5);
+
+    // ハイライト用矢印
+    defs.append('marker')
+      .attr('id', 'arrow-highlight')
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 20)
+      .attr('refY', 5)
+      .attr('markerWidth', 8)
+      .attr('markerHeight', 8)
+      .attr('orient', 'auto-start-reverse')
+      .append('path')
+      .attr('d', 'M 0 0 L 10 5 L 0 10 z')
+      .attr('fill', userColor)
+      .attr('fill-opacity', 0.8);
 
     // クラスターの描画用データ
     const clustersToDraw = selectedTaskId
@@ -135,7 +191,6 @@ export default function NetworkGraph({
         const color = cluster.clusterType === 'ideation' ? '#2563EB' : '#16A34A';
         const opacity = cluster.clusterType === 'ideation' ? 0.08 : 0.12;
 
-        // フォースシミュレーション後に位置更新
         clusterGroup.append('circle')
           .attr('class', `cluster-${cluster.id}`)
           .attr('fill', color)
@@ -147,21 +202,38 @@ export default function NetworkGraph({
       });
     }
 
-    // エッジ描画
+    // エッジ描画（Phase 10: 本流/支流で描き分け）
     const linkGroup = g.append('g').attr('class', 'links');
     const link = linkGroup
       .selectAll('line')
       .data(simLinks)
       .join('line')
-      .attr('stroke', (d) =>
-        hasSelection && highlightedEdgeIds.has(d.id)
-          ? userColor
-          : '#E2E8F0'
-      )
-      .attr('stroke-opacity', (d) =>
-        hasSelection ? (highlightedEdgeIds.has(d.id) ? 0.8 : 0.1) : 0.4
-      )
-      .attr('stroke-width', (d) => Math.max(1, Math.min(d.weight, 5)));
+      .attr('stroke', (d) => {
+        if (hasSelection && highlightedEdgeIds.has(d.id)) return userColor;
+        const cfg = FLOW_TYPE_CONFIG[d.flowType] || FLOW_TYPE_CONFIG.tributary;
+        return cfg.color;
+      })
+      .attr('stroke-opacity', (d) => {
+        if (hasSelection) return highlightedEdgeIds.has(d.id) ? 0.8 : 0.08;
+        const cfg = FLOW_TYPE_CONFIG[d.flowType] || FLOW_TYPE_CONFIG.tributary;
+        return cfg.opacity;
+      })
+      .attr('stroke-width', (d) => {
+        if (hasSelection && highlightedEdgeIds.has(d.id)) return 3;
+        const cfg = FLOW_TYPE_CONFIG[d.flowType] || FLOW_TYPE_CONFIG.tributary;
+        return cfg.width;
+      })
+      .attr('stroke-dasharray', (d) => {
+        if (hasSelection && highlightedEdgeIds.has(d.id)) return 'none';
+        const cfg = FLOW_TYPE_CONFIG[d.flowType] || FLOW_TYPE_CONFIG.tributary;
+        return cfg.dashArray;
+      })
+      .attr('marker-end', (d) => {
+        // 矢印は方向ありのエッジのみ
+        if (d.direction === 'bidirectional') return '';
+        if (hasSelection && highlightedEdgeIds.has(d.id)) return 'url(#arrow-highlight)';
+        return d.flowType === 'main' ? 'url(#arrow-main)' : 'url(#arrow-tributary)';
+      });
 
     // ノード描画
     const nodeGroup = g.append('g').attr('class', 'nodes');
@@ -176,6 +248,8 @@ export default function NetworkGraph({
       const el = d3.select(this);
       const size = LEVEL_SIZE[d.understandingLevel] || 8;
       const isHighlighted = !hasSelection || highlightedNodeIds.has(d.id);
+      const isCheckpointed = checkpointNodeIds.has(d.id);
+
       // ドメイン色分けモード時はドメイン色を使う
       // Phase 9: 人物ノードは関係属性色を適用
       let fillColor: string;
@@ -223,6 +297,16 @@ export default function NetworkGraph({
           .attr('stroke-width', isHighlighted ? 1.5 : 0);
       }
 
+      // Phase 10: チェックポイントマーカー（◆）
+      if (isCheckpointed && selectedTaskId) {
+        el.append('polygon')
+          .attr('points', '0,-5 4,0 0,5 -4,0')
+          .attr('transform', `translate(${size + 6}, ${-size + 2})`)
+          .attr('fill', '#F59E0B')
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 0.5);
+      }
+
       // ラベル
       if (isHighlighted || !hasSelection) {
         el.append('text')
@@ -259,8 +343,9 @@ export default function NetworkGraph({
         d.type === 'person' ? '人物' : 'プロジェクト';
       const relationLabel = d.type === 'person' && d.relationshipType && RELATIONSHIP_TYPE_CONFIG[d.relationshipType]
         ? `<br/>関係: ${RELATIONSHIP_TYPE_CONFIG[d.relationshipType].label}` : '';
+      const cpLabel = checkpointNodeIds.has(d.id) ? '<br/>📍 チェックポイント記録あり' : '';
       tooltip
-        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回${relationLabel}`)
+        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回${relationLabel}${cpLabel}`)
         .style('visibility', 'visible')
         .style('top', `${event.pageY - 10}px`)
         .style('left', `${event.pageX + 15}px`);
@@ -328,7 +413,7 @@ export default function NetworkGraph({
       simulation.stop();
       tooltip.remove();
     };
-  }, [nodes, edges, clusters, viewMode, selectedTaskId, width, height, userColor, colorByDomain, getHighlightedNodeIds, getHighlightedEdgeIds]);
+  }, [nodes, edges, clusters, viewMode, selectedTaskId, width, height, userColor, colorByDomain, checkpoints, getHighlightedNodeIds, getHighlightedEdgeIds, getCheckpointNodeIds]);
 
   return (
     <svg

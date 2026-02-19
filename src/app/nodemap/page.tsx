@@ -14,12 +14,16 @@ export default function NodeMapPage() {
     users,
     mapState,
     clusterDiff,
+    checkpoints,
+    filterMode,
     isLoading,
     availableTasks,
     setViewMode,
     selectTask,
     selectUser,
     toggleCompareMode,
+    addCheckpoint,
+    changeFilterMode,
   } = useNodeMap();
 
   const graphContainerRef = useRef<HTMLDivElement>(null);
@@ -46,15 +50,47 @@ export default function NodeMapPage() {
   const currentUser = users.find((u) => u.id === mapState.selectedUserId);
   const compareUser = users.find((u) => u.id === mapState.compareUserId);
 
-  // 領域フィルターが選択されている場合、ノードをフィルタリング
-  const filteredData = selectedDomainId
-    ? {
-        ...data,
-        nodes: data.nodes.filter(
-          (n) => n.domainId === selectedDomainId || n.type === 'person'
-        ),
-      }
-    : data;
+  // フィルターモード + 領域フィルター適用
+  const filteredData = (() => {
+    let nodes = data.nodes;
+
+    // Phase 10: NodeFilterModeによるノードフィルタリング
+    switch (filterMode) {
+      case 'keyword_only':
+        nodes = nodes.filter((n) => n.type === 'keyword');
+        break;
+      case 'with_person':
+        nodes = nodes.filter((n) => n.type === 'keyword' || n.type === 'person');
+        break;
+      case 'with_project':
+        nodes = nodes.filter((n) => n.type === 'keyword' || n.type === 'project');
+        break;
+      case 'all':
+      default:
+        break;
+    }
+
+    // 領域フィルター
+    if (selectedDomainId) {
+      nodes = nodes.filter(
+        (n) => n.domainId === selectedDomainId || n.type === 'person'
+      );
+    }
+
+    // フィルタリング後のノードIDに基づいてエッジも絞り込み
+    const nodeIds = new Set(nodes.map((n) => n.id));
+    const edges = data.edges.filter(
+      (e) => nodeIds.has(e.sourceNodeId) && nodeIds.has(e.targetNodeId)
+    );
+
+    return { ...data, nodes, edges };
+  })();
+
+  // チェックポイント記録ハンドラー
+  const handleCheckpointRecord = () => {
+    const visibleNodeIds = filteredData.nodes.map((n) => n.id);
+    addCheckpoint(visibleNodeIds, `手動記録：${visibleNodeIds.length}ノード`);
+  };
 
   return (
     <div className="flex h-screen bg-slate-50">
@@ -72,11 +108,14 @@ export default function NodeMapPage() {
               isCompareMode={mapState.isCompareMode}
               compareUserId={mapState.compareUserId}
               selectedDomainId={selectedDomainId}
+              filterMode={filterMode}
               onViewModeChange={setViewMode}
               onTaskSelect={selectTask}
               onUserSelect={selectUser}
               onCompareToggle={toggleCompareMode}
               onDomainFilter={setSelectedDomainId}
+              onFilterModeChange={changeFilterMode}
+              onCheckpointRecord={handleCheckpointRecord}
             />
           </div>
 
@@ -161,6 +200,7 @@ export default function NodeMapPage() {
                   height={graphSize.height}
                   userColor={currentUser?.avatarColor}
                   colorByDomain={colorByDomain}
+                  checkpoints={checkpoints}
                 />
               </div>
             )}
@@ -175,6 +215,7 @@ export default function NodeMapPage() {
               clusters={filteredData.clusters}
               clusterDiff={clusterDiff}
               selectedTaskId={mapState.selectedTaskId}
+              checkpoints={checkpoints}
             />
           </div>
         </div>
