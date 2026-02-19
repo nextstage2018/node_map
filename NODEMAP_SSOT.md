@@ -40,6 +40,7 @@
 | Phase 10：思考マップUI改修 | ✅ 完了 | 2026-02-19 | ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示 |
 | Phase 11：Supabase接続 | ✅ 完了 | 2026-02-19 | 16テーブル作成・全7サービスのDB切り替え・デモモード併存 |
 | Phase 12：APIキー準備（前半） | ✅ 完了 | 2026-02-19 | Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正 |
+| Phase 12後半：インボックス改善 | ✅ 完了 | 2026-02-20 | メールMIMEパース・Chatwork接続・ページネーション・エラーハンドリング |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -111,13 +112,13 @@
 
 | サービス | APIキー取得 | 備考 |
 |----------|-----------|------|
-| Gmail / メール | ⬜ 未取得 | Gmail APIまたはIMAP/SMTP。設定画面のadmin設定で入力可能 |
+| Gmail / メール | ✅ 接続済み | IMAP/SMTP。Vercel環境変数に設定済み。MIMEパーサー実装済み |
 | Slack | ⬜ 未取得 | Bot Token。設定画面のadmin設定で入力可能 |
-| Chatwork | ⬜ 未取得 | APIトークン。設定画面のadmin設定で入力可能 |
-| Anthropic | ⬜ 未取得 | APIキー。設定画面のadmin設定で入力可能 |
-| Supabase | ⬜ 未取得 | URL + Anon Key。設定画面のadmin設定で入力可能 |
+| Chatwork | ✅ 接続済み | APIトークン。Vercel環境変数に設定済み。75メッセージ取得確認済み |
+| Anthropic | ✅ 接続済み | APIキー。Vercel環境変数に設定済み |
+| Supabase | ✅ 接続済み | URL + Anon Key。Vercel連携で自動設定済み |
 
-> 全サービスがデモモードで動作中。API情報を設定すれば実接続に切り替わる設計。
+> Gmail・Chatwork・Anthropic・Supabaseが実接続済み。Slackのみ未接続（Bot Token未取得）。
 
 ---
 
@@ -276,6 +277,14 @@
 | 2026-02-19 | Phase 12前半: Anthropic APIキーをVercelに設定 | ANTHROPIC_API_KEY。AI返信下書き・タスク会話・キーワード抽出が実データで動作可能に |
 | 2026-02-19 | Phase 12前半: Gmail(IMAP/SMTP)をVercelに設定 | EMAIL_USER, EMAIL_PASSWORD（アプリパスワード）, EMAIL_HOST, SMTP_HOST |
 | 2026-02-19 | 接続ステータス検出バグ修正 | settings/route.tsとtest/route.tsがGMAIL_CLIENT_IDのみ参照→EMAIL_USERも参照するよう修正 |
+| 2026-02-20 | Chatwork APIトークンをVercelに設定 | CHATWORK_API_TOKEN。社内グループ等75メッセージ取得確認済み |
+| 2026-02-20 | メールMIMEパーサーを実装 | parseEmailBody/decodeEmailContent/extractFromMultipart/decodeQuotedPrintable。multipart解析・base64/QP・HTML除去 |
+| 2026-02-20 | quoted-printable UTF-8マルチバイト対応 | TextDecoderを使用したバイト列→UTF-8変換。日本語メール本文が正しく表示されるようになった |
+| 2026-02-20 | MIMEヘッダー折り返し展開(unfoldHeaders)を追加 | RFC 2822準拠。Content-Type行が折り返されるケースに対応 |
+| 2026-02-20 | multipart boundary検出フォールバックを追加 | ヘッダーからboundary取得に失敗した場合、本文内のboundaryパターンから推測 |
+| 2026-02-20 | IMAP pagination対応 | fetchEmails(limit,page)でシーケンス番号による範囲取得。MessageListに「過去のメッセージを読み込む」ボタン追加 |
+| 2026-02-20 | Chatworkエラーハンドリング改善 | 204ステータス正常処理、エラーログ強化、ルームスキャン数10→15拡大 |
+| 2026-02-20 | GitHub Personal Access Token再生成 | nodemap-cowork-deploy。node_mapリポへのRead/Write権限。有効期限2026-03-22 |
 
 ---
 
@@ -628,7 +637,9 @@ node_map/
 8. **思考マップUI改修** — ✅完了（2026-02-19）ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示
 9. **Supabase接続** — ✅完了（2026-02-19）16テーブル作成・全7サービスのDB切り替え・デモモード併存
 10. **APIキー準備（前半）** — ✅完了（2026-02-19）Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正
-11. **APIキー準備（後半）・実データ検証** — Slack/Chatwork接続 + 全チャネルの実データ取得テスト
+11. **インボックス改善** — ✅完了（2026-02-20）メールMIMEパース・Chatwork API接続・ページネーション・エラーハンドリング
+12. **インボックスUX改善** — 同一グループ/スレッドのメッセージ統合表示 + Chatwork内部タグ（[rp aid=...]等）の除去・整形
+13. **Slack接続** — Bot Token取得 + 実データ取得テスト
 
 ---
 
