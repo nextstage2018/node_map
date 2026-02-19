@@ -4,6 +4,9 @@ import type {
   ServiceType,
   ConnectionStatus,
 } from '@/lib/types';
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 
 // インメモリ設定ストア（本番はSupabase or 環境変数）
 let appSettings: AppSettings = {
