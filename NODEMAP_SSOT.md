@@ -481,6 +481,21 @@ ai-agent/
 
 ---
 
+## GitHub認証情報
+
+| 項目 | 値 |
+|------|-----|
+| リポジトリ | https://github.com/nextstage2018/node_map |
+| ブランチ | main |
+| user.name | sjinji |
+| user.email | suzuki@next-stage.biz |
+| 認証方式 | Fine-grained personal access token（7日間ローテーション） |
+| トークン | **ローカルのcurrent/NODEMAP_SSOT.mdに記載（GitHub非公開）** |
+
+> **運用ルール：** トークンはGitHubにプッシュするとSecret Scanningでブロックされるため、ローカルのSSOTにのみ記載。エージェントはローカルSSOTからトークンを取得してプッシュを実行。トークンは7日で期限切れ→新しいトークンを発行しローカルSSOTを更新。
+
+---
+
 ## ローカルに保持するファイル一覧
 
 | ファイル | 説明 |
