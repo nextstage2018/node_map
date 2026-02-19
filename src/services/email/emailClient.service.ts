@@ -147,14 +147,38 @@ function extractFromMultipart(body: string, boundary: string): string {
 }
 
 /**
- * Quoted-Printableデコード
+ * Quoted-Printableデコード（UTF-8対応）
  */
 function decodeQuotedPrintable(input: string): string {
-  return input
-    .replace(/=\r?\n/g, '') // soft line breaks
-    .replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => {
+  // soft line breaksを除去
+  const cleaned = input.replace(/=\r?\n/g, '');
+
+  // =XX をバイト値に変換し、UTF-8としてデコード
+  const bytes: number[] = [];
+  let i = 0;
+  while (i < cleaned.length) {
+    if (cleaned[i] === '=' && i + 2 < cleaned.length) {
+      const hex = cleaned.substring(i + 1, i + 3);
+      if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        i += 3;
+        continue;
+      }
+    }
+    // 通常のASCII文字
+    bytes.push(cleaned.charCodeAt(i));
+    i++;
+  }
+
+  // Uint8ArrayからUTF-8文字列にデコード
+  try {
+    return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+  } catch {
+    // フォールバック: 元の方法で試す
+    return cleaned.replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => {
       return String.fromCharCode(parseInt(hex, 16));
     });
+  }
 }
 
 /**
