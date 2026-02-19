@@ -39,6 +39,7 @@
 | Phase 9：関係値情報基盤 | ✅ 完了 | 2026-02-19 | コンタクト統合管理・関係属性AI推定・管理画面・マップ統合 |
 | Phase 10：思考マップUI改修 | ✅ 完了 | 2026-02-19 | ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示 |
 | Phase 11：Supabase接続 | ✅ 完了 | 2026-02-19 | 16テーブル作成・全7サービスのDB切り替え・デモモード併存 |
+| Phase 12：APIキー準備（前半） | ✅ 完了 | 2026-02-19 | Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -272,6 +273,9 @@
 | 2026-02-19 | supabase.tsにisSupabaseConfigured()/getSupabase()を追加 | Supabase未設定時はnullを返し、デモモードにフォールバック |
 | 2026-02-19 | 全サービスに「Supabase有→DB / 無→デモデータ」パターンを適用 | taskClient, nodeClient, edgeClient, clusterClient, checkpoint, knowledgeMaster, contactPerson |
 | 2026-02-19 | Vercel+Supabase連携で環境変数自動設定済み | NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY |
+| 2026-02-19 | Phase 12前半: Anthropic APIキーをVercelに設定 | ANTHROPIC_API_KEY。AI返信下書き・タスク会話・キーワード抽出が実データで動作可能に |
+| 2026-02-19 | Phase 12前半: Gmail(IMAP/SMTP)をVercelに設定 | EMAIL_USER, EMAIL_PASSWORD（アプリパスワード）, EMAIL_HOST, SMTP_HOST |
+| 2026-02-19 | 接続ステータス検出バグ修正 | settings/route.tsとtest/route.tsがGMAIL_CLIENT_IDのみ参照→EMAIL_USERも参照するよう修正 |
 
 ---
 
@@ -581,6 +585,32 @@ node_map/
   - 関係属性のバッチ一括確認UIは未実装（個別確認のみ）
   - チャネル登録フロー（設定画面連携）は未実装
 
+### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
+- **設定した環境変数（Vercel）：**
+  - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
+  - `EMAIL_USER` — Gmailアドレス（Google Workspace）
+  - `EMAIL_PASSWORD` — Googleアプリパスワード（16文字）
+  - `EMAIL_HOST` — `imap.gmail.com`
+  - `SMTP_HOST` — `smtp.gmail.com`
+- **修正したバグ：**
+  - `api/settings/route.ts` と `api/settings/test/route.ts` のEmail接続検出ロジック
+  - 旧：`GMAIL_CLIENT_ID` のみ参照 → 新：`EMAIL_USER || GMAIL_CLIENT_ID` で検出
+- **現在の接続状態（Vercel環境変数設定済み）：**
+  - Supabase: ✅ 接続済み
+  - Anthropic: ✅ 設定済み（デプロイ後に設定画面で確認要）
+  - Gmail: ✅ 設定済み（デプロイ後に設定画面で確認要）
+  - Slack: ❌ 未設定
+  - Chatwork: ❌ 未設定
+- **注意点：**
+  - 接続テスト（`/api/settings/test`）は現在シミュレーション。本番は実際のAPI呼び出しに変更要
+  - Gmailは IMAP/SMTP 方式。Google Workspace の場合、管理者が「安全性の低いアプリ」を許可している必要あり
+  - Vercel Serverless Functions の実行時間制限（10秒/無料プラン）に注意。IMAPの大量取得は分割要
+- **次スレッドでやること：**
+  - 設定画面でAnthropic/Gmailの接続状態が「接続済み」か確認
+  - インボックスで実メール取得テスト
+  - AI機能（返信下書き・キーワード抽出）の実データテスト
+  - Slack/Chatworkの接続設定（必要に応じて）
+
 ---
 
 ## 次にやること
@@ -597,7 +627,8 @@ node_map/
 7. **関係値情報基盤** — ✅完了（2026-02-19）コンタクト統合管理・関係属性AI推定・管理画面・マップ統合
 8. **思考マップUI改修** — ✅完了（2026-02-19）ノードフィルター・本流/支流エッジ・チェックポイント記録・矢印表示
 9. **Supabase接続** — ✅完了（2026-02-19）16テーブル作成・全7サービスのDB切り替え・デモモード併存
-10. **APIキー準備・実データ検証**
+10. **APIキー準備（前半）** — ✅完了（2026-02-19）Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正
+11. **APIキー準備（後半）・実データ検証** — Slack/Chatwork接続 + 全チャネルの実データ取得テスト
 
 ---
 
