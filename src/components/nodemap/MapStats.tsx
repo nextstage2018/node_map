@@ -1,6 +1,7 @@
 'use client';
 
 import type { NodeData, EdgeData, ClusterData, ClusterDiff } from '@/lib/types';
+import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
 
 interface MapStatsProps {
   nodes: NodeData[];
@@ -111,6 +112,40 @@ export default function MapStats({
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 領域分布 */}
+      <div>
+        <h4 className="text-xs font-semibold text-slate-500 mb-2">領域分布</h4>
+        <div className="space-y-1.5">
+          {Object.entries(KNOWLEDGE_DOMAIN_CONFIG).map(([domainId, cfg]) => {
+            const count = nodes.filter((n) => n.domainId === domainId).length;
+            if (count === 0) return null;
+            return (
+              <div key={domainId} className="flex items-center gap-2 text-xs">
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: cfg.color }}
+                />
+                <span className="flex-1 text-slate-600">{cfg.name}</span>
+                <span className="font-medium text-slate-900">{count}</span>
+              </div>
+            );
+          })}
+          {(() => {
+            const unclassified = nodes.filter(
+              (n) => !n.domainId && (n.type === 'keyword' || n.type === 'project')
+            ).length;
+            if (unclassified === 0) return null;
+            return (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-2 h-2 rounded-full shrink-0 bg-slate-300" />
+                <span className="flex-1 text-slate-400">未分類</span>
+                <span className="font-medium text-slate-400">{unclassified}</span>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

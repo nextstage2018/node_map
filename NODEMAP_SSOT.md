@@ -35,6 +35,7 @@
 | **再定義v2：根本整理** | **✅ 完了** | **2026-02-19** | **ノード純化・ナレッジマスタ・ジョブ/タスク分離等** |
 | Phase 6：UI統一（配色・アイコン） | ✅ 完了 | 2026-02-19 | 3色システム・SVGアイコン13個・gray→slate全置換 |
 | Phase 7：タスクボード改修 | ✅ 完了 | 2026-02-19 | ジョブ/タスク分離・種ボックス・ステータス/タイムライン切り替え |
+| Phase 8：ナレッジマスタ基盤 | ✅ 完了 | 2026-02-19 | 3階層分類体系・AI自動分類・管理画面・マップ統合 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -249,6 +250,11 @@
 | 2026-02-19 | タブ切り替え（タスク/ジョブ） | BOARD_TAB_CONFIGでUI分離。ジョブ側は詳細パネル非表示 |
 | 2026-02-19 | ステータス/タイムラインのビュー切り替え | VIEW_MODE_CONFIGで2モード。タイムラインは今日/明日/明後日＋期限超過/未設定 |
 | 2026-02-19 | ジョブのデモデータ3件・種のデモデータ2件を追加 | TaskServiceに統合。APIルートは/api/jobs, /api/seeds |
+| 2026-02-19 | Phase 8: ナレッジマスタ3階層体系を導入 | 領域(5)→分野(17)→マスタキーワード(30)のデモデータ。KNOWLEDGE_DOMAIN_CONFIGで定数定義 |
+| 2026-02-19 | knowledgeMaster.service.tsを新規作成 | getDomains/getFields/getMasterEntries/classifyKeyword/linkNodeToMaster/getHierarchy |
+| 2026-02-19 | processText()にAI自動分類を統合 | キーワード抽出後にclassifyKeyword()→linkNodeToMaster()を自動実行。NodeDataにdomainId/fieldIdをキャッシュ |
+| 2026-02-19 | /master管理画面を新規作成 | ツリー表示（DomainTree）・統計カード（MasterStats）・分類バッジ（ClassificationBadge）・検索機能 |
+| 2026-02-19 | 思考マップに領域フィルター・ドメイン色分けを追加 | MapControlsに領域ボタン、NetworkGraphにcolorByDomain、MapStatsに領域分布表示 |
 
 ---
 
@@ -276,7 +282,8 @@ node_map/
 │       ├── nav-inbox.svg              ← ナビゲーション
 │       ├── nav-tasks.svg
 │       ├── nav-settings.svg
-│       └── nav-map.svg
+│       ├── nav-map.svg
+│       └── nav-master.svg            ← Phase 8: ナレッジマスタナビ
 ├── src/
 │   ├── app/
 │   │   ├── layout.tsx                 ← ルートレイアウト
@@ -286,6 +293,7 @@ node_map/
 │   │   ├── tasks/page.tsx             ← 画面②タスクボード（DndContext）
 │   │   ├── settings/page.tsx          ← 設定画面（2タブ構成）
 │   │   ├── nodemap/page.tsx          ← 画面③④思考マップ（D3.jsグラフ）
+│   │   ├── master/page.tsx           ← Phase 8: ナレッジマスタ管理画面
 │   │   └── api/
 │   │       ├── messages/
 │   │       │   ├── route.ts           ← メッセージ一覧取得
@@ -314,6 +322,12 @@ node_map/
 │   │       ├── nodemap/
 │   │       │   ├── route.ts           ← ノードマップ全体データ取得
 │   │       │   └── users/route.ts     ← マップユーザー一覧
+│   │       ├── master/                ← Phase 8: ナレッジマスタAPI
+│   │       │   ├── route.ts          ← 全階層ツリー取得
+│   │       │   ├── domains/route.ts  ← 領域一覧/追加
+│   │       │   ├── fields/route.ts   ← 分野一覧/追加
+│   │       │   ├── entries/route.ts  ← マスタキーワード一覧
+│   │       │   └── classify/route.ts ← キーワード自動分類
 │   │       └── clusters/
 │   │           ├── route.ts           ← クラスターCRUD
 │   │           └── diff/route.ts      ← クラスター差分計算
@@ -352,10 +366,14 @@ node_map/
 │   │   │   ├── Button.tsx
 │   │   │   ├── ChannelBadge.tsx
 │   │   │   └── StatusBadge.tsx
+│   │   ├── master/                    ← Phase 8: ナレッジマスタUI
+│   │   │   ├── DomainTree.tsx         ← 3階層ツリー表示（検索対応）
+│   │   │   ├── MasterStats.tsx        ← 統計カード（領域別ノード数等）
+│   │   │   └── ClassificationBadge.tsx ← 分類バッジ（領域色ドット付き）
 │   │   └── nodemap/
-│   │       ├── NetworkGraph.tsx       ← D3.jsネットワークグラフ本体
-│   │       ├── MapControls.tsx        ← 操作パネル（ユーザー/タスク/モード切替）
-│   │       └── MapStats.tsx           ← 統計情報パネル
+│   │       ├── NetworkGraph.tsx       ← D3.jsネットワークグラフ本体（+ドメイン色分け対応）
+│   │       ├── MapControls.tsx        ← 操作パネル（+領域フィルター追加）
+│   │       └── MapStats.tsx           ← 統計情報パネル（+領域分布追加）
 │   ├── hooks/
 │   │   ├── useMessages.ts
 │   │   ├── useTasks.ts
@@ -377,9 +395,10 @@ node_map/
 │       ├── task/taskClient.service.ts
 │       ├── settings/settingsClient.service.ts
 │       └── nodemap/
-│           ├── nodeClient.service.ts      ← ノード（点）管理
+│           ├── nodeClient.service.ts      ← ノード（点）管理（+自動分類統合）
 │           ├── edgeClient.service.ts      ← エッジ（線）管理
-│           └── clusterClient.service.ts   ← クラスター（面）管理
+│           ├── clusterClient.service.ts   ← クラスター（面）管理
+│           └── knowledgeMaster.service.ts ← Phase 8: ナレッジマスタ管理
 ├── supabase/
 │   ├── 001_initial_schema.sql
 │   ├── 002_tasks_schema.sql
@@ -451,6 +470,20 @@ node_map/
   - 種ボックスの新規構築
   - 配色統一・アイコン統一
 
+### Phase 7 → Phase 8（ナレッジマスタ基盤）への引き継ぎ
+- **実装したファイル構成：** knowledgeMaster.service.ts + api/master/* + components/master/* + master/page.tsx
+- **ナレッジマスタの設計：**
+  - 3階層体系：領域(5)→分野(17)→マスタキーワード(30)
+  - 領域5つ：マーケティング/開発/営業/管理/企画（各色定義済み）
+  - デモデータ：全ユーザーの既存ノード44個中、キーワード/プロジェクト型を自動リンク
+  - 自動分類：processText()内でclassifyKeyword()を呼び出し、ノードにdomainId/fieldIdをキャッシュ
+  - 管理画面：/masterでツリー表示、検索、統計カード
+  - マップ統合：領域フィルター（ノード絞り込み）、ドメイン色分け、統計パネルに領域分布
+- **注意点：**
+  - 分類ロジックは現在ルールベース（完全一致/同義語/部分一致）。本番はAI API呼び出しに置き換え
+  - マスタキーワードの追加/編集UIは未実装（APIは準備済み）
+  - NodeMasterLinkの確認（confirmed）UIは未実装
+
 ---
 
 ## 次にやること
@@ -463,7 +496,7 @@ node_map/
 ### 再定義v2の実装（Phase 6以降）
 4. **UI修正** — ✅完了（2026-02-19）配色3色統一、SVGアイコン13個、gray→slate全置換
 5. **タスクボード改修** — ✅完了（2026-02-19）ジョブ/タスク分離、種ボックス、ステータス/タイムライン切り替え
-6. **ナレッジマスタ基盤** — 組織共通の3階層分類体系＋AI自動分類
+6. **ナレッジマスタ基盤** — ✅完了（2026-02-19）3階層体系（領域→分野→キーワード）、AI自動分類、管理画面、マップ統合
 7. **関係値情報基盤** — チャネル登録フロー、コンタクトリスト、関係属性
 8. **思考マップUI改修** — ノード純化、フィルター、本流/支流、チェックポイント
 9. **Supabase接続** — インメモリからDBへの切り替え

@@ -13,6 +13,7 @@ export default function Header() {
     { href: '/tasks', label: 'タスク', icon: '/icons/nav-tasks.svg', enabled: true },
     { href: '/settings', label: '設定', icon: '/icons/nav-settings.svg', enabled: true },
     { href: '/nodemap', label: '思考マップ', icon: '/icons/nav-map.svg', enabled: true },
+    { href: '/master', label: 'ナレッジマスタ', icon: '/icons/nav-master.svg', enabled: true },
   ];
 
   return (

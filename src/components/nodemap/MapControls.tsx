@@ -2,6 +2,7 @@
 
 import type { MapViewMode, MapUser } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
 
 interface MapControlsProps {
   viewMode: MapViewMode;
@@ -11,10 +12,12 @@ interface MapControlsProps {
   availableTasks: { id: string; label: string }[];
   isCompareMode: boolean;
   compareUserId: string | null;
+  selectedDomainId: string | null;
   onViewModeChange: (mode: MapViewMode) => void;
   onTaskSelect: (taskId: string | null) => void;
   onUserSelect: (userId: string) => void;
   onCompareToggle: (userId: string | null) => void;
+  onDomainFilter: (domainId: string | null) => void;
 }
 
 const VIEW_MODES: { key: MapViewMode; label: string; icon: string; description: string }[] = [
@@ -32,10 +35,12 @@ export default function MapControls({
   availableTasks,
   isCompareMode,
   compareUserId,
+  selectedDomainId,
   onViewModeChange,
   onTaskSelect,
   onUserSelect,
   onCompareToggle,
+  onDomainFilter,
 }: MapControlsProps) {
   const currentUser = users.find((u) => u.id === selectedUserId);
 
@@ -160,6 +165,47 @@ export default function MapControls({
             </button>
           </div>
         )}
+      </div>
+
+      {/* 領域フィルター */}
+      <div>
+        <label className="block text-xs font-semibold text-slate-500 mb-2">領域フィルター</label>
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => onDomainFilter(null)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+              !selectedDomainId
+                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'
+            )}
+          >
+            すべて
+          </button>
+          {Object.entries(KNOWLEDGE_DOMAIN_CONFIG).map(([id, cfg]) => (
+            <button
+              key={id}
+              onClick={() => onDomainFilter(selectedDomainId === id ? null : id)}
+              className={cn(
+                'flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                selectedDomainId === id
+                  ? 'border shadow-sm'
+                  : 'bg-slate-50 text-slate-500 border border-slate-100 hover:bg-slate-100'
+              )}
+              style={selectedDomainId === id ? {
+                backgroundColor: `${cfg.color}15`,
+                color: cfg.color,
+                borderColor: `${cfg.color}40`,
+              } : {}}
+            >
+              <span
+                className="w-2 h-2 rounded-full"
+                style={{ backgroundColor: cfg.color }}
+              />
+              {cfg.name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 凡例 */}

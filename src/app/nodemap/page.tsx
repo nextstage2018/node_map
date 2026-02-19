@@ -24,6 +24,8 @@ export default function NodeMapPage() {
 
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const [graphSize, setGraphSize] = useState({ width: 800, height: 600 });
+  const [selectedDomainId, setSelectedDomainId] = useState<string | null>(null);
+  const colorByDomain = selectedDomainId !== null;
 
   // グラフコンテナのサイズを監視
   useEffect(() => {
@@ -44,6 +46,16 @@ export default function NodeMapPage() {
   const currentUser = users.find((u) => u.id === mapState.selectedUserId);
   const compareUser = users.find((u) => u.id === mapState.compareUserId);
 
+  // 領域フィルターが選択されている場合、ノードをフィルタリング
+  const filteredData = selectedDomainId
+    ? {
+        ...data,
+        nodes: data.nodes.filter(
+          (n) => n.domainId === selectedDomainId || n.type === 'person'
+        ),
+      }
+    : data;
+
   return (
     <div className="flex h-screen bg-slate-50">
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -59,10 +71,12 @@ export default function NodeMapPage() {
               availableTasks={availableTasks}
               isCompareMode={mapState.isCompareMode}
               compareUserId={mapState.compareUserId}
+              selectedDomainId={selectedDomainId}
               onViewModeChange={setViewMode}
               onTaskSelect={selectTask}
               onUserSelect={selectUser}
               onCompareToggle={toggleCompareMode}
+              onDomainFilter={setSelectedDomainId}
             />
           </div>
 
@@ -75,7 +89,7 @@ export default function NodeMapPage() {
                   <p className="text-sm text-slate-500">マップを読み込み中...</p>
                 </div>
               </div>
-            ) : data.nodes.length === 0 ? (
+            ) : filteredData.nodes.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center max-w-sm">
                   <div className="text-4xl mb-3">🗺️</div>
@@ -138,14 +152,15 @@ export default function NodeMapPage() {
               /* 通常モード */
               <div ref={graphContainerRef} className="flex-1">
                 <NetworkGraph
-                  nodes={data.nodes}
-                  edges={data.edges}
-                  clusters={data.clusters}
+                  nodes={filteredData.nodes}
+                  edges={filteredData.edges}
+                  clusters={filteredData.clusters}
                   viewMode={mapState.viewMode}
                   selectedTaskId={mapState.selectedTaskId}
                   width={graphSize.width}
                   height={graphSize.height}
                   userColor={currentUser?.avatarColor}
+                  colorByDomain={colorByDomain}
                 />
               </div>
             )}
@@ -155,9 +170,9 @@ export default function NodeMapPage() {
           <div className="w-64 border-l border-slate-200 bg-white overflow-y-auto p-4">
             <h3 className="text-sm font-bold text-slate-900 mb-3">統計情報</h3>
             <MapStats
-              nodes={data.nodes}
-              edges={data.edges}
-              clusters={data.clusters}
+              nodes={filteredData.nodes}
+              edges={filteredData.edges}
+              clusters={filteredData.clusters}
               clusterDiff={clusterDiff}
               selectedTaskId={mapState.selectedTaskId}
             />

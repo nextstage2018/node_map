@@ -343,6 +343,46 @@ export const VIEW_MODE_CONFIG = {
   },
 } as const;
 
+// ===== Phase 8: ナレッジマスタ基盤 =====
+
+export const KNOWLEDGE_DOMAIN_CONFIG: Record<string, {
+  name: string;
+  description: string;
+  color: string;
+  sortOrder: number;
+}> = {
+  domain_marketing: {
+    name: 'マーケティング',
+    description: '集客・ブランド・広告・SEO・SNS',
+    color: '#2563EB', // primary blue
+    sortOrder: 1,
+  },
+  domain_development: {
+    name: '開発',
+    description: 'ソフトウェア・インフラ・アーキテクチャ',
+    color: '#16A34A', // green
+    sortOrder: 2,
+  },
+  domain_sales: {
+    name: '営業',
+    description: '顧客獲得・提案・商談・CRM',
+    color: '#D97706', // amber
+    sortOrder: 3,
+  },
+  domain_management: {
+    name: '管理',
+    description: '経理・人事・法務・総務',
+    color: '#9333EA', // purple
+    sortOrder: 4,
+  },
+  domain_planning: {
+    name: '企画',
+    description: '経営企画・事業計画・新規事業',
+    color: '#DC2626', // red
+    sortOrder: 5,
+  },
+} as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },

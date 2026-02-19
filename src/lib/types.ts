@@ -398,6 +398,10 @@ export interface NodeData {
   sourceContexts: NodeSourceContext[]; // どこで出現したか
   createdAt: string;
   updatedAt: string;
+  // Phase 8: ナレッジマスタとの紐付け
+  masterEntryId?: string;   // マスタキーワードへの参照
+  domainId?: string;        // 分類された領域ID
+  fieldId?: string;         // 分類された分野ID
 }
 
 // ノードの出現コンテキスト
@@ -523,4 +527,67 @@ export interface MapState {
   selectedUserId: string;
   compareUserId: string | null;
   isCompareMode: boolean;
+}
+
+// ===== Phase 8: ナレッジマスタ基盤 =====
+
+// 第1階層：領域（組織共通）
+export interface KnowledgeDomain {
+  id: string;
+  name: string;
+  description: string;
+  color: string;           // 表示色（hex）
+  sortOrder: number;
+  createdAt: string;
+}
+
+// 第2階層：分野（組織共通）
+export interface KnowledgeField {
+  id: string;
+  domainId: string;        // 所属領域
+  name: string;
+  description: string;
+  sortOrder: number;
+  createdAt: string;
+}
+
+// 第3階層：マスタキーワード（組織共通）
+export interface KnowledgeMasterEntry {
+  id: string;
+  fieldId: string;         // 所属分野
+  label: string;           // 正式名称
+  synonyms: string[];      // 同義語・別名（マッチング用）
+  description?: string;
+  createdAt: string;
+}
+
+// ユーザーノード↔マスタの紐付け
+export interface NodeMasterLink {
+  nodeId: string;
+  masterEntryId: string;
+  confidence: number;      // AI分類の信頼度 0.0〜1.0
+  confirmed: boolean;      // ユーザーが確認済みか
+  createdAt: string;
+}
+
+// ナレッジマスタの階層ツリー（API応答用）
+export interface KnowledgeHierarchy {
+  domains: (KnowledgeDomain & {
+    fields: (KnowledgeField & {
+      entries: KnowledgeMasterEntry[];
+      nodeCount: number;    // この分野にリンクされたノード数
+    })[];
+  })[];
+  totalEntries: number;
+  unclassifiedCount: number;
+}
+
+// 分類結果
+export interface ClassificationResult {
+  domainId: string;
+  domainName: string;
+  fieldId: string;
+  fieldName: string;
+  masterEntryId?: string;  // 既存マスタにマッチした場合
+  confidence: number;
 }

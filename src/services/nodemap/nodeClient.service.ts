@@ -11,6 +11,7 @@ import {
   ExtractedKeyword,
 } from '@/lib/types';
 import { extractKeywords, assessUnderstandingLevel } from '@/services/ai/keywordExtractor.service';
+import { KnowledgeMasterService } from './knowledgeMaster.service';
 
 // インメモリストア（本番はSupabase）
 let nodesStore: NodeData[] = [];
@@ -236,6 +237,29 @@ export class NodeService {
       if (project.confidence >= 0.5) {
         const node = await this.upsertNode(project.label, 'project', request.userId, context);
         upsertedNodes.push(node);
+      }
+    }
+
+    // Phase 8: ナレッジマスタ自動分類
+    // キーワード・プロジェクトノードをマスタに紐付け
+    for (const node of upsertedNodes) {
+      if (node.type === 'keyword' || node.type === 'project') {
+        try {
+          const classification = await KnowledgeMasterService.classifyKeyword(node.label);
+          if (classification) {
+            await KnowledgeMasterService.linkNodeToMaster(
+              node.id,
+              classification.masterEntryId || '',
+              classification.confidence
+            );
+            // ノードに分類結果をキャッシュ
+            node.domainId = classification.domainId;
+            node.fieldId = classification.fieldId;
+            node.masterEntryId = classification.masterEntryId;
+          }
+        } catch {
+          // 分類失敗はサイレントに無視（ノード蓄積は継続）
+        }
       }
     }
 

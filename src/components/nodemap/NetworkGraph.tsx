@@ -3,6 +3,7 @@
 import { useRef, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
 import type { NodeData, EdgeData, ClusterData, MapViewMode } from '@/lib/types';
+import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
 
 interface NetworkGraphProps {
   nodes: NodeData[];
@@ -13,6 +14,7 @@ interface NetworkGraphProps {
   width?: number;
   height?: number;
   userColor?: string;
+  colorByDomain?: boolean;
 }
 
 // 理解度レベルに応じたサイズ
@@ -45,6 +47,7 @@ export default function NetworkGraph({
   width = 800,
   height = 600,
   userColor = '#2563EB',
+  colorByDomain = false,
 }: NetworkGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simulationRef = useRef<d3.Simulation<d3.SimulationNodeDatum, undefined> | null>(null);
@@ -173,9 +176,15 @@ export default function NetworkGraph({
       const el = d3.select(this);
       const size = LEVEL_SIZE[d.understandingLevel] || 8;
       const isHighlighted = !hasSelection || highlightedNodeIds.has(d.id);
-      const fillColor = isHighlighted
-        ? LEVEL_COLOR[d.understandingLevel] || '#94A3B8'
-        : '#E2E8F0';
+      // ドメイン色分けモード時はドメイン色を使う
+      let fillColor: string;
+      if (!isHighlighted) {
+        fillColor = '#E2E8F0';
+      } else if (colorByDomain && d.domainId && KNOWLEDGE_DOMAIN_CONFIG[d.domainId]) {
+        fillColor = KNOWLEDGE_DOMAIN_CONFIG[d.domainId].color;
+      } else {
+        fillColor = LEVEL_COLOR[d.understandingLevel] || '#94A3B8';
+      }
       const opacity = isHighlighted ? 1 : 0.3;
       const shape = NODE_SHAPE[d.type] || 'circle';
 
@@ -313,7 +322,7 @@ export default function NetworkGraph({
       simulation.stop();
       tooltip.remove();
     };
-  }, [nodes, edges, clusters, viewMode, selectedTaskId, width, height, userColor, getHighlightedNodeIds, getHighlightedEdgeIds]);
+  }, [nodes, edges, clusters, viewMode, selectedTaskId, width, height, userColor, colorByDomain, getHighlightedNodeIds, getHighlightedEdgeIds]);
 
   return (
     <svg
