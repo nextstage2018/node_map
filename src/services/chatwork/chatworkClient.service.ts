@@ -13,13 +13,20 @@ function getToken(): string {
 
 async function chatworkFetch(endpoint: string, options?: RequestInit) {
   const token = getToken();
-  return fetch(`${CHATWORK_API_BASE}${endpoint}`, {
+  const res = await fetch(`${CHATWORK_API_BASE}${endpoint}`, {
     ...options,
     headers: {
       'X-ChatWorkToken': token,
       ...options?.headers,
     },
   });
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => 'unknown');
+    console.error(`[Chatwork API] ${res.status} ${res.statusText} - ${endpoint}: ${errorBody}`);
+  }
+
+  return res;
 }
 
 /**
@@ -29,25 +36,62 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
   const token = getToken();
 
   if (!token) {
+    console.log('[Chatwork] トークン未設定のためデモデータを返却');
     return getDemoChatworkMessages();
   }
 
   try {
     // ルーム一覧を取得
     const roomsRes = await chatworkFetch('/rooms');
+    if (!roomsRes.ok) {
+      console.error('[Chatwork] ルーム一覧取得失敗:', roomsRes.status, roomsRes.statusText);
+      return getDemoChatworkMessages();
+    }
+
     const rooms = await roomsRes.json();
+    console.log(`[Chatwork] ${rooms.length}個のルームを取得`);
+
+    if (!Array.isArray(rooms) || rooms.length === 0) {
+      console.log('[Chatwork] ルームが存在しません');
+      return [];
+    }
 
     const messages: UnifiedMessage[] = [];
+    const perRoom = Math.max(5, Math.ceil(limit / Math.min(rooms.length, 10)));
 
-    for (const room of rooms.slice(0, 10)) {
+    // 直近のメッセージがありそうなルームを優先（last_update_timeでソート）
+    const sortedRooms = [...rooms].sort(
+      (a: { last_update_time?: number }, b: { last_update_time?: number }) =>
+        (b.last_update_time || 0) - (a.last_update_time || 0)
+    );
+
+    for (const room of sortedRooms.slice(0, 15)) {
       try {
+        // force=1: 最新100件取得。force=0だと未読のみ
         const msgRes = await chatworkFetch(`/rooms/${room.room_id}/messages?force=1`);
-        if (!msgRes.ok) continue;
+
+        if (msgRes.status === 204) {
+          // 204: メッセージなし（正常）
+          console.log(`[Chatwork] ルーム ${room.name}(${room.room_id}): メッセージなし`);
+          continue;
+        }
+
+        if (!msgRes.ok) {
+          console.error(`[Chatwork] ルーム ${room.name}(${room.room_id}): メッセージ取得失敗 ${msgRes.status}`);
+          continue;
+        }
+
         const roomMessages = await msgRes.json();
 
-        if (!Array.isArray(roomMessages)) continue;
+        if (!Array.isArray(roomMessages)) {
+          console.log(`[Chatwork] ルーム ${room.name}: レスポンスが配列ではありません`, typeof roomMessages);
+          continue;
+        }
 
-        for (const msg of roomMessages.slice(-Math.ceil(limit / rooms.length))) {
+        console.log(`[Chatwork] ルーム ${room.name}: ${roomMessages.length}件取得`);
+
+        // 最新のメッセージを取得
+        for (const msg of roomMessages.slice(-perRoom)) {
           messages.push({
             id: `chatwork-${room.room_id}-${msg.message_id}`,
             channel: 'chatwork',
@@ -67,16 +111,18 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
             },
           });
         }
-      } catch {
-        // room message fetch failed
+      } catch (err) {
+        console.error(`[Chatwork] ルーム ${room.name}(${room.room_id}) エラー:`, err);
       }
     }
+
+    console.log(`[Chatwork] 合計 ${messages.length}件のメッセージを取得`);
 
     return messages.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   } catch (error) {
-    console.error('Chatwork取得エラー:', error);
+    console.error('[Chatwork] 全体エラー:', error);
     return getDemoChatworkMessages();
   }
 }

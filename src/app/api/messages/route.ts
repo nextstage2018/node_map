@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { fetchEmails } from '@/services/email/emailClient.service';
 import { fetchSlackMessages } from '@/services/slack/slackClient.service';
 import { fetchChatworkMessages } from '@/services/chatwork/chatworkClient.service';
@@ -8,13 +8,18 @@ import { UnifiedMessage } from '@/lib/types';
 export const dynamic = 'force-dynamic';
 
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // ページネーションパラメータ
+    const searchParams = request.nextUrl.searchParams;
+    const page = Number(searchParams.get('page')) || 1;
+    const limit = Number(searchParams.get('limit')) || 50;
+
     // 全チャネルからメッセージを並列取得
     const [emails, slackMessages, chatworkMessages] = await Promise.all([
-      fetchEmails(),
-      fetchSlackMessages(),
-      fetchChatworkMessages(),
+      fetchEmails(limit, page),
+      fetchSlackMessages(limit),
+      fetchChatworkMessages(limit),
     ]);
 
     // 全メッセージを統合して時系列ソート
@@ -45,6 +50,11 @@ export async function GET() {
     return NextResponse.json({
       success: true,
       data: allMessages,
+      pagination: {
+        page,
+        limit,
+        hasMore: emails.length >= limit, // メールがlimit件あれば次ページがある可能性
+      },
     });
   } catch (error) {
     console.error('メッセージ取得エラー:', error);

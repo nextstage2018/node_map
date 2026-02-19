@@ -14,6 +14,9 @@ interface MessageListProps {
   onSelect: (message: UnifiedMessage) => void;
   filter: ChannelType | 'all';
   onFilterChange: (filter: ChannelType | 'all') => void;
+  onLoadMore?: () => void;
+  isLoadingMore?: boolean;
+  hasMore?: boolean;
 }
 
 export default function MessageList({
@@ -22,6 +25,9 @@ export default function MessageList({
   onSelect,
   filter,
   onFilterChange,
+  onLoadMore,
+  isLoadingMore,
+  hasMore,
 }: MessageListProps) {
   const filteredMessages =
     filter === 'all'
@@ -65,56 +71,71 @@ export default function MessageList({
             メッセージがありません
           </div>
         ) : (
-          filteredMessages.map((message) => (
-            <button
-              key={message.id}
-              onClick={() => onSelect(message)}
-              className={cn(
-                'w-full text-left p-4 border-b border-slate-100 hover:bg-blue-50 transition-colors',
-                selectedId === message.id && 'bg-blue-50 border-l-2 border-l-blue-600',
-                message.status === 'unread' && 'bg-white'
-              )}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  <ChannelBadge channel={message.channel} />
-                  <span className={cn(
-                    'text-sm text-slate-900',
-                    message.status === 'unread' ? 'font-bold' : 'font-normal'
+          <>
+            {filteredMessages.map((message) => (
+              <button
+                key={message.id}
+                onClick={() => onSelect(message)}
+                className={cn(
+                  'w-full text-left p-4 border-b border-slate-100 hover:bg-blue-50 transition-colors',
+                  selectedId === message.id && 'bg-blue-50 border-l-2 border-l-blue-600',
+                  message.status === 'unread' && 'bg-white'
+                )}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <ChannelBadge channel={message.channel} />
+                    <span className={cn(
+                      'text-sm text-slate-900',
+                      message.status === 'unread' ? 'font-bold' : 'font-normal'
+                    )}>
+                      {message.from.name}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={message.status} />
+                    <span className="text-xs text-slate-400">
+                      {formatRelativeTime(message.timestamp)}
+                    </span>
+                  </div>
+                </div>
+                {message.subject && (
+                  <div className={cn(
+                    'text-sm mb-0.5',
+                    message.status === 'unread' ? 'text-slate-900 font-semibold' : 'text-slate-700'
                   )}>
-                    {message.from.name}
-                  </span>
+                    {truncate(message.subject, 40)}
+                  </div>
+                )}
+                {message.metadata.slackChannelName && (
+                  <div className="text-xs text-slate-400 mb-0.5">
+                    #{message.metadata.slackChannelName}
+                  </div>
+                )}
+                {message.metadata.chatworkRoomName && (
+                  <div className="text-xs text-slate-400 mb-0.5">
+                    {message.metadata.chatworkRoomName}
+                  </div>
+                )}
+                <div className="text-xs text-slate-500 line-clamp-2">
+                  {truncate(stripHtml(message.body), 80)}
                 </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={message.status} />
-                  <span className="text-xs text-slate-400">
-                    {formatRelativeTime(message.timestamp)}
-                  </span>
-                </div>
+              </button>
+            ))}
+
+            {/* もっと読み込むボタン */}
+            {hasMore && onLoadMore && (
+              <div className="p-4 text-center">
+                <button
+                  onClick={onLoadMore}
+                  disabled={isLoadingMore}
+                  className="px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {isLoadingMore ? '読み込み中...' : '過去のメッセージを読み込む'}
+                </button>
               </div>
-              {message.subject && (
-                <div className={cn(
-                  'text-sm mb-0.5',
-                  message.status === 'unread' ? 'text-slate-900 font-semibold' : 'text-slate-700'
-                )}>
-                  {truncate(message.subject, 40)}
-                </div>
-              )}
-              {message.metadata.slackChannelName && (
-                <div className="text-xs text-slate-400 mb-0.5">
-                  #{message.metadata.slackChannelName}
-                </div>
-              )}
-              {message.metadata.chatworkRoomName && (
-                <div className="text-xs text-slate-400 mb-0.5">
-                  {message.metadata.chatworkRoomName}
-                </div>
-              )}
-              <div className="text-xs text-slate-500 line-clamp-2">
-                {truncate(stripHtml(message.body), 80)}
-              </div>
-            </button>
-          ))
+            )}
+          </>
         )}
       </div>
     </div>

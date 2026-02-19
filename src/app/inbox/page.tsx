@@ -9,7 +9,7 @@ import MessageList from '@/components/inbox/MessageList';
 import MessageDetail from '@/components/inbox/MessageDetail';
 
 export default function InboxPage() {
-  const { messages, isLoading, error, refresh, messageCounts, unreadCounts } =
+  const { messages, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts } =
     useMessages();
   const [selectedMessage, setSelectedMessage] = useState<UnifiedMessage | null>(
     null
@@ -26,14 +26,14 @@ export default function InboxPage() {
           <div className="w-96 border-r border-slate-200 flex flex-col">
             <div className="p-3 border-b border-slate-200 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-900">
-                📥 統合インボックス
+                統合インボックス
               </h2>
               <button
                 onClick={refresh}
                 className="text-xs text-blue-600 hover:underline"
                 disabled={isLoading}
               >
-                {isLoading ? '更新中...' : '🔄 更新'}
+                {isLoading ? '更新中...' : '更新'}
               </button>
             </div>
 
@@ -57,6 +57,9 @@ export default function InboxPage() {
                 onSelect={setSelectedMessage}
                 filter={filter}
                 onFilterChange={setFilter}
+                onLoadMore={loadMore}
+                isLoadingMore={isLoadingMore}
+                hasMore={hasMore}
               />
             )}
           </div>
