@@ -133,6 +133,9 @@ export interface Task {
   // メタ情報
   tags: string[];
   assignee?: string;
+  // Phase 7 追加フィールド
+  seedId?: string;       // 種ボックス経由で作成された場合の種ID
+  dueDate?: string;      // 期限日（タイムラインビュー用、ISO日付）
 }
 
 // タスク作成リクエスト
@@ -155,6 +158,7 @@ export interface UpdateTaskRequest {
   ideationSummary?: string;
   resultSummary?: string;
   tags?: string[];
+  dueDate?: string;
 }
 
 // AI会話リクエスト
@@ -183,6 +187,75 @@ export interface TaskSuggestion {
   sourceDate: string; // いつ（ISO文字列）
   sourceSubject?: string; // 件名
   sourceExcerpt: string; // 元メッセージの抜粋
+}
+
+// ===== Phase 7: ジョブ/タスク分離・種ボックス・表示切り替え =====
+
+// ジョブステータス（AI定型作業の流れ：下書き→提案→実行 or 却下）
+export type JobStatus = 'draft' | 'proposed' | 'executed' | 'dismissed';
+
+// ジョブの種別
+export type JobType = 'email_reply' | 'document_update' | 'data_entry' | 'routine_admin';
+
+// ジョブ（AI起点の定型作業。思考マップ対象外）
+export interface Job {
+  id: string;
+  type: JobType;
+  title: string;
+  description: string;
+  status: JobStatus;
+  priority: TaskPriority;
+  draftContent?: string;       // AI生成の下書き内容
+  sourceMessageId?: string;
+  sourceChannel?: ChannelType;
+  createdAt: string;
+  updatedAt: string;
+  executedAt?: string;
+  dismissedAt?: string;
+}
+
+// 種の状態
+export type SeedStatus = 'pending' | 'confirmed';
+
+// 種（タスク化前のアイデア・メモ）
+export interface Seed {
+  id: string;
+  content: string;             // ユーザーが入力した生テキスト
+  sourceChannel?: ChannelType;
+  sourceMessageId?: string;
+  createdAt: string;
+  status: SeedStatus;
+  // AI構造化結果（確認フェーズで生成）
+  structured?: {
+    goal: string;
+    content: string;
+    concerns: string;
+    deadline?: string;
+  };
+}
+
+// タスクボードの表示モード
+export type TaskBoardViewMode = 'status' | 'timeline';
+
+// タスクボードのタブ
+export type TaskBoardTab = 'tasks' | 'jobs';
+
+// ジョブ作成リクエスト
+export interface CreateJobRequest {
+  type: JobType;
+  title: string;
+  description: string;
+  priority: TaskPriority;
+  draftContent?: string;
+  sourceMessageId?: string;
+  sourceChannel?: ChannelType;
+}
+
+// 種作成リクエスト
+export interface CreateSeedRequest {
+  content: string;
+  sourceChannel?: ChannelType;
+  sourceMessageId?: string;
 }
 
 // ===== Phase 3: 設定画面 / API接続 =====

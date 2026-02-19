@@ -9,6 +9,13 @@ import {
   CreateTaskRequest,
   UpdateTaskRequest,
   TaskSuggestion,
+  Job,
+  JobStatus,
+  JobType,
+  Seed,
+  SeedStatus,
+  CreateJobRequest,
+  CreateSeedRequest,
 } from '@/lib/types';
 
 // === デモデータ ===
@@ -225,6 +232,65 @@ const demoSuggestions: TaskSuggestion[] = [
   },
 ];
 
+// === デモデータ: ジョブ ===
+
+const demoJobs: Job[] = [
+  {
+    id: 'job-1',
+    type: 'email_reply',
+    title: '社内通知メールへの確認返信',
+    description: '人事部からの福利厚生制度変更のお知らせメールに「確認しました」と返信する。',
+    status: 'proposed',
+    priority: 'low',
+    draftContent: 'お疲れ様です。福利厚生制度変更のお知らせ、確認いたしました。ご連絡ありがとうございます。',
+    sourceMessageId: 'email-3',
+    sourceChannel: 'email',
+    createdAt: h(4),
+    updatedAt: h(4),
+  },
+  {
+    id: 'job-2',
+    type: 'document_update',
+    title: '週次ミーティング議事録テンプレート更新',
+    description: '次回ミーティングの日付と参加者リストをテンプレートに反映する。',
+    status: 'draft',
+    priority: 'low',
+    draftContent: '日付: 2026-02-26\n参加者: 鈴木、田中、佐藤、山田\nアジェンダ: 前回アクションアイテム確認、今週の進捗、来週の予定',
+    createdAt: h(2),
+    updatedAt: h(2),
+  },
+  {
+    id: 'job-3',
+    type: 'routine_admin',
+    title: '経費精算の月次締め作業',
+    description: '今月分の経費精算データを取りまとめてCSVでエクスポートする。',
+    status: 'executed',
+    priority: 'medium',
+    createdAt: h(72),
+    updatedAt: h(24),
+    executedAt: h(24),
+  },
+];
+
+// === デモデータ: 種ボックス ===
+
+const demoSeeds: Seed[] = [
+  {
+    id: 'seed-1',
+    content: '来月の新製品発表に向けた市場調査を進めたい。競合他社のポジショニングと価格帯を整理する必要がある。',
+    createdAt: h(1),
+    status: 'pending',
+  },
+  {
+    id: 'seed-2',
+    content: 'チーム内のナレッジ共有の仕組みを改善したい',
+    sourceChannel: 'slack',
+    sourceMessageId: 'slack-3',
+    createdAt: h(8),
+    status: 'pending',
+  },
+];
+
 // === サービスクラス ===
 
 export class TaskService {
@@ -323,5 +389,136 @@ export class TaskService {
       return demoSuggestions;
     }
     return [];
+  }
+
+  // ===== ジョブ管理 =====
+
+  static async getJobs(): Promise<Job[]> {
+    if (this.isDemo()) {
+      return [...demoJobs].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    }
+    return [];
+  }
+
+  static async createJob(req: CreateJobRequest): Promise<Job> {
+    const newJob: Job = {
+      id: `job-${Date.now()}`,
+      type: req.type,
+      title: req.title,
+      description: req.description,
+      status: 'draft',
+      priority: req.priority,
+      draftContent: req.draftContent,
+      sourceMessageId: req.sourceMessageId,
+      sourceChannel: req.sourceChannel,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (this.isDemo()) {
+      demoJobs.unshift(newJob);
+    }
+    return newJob;
+  }
+
+  static async updateJobStatus(id: string, status: JobStatus): Promise<Job | null> {
+    if (this.isDemo()) {
+      const idx = demoJobs.findIndex((j) => j.id === id);
+      if (idx === -1) return null;
+      demoJobs[idx] = {
+        ...demoJobs[idx],
+        status,
+        updatedAt: new Date().toISOString(),
+        ...(status === 'executed' ? { executedAt: new Date().toISOString() } : {}),
+        ...(status === 'dismissed' ? { dismissedAt: new Date().toISOString() } : {}),
+      };
+      return demoJobs[idx];
+    }
+    return null;
+  }
+
+  // ===== 種ボックス管理 =====
+
+  static async getSeeds(): Promise<Seed[]> {
+    if (this.isDemo()) {
+      return demoSeeds.filter((s) => s.status === 'pending');
+    }
+    return [];
+  }
+
+  static async createSeed(req: CreateSeedRequest): Promise<Seed> {
+    const newSeed: Seed = {
+      id: `seed-${Date.now()}`,
+      content: req.content,
+      sourceChannel: req.sourceChannel,
+      sourceMessageId: req.sourceMessageId,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    };
+    if (this.isDemo()) {
+      demoSeeds.unshift(newSeed);
+    }
+    return newSeed;
+  }
+
+  static async confirmSeed(seedId: string): Promise<Task | null> {
+    if (this.isDemo()) {
+      const seed = demoSeeds.find((s) => s.id === seedId);
+      if (!seed || seed.status === 'confirmed') return null;
+
+      // AI構造化をシミュレート
+      seed.structured = {
+        goal: `${seed.content.slice(0, 30)}... のゴール達成`,
+        content: seed.content,
+        concerns: '詳細な要件の整理が必要',
+        deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      };
+      seed.status = 'confirmed';
+
+      // タスクを生成
+      const newTask: Task = {
+        id: `task-${Date.now()}`,
+        title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
+        description: seed.content,
+        status: 'todo',
+        priority: 'medium',
+        phase: 'ideation',
+        sourceMessageId: seed.sourceMessageId,
+        sourceChannel: seed.sourceChannel,
+        conversations: [],
+        ideationSummary: `【ゴール】${seed.structured.goal}\n【主な内容】${seed.structured.content}\n【気になる点】${seed.structured.concerns}\n【期限】${seed.structured.deadline}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        tags: [],
+        seedId: seed.id,
+        dueDate: seed.structured.deadline,
+      };
+      demoTasks.unshift(newTask);
+      return newTask;
+    }
+    return null;
+  }
+
+  // 種の詳細取得（AI構造化プレビュー用）
+  static async getSeedStructured(seedId: string): Promise<Seed | null> {
+    if (this.isDemo()) {
+      const seed = demoSeeds.find((s) => s.id === seedId);
+      if (!seed) return null;
+      // 未構造化の場合はプレビュー生成
+      if (!seed.structured) {
+        return {
+          ...seed,
+          structured: {
+            goal: `${seed.content.slice(0, 30)}... のゴール達成`,
+            content: seed.content,
+            concerns: '詳細な要件の整理が必要',
+            deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+          },
+        };
+      }
+      return seed;
+    }
+    return null;
   }
 }

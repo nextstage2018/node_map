@@ -273,6 +273,76 @@ export const EMAIL_DIGEST_OPTIONS = [
   { value: 'weekly', label: '毎週' },
 ] as const;
 
+// ===== Phase 7: ジョブ・種ボックス・ビュー切り替え =====
+
+export const JOB_STATUS_CONFIG = {
+  draft: {
+    label: 'ドラフト',
+    color: 'bg-slate-100 text-slate-700',
+    dotColor: 'bg-slate-400',
+  },
+  proposed: {
+    label: '提案中',
+    color: 'bg-amber-100 text-amber-700',
+    dotColor: 'bg-amber-500',
+  },
+  executed: {
+    label: '実行済み',
+    color: 'bg-green-100 text-green-700',
+    dotColor: 'bg-green-500',
+  },
+  dismissed: {
+    label: '却下',
+    color: 'bg-red-100 text-red-700',
+    dotColor: 'bg-red-500',
+  },
+} as const;
+
+export const JOB_TYPE_CONFIG = {
+  email_reply: {
+    label: 'メール返信',
+    icon: '/icons/gmail.svg',
+    description: '定型メール返信の自動化',
+  },
+  document_update: {
+    label: 'ドキュメント更新',
+    icon: '/icons/memo-content.svg',
+    description: 'ドキュメント修正の自動化',
+  },
+  data_entry: {
+    label: 'データ入力',
+    icon: '/icons/memo-goal.svg',
+    description: 'データ入力作業の自動化',
+  },
+  routine_admin: {
+    label: 'ルーチン管理作業',
+    icon: '/icons/nav-settings.svg',
+    description: '定期的な管理作業の自動化',
+  },
+} as const;
+
+export const BOARD_TAB_CONFIG = {
+  tasks: {
+    label: 'タスク',
+    description: '思考型の作業（思考マップ対象）',
+  },
+  jobs: {
+    label: 'ジョブ',
+    description: 'AI定型作業（思考マップ対象外）',
+  },
+} as const;
+
+export const VIEW_MODE_CONFIG = {
+  status: {
+    label: 'ステータス',
+    description: '何が残っているか（Todo / 進行中 / 完了）',
+  },
+  timeline: {
+    label: 'タイムライン',
+    description: '今日何やるか（日付ベース）',
+  },
+} as const;
+
 // 進行フェーズのクイックアクション
 export const PROGRESS_QUICK_ACTIONS = [
   { label: '要点を整理', prompt: 'ここまでの会話の要点を箇条書きで整理してください。' },
