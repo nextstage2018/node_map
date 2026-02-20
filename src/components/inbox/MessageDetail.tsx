@@ -379,6 +379,11 @@ function SeedButton({
         )}
       >
         {result.type === 'success' ? '✅' : '❌'} {result.text}
+        {result.type === 'success' && (
+          <a href="/tasks" className="ml-1 underline hover:no-underline text-green-600">
+            種ボックスを見る →
+          </a>
+        )}
       </span>
     );
   }
@@ -401,7 +406,7 @@ function SeedButton({
 }
 
 /**
- * AIタスク化提案バナー
+ * AIタスク化提案バナー（コンパクト折りたたみ式）
  */
 function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
   const [suggestion, setSuggestion] = useState<{
@@ -412,16 +417,16 @@ function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const fetchedRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // 自分の送信メッセージは分析しない
     if (message.from.name === 'あなた') return;
-    // 同じメッセージの重複フェッチ防止
     if (fetchedRef.current === message.id) return;
     fetchedRef.current = message.id;
     setDismissed(false);
     setSuggestion(null);
+    setExpanded(false);
 
     const fetchSuggestion = async () => {
       setIsLoading(true);
@@ -453,45 +458,50 @@ function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
   }, [message.id, message.from.name, message.channel, message.subject, message.body, message.timestamp]);
 
   if (dismissed || (!isLoading && !suggestion)) return null;
-
-  if (isLoading) {
-    return (
-      <div className="mx-6 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-center gap-2 text-xs text-blue-600">
-          <span className="animate-spin">⟳</span>
-          AIがタスク化を分析中...
-        </div>
-      </div>
-    );
-  }
-
+  if (isLoading) return null; // ローディング中は非表示（本文エリアを確保）
   if (!suggestion) return null;
 
   return (
-    <div className="mx-6 mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm">🤖</span>
-          <span className="text-xs font-bold text-amber-800">タスク化を推奨します</span>
-        </div>
+    <div className="mx-6 mt-2 shrink-0">
+      {/* コンパクトバー（1行） */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-violet-50 border border-violet-200 rounded-lg">
+        <span className="text-xs">🤖</span>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex-1 text-left text-xs font-medium text-violet-700 hover:text-violet-900"
+        >
+          タスク化を推奨 — {suggestion.reason.slice(0, 40)}{suggestion.reason.length > 40 ? '...' : ''}
+        </button>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="text-violet-400 hover:text-violet-600 text-xs"
+        >
+          {expanded ? '▲' : '▼'}
+        </button>
         <button
           onClick={() => setDismissed(true)}
-          className="text-amber-400 hover:text-amber-600 text-xs"
+          className="text-violet-300 hover:text-violet-500 text-xs ml-1"
         >
           ✕
         </button>
       </div>
-      <p className="text-xs text-amber-700 mb-3">{suggestion.reason}</p>
-      <div className="space-y-2">
-        <div className="p-2.5 bg-white rounded-lg border border-amber-200">
-          <div className="text-[10px] text-amber-500 font-semibold mb-0.5">最低限の対応</div>
-          <p className="text-xs text-slate-700">{suggestion.minimalTask}</p>
+
+      {/* 展開時の詳細 */}
+      {expanded && (
+        <div className="mt-1.5 p-3 bg-violet-50 border border-violet-200 rounded-lg space-y-2">
+          <p className="text-xs text-violet-700">{suggestion.reason}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2 bg-white rounded border border-slate-200">
+              <div className="text-[10px] text-slate-500 font-semibold mb-0.5">最低限の対応</div>
+              <p className="text-xs text-slate-700">{suggestion.minimalTask}</p>
+            </div>
+            <div className="p-2 bg-white rounded border border-violet-200">
+              <div className="text-[10px] text-violet-600 font-semibold mb-0.5">推奨対応 ⭐</div>
+              <p className="text-xs text-slate-700">{suggestion.recommendedTask}</p>
+            </div>
+          </div>
         </div>
-        <div className="p-2.5 bg-white rounded-lg border border-blue-200">
-          <div className="text-[10px] text-blue-500 font-semibold mb-0.5">推奨対応 ⭐</div>
-          <p className="text-xs text-slate-700">{suggestion.recommendedTask}</p>
-        </div>
-      </div>
+      )}
     </div>
   );
 }

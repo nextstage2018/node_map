@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ReplyRequest } from '@/lib/types';
+import { ReplyRequest, UnifiedMessage } from '@/lib/types';
 import { sendEmail } from '@/services/email/emailClient.service';
 import { sendSlackMessage } from '@/services/slack/slackClient.service';
 import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service';
+import { saveMessages } from '@/services/inbox/inboxStorage.service';
 
 export async function POST(request: NextRequest) {
   try {
@@ -49,6 +50,37 @@ export async function POST(request: NextRequest) {
     }
 
     if (success) {
+      // 返信メッセージをSupabaseに保存（永続化）
+      try {
+        const now = new Date().toISOString();
+        const sentMessage: UnifiedMessage = {
+          id: `sent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          channel,
+          channelIcon: channel === 'email' ? '📧' : channel === 'slack' ? '💬' : '🔵',
+          from: { name: 'あなた', address: 'me' },
+          to: to ? to.map((addr) => ({ name: addr, address: addr })) : undefined,
+          cc: cc ? cc.map((addr) => ({ name: addr, address: addr })) : undefined,
+          subject: subject || undefined,
+          body: replyBody,
+          timestamp: now,
+          isRead: true,
+          status: 'replied',
+          threadId: metadata.messageId || undefined,
+          metadata: {
+            messageId: metadata.messageId,
+            slackChannel: metadata.slackChannel,
+            slackChannelName: metadata.slackChannelName,
+            slackTs: metadata.slackTs,
+            slackThreadTs: metadata.slackThreadTs,
+            chatworkRoomId: metadata.chatworkRoomId,
+            chatworkRoomName: metadata.chatworkRoomName,
+          },
+        };
+        await saveMessages([sentMessage]);
+      } catch (saveErr) {
+        console.error('返信メッセージ保存エラー（送信自体は成功）:', saveErr);
+      }
+
       return NextResponse.json({ success: true, data: { sent: true } });
     } else {
       return NextResponse.json(
