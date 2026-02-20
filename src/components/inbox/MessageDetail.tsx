@@ -8,6 +8,7 @@ import ChannelBadge from '@/components/ui/ChannelBadge';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
+import ChatworkBody from '@/components/inbox/ChatworkBody';
 
 interface MessageDetailProps {
   message: UnifiedMessage | null;
@@ -195,9 +196,13 @@ function ConversationBubble({ message }: { message: UnifiedMessage }) {
           </div>
         )}
         {/* 本文 */}
-        <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-          {message.body}
-        </p>
+        {message.channel === 'chatwork' ? (
+          <ChatworkBody body={message.body} className="text-[13px]" />
+        ) : (
+          <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
+            {message.body}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -359,9 +364,13 @@ function EmailThreadDetail({
                   {msg.timestamp}
                 </span>
               </div>
-              <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-                {msg.body}
-              </p>
+              {group.channel === 'chatwork' ? (
+                <ChatworkBody body={msg.body} className="text-[13px]" />
+              ) : (
+                <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
+                  {msg.body}
+                </p>
+              )}
             </div>
           </div>
         ))}
@@ -454,9 +463,13 @@ function SingleMessageDetail({
 
       {/* 本文 */}
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">
-          {message.body}
-        </div>
+        {message.channel === 'chatwork' ? (
+          <ChatworkBody body={message.body} />
+        ) : (
+          <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">
+            {message.body}
+          </div>
+        )}
 
         {/* 添付ファイル */}
         {message.attachments && message.attachments.length > 0 && (
@@ -504,9 +517,13 @@ function SingleMessageDetail({
                       {formatRelativeTime(msg.timestamp)}
                     </span>
                   </div>
-                  <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-                    {msg.body}
-                  </p>
+                  {message.channel === 'chatwork' ? (
+                    <ChatworkBody body={msg.body} className="text-[13px]" />
+                  ) : (
+                    <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
+                      {msg.body}
+                    </p>
+                  )}
                 </div>
               </div>
             ))}

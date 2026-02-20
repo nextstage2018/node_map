@@ -271,14 +271,26 @@ export function cleanChatworkBody(body: string): string {
     (_match, content) => (content as string).trim()
   );
 
-  // [qt][qtmeta ...]引用[/qt] → 引用表示
+  // [qt][qtmeta ...]引用[/qt] → 引用表示（複数行対応）
   cleaned = cleaned.replace(
     /\[qt\]\[qtmeta[^\]]*\]([\s\S]*?)\[\/qt\]/g,
-    (_match, content) => `> ${(content as string).trim()}`
+    (_match, content) => {
+      const lines = (content as string).trim().split('\n');
+      return lines.map(line => `> ${line}`).join('\n');
+    }
   );
 
-  // [rp aid=... to=...] → 除去
-  cleaned = cleaned.replace(/\[rp\s+aid=\d+[^\]]*\]/g, '');
+  // [qt]...[/qt] qtmetaなしのパターン
+  cleaned = cleaned.replace(
+    /\[qt\]([\s\S]*?)\[\/qt\]/g,
+    (_match, content) => {
+      const lines = (content as string).trim().split('\n');
+      return lines.map(line => `> ${line}`).join('\n');
+    }
+  );
+
+  // [rp aid=... to=...] → 引用返信マーク
+  cleaned = cleaned.replace(/\[rp\s+aid=\d+[^\]]*\]/g, '>> ');
 
   // [To:12345678]Name → @Name
   cleaned = cleaned.replace(/\[To:\d+\]\s*/g, '@');
@@ -286,19 +298,26 @@ export function cleanChatworkBody(body: string): string {
   // [toall] → @全員
   cleaned = cleaned.replace(/\[toall\]/g, '@全員 ');
 
-  // [code]...[/code] → コード部分のみ残す
-  cleaned = cleaned.replace(/\[code\]([\s\S]*?)\[\/code\]/g, (_match, code) => (code as string).trim());
+  // [code]...[/code] → コードブロックとしてマーク
+  cleaned = cleaned.replace(
+    /\[code\]([\s\S]*?)\[\/code\]/g,
+    (_match, code) => `\`\`\`\n${(code as string).trim()}\n\`\`\``
+  );
 
-  // [hr] → 除去
-  cleaned = cleaned.replace(/\[hr\]/g, '');
+  // [hr] → 水平線
+  cleaned = cleaned.replace(/\[hr\]/g, '────────────────');
 
   // [title]...[/title] 単独
   cleaned = cleaned.replace(/\[title\]([\s\S]*?)\[\/title\]/g, (_match, title) => `■ ${(title as string).trim()}`);
 
-  // [piconname:...], [dtext:...], [preview ...] → 除去
+  // [piconname:...], [dtext:...], [preview ...], [download:...] → 除去
   cleaned = cleaned.replace(/\[piconname:[^\]]*\]/g, '');
   cleaned = cleaned.replace(/\[dtext:[^\]]*\]/g, '');
   cleaned = cleaned.replace(/\[preview[^\]]*\]/g, '');
+  cleaned = cleaned.replace(/\[download:[^\]]*\]/g, '');
+
+  // 残存する未知のChatworkタグを除去（[xxx] [/xxx] 形式）
+  cleaned = cleaned.replace(/\[\/?[a-zA-Z][a-zA-Z0-9_]*(?::[^\]]*)?(?:\s[^\]]*)?\]/g, '');
 
   // 連続する空行を1つにまとめる
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');

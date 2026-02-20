@@ -42,6 +42,7 @@
 | Phase 12：APIキー準備（前半） | ✅ 完了 | 2026-02-19 | Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正 |
 | Phase 12後半：インボックス改善 | ✅ 完了 | 2026-02-20 | メールMIMEパース・Chatwork接続・ページネーション・エラーハンドリング |
 | Phase 13：インボックスUX改善 | ✅ 完了 | 2026-02-20 | Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・要約スクロール・自動スクロール |
+| Phase 14：Chatwork内部タグ整形 | ✅ 完了 | 2026-02-20 | 生タグ整形表示・リッチレンダリング（info/code/quote/hr/メンション） |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -303,6 +304,7 @@
 | **2026-02-20** | **週次ノードバナーの導入を決定** | **週次で触れたノード一覧→本人が「理解が深まった」ものを選択→確認済みフラグ。自動＋本人確認の二層構造** |
 | **2026-02-20** | **架空の同僚フィードバックを将来機能として定義** | **ノード50件蓄積で解放。三者間会話モード。Phase 16〜20完了が前提** |
 | **2026-02-20** | **Phase 14〜20+の完全ロードマップを確定** | **仕様書7項目を依存関係考慮して配置。14=Chatworkタグ,15=Slack,16=ノード設計,17=会話タグ+時間,18=種+AI提案,19=会話UI,20=週次バナー** |
+| 2026-02-20 | Phase 14: Chatwork内部タグのリッチレンダリング | cleanChatworkBody()拡張 + ChatworkBody.tsxリッチ表示コンポーネント新規作成 |
 
 ---
 
@@ -394,6 +396,7 @@ node_map/
 │   │   │   ├── MessageList.tsx
 │   │   │   ├── MessageDetail.tsx
 │   │   │   ├── ReplyForm.tsx
+│   │   │   ├── ChatworkBody.tsx       ← Phase 14: Chatworkリッチ表示
 │   │   │   └── ThreadView.tsx
 │   │   ├── tasks/
 │   │   │   ├── TaskCard.tsx           ← カンバンカード（useSortable）
@@ -640,6 +643,13 @@ node_map/
   - AI要約のコスト管理：1スレッド500トークン上限。大量スレッドではAPI呼び出し回数に注意
   - 引用チェーンパーサーは日本語メール形式に特化。英語メールの「On ... wrote:」形式も対応済みだが、他言語は未対応
 
+### Phase 14（Chatwork内部タグ整形）→ Phase 15（Slack接続）への引き継ぎ
+- **変更ファイル：** `src/lib/utils.ts`, `src/components/inbox/MessageDetail.tsx`
+- **新規ファイル：** `src/components/inbox/ChatworkBody.tsx`
+- **cleanChatworkBody()改善：** [qt]複数行対応, [code]→```マーク, [hr]→水平線, [rp]→引用返信マーク, [download:]除去, 未知タグ一括除去
+- **ChatworkBody.tsx：** 整形済みテキストをブロック分解→info=青ボックス, code=黒背景モノスペース, quote=左ボーダー引用, hr=水平線, @メンション=青ハイライト, >>返信=↩マーク
+- **MessageDetail.tsx：** ConversationBubble/GroupDetail/SingleMessageDetail/スレッド履歴の4箇所でchannel==='chatwork'分岐
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -682,6 +692,7 @@ node_map/
 - ✅ インボックス改善 — メールMIMEパース・Chatwork接続・ページネーション・エラーハンドリング（2026-02-20）
 - ✅ インボックスUX改善 — Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・スクロール改善（2026-02-20）
 - ✅ 添付ファイル・画像の表示・保存 — メールMIME添付抽出・Chatworkファイル取得・画像プレビュー・DL機能（2026-02-20）
+- ✅ Chatwork内部タグ整形 — 生タグ→リッチレンダリング（info/code/quote/hr/メンション/引用返信）（2026-02-20）
 
 ---
 
@@ -693,8 +704,8 @@ node_map/
 
 ---
 
-#### Phase 14：Chatwork内部タグの整形
-- **優先度：** ★★★（高）| **実装難易度：** 低 | **依存：** なし
+#### Phase 14：Chatwork内部タグの整形 ✅ 完了
+- **優先度：** ★★★（高）| **実装難易度：** 低 | **依存：** なし | **完了日：** 2026-02-20
 - **仕様書対応：** なし（インフラ改善）
 - **理由：** `[rp aid=12345]` や `[To:12345]` のような生タグが表示されており読みづらい。作業量が軽く、即座にUXが改善する
 - **内容：**
