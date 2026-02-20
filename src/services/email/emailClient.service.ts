@@ -222,16 +222,13 @@ function decodeEmailContent(body: string, headers: string): string {
     }
   }
 
-  // text/html の場合、HTMLタグを除去
-  if (contentType === 'text/html') {
-    return stripHtmlTags(body);
-  }
-
-  // フォールバック: 本文がQPパターンに見える場合は自動デコード試行
+  // フォールバック: 本文がQPパターンに見える場合は自動デコード試行（HTMLより先に実行）
   if (/=[0-9A-F]{2}/i.test(body) && (body.match(/=[0-9A-F]{2}/gi) || []).length > 5) {
     const decoded = decodeQuotedPrintable(body, charset);
     if (decoded !== body && !/=[0-9A-F]{2}/.test(decoded.slice(0, 200))) {
-      if (contentType === 'text/html') return stripHtmlTags(decoded);
+      if (contentType === 'text/html' || /<[a-z][\s\S]*>/i.test(decoded)) {
+        return stripHtmlTags(decoded);
+      }
       return decoded;
     }
   }
@@ -246,12 +243,19 @@ function decodeEmailContent(body: string, headers: string): string {
       const decoded = decodeWithCharset(new Uint8Array(buf), charset);
       const controlChars = (decoded.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
       if (controlChars < decoded.length * 0.05) {
-        if (contentType === 'text/html') return stripHtmlTags(decoded);
+        if (contentType === 'text/html' || /<[a-z][\s\S]*>/i.test(decoded)) {
+          return stripHtmlTags(decoded);
+        }
         return decoded;
       }
     } catch {
       // フォールバック失敗、無視
     }
+  }
+
+  // text/html の場合、HTMLタグを除去
+  if (contentType === 'text/html') {
+    return stripHtmlTags(body);
   }
 
   // text/plain はそのまま
@@ -536,20 +540,45 @@ function stripHtmlTags(html: string): string {
     .replace(/<\/tr>/gi, '\n')
     .replace(/<\/li>/gi, '\n')
     .replace(/<[^>]+>/g, '') // 残りのタグを除去
+    // HTMLエンティティの変換（よく使われるもの）
     .replace(/&nbsp;/gi, ' ')
+    .replace(/&shy;/gi, '')   // ソフトハイフン（表示不要）
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/&#\d+;/g, '');
+    .replace(/&laquo;/gi, '«')
+    .replace(/&raquo;/gi, '»')
+    .replace(/&mdash;/gi, '—')
+    .replace(/&ndash;/gi, '–')
+    .replace(/&bull;/gi, '・')
+    .replace(/&hellip;/gi, '…')
+    .replace(/&copy;/gi, '©')
+    .replace(/&reg;/gi, '®')
+    .replace(/&trade;/gi, '™')
+    .replace(/&#(\d+);/g, (_m, code) => {
+      const n = parseInt(code, 10);
+      return (n > 31 && n < 65535) ? String.fromCharCode(n) : '';
+    })
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => {
+      const n = parseInt(hex, 16);
+      return (n > 31 && n < 65535) ? String.fromCharCode(n) : '';
+    })
+    .replace(/&[a-z]+;/gi, ''); // 残りの名前付きエンティティを除去
 
+  // CSSコメント除去: /* ... */
+  text = text.replace(/\/\*[\s\S]*?\*\//g, '');
   // CSSルール除去（マルチライン対応）: セレクタ { ... } パターン
-  text = text.replace(/[^;\n]*\{[^}]*\}/g, '');
-  // CSSの @media, @font-face 等の残骸を除去
+  text = text.replace(/[^;\n{]*\{[^}]*\}/g, '');
+  // ネストされた { } の残りも除去
+  text = text.replace(/[^;\n{]*\{[^}]*\}/g, '');
+  // CSSの @media, @font-face, @keyframes 等の残骸を除去（マルチライン）
   text = text.replace(/@[a-z-]+[^{]*\{[\s\S]*?\}/gi, '');
-  // CSS関連の行を除去（!important, font-family:, background-color: 等で始まる行）
-  text = text.replace(/^.*(!important|font-family|background-color|text-decoration|line-height|margin:|padding:).*$/gim, '');
+  // CSS関連の行を除去（!important, font-family:, background-color: 等を含む行）
+  text = text.replace(/^.*(!important|font-family|background-color|text-decoration|line-height|margin:|padding:|border:|display:|color:|font-size|font-weight|text-align|vertical-align|width:|height:|max-width|min-width|overflow|position:|z-index|opacity|float:|clear:|white-space|word-break|letter-spacing|box-sizing|table-layout|border-collapse|mso-).*$/gim, '');
+  // CSSセレクタ残骸の除去（例: u + .body .blend-wrapper）
+  text = text.replace(/^[.#\w\s+>~*[\]:,()-]*\{.*$/gim, '');
 
   return text
     .replace(/\n{3,}/g, '\n\n')
