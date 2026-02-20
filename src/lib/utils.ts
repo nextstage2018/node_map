@@ -131,12 +131,12 @@ export interface ParsedEmailMessage {
 /**
  * Gmail形式のメール引用チェーンを解析し、個別メッセージの配列に変換
  *
- * Gmail引用形式：
- *   [最新の返信本文]
- *   2026年2月19日(木) 15:47 福田遼太郎 <fukuda@next-stage.biz>:
- *   > [前の返信本文]
- *   > 2026年2月18日(水) 10:30 鈴木次郎 <suzuki@next-stage.biz>:
- *   >> [さらに前の本文]
+ * Gmail引用形式（ヘッダーがレベルN、本文がレベルN+1）：
+ *   [最新の返信本文]                         (level 0, ヘッダーなし)
+ *   2026年2月20日(金) 8:00 山地 <a@b>:       (level 0, ヘッダー)
+ *   > [山地の返信本文]                        (level 1, 本文)
+ *   > 2026年2月19日(木) 15:47 福田 <c@d>:    (level 1, ヘッダー)
+ *   >> [福田の返信本文]                       (level 2, 本文)
  *
  * @returns 古い順に並んだメッセージ配列
  */
@@ -145,132 +145,92 @@ export function parseEmailThread(body: string): ParsedEmailMessage[] {
 
   // --- 前処理: 改行正規化 & 折り返しヘッダーの結合 ---
   let normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  // Gmailが長いヘッダーを折り返すケースを結合:
-  // "2026年2月20日(金) 8:00 名前 <\n email@example.com>:" → 1行に
-  // また "On Feb 19, 2026, Name <\n email@example.com> wrote:" も同様
+  // Gmailが長いヘッダーを折り返すケース:
+  // "名前 <\n email@example.com>:" → 1行に結合
   normalized = normalized.replace(/<\n\s*/g, '<');
 
   const lines = normalized.split('\n');
-  const messages: ParsedEmailMessage[] = [];
 
-  // --- Step 1: 最新の返信（引用なし部分）を抽出 ---
-  let firstQuoteHeaderIdx = -1;
+  // --- Step 1: 全行をスキャンして引用ヘッダーの位置を検出 ---
+  interface HeaderInfo {
+    lineIdx: number;
+    level: number;  // ヘッダー自体の > レベル
+    sender: string;
+    email: string;
+    dateStr: string;
+  }
+  const headers: HeaderInfo[] = [];
+
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (parseQuoteHeader(trimmed)) {
-      firstQuoteHeaderIdx = i;
-      break;
-    }
-    // > で始まる引用行が3行以上連続したら引用開始とみなす（ヘッダーなし引用）
-    if (trimmed.startsWith('>')) {
-      let count = 1;
-      for (let j = i + 1; j < lines.length && j < i + 5; j++) {
-        if (lines[j].trim().startsWith('>')) count++;
-      }
-      if (count >= 3 && firstQuoteHeaderIdx === -1) {
-        firstQuoteHeaderIdx = i;
-        break;
-      }
+    const stripped = stripQuotePrefix(trimmed);
+    const header = parseQuoteHeader(stripped.text.trim());
+    if (header) {
+      headers.push({
+        lineIdx: i,
+        level: stripped.level,
+        sender: header.name,
+        email: header.email,
+        dateStr: header.dateStr,
+      });
     }
   }
 
   // 引用が全く無い場合はそのまま1メッセージとして返す
-  if (firstQuoteHeaderIdx === -1) {
-    const cleaned = removeSignature(body);
+  if (headers.length === 0) {
+    const cleaned = removeSignature(normalized);
     if (cleaned) {
-      messages.push({ sender: '', email: '', dateStr: '', body: cleaned });
+      return [{ sender: '', email: '', dateStr: '', body: cleaned }];
     }
-    return messages;
+    return [];
   }
 
-  // 最新の返信本文
-  const latestBody = removeSignature(lines.slice(0, firstQuoteHeaderIdx).join('\n'));
+  const messages: ParsedEmailMessage[] = [];
+
+  // --- Step 2: 最新の返信（最初のヘッダーより前の部分）を抽出 ---
+  const latestBody = removeSignature(
+    lines.slice(0, headers[0].lineIdx).join('\n')
+  );
   if (latestBody) {
     messages.push({ sender: '', email: '', dateStr: '', body: latestBody });
   }
 
-  // --- Step 2: 引用チェーンを再帰的にパース ---
-  const quotedLines = lines.slice(firstQuoteHeaderIdx);
-  parseQuotedSection(quotedLines, 0, messages);
+  // --- Step 3: 各ヘッダーの本文を抽出 ---
+  // Gmail形式：ヘッダーがレベルN → 本文はレベルN+1
+  for (let h = 0; h < headers.length; h++) {
+    const hdr = headers[h];
+    const contentLevel = hdr.level + 1; // 本文の > レベル
+    const startLine = hdr.lineIdx + 1;
+    const endLine = h + 1 < headers.length ? headers[h + 1].lineIdx : lines.length;
+
+    const bodyLines: string[] = [];
+    for (let i = startLine; i < endLine; i++) {
+      const trimmed = lines[i].trim();
+      const stripped = stripQuotePrefix(trimmed);
+      // このヘッダーに対応する本文行のみ収集（ちょうどN+1レベル）
+      if (stripped.level === contentLevel) {
+        bodyLines.push(stripped.text);
+      } else if (stripped.level < contentLevel && trimmed === '') {
+        // 空行（レベル0）はスキップ
+      }
+      // より深いレベル（N+2以上）は次のヘッダーの本文なのでスキップ
+    }
+
+    const msgBody = removeSignature(bodyLines.join('\n'));
+    if (msgBody) {
+      messages.push({
+        sender: hdr.sender,
+        email: hdr.email,
+        dateStr: hdr.dateStr,
+        body: msgBody,
+      });
+    }
+  }
 
   // 古い順に並べ替え（パース順は新しい→古いなので反転）
   messages.reverse();
 
   return messages;
-}
-
-/**
- * 引用セクションを再帰的にパースして個別メッセージを抽出
- */
-function parseQuotedSection(
-  lines: string[],
-  expectedLevel: number,
-  messages: ParsedEmailMessage[]
-): void {
-  let currentSender: { name: string; email: string; dateStr: string } | null = null;
-  const bodyLines: string[] = [];
-  let deeperQuoteStart = -1;
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    // 引用プレフィックスを除去
-    const stripped = stripQuotePrefix(trimmed);
-
-    // このレベルの引用ヘッダーを検出
-    if (stripped.level === expectedLevel) {
-      const header = parseQuoteHeader(stripped.text.trim());
-      if (header) {
-        // 前のメッセージがあれば保存
-        if (currentSender) {
-          const body = removeSignature(bodyLines.join('\n'));
-          if (body) {
-            messages.push({
-              sender: currentSender.name,
-              email: currentSender.email,
-              dateStr: currentSender.dateStr,
-              body,
-            });
-          }
-          bodyLines.length = 0;
-        }
-        // より深い引用があれば先に処理
-        if (deeperQuoteStart >= 0) {
-          parseQuotedSection(lines.slice(deeperQuoteStart, i), expectedLevel + 1, messages);
-          deeperQuoteStart = -1;
-        }
-        currentSender = { name: header.name, email: header.email, dateStr: header.dateStr };
-        continue;
-      }
-    }
-
-    // 本文行かより深い引用か判定
-    if (stripped.level === expectedLevel && currentSender) {
-      bodyLines.push(stripped.text);
-    } else if (stripped.level > expectedLevel) {
-      if (deeperQuoteStart === -1) deeperQuoteStart = i;
-    } else if (stripped.level === expectedLevel && !currentSender) {
-      // ヘッダーが見つかる前の行（スキップ）
-    }
-  }
-
-  // 残りのメッセージを保存
-  if (currentSender) {
-    const body = removeSignature(bodyLines.join('\n'));
-    if (body) {
-      messages.push({
-        sender: currentSender.name,
-        email: currentSender.email,
-        dateStr: currentSender.dateStr,
-        body,
-      });
-    }
-  }
-  if (deeperQuoteStart >= 0) {
-    parseQuotedSection(lines.slice(deeperQuoteStart), expectedLevel + 1, messages);
-  }
 }
 
 /**
