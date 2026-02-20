@@ -45,6 +45,7 @@
 | Phase 14：Chatwork内部タグ整形 | ✅ 完了 | 2026-02-20 | 生タグ整形表示・リッチレンダリング（info/code/quote/hr/メンション） |
 | Phase 15：Slack接続 | ✅ 完了 | 2026-02-20 | 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化 |
 | Phase 16：ノード登録・カウント設計変更 | ✅ 完了 | 2026-02-20 | interactionCount導入・受動登録廃止・色濃淡表示・DB migration |
+| Phase 17：会話ログ構造化分類+タイムスタンプ | ✅ 完了 | 2026-02-20 | 会話タグ7種自動分類・フェーズ遷移時刻記録・UI表示・DB migration |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -686,6 +687,18 @@ node_map/
 - **注意：** Supabase DBに `005_phase16_interaction_count.sql` を実行する必要あり
 - **後方互換：** `understandingLevel`型とフィールドは残存。`frequency`も`interactionCount`と同値で保持
 
+### Phase 17（会話ログ構造化分類+タイムスタンプ）→ Phase 18への引き継ぎ
+- **変更ファイル：**
+  - `src/lib/types.ts` — `ConversationTag`型（固定7種）追加、`AiConversationMessage`に`conversationTag`追加、`TaskAiChatResponse`に`conversationTag`追加、`Task`に`seedAt/ideationAt/progressAt/resultAt`追加
+  - `src/services/ai/aiClient.service.ts` — `classifyConversationTag()`ルールベース分類関数追加、`generateTaskChat()`がタグ付きレスポンスを返却
+  - `src/services/task/taskClient.service.ts` — `mapTaskFromDb()`/`mapConversationFromDb()`にPhase17フィールド追加、`addConversation()`でタグ保存、`updateTask()`でフェーズ遷移タイムスタンプ自動記録
+  - `src/app/api/tasks/chat/route.ts` — AI応答生成→ユーザーメッセージ保存の順序変更（タグ付与のため）
+  - `src/components/tasks/TaskAiChat.tsx` — `CONVERSATION_TAG_STYLE`定数追加、メッセージバブルにタグバッジ表示
+  - `supabase/006_phase17_conversation_tags.sql` — `conversation_tag`カラム・フェーズ遷移タイムスタンプカラム・インデックス追加
+- **分類方式：** ルールベース（正規表現）でAPIコール不要・高速。7種類の固定タグから1つ選択
+- **タイムスタンプ：** タスク作成時にideationAt自動記録、フェーズ遷移時に対応カラム自動記録
+- **注意：** Supabase DBに `006_phase17_conversation_tags.sql` を実行する必要あり
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -731,6 +744,7 @@ node_map/
 - ✅ Chatwork内部タグ整形 — 生タグ→リッチレンダリング（info/code/quote/hr/メンション/引用返信）（2026-02-20）
 - ✅ Slack接続 — 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化（2026-02-20）
 - ✅ ノード登録・カウント設計変更 — interactionCount導入・受動登録廃止・5トリガー定義・色濃淡表示・MapStats更新（2026-02-20）
+- ✅ 会話ログ構造化分類+タイムスタンプ — 会話タグ7種自動分類・フェーズ遷移時刻記録・TaskAiChat UI表示・DB migration（2026-02-20）
 
 ---
 
@@ -806,8 +820,8 @@ node_map/
 
 ---
 
-#### Phase 17：会話ログの構造化分類 + タイムスタンプ記録（仕様書②③）
-- **優先度：** ★★★（高）| **実装難易度：** 低〜中 | **依存：** 既存会話機能 + 既存ステータス変更機能
+#### Phase 17：会話ログの構造化分類 + タイムスタンプ記録（仕様書②③） ✅ 完了
+- **優先度：** ★★★（高）| **実装難易度：** 低〜中 | **依存：** 既存会話機能 + 既存ステータス変更機能 | **完了日：** 2026-02-20
 - **仕様書対応：** ②会話ログの構造化分類 + ③タスク状態遷移のタイムスタンプ記録
 - **理由：** 「どんな種類の質問をしたか」の思考パターン可視化と、各フェーズの所要時間記録。どちらもデータ蓄積系で軽量かつ後続分析の基盤
 

@@ -27,20 +27,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ユーザーメッセージを保存
-    await TaskService.addConversation(body.taskId, {
-      role: 'user',
-      content: body.message,
-      phase: body.phase,
-    });
-
-    // AI応答を生成
+    // AI応答を生成（Phase 17: タグ分類も同時実行）
     const response = await generateTaskChat(
       task,
       body.message,
       body.phase,
       task.conversations
     );
+
+    // ユーザーメッセージを保存（Phase 17: conversationTag付与）
+    await TaskService.addConversation(body.taskId, {
+      role: 'user',
+      content: body.message,
+      phase: body.phase,
+      conversationTag: response.conversationTag,
+    });
 
     // AI応答を保存
     await TaskService.addConversation(body.taskId, {

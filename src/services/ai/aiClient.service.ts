@@ -6,6 +6,7 @@ import {
   AiConversationMessage,
   TaskAiChatResponse,
   ThreadMessage,
+  ConversationTag,
 } from '@/lib/types';
 
 /**
@@ -214,6 +215,46 @@ function getDemoThreadSummary(subject: string, threadMessages: ThreadMessage[]):
 // ===== Phase 2: タスクAI会話 =====
 
 /**
+ * Phase 17: ユーザーメッセージの会話タグをルールベースで分類する
+ * APIコール不要で高速に分類できる
+ */
+function classifyConversationTag(userMessage: string): ConversationTag {
+  const msg = userMessage.toLowerCase();
+
+  // 情報収集: 「〜とは」「教えて」「知りたい」「調べて」「事例」
+  if (/とは[何？?]|教えて|知りたい|調べ|事例|どういう意味|具体的に|どんな/.test(msg)) {
+    return '情報収集';
+  }
+
+  // 判断相談: 「どちらが」「どっちが」「迷って」「判断」「選ぶ」「比較」
+  if (/どちらが|どっちが|迷って|判断|選[ぶべ]|比較|メリット|デメリット|ベスト|おすすめ/.test(msg)) {
+    return '判断相談';
+  }
+
+  // 壁の突破: 「うまくいかない」「詰まって」「行き詰」「困って」「エラー」「問題」
+  if (/うまくいかない|詰ま[っり]|行き詰|困って|エラー|問題が|失敗|原因|解決|なぜ.*ない|どうすれば/.test(msg)) {
+    return '壁の突破';
+  }
+
+  // アウトプット生成: 「作って」「書いて」「生成」「作成」「ドラフト」
+  if (/作って|書いて|生成|作成|ドラフト|下書き|テンプレ|文面|資料を|出力/.test(msg)) {
+    return 'アウトプット生成';
+  }
+
+  // 確認・検証: 「合ってる」「確認」「チェック」「レビュー」「正しい」
+  if (/合って[るい]|確認|チェック|レビュー|正し[いく]|大丈夫|問題ない|OK[？?]|いい[？?]/.test(msg)) {
+    return '確認・検証';
+  }
+
+  // 整理・構造化: 「整理」「まとめ」「構造化」「分類」「リスト」
+  if (/整理|まとめ|構造化|分類|リスト[化に]|体系|棚卸|振り返|要約/.test(msg)) {
+    return '整理・構造化';
+  }
+
+  return 'その他';
+}
+
+/**
  * タスク内AI会話の応答を生成
  */
 export async function generateTaskChat(
@@ -224,8 +265,11 @@ export async function generateTaskChat(
 ): Promise<TaskAiChatResponse> {
   const apiKey = getApiKey();
 
+  // Phase 17: ルールベースでタグ分類（API不要）
+  const conversationTag = classifyConversationTag(userMessage);
+
   if (!apiKey) {
-    return getDemoTaskChat(task, userMessage, phase);
+    return { ...getDemoTaskChat(task, userMessage, phase), conversationTag };
   }
 
   try {
@@ -279,10 +323,10 @@ ${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`;
 
     const reply = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
-    return { reply };
+    return { reply, conversationTag };
   } catch (error) {
     console.error('タスクAI会話エラー:', error);
-    return getDemoTaskChat(task, userMessage, phase);
+    return { ...getDemoTaskChat(task, userMessage, phase), conversationTag };
   }
 }
 

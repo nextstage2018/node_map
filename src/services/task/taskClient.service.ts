@@ -6,6 +6,7 @@ import {
   TaskStatus,
   TaskPriority,
   AiConversationMessage,
+  ConversationTag,
   CreateTaskRequest,
   UpdateTaskRequest,
   TaskSuggestion,
@@ -312,6 +313,11 @@ function mapTaskFromDb(dbRow: any): Task {
     createdAt: dbRow.created_at,
     updatedAt: dbRow.updated_at,
     completedAt: dbRow.completed_at,
+    // Phase 17: フェーズ遷移タイムスタンプ
+    seedAt: dbRow.seed_at,
+    ideationAt: dbRow.ideation_at,
+    progressAt: dbRow.progress_at,
+    resultAt: dbRow.result_at,
   };
 }
 
@@ -322,6 +328,7 @@ function mapConversationFromDb(dbRow: any): AiConversationMessage {
     content: dbRow.content,
     phase: dbRow.phase,
     timestamp: dbRow.created_at,
+    conversationTag: dbRow.conversation_tag || undefined, // Phase 17
   };
 }
 
@@ -459,6 +466,8 @@ export class TaskService {
       createdAt: now,
       updatedAt: now,
       tags: req.tags || [],
+      // Phase 17: 作成時に ideationAt を記録
+      ideationAt: now,
     };
 
     if (!sb) {
@@ -507,14 +516,24 @@ export class TaskService {
       const idx = demoTasks.findIndex((t) => t.id === id);
       if (idx === -1) return null;
 
+      const nowLocal = new Date().toISOString();
       const updated = {
         ...demoTasks[idx],
         ...req,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowLocal,
       };
 
       if (req.status === 'done' && !updated.completedAt) {
-        updated.completedAt = new Date().toISOString();
+        updated.completedAt = nowLocal;
+      }
+
+      // Phase 17: フェーズ遷移タイムスタンプ（デモモード）
+      if (req.phase === 'ideation' && !updated.ideationAt) {
+        updated.ideationAt = nowLocal;
+      } else if (req.phase === 'progress' && !updated.progressAt) {
+        updated.progressAt = nowLocal;
+      } else if (req.phase === 'result' && !updated.resultAt) {
+        updated.resultAt = nowLocal;
       }
 
       demoTasks[idx] = updated;
@@ -545,6 +564,19 @@ export class TaskService {
       // Set completedAt if marking as done
       if (req.status === 'done') {
         updateData.completed_at = now;
+      }
+
+      // Phase 17: フェーズ遷移タイムスタンプの自動記録
+      if (req.phase) {
+        const phaseTimestampMap: Record<string, string> = {
+          ideation: 'ideation_at',
+          progress: 'progress_at',
+          result: 'result_at',
+        };
+        const tsCol = phaseTimestampMap[req.phase];
+        if (tsCol) {
+          updateData[tsCol] = now;
+        }
       }
 
       const { data, error } = await sb
@@ -605,17 +637,22 @@ export class TaskService {
     }
 
     try {
-      // Insert conversation
+      // Insert conversation (Phase 17: conversationTag 追加)
+      const insertData: any = {
+        id: newId,
+        task_id: taskId,
+        role: message.role,
+        content: message.content,
+        phase: message.phase,
+        created_at: now,
+      };
+      if (message.conversationTag) {
+        insertData.conversation_tag = message.conversationTag;
+      }
+
       const { data, error } = await sb
         .from('task_conversations')
-        .insert({
-          id: newId,
-          task_id: taskId,
-          role: message.role,
-          content: message.content,
-          phase: message.phase,
-          created_at: now,
-        })
+        .insert(insertData)
         .select()
         .single();
 

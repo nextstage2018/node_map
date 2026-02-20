@@ -134,6 +134,16 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done';
 // タスクの優先度
 export type TaskPriority = 'high' | 'medium' | 'low';
 
+// Phase 17: 会話ログの構造化分類タグ（固定7種類）
+export type ConversationTag =
+  | '情報収集'         // 「〜とは何か」「〜の事例を教えて」
+  | '判断相談'         // 「〜と〜どちらがいいか」
+  | '壁の突破'         // 「うまくいかない」「詰まっている」
+  | 'アウトプット生成'  // 「〜を作って」「〜を書いて」
+  | '確認・検証'       // 「これで合っているか」
+  | '整理・構造化'     // 「整理したい」「まとめて」
+  | 'その他';          // 上記に該当しないもの
+
 // AI会話メッセージ
 export interface AiConversationMessage {
   id: string;
@@ -141,6 +151,7 @@ export interface AiConversationMessage {
   content: string;
   timestamp: string;
   phase: TaskPhase;
+  conversationTag?: ConversationTag; // Phase 17: AI自動分類タグ
 }
 
 // タスク
@@ -164,6 +175,11 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  // Phase 17: フェーズ遷移タイムスタンプ
+  seedAt?: string;       // 種として登録された日時
+  ideationAt?: string;   // 構想フェーズに入った日時
+  progressAt?: string;   // 進行フェーズに入った日時
+  resultAt?: string;     // 結果フェーズに入った日時
   // メタ情報
   tags: string[];
   assignee?: string;
@@ -205,7 +221,8 @@ export interface TaskAiChatRequest {
 // AI会話レスポンス
 export interface TaskAiChatResponse {
   reply: string;
-  suggestedPhaseTransition?: TaskPhase; // フェーズ遷移の提案
+  conversationTag?: ConversationTag;     // Phase 17: 分類タグ
+  suggestedPhaseTransition?: TaskPhase;  // フェーズ遷移の提案
 }
 
 // タスク提案（メッセージからの自動提案）

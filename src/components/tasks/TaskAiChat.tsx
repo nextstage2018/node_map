@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Task, TaskPhase, AiConversationMessage } from '@/lib/types';
+import { Task, TaskPhase, AiConversationMessage, ConversationTag } from '@/lib/types';
 import {
   TASK_PHASE_CONFIG,
   IDEATION_MEMO_FIELDS,
@@ -9,6 +9,17 @@ import {
 } from '@/lib/constants';
 import { cn, formatRelativeTime } from '@/lib/utils';
 import Button from '@/components/ui/Button';
+
+// Phase 17: 会話タグのスタイル設定
+const CONVERSATION_TAG_STYLE: Record<ConversationTag, { bg: string; text: string; icon: string }> = {
+  '情報収集':       { bg: 'bg-sky-100',    text: 'text-sky-700',    icon: '🔍' },
+  '判断相談':       { bg: 'bg-violet-100',  text: 'text-violet-700', icon: '⚖️' },
+  '壁の突破':       { bg: 'bg-orange-100',  text: 'text-orange-700', icon: '🔨' },
+  'アウトプット生成': { bg: 'bg-emerald-100', text: 'text-emerald-700', icon: '✏️' },
+  '確認・検証':     { bg: 'bg-amber-100',   text: 'text-amber-700',  icon: '✅' },
+  '整理・構造化':   { bg: 'bg-indigo-100',  text: 'text-indigo-700', icon: '📐' },
+  'その他':         { bg: 'bg-slate-100',   text: 'text-slate-500',  icon: '💬' },
+};
 
 interface TaskAiChatProps {
   task: Task;
@@ -327,6 +338,22 @@ export default function TaskAiChat({
                 >
                   {formatRelativeTime(msg.timestamp)}
                 </span>
+                {/* Phase 17: 会話タグバッジ */}
+                {msg.conversationTag && msg.conversationTag !== 'その他' && (() => {
+                  const tagStyle = CONVERSATION_TAG_STYLE[msg.conversationTag];
+                  return (
+                    <span
+                      className={cn(
+                        'text-[9px] px-1.5 py-0.5 rounded-full font-medium',
+                        msg.role === 'user'
+                          ? 'bg-blue-500/30 text-blue-100'
+                          : `${tagStyle.bg} ${tagStyle.text}`
+                      )}
+                    >
+                      {tagStyle.icon} {msg.conversationTag}
+                    </span>
+                  );
+                })()}
               </div>
               <p className="text-[13px] whitespace-pre-wrap leading-relaxed">
                 {msg.content}
