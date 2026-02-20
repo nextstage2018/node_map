@@ -76,9 +76,19 @@ function findSignatureStart(lines: string[]): number {
  */
 function removeSignature(text: string): string {
   const lines = text.split('\n');
+  // まず明示的な区切り線を探す
   const sigIndex = findSignatureStart(lines);
   if (sigIndex >= 0) {
     return lines.slice(0, sigIndex).join('\n').trim();
+  }
+  // 「-- 」（ダブルハイフン+スペースまたはダブルハイフンのみ）RFC署名区切り
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 20); i--) {
+    const line = lines[i].trim();
+    if (line === '--' || line === '-- ') {
+      if (i > 2) {
+        return lines.slice(0, i).join('\n').trim();
+      }
+    }
   }
   return text.trim();
 }
@@ -147,7 +157,9 @@ export function parseEmailThread(body: string): ParsedEmailMessage[] {
   let normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   // Gmailが長いヘッダーを折り返すケース:
   // "名前 <\n email@example.com>:" → 1行に結合
-  normalized = normalized.replace(/<\n\s*/g, '<');
+  // 深い引用では "名前 <\n>>>>> email@example.com>:" のように
+  // 次の行に引用プレフィックスが付くため、それも除去
+  normalized = normalized.replace(/<\n(?:>\s*)*/g, '<');
 
   const lines = normalized.split('\n');
 
