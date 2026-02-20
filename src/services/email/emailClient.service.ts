@@ -1,4 +1,5 @@
-import { UnifiedMessage } from '@/lib/types';
+import { UnifiedMessage, ThreadMessage } from '@/lib/types';
+import { parseEmailThread } from '@/lib/utils';
 
 /**
  * メール連携サービス
@@ -285,6 +286,31 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
         const rawSource = message.source?.toString() || '';
         const parsedBody = parseEmailBody(rawSource);
 
+        // 引用チェーンをパースしてスレッドメッセージに変換
+        const parsedThread = parseEmailThread(parsedBody);
+        const emailUser = config.user.toLowerCase();
+        let displayBody = parsedBody;
+        let threadMessages: ThreadMessage[] | undefined;
+        let hasQuote = false;
+
+        if (parsedThread.length > 1) {
+          // 引用チェーンがある場合
+          hasQuote = true;
+          // 最新メッセージ（配列の最後）を本文に
+          displayBody = parsedThread[parsedThread.length - 1].body;
+          // 全メッセージをスレッドとして表示
+          threadMessages = parsedThread.map((pm, idx) => ({
+            id: `email-quote-${envelope.messageId || message.uid}-${idx}`,
+            from: {
+              name: pm.sender || envelope.from?.[0]?.name || '不明',
+              address: pm.email || envelope.from?.[0]?.address || '',
+            },
+            body: pm.body,
+            timestamp: pm.dateStr || envelope.date?.toISOString() || new Date().toISOString(),
+            isOwn: pm.email ? pm.email.toLowerCase() === emailUser : false,
+          }));
+        }
+
         messages.push({
           id: `email-${envelope.messageId || message.uid}`,
           channel: 'email',
@@ -298,11 +324,14 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
             address: t.address || '',
           })),
           subject: envelope.subject || '(件名なし)',
-          body: parsedBody,
+          body: displayBody,
+          bodyFull: hasQuote ? parsedBody : undefined,
+          hasQuote,
           timestamp: envelope.date?.toISOString() || new Date().toISOString(),
           isRead: false,
           status: 'unread' as const,
           threadId: envelope.inReplyTo || undefined,
+          threadMessages,
           metadata: {
             messageId: envelope.messageId || undefined,
           },

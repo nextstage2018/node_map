@@ -45,6 +45,227 @@ export function cn(...classes: (string | undefined | false | null)[]): string {
 }
 
 /**
+ * メール本文から引用部分と署名を除去し、最新の返信本文のみを抽出
+ */
+export function cleanEmailBody(body: string): { main: string; hasQuote: boolean } {
+  if (!body) return { main: '', hasQuote: false };
+  const parsed = parseEmailThread(body);
+  if (parsed.length <= 1) {
+    return { main: parsed[0]?.body || body.trim(), hasQuote: false };
+  }
+  return { main: parsed[0].body, hasQuote: true };
+}
+
+/**
+ * メール署名の開始位置を検出
+ * 「ーーー」「---」「__」等の区切り線以降を署名とみなす
+ */
+function findSignatureStart(lines: string[]): number {
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 15); i--) {
+    const line = lines[i].trim();
+    if (/^[ー]{5,}$/.test(line) || /^[-]{5,}$/.test(line) || /^[_]{5,}$/.test(line) || /^[=]{5,}$/.test(line)) {
+      if (i > 2) return i;
+    }
+    if (/^>{2,}.*<{2,}$/.test(line)) return i;
+  }
+  return -1;
+}
+
+/**
+ * 署名を除去するヘルパー
+ */
+function removeSignature(text: string): string {
+  const lines = text.split('\n');
+  const sigIndex = findSignatureStart(lines);
+  if (sigIndex >= 0) {
+    return lines.slice(0, sigIndex).join('\n').trim();
+  }
+  return text.trim();
+}
+
+/** 引用ヘッダーのパターン（日本語・英語対応） */
+const QUOTE_HEADER_PATTERNS = [
+  // "2026年2月19日(木) 15:47 福田遼太郎 <fukuda@next-stage.biz>:"
+  /^(\d{4}年\d{1,2}月\d{1,2}日\s*\(.+?\)\s*\d{1,2}:\d{2})\s+(.+?)\s*<([^>]+)>\s*:?\s*$/,
+  // "On Feb 19, 2026, at 15:47, Name <email> wrote:"
+  /^On\s+(.+?),?\s+(.+?)\s*<([^>]+)>\s*wrote:\s*$/i,
+  // "On 2026/02/19 15:47, Name <email> wrote:"
+  /^On\s+(\d{4}\/\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}),?\s+(.+?)\s*<([^>]+)>\s*wrote:\s*$/i,
+];
+
+/**
+ * 引用ヘッダー行を解析して送信者情報を返す
+ */
+function parseQuoteHeader(line: string): { dateStr: string; name: string; email: string } | null {
+  for (const pattern of QUOTE_HEADER_PATTERNS) {
+    const match = line.match(pattern);
+    if (match) {
+      return { dateStr: match[1], name: match[2].trim(), email: match[3] };
+    }
+  }
+  return null;
+}
+
+/**
+ * 引用レベル（行頭の > の数）を数え、引用プレフィックスを除去した本文を返す
+ */
+function stripQuotePrefix(line: string): { level: number; text: string } {
+  let level = 0;
+  let rest = line;
+  while (rest.startsWith('>')) {
+    level++;
+    rest = rest.substring(1);
+    if (rest.startsWith(' ')) rest = rest.substring(1);
+  }
+  return { level, text: rest };
+}
+
+/** 解析済みメール引用メッセージ */
+export interface ParsedEmailMessage {
+  sender: string;
+  email: string;
+  dateStr: string;
+  body: string;
+}
+
+/**
+ * Gmail形式のメール引用チェーンを解析し、個別メッセージの配列に変換
+ *
+ * Gmail引用形式：
+ *   [最新の返信本文]
+ *   2026年2月19日(木) 15:47 福田遼太郎 <fukuda@next-stage.biz>:
+ *   > [前の返信本文]
+ *   > 2026年2月18日(水) 10:30 鈴木次郎 <suzuki@next-stage.biz>:
+ *   >> [さらに前の本文]
+ *
+ * @returns 古い順に並んだメッセージ配列
+ */
+export function parseEmailThread(body: string): ParsedEmailMessage[] {
+  if (!body) return [];
+
+  const lines = body.split('\n');
+  const messages: ParsedEmailMessage[] = [];
+
+  // --- Step 1: 最新の返信（引用なし部分）を抽出 ---
+  let firstQuoteHeaderIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (parseQuoteHeader(trimmed)) {
+      firstQuoteHeaderIdx = i;
+      break;
+    }
+    // > で始まる引用行が3行以上連続したら引用開始とみなす（ヘッダーなし引用）
+    if (trimmed.startsWith('>')) {
+      let count = 1;
+      for (let j = i + 1; j < lines.length && j < i + 5; j++) {
+        if (lines[j].trim().startsWith('>')) count++;
+      }
+      if (count >= 3 && firstQuoteHeaderIdx === -1) {
+        firstQuoteHeaderIdx = i;
+        break;
+      }
+    }
+  }
+
+  // 引用が全く無い場合はそのまま1メッセージとして返す
+  if (firstQuoteHeaderIdx === -1) {
+    const cleaned = removeSignature(body);
+    if (cleaned) {
+      messages.push({ sender: '', email: '', dateStr: '', body: cleaned });
+    }
+    return messages;
+  }
+
+  // 最新の返信本文
+  const latestBody = removeSignature(lines.slice(0, firstQuoteHeaderIdx).join('\n'));
+  if (latestBody) {
+    messages.push({ sender: '', email: '', dateStr: '', body: latestBody });
+  }
+
+  // --- Step 2: 引用チェーンを再帰的にパース ---
+  const quotedLines = lines.slice(firstQuoteHeaderIdx);
+  parseQuotedSection(quotedLines, 0, messages);
+
+  // 古い順に並べ替え（パース順は新しい→古いなので反転）
+  messages.reverse();
+
+  return messages;
+}
+
+/**
+ * 引用セクションを再帰的にパースして個別メッセージを抽出
+ */
+function parseQuotedSection(
+  lines: string[],
+  expectedLevel: number,
+  messages: ParsedEmailMessage[]
+): void {
+  let currentSender: { name: string; email: string; dateStr: string } | null = null;
+  const bodyLines: string[] = [];
+  let deeperQuoteStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // 引用プレフィックスを除去
+    const stripped = stripQuotePrefix(trimmed);
+
+    // このレベルの引用ヘッダーを検出
+    if (stripped.level === expectedLevel) {
+      const header = parseQuoteHeader(stripped.text.trim());
+      if (header) {
+        // 前のメッセージがあれば保存
+        if (currentSender) {
+          const body = removeSignature(bodyLines.join('\n'));
+          if (body) {
+            messages.push({
+              sender: currentSender.name,
+              email: currentSender.email,
+              dateStr: currentSender.dateStr,
+              body,
+            });
+          }
+          bodyLines.length = 0;
+        }
+        // より深い引用があれば先に処理
+        if (deeperQuoteStart >= 0) {
+          parseQuotedSection(lines.slice(deeperQuoteStart, i), expectedLevel + 1, messages);
+          deeperQuoteStart = -1;
+        }
+        currentSender = { name: header.name, email: header.email, dateStr: header.dateStr };
+        continue;
+      }
+    }
+
+    // 本文行かより深い引用か判定
+    if (stripped.level === expectedLevel && currentSender) {
+      bodyLines.push(stripped.text);
+    } else if (stripped.level > expectedLevel) {
+      if (deeperQuoteStart === -1) deeperQuoteStart = i;
+    } else if (stripped.level === expectedLevel && !currentSender) {
+      // ヘッダーが見つかる前の行（スキップ）
+    }
+  }
+
+  // 残りのメッセージを保存
+  if (currentSender) {
+    const body = removeSignature(bodyLines.join('\n'));
+    if (body) {
+      messages.push({
+        sender: currentSender.name,
+        email: currentSender.email,
+        dateStr: currentSender.dateStr,
+        body,
+      });
+    }
+  }
+  if (deeperQuoteStart >= 0) {
+    parseQuotedSection(lines.slice(deeperQuoteStart), expectedLevel + 1, messages);
+  }
+}
+
+/**
  * Chatwork内部タグを除去してきれいなテキストに整形
  * 対象: [rp aid=...], [To:...], [toall], [info]...[/info], [title]...[/title],
  *        [hr], [code]...[/code], [qt]...[/qt], [qtmeta ...], [piconname:...], [dtext:...]

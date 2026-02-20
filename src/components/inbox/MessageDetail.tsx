@@ -28,7 +28,7 @@ export default function MessageDetail({ message, group }: MessageDetailProps) {
     );
   }
 
-  // グループが選択されている場合
+  // グループが選択されている場合（複数メッセージのグループ）
   if (group && group.messageCount > 1) {
     return (
       <GroupDetail
@@ -42,6 +42,18 @@ export default function MessageDetail({ message, group }: MessageDetailProps) {
 
   // 単一メッセージ（グループ内1件、またはグループなし）
   const displayMessage = group ? group.latestMessage : message!;
+
+  // メールで引用チェーンが解析されている場合は会話ビューで表示
+  if (displayMessage.channel === 'email' && displayMessage.threadMessages && displayMessage.threadMessages.length > 1) {
+    return (
+      <EmailThreadDetail
+        message={displayMessage}
+        showReply={showReply}
+        onToggleReply={() => setShowReply(!showReply)}
+        onCloseReply={() => setShowReply(false)}
+      />
+    );
+  }
 
   return (
     <SingleMessageDetail
@@ -170,6 +182,109 @@ function ConversationBubble({ message }: { message: UnifiedMessage }) {
       </div>
     </div>
   );
+}
+
+/**
+ * メール引用チェーンを会話形式で表示
+ * Gmailの「>」引用をパースして、チャットワーク風のバブルUIに変換
+ */
+function EmailThreadDetail({
+  message,
+  showReply,
+  onToggleReply,
+  onCloseReply,
+}: {
+  message: UnifiedMessage;
+  showReply: boolean;
+  onToggleReply: () => void;
+  onCloseReply: () => void;
+}) {
+  const threadMessages = message.threadMessages || [];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* ヘッダー */}
+      <div className="p-6 border-b border-slate-200">
+        <div className="flex items-center gap-2 mb-2">
+          <ChannelBadge channel="email" />
+          <span className="text-xs text-slate-400">
+            {threadMessages.length}件のやり取り
+          </span>
+          <span className="inline-flex items-center gap-1 text-[10px] text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+            💬 引用を会話に変換
+          </span>
+        </div>
+        {message.subject && (
+          <h2 className="text-lg font-bold text-slate-900 mb-1">
+            {message.subject}
+          </h2>
+        )}
+        <div className="text-xs text-slate-400">
+          参加者: {getUniqueThreadParticipants(threadMessages)}
+        </div>
+      </div>
+
+      {/* 会話一覧（古い順） */}
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        {threadMessages.map((msg) => (
+          <div
+            key={msg.id}
+            className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}
+          >
+            <div
+              className={cn(
+                'max-w-[85%] rounded-2xl px-4 py-3',
+                msg.isOwn
+                  ? 'bg-blue-600 text-white rounded-br-sm'
+                  : 'bg-slate-100 text-slate-800 rounded-bl-sm'
+              )}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span
+                  className={cn(
+                    'text-xs font-semibold',
+                    msg.isOwn ? 'text-blue-100' : 'text-slate-500'
+                  )}
+                >
+                  {msg.isOwn ? 'あなた' : msg.from.name}
+                </span>
+                <span
+                  className={cn(
+                    'text-[10px]',
+                    msg.isOwn ? 'text-blue-200' : 'text-slate-400'
+                  )}
+                >
+                  {msg.timestamp}
+                </span>
+              </div>
+              <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
+                {msg.body}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* アクションバー */}
+      <div className="p-4 border-t border-slate-200 bg-slate-50">
+        {showReply ? (
+          <ReplyForm message={message} onClose={onCloseReply} />
+        ) : (
+          <div className="flex gap-2">
+            <Button onClick={onToggleReply}>↩ 返信</Button>
+            <Button variant="secondary" onClick={onToggleReply}>
+              🤖 AIで下書き
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function getUniqueThreadParticipants(messages: { from: { name: string } }[]): string {
+  const names = new Set(messages.map((m) => m.from.name));
+  return Array.from(names).join('、');
 }
 
 /**

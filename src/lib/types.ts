@@ -20,8 +20,10 @@ export interface UnifiedMessage {
     address: string;
   }[];
   subject?: string; // email only
-  body: string;
+  body: string;             // 表示用本文（引用・署名除去済み）
+  bodyFull?: string;        // 引用含む全文（「引用を表示」用）
   bodyHtml?: string;
+  hasQuote?: boolean;       // 引用部分が除去されたか
   timestamp: string; // ISO 8601
   isRead: boolean;
   status: MessageStatus;
