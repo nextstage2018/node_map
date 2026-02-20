@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { UnifiedMessage, MessageGroup, Attachment } from '@/lib/types';
+import { UnifiedMessage, MessageGroup, Attachment, ChannelType } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import ChannelBadge from '@/components/ui/ChannelBadge';
@@ -9,6 +9,244 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
 import ChatworkBody from '@/components/inbox/ChatworkBody';
+
+// リアクション用の絵文字リスト
+const REACTION_EMOJIS = [
+  { emoji: '👍', name: 'thumbsup', label: 'いいね' },
+  { emoji: '❤️', name: 'heart', label: 'ハート' },
+  { emoji: '😂', name: 'laughing', label: '笑い' },
+  { emoji: '🎉', name: 'tada', label: '祝い' },
+  { emoji: '👀', name: 'eyes', label: '確認' },
+  { emoji: '🙏', name: 'pray', label: 'お願い' },
+  { emoji: '✅', name: 'white_check_mark', label: '了解' },
+  { emoji: '🔥', name: 'fire', label: '火' },
+];
+
+interface ReactionData {
+  id: string;
+  message_id: string;
+  emoji: string;
+  emoji_name: string | null;
+  user_name: string;
+  created_at: string;
+}
+
+/**
+ * リアクションピッカー＋表示コンポーネント
+ */
+function ReactionBar({
+  messageId,
+  channel,
+  existingReactions,
+}: {
+  messageId: string;
+  channel: ChannelType;
+  existingReactions?: { name: string; count: number }[];
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+  const [myReactions, setMyReactions] = useState<ReactionData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // ツール内リアクション取得
+  useEffect(() => {
+    fetchMyReactions();
+  }, [messageId]);
+
+  // ピッカー外クリックで閉じる
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowPicker(false);
+      }
+    }
+    if (showPicker) {
+      document.addEventListener('mousedown', handleClick);
+    }
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPicker]);
+
+  async function fetchMyReactions() {
+    try {
+      const res = await fetch(`/api/inbox/reactions?messageId=${encodeURIComponent(messageId)}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        setMyReactions(data.data);
+      }
+    } catch {
+      // Supabase未設定時は無視
+    }
+  }
+
+  async function addReaction(emoji: string, emojiName: string) {
+    // すでにリアクション済みなら削除
+    const existing = myReactions.find(r => r.emoji === emoji);
+    if (existing) {
+      await removeReaction(emoji, emojiName);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/inbox/reactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messageId,
+          channel,
+          emoji,
+          emojiName,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchMyReactions();
+      }
+    } catch (err) {
+      console.error('リアクション追加エラー:', err);
+    } finally {
+      setLoading(false);
+      setShowPicker(false);
+    }
+  }
+
+  async function removeReaction(emoji: string, emojiName?: string) {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        messageId,
+        emoji,
+        channel,
+        ...(emojiName ? { emojiName } : {}),
+      });
+      await fetch(`/api/inbox/reactions?${params}`, { method: 'DELETE' });
+      await fetchMyReactions();
+    } catch (err) {
+      console.error('リアクション削除エラー:', err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // APIから取得したリアクション + 外部リアクション を統合
+  const mergedReactions = mergeReactions(existingReactions || [], myReactions);
+
+  return (
+    <div className="mt-2">
+      {/* 統合リアクション表示 */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        {mergedReactions.map((r) => (
+          <button
+            key={r.emoji}
+            onClick={() => {
+              const emojiDef = REACTION_EMOJIS.find(e => e.emoji === r.emoji);
+              if (r.isMine) {
+                removeReaction(r.emoji, emojiDef?.name);
+              } else {
+                addReaction(r.emoji, emojiDef?.name || '');
+              }
+            }}
+            disabled={loading}
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border transition-colors',
+              r.isMine
+                ? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+            )}
+          >
+            {r.emoji} <span className="font-semibold">{r.count}</span>
+          </button>
+        ))}
+
+        {/* リアクション追加ボタン */}
+        <div className="relative" ref={pickerRef}>
+          <button
+            onClick={() => setShowPicker(!showPicker)}
+            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs border border-dashed border-slate-300 text-slate-400 hover:bg-slate-50 hover:text-slate-600 hover:border-slate-400 transition-colors"
+            title="リアクションを追加"
+          >
+            😀 +
+          </button>
+
+          {/* 絵文字ピッカー */}
+          {showPicker && (
+            <div className="absolute bottom-8 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-2 min-w-[200px]">
+              <div className="text-[10px] text-slate-400 mb-1.5 px-1">リアクションを選択</div>
+              <div className="grid grid-cols-4 gap-1">
+                {REACTION_EMOJIS.map((item) => {
+                  const isActive = myReactions.some(r => r.emoji === item.emoji);
+                  return (
+                    <button
+                      key={item.emoji}
+                      onClick={() => addReaction(item.emoji, item.name)}
+                      disabled={loading}
+                      className={cn(
+                        'text-xl p-1.5 rounded-lg hover:bg-slate-100 transition-colors',
+                        isActive && 'bg-blue-50 ring-1 ring-blue-300'
+                      )}
+                      title={item.label}
+                    >
+                      {item.emoji}
+                    </button>
+                  );
+                })}
+              </div>
+              {channel === 'slack' && (
+                <div className="text-[9px] text-blue-500 mt-1.5 px-1 border-t border-slate-100 pt-1">
+                  Slackにも送信されます
+                </div>
+              )}
+              {channel === 'chatwork' && (
+                <div className="text-[9px] text-slate-400 mt-1.5 px-1 border-t border-slate-100 pt-1">
+                  NodeMap内のみ（Chatwork APIは非対応）
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 外部リアクション（Slackから取得）とツール内リアクションを統合
+ */
+function mergeReactions(
+  external: { name: string; count: number }[],
+  internal: ReactionData[]
+): { emoji: string; count: number; isMine: boolean }[] {
+  const map = new Map<string, { count: number; isMine: boolean }>();
+
+  // 外部リアクション
+  for (const r of external) {
+    // Slack絵文字名からUnicode絵文字に変換
+    const emojiDef = REACTION_EMOJIS.find(e => e.name === r.name);
+    const emoji = emojiDef?.emoji || r.name;
+    const existing = map.get(emoji);
+    if (existing) {
+      existing.count += r.count;
+    } else {
+      map.set(emoji, { count: r.count, isMine: false });
+    }
+  }
+
+  // ツール内リアクション
+  for (const r of internal) {
+    const existing = map.get(r.emoji);
+    if (existing) {
+      existing.count += 1;
+      existing.isMine = true;
+    } else {
+      map.set(r.emoji, { count: 1, isMine: true });
+    }
+  }
+
+  return Array.from(map.entries()).map(([emoji, data]) => ({
+    emoji,
+    ...data,
+  }));
+}
 
 /**
  * URLをリンク化するコンポーネント
@@ -248,16 +486,12 @@ function ConversationBubble({ message }: { message: UnifiedMessage }) {
         ) : (
           <LinkifiedText text={message.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
         )}
-        {/* リアクション表示 */}
-        {message.metadata?.reactions && message.metadata.reactions.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {message.metadata.reactions.map((r: { name: string; count: number }, i: number) => (
-              <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white/20 rounded-full text-[11px]">
-                {r.name.startsWith(':') ? r.name : `${r.name}`} <span className="font-medium">{r.count}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* リアクション */}
+        <ReactionBar
+          messageId={message.id}
+          channel={message.channel}
+          existingReactions={message.metadata?.reactions}
+        />
       </div>
     </div>
   );
@@ -524,16 +758,12 @@ function SingleMessageDetail({
           <LinkifiedText text={message.body} className="text-slate-700 whitespace-pre-wrap leading-relaxed" />
         )}
 
-        {/* リアクション表示 */}
-        {message.metadata?.reactions && message.metadata.reactions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-3">
-            {message.metadata.reactions.map((r: { name: string; count: number }, i: number) => (
-              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-full text-xs border border-slate-200">
-                {r.name} <span className="font-semibold text-slate-600">{r.count}</span>
-              </span>
-            ))}
-          </div>
-        )}
+        {/* リアクション */}
+        <ReactionBar
+          messageId={message.id}
+          channel={message.channel}
+          existingReactions={message.metadata?.reactions}
+        />
 
         {/* 添付ファイル */}
         {message.attachments && message.attachments.length > 0 && (
