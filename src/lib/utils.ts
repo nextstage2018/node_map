@@ -106,10 +106,22 @@ export function cleanChatworkBody(body: string): string {
 }
 
 /**
+ * メール件名を正規化（Re:/Fwd:等を除去して同一スレッド判定に使う）
+ */
+export function normalizeEmailSubject(subject: string): string {
+  if (!subject) return '';
+  // Re:, RE:, Fwd:, FW:, Fw: 等を繰り返し除去（日本語の「件名:」にも対応）
+  return subject
+    .replace(/^(\s*(Re|RE|Fwd|FW|Fw|返信|転送)\s*[:：]\s*)+/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+/**
  * メッセージのグループキーを生成
  * 同一スレッド/ルーム/チャンネルのメッセージをまとめるためのキー
  */
-export function getMessageGroupKey(message: { channel: string; threadId?: string; metadata: { chatworkRoomId?: string; chatworkRoomName?: string; slackChannel?: string; slackChannelName?: string; slackThreadTs?: string; } }): string {
+export function getMessageGroupKey(message: { channel: string; subject?: string; threadId?: string; metadata: { chatworkRoomId?: string; chatworkRoomName?: string; slackChannel?: string; slackChannelName?: string; slackThreadTs?: string; } }): string {
   switch (message.channel) {
     case 'chatwork':
       // Chatwork: 同一ルームでグループ化
@@ -124,11 +136,18 @@ export function getMessageGroupKey(message: { channel: string; threadId?: string
       return message.metadata.slackChannel
         ? `slack-channel-${message.metadata.slackChannel}`
         : `slack-solo-${Math.random()}`;
-    case 'email':
-      // Email: threadIdでグループ化。なければ個別
-      return message.threadId
-        ? `email-thread-${message.threadId}`
-        : `email-solo-${Math.random()}`;
+    case 'email': {
+      // Email: threadIdがあればそれを使い、なければ件名で同一スレッド判定
+      if (message.threadId) {
+        return `email-thread-${message.threadId}`;
+      }
+      // 件名ベースのグループ化（Re:/Fwd:を除去して正規化）
+      const normalized = normalizeEmailSubject(message.subject || '');
+      if (normalized) {
+        return `email-subject-${normalized}`;
+      }
+      return `email-solo-${Math.random()}`;
+    }
     default:
       return `unknown-${Math.random()}`;
   }
@@ -143,8 +162,12 @@ export function getGroupLabel(message: { channel: string; subject?: string; meta
       return message.metadata.chatworkRoomName || 'Chatwork';
     case 'slack':
       return message.metadata.slackChannelName ? `#${message.metadata.slackChannelName}` : 'Slack';
-    case 'email':
-      return message.subject || 'メール';
+    case 'email': {
+      // Re:/Fwd:を除去した件名をグループラベルに使う
+      const subject = message.subject || '';
+      const cleaned = subject.replace(/^(\s*(Re|RE|Fwd|FW|Fw|返信|転送)\s*[:：]\s*)+/g, '').trim();
+      return cleaned || 'メール';
+    }
     default:
       return '';
   }
