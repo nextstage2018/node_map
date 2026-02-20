@@ -232,6 +232,41 @@ function stripHtmlTags(html: string): string {
 }
 
 /**
+ * 日本語・英語の日付文字列をISO形式に変換
+ * 例: "2026年1月19日(月) 16:36" → "2026-01-19T16:36:00.000Z"
+ *     "Mon, Jan 19, 2026 at 4:36 PM" → ISO string
+ */
+function parseDateStrToISO(dateStr: string): string | null {
+  if (!dateStr) return null;
+
+  // 日本語形式: 2026年1月19日(月) 16:36
+  const jpMatch = dateStr.match(/(\d{4})年(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})/);
+  if (jpMatch) {
+    const [, year, month, day, hour, minute] = jpMatch;
+    return new Date(
+      Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)
+    ).toISOString();
+  }
+
+  // 英語形式: 2026/1/19 16:36 or 2026/01/19 4:36
+  const slashMatch = dateStr.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})\s+(\d{1,2}):(\d{2})/);
+  if (slashMatch) {
+    const [, year, month, day, hour, minute] = slashMatch;
+    return new Date(
+      Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)
+    ).toISOString();
+  }
+
+  // Dateで直接パース可能か試す
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) return d.toISOString();
+  } catch { /* ignore */ }
+
+  return null;
+}
+
+/**
  * メール受信メッセージを取得し、UnifiedMessage形式に変換
  * @param limit 取得件数
  * @param page ページ番号（1始まり）。古いメールを取得するために使用
@@ -306,7 +341,7 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
               address: pm.email || envelope.from?.[0]?.address || '',
             },
             body: pm.body,
-            timestamp: pm.dateStr || envelope.date?.toISOString() || new Date().toISOString(),
+            timestamp: parseDateStrToISO(pm.dateStr) || envelope.date?.toISOString() || new Date().toISOString(),
             isOwn: pm.email ? pm.email.toLowerCase() === emailUser : false,
           }));
         }
