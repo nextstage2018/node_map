@@ -19,6 +19,10 @@ export interface UnifiedMessage {
     name: string;
     address: string;
   }[];
+  cc?: {
+    name: string;
+    address: string;
+  }[];
   subject?: string; // email only
   body: string;             // 表示用本文（引用・署名除去済み）
   bodyFull?: string;        // 引用含む全文（「引用を表示」用）
@@ -74,6 +78,9 @@ export interface ReplyRequest {
   messageId: string;
   channel: ChannelType;
   body: string;
+  to?: string[];      // 宛先メールアドレス群
+  cc?: string[];       // CCメールアドレス群
+  subject?: string;    // 件名
   metadata: UnifiedMessage['metadata'];
 }
 

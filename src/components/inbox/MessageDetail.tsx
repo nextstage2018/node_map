@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { UnifiedMessage, MessageGroup } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -200,6 +200,42 @@ function EmailThreadDetail({
   onCloseReply: () => void;
 }) {
   const threadMessages = message.threadMessages || [];
+  const [summary, setSummary] = useState<string>('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState(false);
+
+  const fetchSummary = useCallback(async () => {
+    if (threadMessages.length < 2) return;
+    setIsSummarizing(true);
+    setSummaryError(false);
+    try {
+      const res = await fetch('/api/ai/thread-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: message.subject || '',
+          threadMessages,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.summary) {
+        setSummary(data.data.summary);
+      } else {
+        setSummaryError(true);
+      }
+    } catch {
+      setSummaryError(true);
+    } finally {
+      setIsSummarizing(false);
+    }
+  }, [message.subject, threadMessages]);
+
+  // 自動で要約を取得
+  useEffect(() => {
+    if (threadMessages.length >= 2 && !summary) {
+      fetchSummary();
+    }
+  }, [message.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-full">
@@ -222,6 +258,39 @@ function EmailThreadDetail({
         <div className="text-xs text-slate-400">
           参加者: {getUniqueThreadParticipants(threadMessages)}
         </div>
+
+        {/* AI要約 */}
+        {threadMessages.length >= 2 && (
+          <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-amber-600 text-xs font-semibold">✨ AI要約</span>
+              {isSummarizing && (
+                <span className="text-[10px] text-amber-400">生成中...</span>
+              )}
+            </div>
+            {summary ? (
+              <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">
+                {summary}
+              </p>
+            ) : summaryError ? (
+              <p className="text-xs text-amber-600">
+                要約の生成に失敗しました。
+                <button
+                  onClick={fetchSummary}
+                  className="ml-1 underline hover:no-underline"
+                >
+                  再試行
+                </button>
+              </p>
+            ) : isSummarizing ? (
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* 会話一覧（古い順） */}

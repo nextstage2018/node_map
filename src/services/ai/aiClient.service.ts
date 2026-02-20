@@ -5,6 +5,7 @@ import {
   TaskPhase,
   AiConversationMessage,
   TaskAiChatResponse,
+  ThreadMessage,
 } from '@/lib/types';
 
 /**
@@ -103,6 +104,66 @@ function getDemoDraft(message: UnifiedMessage, instruction?: string): AiDraftRes
     draft: drafts[message.channel] || drafts.email,
     suggestions: ['より丁寧に', 'より簡潔に', '日程を提案'],
   };
+}
+
+// ===== スレッド要約 =====
+
+/**
+ * メールスレッドの要約を生成（3行要約）
+ */
+export async function generateThreadSummary(
+  subject: string,
+  threadMessages: ThreadMessage[]
+): Promise<string> {
+  const apiKey = getApiKey();
+
+  if (!apiKey) {
+    return getDemoThreadSummary(subject, threadMessages);
+  }
+
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
+
+    const conversationText = threadMessages
+      .map((m) => `[${m.from.name}] ${m.body}`)
+      .join('\n---\n');
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 300,
+      system: `あなたはメールスレッドの要約を生成するアシスタントです。
+以下のルールに従ってください：
+- 3行以内で簡潔に要約する
+- 「誰が」「何を」「どういう状態か」を含める
+- 箇条書きは使わず、自然な文章で書く
+- 日本語で出力する`,
+      messages: [
+        {
+          role: 'user',
+          content: `以下のメールスレッドを3行以内で要約してください。
+
+【件名】${subject}
+【やり取り】
+${conversationText}`,
+        },
+      ],
+    });
+
+    return response.content[0]?.type === 'text' ? response.content[0].text : '';
+  } catch (error) {
+    console.error('スレッド要約生成エラー:', error);
+    return getDemoThreadSummary(subject, threadMessages);
+  }
+}
+
+/**
+ * デモ用スレッド要約
+ */
+function getDemoThreadSummary(subject: string, threadMessages: ThreadMessage[]): string {
+  const participants = Array.from(new Set(threadMessages.map((m) => m.from.name))).join('、');
+  const count = threadMessages.length;
+  return `${participants}による${count}件のやり取り。${subject}について議論が進行中。最新のメッセージで対応方針の確認が求められています。`;
 }
 
 // ===== Phase 2: タスクAI会話 =====

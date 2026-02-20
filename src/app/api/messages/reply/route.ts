@@ -7,17 +7,18 @@ import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service'
 export async function POST(request: NextRequest) {
   try {
     const body: ReplyRequest = await request.json();
-    const { channel, body: replyBody, metadata } = body;
+    const { channel, body: replyBody, to, cc, subject, metadata } = body;
 
     let success = false;
 
     switch (channel) {
       case 'email':
         success = await sendEmail(
-          metadata.messageId ? '' : '', // TODO: extract reply-to from original
-          `Re: `, // TODO: extract subject
+          to && to.length > 0 ? to : [''],
+          subject || 'Re: ',
           replyBody,
-          metadata.messageId
+          metadata.messageId,
+          cc
         );
         break;
 

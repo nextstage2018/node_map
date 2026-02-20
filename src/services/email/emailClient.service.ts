@@ -323,6 +323,10 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
             name: t.name || t.address || '',
             address: t.address || '',
           })),
+          cc: envelope.cc?.map((c: { name?: string; address?: string }) => ({
+            name: c.name || c.address || '',
+            address: c.address || '',
+          })),
           subject: envelope.subject || '(件名なし)',
           body: displayBody,
           bodyFull: hasQuote ? parsedBody : undefined,
@@ -353,15 +357,16 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
  * メールを送信（返信）
  */
 export async function sendEmail(
-  to: string,
+  to: string | string[],
   subject: string,
   body: string,
-  inReplyTo?: string
+  inReplyTo?: string,
+  cc?: string[]
 ): Promise<boolean> {
   const config = getConfig();
 
   if (!config.user || !config.password) {
-    console.log('[デモモード] メール送信:', { to, subject, body });
+    console.log('[デモモード] メール送信:', { to, cc, subject, body });
     return true;
   }
 
@@ -379,7 +384,8 @@ export async function sendEmail(
 
     await transporter.sendMail({
       from: config.user,
-      to,
+      to: Array.isArray(to) ? to.join(', ') : to,
+      cc: cc && cc.length > 0 ? cc.join(', ') : undefined,
       subject,
       text: body,
       inReplyTo: inReplyTo || undefined,
