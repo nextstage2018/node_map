@@ -3,10 +3,10 @@
 import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import type { ServiceType, ChannelAuthType, ChannelAuth, UserPreferences } from '@/lib/types';
+import { SERVICE_CONFIG, CONNECTION_STATUS_CONFIG } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 import Header from '@/components/shared/Header';
 import ConnectionOverview from '@/components/settings/ConnectionOverview';
-import ServiceSettingsCard from '@/components/settings/ServiceSettingsCard';
 import ProfileSettings from '@/components/settings/ProfileSettings';
 import ChannelAuthCard from '@/components/settings/ChannelAuthCard';
 import UserPreferencesCard from '@/components/settings/UserPreferencesCard';
@@ -150,54 +150,80 @@ export default function SettingsPage() {
               totalCount={settings.connections.length}
             />
 
-            {/* チャネル連携設定 */}
+            {/* チャネル連携ステータス */}
             <div>
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
-                📨 チャネル連携（API基盤）
+                📨 チャネル連携
               </h2>
-              <p className="text-xs text-slate-500 mb-3">
-                各サービスのClient ID/Secret、Bot Token等を設定します。ユーザーの個人認証はこの設定が完了した後に行えます。
-              </p>
               <div className="space-y-3">
-                {channelServices.map((type) => (
-                  <ServiceSettingsCard
-                    key={type}
-                    serviceType={type}
-                    connection={getConnection(type)}
-                    onSave={saveServiceSettings}
-                    onTest={testConnection}
-                  />
-                ))}
+                {channelServices.map((type) => {
+                  const conn = getConnection(type);
+                  const svcConfig = SERVICE_CONFIG[type as keyof typeof SERVICE_CONFIG];
+                  const stConfig = CONNECTION_STATUS_CONFIG[conn.status];
+                  return (
+                    <div key={type} className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', svcConfig.color.split(' ')[0])}>
+                          <img src={svcConfig.icon} alt={svcConfig.label} width={24} height={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">{svcConfig.label}</h3>
+                          <p className="text-xs text-slate-500">{svcConfig.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className={cn('w-2.5 h-2.5 rounded-full', stConfig.dotColor)} />
+                        <span className={cn('text-sm font-medium', stConfig.color.split(' ')[1])}>
+                          {stConfig.label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* インフラ設定 */}
+            {/* AI・データベース ステータス */}
             <div>
               <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
                 🤖 AI・データベース
               </h2>
               <div className="space-y-3">
-                {infraServices.map((type) => (
-                  <ServiceSettingsCard
-                    key={type}
-                    serviceType={type}
-                    connection={getConnection(type)}
-                    onSave={saveServiceSettings}
-                    onTest={testConnection}
-                  />
-                ))}
+                {infraServices.map((type) => {
+                  const conn = getConnection(type);
+                  const svcConfig = SERVICE_CONFIG[type as keyof typeof SERVICE_CONFIG];
+                  const stConfig = CONNECTION_STATUS_CONFIG[conn.status];
+                  return (
+                    <div key={type} className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', svcConfig.color.split(' ')[0])}>
+                          <img src={svcConfig.icon} alt={svcConfig.label} width={24} height={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-sm font-bold text-slate-900">{svcConfig.label}</h3>
+                          <p className="text-xs text-slate-500">{svcConfig.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className={cn('w-2.5 h-2.5 rounded-full', stConfig.dotColor)} />
+                        <span className={cn('text-sm font-medium', stConfig.color.split(' ')[1])}>
+                          {stConfig.label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* デモモード注記 */}
-            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200">
+            {/* 環境変数の案内 */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
               <div className="flex items-start gap-2">
-                <span className="text-sm">💡</span>
+                <span className="text-sm">ℹ️</span>
                 <div>
-                  <h3 className="text-xs font-bold text-amber-800 mb-1">デモモードについて</h3>
-                  <p className="text-xs text-amber-700 leading-relaxed">
-                    API情報が未設定のサービスはデモモードで動作しています。
-                    実際のメッセージやAI機能を利用するには、各サービスのAPI情報を設定してください。
+                  <h3 className="text-xs font-bold text-slate-700 mb-1">接続設定について</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
+                    各サービスのAPI情報はVercelの環境変数で管理されています。接続状況を変更する場合は、Vercelダッシュボードから環境変数を更新してください。
                   </p>
                 </div>
               </div>
