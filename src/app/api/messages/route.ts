@@ -6,6 +6,8 @@ import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { UnifiedMessage } from '@/lib/types';
 import { cache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
 import { generateThreadSummary } from '@/services/ai/aiClient.service';
+import { saveMessages, getBlocklist } from '@/services/inbox/inboxStorage.service';
+import { isSupabaseConfigured } from '@/lib/supabase';
 // force dynamic rendering to prevent static cache
 export const dynamic = 'force-dynamic';
 
@@ -43,7 +45,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     // 全メッセージを統合して時系列ソート
-    const allMessages: UnifiedMessage[] = [
+    let allMessages: UnifiedMessage[] = [
       ...emails,
       ...slackMessages,
       ...chatworkMessages,
@@ -51,6 +53,32 @@ export async function GET(request: NextRequest) {
       (a, b) =>
         new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
+
+    // 【Supabase】メッセージを保存（バックグラウンド）
+    if (isSupabaseConfigured()) {
+      saveMessages(allMessages).catch((err) => {
+        console.error('[Messages API] Supabase保存エラー:', err);
+      });
+    }
+
+    // 【ブロックリスト】メールをフィルタリング
+    try {
+      const blocklist = await getBlocklist();
+      if (blocklist.length > 0) {
+        allMessages = allMessages.filter((msg) => {
+          if (msg.channel !== 'email') return true;
+          const addr = msg.from.address.toLowerCase();
+          const domain = addr.split('@')[1] || '';
+          for (const entry of blocklist) {
+            if (entry.match_type === 'exact' && addr === entry.address.toLowerCase()) return false;
+            if (entry.match_type === 'domain' && domain === entry.address.toLowerCase()) return false;
+          }
+          return true;
+        });
+      }
+    } catch {
+      // ブロックリスト取得失敗時はフィルタなしで続行
+    }
 
     const pagination = {
       page,

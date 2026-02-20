@@ -11,11 +11,11 @@ interface SidebarProps {
 
 export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
   const channels: ChannelType[] = ['email', 'slack', 'chatwork'];
-  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
+  const totalMessages = Object.values(messageCounts).reduce((a, b) => a + b, 0);
 
   return (
     <aside className="w-56 border-r border-slate-200 bg-slate-50 p-4 shrink-0">
-      <div className="mb-6">
+      <div>
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
           チャネル
         </h2>
@@ -25,14 +25,15 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
               <Image src="/icons/nav-inbox.svg" alt="すべて" width={16} height={16} />
               すべて
             </span>
-            {totalUnread > 0 && (
+            {totalMessages > 0 && (
               <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
-                {totalUnread}
+                {totalMessages}
               </span>
             )}
           </li>
           {channels.map((ch) => {
             const config = CHANNEL_CONFIG[ch];
+            const count = messageCounts[ch];
             return (
               <li
                 key={ch}
@@ -48,30 +49,15 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
                   />
                   {config.label}
                 </span>
-                <div className="flex items-center gap-2">
+                {count > 0 && (
                   <span className="text-xs text-slate-400">
-                    {messageCounts[ch]}
+                    {count}
                   </span>
-                  {unreadCounts[ch] > 0 && (
-                    <span className={`text-xs rounded-full px-1.5 py-0.5 ${config.bgColor} ${config.textColor}`}>
-                      {unreadCounts[ch]}
-                    </span>
-                  )}
-                </div>
+                )}
               </li>
             );
           })}
         </ul>
-      </div>
-
-      <div>
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          ステータス
-        </h2>
-        <div className="text-xs text-slate-400 px-3">
-          <p>API連携: デモモード</p>
-          <p className="mt-1">APIキーを設定すると実データに切り替わります</p>
-        </div>
       </div>
     </aside>
   );

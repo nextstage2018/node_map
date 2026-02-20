@@ -7,12 +7,14 @@ import Header from '@/components/shared/Header';
 import Sidebar from '@/components/shared/Sidebar';
 import MessageList from '@/components/inbox/MessageList';
 import MessageDetail from '@/components/inbox/MessageDetail';
+import ComposeMessage from '@/components/inbox/ComposeMessage';
 
 export default function InboxPage() {
   const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts } =
     useMessages();
   const [selectedGroup, setSelectedGroup] = useState<MessageGroup | null>(null);
   const [filter, setFilter] = useState<ChannelType | 'all'>('all');
+  const [showCompose, setShowCompose] = useState(false);
 
   return (
     <div className="flex flex-col h-screen bg-white">
@@ -26,13 +28,24 @@ export default function InboxPage() {
               <h2 className="text-sm font-semibold text-slate-900">
                 統合インボックス
               </h2>
-              <button
-                onClick={refresh}
-                className="text-xs text-blue-600 hover:underline"
-                disabled={isLoading}
-              >
-                {isLoading ? '更新中...' : '更新'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowCompose(true);
+                    setSelectedGroup(null);
+                  }}
+                  className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  ✏️ 新規
+                </button>
+                <button
+                  onClick={refresh}
+                  className="text-xs text-blue-600 hover:underline"
+                  disabled={isLoading}
+                >
+                  {isLoading ? '更新中...' : '更新'}
+                </button>
+              </div>
             </div>
 
             {error && (
@@ -53,7 +66,10 @@ export default function InboxPage() {
                 messages={messages}
                 messageGroups={messageGroups}
                 selectedGroupKey={selectedGroup?.groupKey}
-                onSelectGroup={setSelectedGroup}
+                onSelectGroup={(group) => {
+                  setSelectedGroup(group);
+                  setShowCompose(false);
+                }}
                 filter={filter}
                 onFilterChange={setFilter}
                 onLoadMore={loadMore}
@@ -63,12 +79,22 @@ export default function InboxPage() {
             )}
           </div>
 
-          {/* メッセージ詳細 */}
+          {/* メッセージ詳細 or 新規作成 */}
           <div className="flex-1">
-            <MessageDetail
-              message={selectedGroup?.latestMessage ?? null}
-              group={selectedGroup}
-            />
+            {showCompose ? (
+              <ComposeMessage
+                onClose={() => setShowCompose(false)}
+                onSent={() => {
+                  setShowCompose(false);
+                  refresh();
+                }}
+              />
+            ) : (
+              <MessageDetail
+                message={selectedGroup?.latestMessage ?? null}
+                group={selectedGroup}
+              />
+            )}
           </div>
         </div>
       </div>

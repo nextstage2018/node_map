@@ -10,8 +10,83 @@ interface ReplyFormProps {
 }
 
 /**
+ * 宛先入力コンポーネント（タグ形式）
+ */
+function RecipientInput({
+  label,
+  values,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  values: string[];
+  onChange: (v: string[]) => void;
+  placeholder?: string;
+}) {
+  const [inputValue, setInputValue] = useState('');
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if ((e.key === 'Enter' || e.key === ',' || e.key === ' ' || e.key === 'Tab') && inputValue.trim()) {
+      e.preventDefault();
+      const trimmed = inputValue.trim().replace(/,$/g, '');
+      if (trimmed && !values.includes(trimmed)) {
+        onChange([...values, trimmed]);
+      }
+      setInputValue('');
+    }
+    if (e.key === 'Backspace' && !inputValue && values.length > 0) {
+      onChange(values.slice(0, -1));
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(values.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="flex gap-2 items-start">
+      <span className="text-slate-400 w-8 shrink-0 pt-1 text-xs">{label}</span>
+      <div className="flex-1 flex flex-wrap gap-1 min-h-[28px] items-center">
+        {values.map((v, i) => (
+          <span
+            key={`${v}-${i}`}
+            className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs"
+          >
+            {v}
+            <button
+              onClick={() => handleRemove(i)}
+              className="text-slate-400 hover:text-red-500 ml-0.5"
+              type="button"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onBlur={() => {
+            const trimmed = inputValue.trim().replace(/,$/g, '');
+            if (trimmed && !values.includes(trimmed)) {
+              onChange([...values, trimmed]);
+              setInputValue('');
+            }
+          }}
+          placeholder={values.length === 0 ? placeholder : ''}
+          className="flex-1 min-w-[120px] text-xs py-0.5 bg-transparent focus:outline-none"
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
  * 返信フォーム
- * メールの場合: 全員返信をデフォルトにし、To/CC欄を表示
+ * メールの場合: To/CC/BCC欄を編集可能
+ * Slack: メンション追加可能
+ * Chatwork: 宛先指定可能
  */
 export default function ReplyForm({ message, onClose }: ReplyFormProps) {
   const [replyText, setReplyText] = useState('');
@@ -23,36 +98,35 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
 
   // メール向け: 全員返信の宛先計算
   const isEmail = message.channel === 'email';
-  const { defaultTo, defaultCc, hasMultipleRecipients } = useMemo(() => {
-    if (!isEmail) return { defaultTo: [], defaultCc: [], hasMultipleRecipients: false };
+  const isSlack = message.channel === 'slack';
+  const isChatwork = message.channel === 'chatwork';
 
-    // 自分のアドレスを除外するためのチェック
-    // To欄の先頭がだいたい自分（受信者）なので、fromを返信先にする
+  const { defaultTo, defaultCc } = useMemo(() => {
+    if (!isEmail) return { defaultTo: [], defaultCc: [] };
     const senderAddress = message.from.address;
     const toAddresses = message.to?.map((t) => t.address).filter(Boolean) || [];
     const ccAddresses = message.cc?.map((c) => c.address).filter(Boolean) || [];
-
-    // 返信先: 元の送信者
     const replyTo = [senderAddress];
-
-    // CC: 元のTo（自分を除く） + 元のCC（自分と送信者を除く）
     const allRecipients = [...toAddresses, ...ccAddresses];
     const replyCC = allRecipients.filter(
-      (addr) => addr !== senderAddress && !addr.includes('+') // 自分と重複を除外
+      (addr) => addr !== senderAddress && !addr.includes('+')
     );
-    // 簡易的に重複除去
-    const uniqueCC = Array.from(new Set(replyCC));
-
     return {
       defaultTo: replyTo,
-      defaultCc: uniqueCC,
-      hasMultipleRecipients: uniqueCC.length > 0,
+      defaultCc: Array.from(new Set(replyCC)),
     };
   }, [isEmail, message]);
 
-  const [isReplyAll, setIsReplyAll] = useState(true);
-  const [toRecipients] = useState<string[]>(defaultTo);
-  const [ccRecipients] = useState<string[]>(defaultCc);
+  const [toRecipients, setToRecipients] = useState<string[]>(defaultTo);
+  const [ccRecipients, setCcRecipients] = useState<string[]>(defaultCc);
+  const [bccRecipients, setBccRecipients] = useState<string[]>([]);
+  const [showBcc, setShowBcc] = useState(false);
+
+  // Chatwork宛先（@付きユーザー名）
+  const [chatworkTo, setChatworkTo] = useState<string[]>(() => {
+    if (!isChatwork) return [];
+    return message.from.name !== 'あなた' ? [message.from.name] : [];
+  });
 
   // 件名（Re: を付与）
   const replySubject = useMemo(() => {
@@ -92,6 +166,14 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
     if (!replyText.trim()) return;
     setIsLoading(true);
     setStatusMessage('');
+
+    // Chatwork宛先をメッセージ本文に挿入
+    let finalBody = replyText;
+    if (isChatwork && chatworkTo.length > 0) {
+      const toTags = chatworkTo.map((name) => `[To:${name}]`).join('');
+      finalBody = `${toTags}\n${replyText}`;
+    }
+
     try {
       const res = await fetch('/api/messages/reply', {
         method: 'POST',
@@ -99,9 +181,10 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
         body: JSON.stringify({
           messageId: message.id,
           channel: message.channel,
-          body: replyText,
+          body: finalBody,
           to: isEmail ? toRecipients : undefined,
-          cc: isEmail && isReplyAll ? ccRecipients : undefined,
+          cc: isEmail ? ccRecipients : undefined,
+          bcc: isEmail ? bccRecipients : undefined,
           subject: isEmail ? replySubject : undefined,
           metadata: message.metadata,
         }),
@@ -123,57 +206,67 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
 
   return (
     <div className="space-y-3">
-      {/* メールの場合: 宛先表示 */}
+      {/* メールの場合: 宛先編集 */}
       {isEmail && (
-        <div className="text-xs space-y-1 bg-white border border-slate-200 rounded-lg p-3">
-          {/* 全員返信トグル */}
-          {hasMultipleRecipients && (
-            <div className="flex items-center gap-2 mb-2 pb-2 border-b border-slate-100">
-              <button
-                onClick={() => setIsReplyAll(!isReplyAll)}
-                className={`px-2 py-1 rounded text-xs font-medium transition-colors ${
-                  isReplyAll
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'bg-slate-100 text-slate-500'
-                }`}
-              >
-                {isReplyAll ? '👥 全員に返信' : '👤 送信者のみ'}
-              </button>
-              <span className="text-slate-400">
-                {isReplyAll ? 'To + CC全員に送信されます' : '送信者のみに返信します'}
-              </span>
-            </div>
+        <div className="text-xs space-y-1.5 bg-white border border-slate-200 rounded-lg p-3">
+          <RecipientInput
+            label="To:"
+            values={toRecipients}
+            onChange={setToRecipients}
+            placeholder="メールアドレスを入力"
+          />
+          <RecipientInput
+            label="Cc:"
+            values={ccRecipients}
+            onChange={setCcRecipients}
+            placeholder="CC（任意）"
+          />
+          {showBcc ? (
+            <RecipientInput
+              label="Bcc:"
+              values={bccRecipients}
+              onChange={setBccRecipients}
+              placeholder="BCC（任意）"
+            />
+          ) : (
+            <button
+              onClick={() => setShowBcc(true)}
+              className="text-[10px] text-blue-500 hover:underline ml-8"
+              type="button"
+            >
+              + BCC を追加
+            </button>
           )}
-          {/* To */}
-          <div className="flex gap-2">
-            <span className="text-slate-400 w-6 shrink-0">To:</span>
-            <div className="flex flex-wrap gap-1">
-              {toRecipients.map((addr) => (
-                <span
-                  key={addr}
-                  className="inline-block bg-slate-100 text-slate-700 px-2 py-0.5 rounded"
-                >
-                  {addr}
-                </span>
-              ))}
-            </div>
+        </div>
+      )}
+
+      {/* Chatwork宛先 */}
+      {isChatwork && (
+        <div className="text-xs bg-white border border-slate-200 rounded-lg p-3">
+          <RecipientInput
+            label="宛先:"
+            values={chatworkTo}
+            onChange={setChatworkTo}
+            placeholder="宛先名を入力"
+          />
+        </div>
+      )}
+
+      {/* Slack: チャンネル情報表示 */}
+      {isSlack && (
+        <div className="text-xs bg-white border border-slate-200 rounded-lg p-3">
+          <div className="flex gap-2 items-center">
+            <span className="text-slate-400">送信先:</span>
+            <span className="text-slate-700 font-medium">
+              #{message.metadata.slackChannelName || message.metadata.slackChannel}
+            </span>
+            {message.metadata.slackThreadTs && (
+              <span className="text-slate-400">（スレッド返信）</span>
+            )}
           </div>
-          {/* CC（全員返信の場合のみ） */}
-          {isReplyAll && ccRecipients.length > 0 && (
-            <div className="flex gap-2">
-              <span className="text-slate-400 w-6 shrink-0">Cc:</span>
-              <div className="flex flex-wrap gap-1">
-                {ccRecipients.map((addr) => (
-                  <span
-                    key={addr}
-                    className="inline-block bg-slate-50 text-slate-500 px-2 py-0.5 rounded"
-                  >
-                    {addr}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            メンションは本文に @ユーザー名 と入力してください
+          </p>
         </div>
       )}
 
@@ -229,7 +322,7 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
           onClick={handleSend}
           disabled={isLoading || !replyText.trim()}
         >
-          {isLoading ? '送信中...' : isEmail && isReplyAll && hasMultipleRecipients ? '📨 全員に送信' : '📨 送信'}
+          {isLoading ? '送信中...' : '📨 送信'}
         </Button>
       </div>
     </div>
