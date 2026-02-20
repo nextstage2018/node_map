@@ -227,6 +227,33 @@ function decodeEmailContent(body: string, headers: string): string {
     return stripHtmlTags(body);
   }
 
+  // フォールバック: 本文がQPパターンに見える場合は自動デコード試行
+  if (/=[0-9A-F]{2}/i.test(body) && (body.match(/=[0-9A-F]{2}/gi) || []).length > 5) {
+    const decoded = decodeQuotedPrintable(body, charset);
+    if (decoded !== body && !/=[0-9A-F]{2}/.test(decoded.slice(0, 200))) {
+      if (contentType === 'text/html') return stripHtmlTags(decoded);
+      return decoded;
+    }
+  }
+
+  // フォールバック: 本文がBase64パターンに見える場合は自動デコード試行
+  const trimmedBody = body.trim();
+  if (/^[A-Za-z0-9+/=\r\n]+$/.test(trimmedBody) && trimmedBody.length > 20) {
+    try {
+      const cleaned = trimmedBody.replace(/[\r\n\s]/g, '');
+      const buf = Buffer.from(cleaned, 'base64');
+      // デコード結果が有効なテキストか確認（制御文字が少ない）
+      const decoded = decodeWithCharset(new Uint8Array(buf), charset);
+      const controlChars = (decoded.match(/[\x00-\x08\x0E-\x1F]/g) || []).length;
+      if (controlChars < decoded.length * 0.05) {
+        if (contentType === 'text/html') return stripHtmlTags(decoded);
+        return decoded;
+      }
+    } catch {
+      // フォールバック失敗、無視
+    }
+  }
+
   // text/plain はそのまま
   return body.trim();
 }
@@ -498,16 +525,16 @@ function decodeQuotedPrintable(input: string, charset: string = 'utf-8'): string
  * HTMLタグを除去してプレーンテキストにする
  */
 function stripHtmlTags(html: string): string {
-  return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, '') // style要素を除去（閉じタグの前後空白も対応）
+  let text = html
+    .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, '') // style要素を除去
     .replace(/<style[^>]*\/>/gi, '') // 自己閉じstyleタグ
     .replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, '') // script要素を除去
-    .replace(/<head[^>]*>[\s\S]*?<\/head\s*>/gi, '') // head要素全体を除去（CSSなど含む）
-    .replace(/<br\s*\/?>/gi, '\n') // br→改行
-    .replace(/<\/p>/gi, '\n\n') // p閉じ→改行
-    .replace(/<\/div>/gi, '\n') // div閉じ→改行
-    .replace(/<\/tr>/gi, '\n') // tr閉じ→改行
-    .replace(/<\/li>/gi, '\n') // li閉じ→改行
+    .replace(/<head[^>]*>[\s\S]*?<\/head\s*>/gi, '') // head要素全体を除去
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
     .replace(/<[^>]+>/g, '') // 残りのタグを除去
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
@@ -515,9 +542,17 @@ function stripHtmlTags(html: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
-    .replace(/&#\d+;/g, '') // 数値文字参照を除去
-    .replace(/\{[^}]*\}/g, '') // 残存CSSルール（{...}）を除去
-    .replace(/\n{3,}/g, '\n\n') // 連続改行を整理
+    .replace(/&#\d+;/g, '');
+
+  // CSSルール除去（マルチライン対応）: セレクタ { ... } パターン
+  text = text.replace(/[^;\n]*\{[^}]*\}/g, '');
+  // CSSの @media, @font-face 等の残骸を除去
+  text = text.replace(/@[a-z-]+[^{]*\{[\s\S]*?\}/gi, '');
+  // CSS関連の行を除去（!important, font-family:, background-color: 等で始まる行）
+  text = text.replace(/^.*(!important|font-family|background-color|text-decoration|line-height|margin:|padding:).*$/gim, '');
+
+  return text
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
