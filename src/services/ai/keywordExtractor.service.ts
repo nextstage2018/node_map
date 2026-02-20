@@ -155,7 +155,10 @@ function getDemoExtraction(text: string): KeywordExtractionResponse {
 }
 
 /**
- * 理解度レベルを判定する
+ * @deprecated Phase 16で廃止。interactionCountからderiveLevel()で導出する方式に変更。
+ * 後方互換のため関数は残す。
+ *
+ * 旧: 理解度レベルを判定する
  * - recognition: 受信メッセージにのみ含まれる（認知）
  * - understanding: 自分の送信やAI会話で使用（理解）
  * - mastery: 他人への説明・指示文脈で使用（習熟）
@@ -167,10 +170,7 @@ export function assessUnderstandingLevel(
   const hasSent = contexts.some((c) => c.direction === 'sent');
   const hasSelf = contexts.some((c) => c.direction === 'self');
 
-  // 送信メッセージで使用 + 受信でも触れている = 習熟の可能性
-  // （他人に対して説明・指示する文脈）
   if (hasSent && hasReceived) {
-    // 送信回数が2回以上なら習熟と判定
     const sentCount = contexts.filter((c) => c.direction === 'sent').length;
     if (sentCount >= 2) {
       return 'mastery';
@@ -178,11 +178,9 @@ export function assessUnderstandingLevel(
     return 'understanding';
   }
 
-  // 自分のメモ（タスク会話）で使用 = 理解
   if (hasSelf || hasSent) {
     return 'understanding';
   }
 
-  // 受信のみ = 認知
   return 'recognition';
 }

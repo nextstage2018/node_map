@@ -24,9 +24,13 @@ export default function MapStats({
   const personCount = nodes.filter((n) => n.type === 'person').length;
   const projectCount = nodes.filter((n) => n.type === 'project').length;
 
-  const recognitionCount = nodes.filter((n) => n.understandingLevel === 'recognition').length;
-  const understandingCount = nodes.filter((n) => n.understandingLevel === 'understanding').length;
-  const masteryCount = nodes.filter((n) => n.understandingLevel === 'mastery').length;
+  // Phase 16: interactionCount ベースの強度分布
+  const lightCount = nodes.filter((n) => (n.interactionCount ?? n.frequency) < 3).length;
+  const mediumCount = nodes.filter((n) => {
+    const c = n.interactionCount ?? n.frequency;
+    return c >= 3 && c < 8;
+  }).length;
+  const deepCount = nodes.filter((n) => (n.interactionCount ?? n.frequency) >= 8).length;
 
   return (
     <div className="space-y-4">
@@ -118,20 +122,23 @@ export default function MapStats({
         </div>
       </div>
 
-      {/* 理解度分布 */}
+      {/* Phase 16: インタラクション強度分布 */}
       <div>
-        <h4 className="text-xs font-semibold text-slate-500 mb-2">理解度分布</h4>
+        <h4 className="text-xs font-semibold text-slate-500 mb-2">インタラクション強度</h4>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 text-xs">
             <div className="flex-1">
               <div className="flex justify-between mb-0.5">
-                <span className="text-slate-600">認知</span>
-                <span className="font-medium">{recognitionCount}</span>
+                <span className="text-slate-600">浅い（1-2回）</span>
+                <span className="font-medium">{lightCount}</span>
               </div>
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-slate-400 rounded-full"
-                  style={{ width: `${nodes.length > 0 ? (recognitionCount / nodes.length) * 100 : 0}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${nodes.length > 0 ? (lightCount / nodes.length) * 100 : 0}%`,
+                    backgroundColor: '#93C5FD',
+                  }}
                 />
               </div>
             </div>
@@ -139,13 +146,16 @@ export default function MapStats({
           <div className="flex items-center gap-2 text-xs">
             <div className="flex-1">
               <div className="flex justify-between mb-0.5">
-                <span className="text-slate-600">理解</span>
-                <span className="font-medium">{understandingCount}</span>
+                <span className="text-slate-600">中程度（3-7回）</span>
+                <span className="font-medium">{mediumCount}</span>
               </div>
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-blue-500 rounded-full"
-                  style={{ width: `${nodes.length > 0 ? (understandingCount / nodes.length) * 100 : 0}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${nodes.length > 0 ? (mediumCount / nodes.length) * 100 : 0}%`,
+                    backgroundColor: '#2563EB',
+                  }}
                 />
               </div>
             </div>
@@ -153,13 +163,16 @@ export default function MapStats({
           <div className="flex items-center gap-2 text-xs">
             <div className="flex-1">
               <div className="flex justify-between mb-0.5">
-                <span className="text-slate-600">習熟</span>
-                <span className="font-medium">{masteryCount}</span>
+                <span className="text-slate-600">深い（8回+）</span>
+                <span className="font-medium">{deepCount}</span>
               </div>
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-green-500 rounded-full"
-                  style={{ width: `${nodes.length > 0 ? (masteryCount / nodes.length) * 100 : 0}%` }}
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${nodes.length > 0 ? (deepCount / nodes.length) * 100 : 0}%`,
+                    backgroundColor: '#1E3A8A',
+                  }}
                 />
               </div>
             </div>

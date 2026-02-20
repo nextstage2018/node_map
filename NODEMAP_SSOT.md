@@ -44,6 +44,7 @@
 | Phase 13：インボックスUX改善 | ✅ 完了 | 2026-02-20 | Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・要約スクロール・自動スクロール |
 | Phase 14：Chatwork内部タグ整形 | ✅ 完了 | 2026-02-20 | 生タグ整形表示・リッチレンダリング（info/code/quote/hr/メンション） |
 | Phase 15：Slack接続 | ✅ 完了 | 2026-02-20 | 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化 |
+| Phase 16：ノード登録・カウント設計変更 | ✅ 完了 | 2026-02-20 | interactionCount導入・受動登録廃止・色濃淡表示・DB migration |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -671,6 +672,20 @@ node_map/
   - プライベートチャンネルは `groups:history`, `groups:read` も必要
   - Vercel Serverless 10秒制限に注意（チャンネル数が多い場合）
 
+### Phase 16（ノード登録・カウント設計変更）→ Phase 17への引き継ぎ
+- **変更ファイル：**
+  - `src/lib/types.ts` — `NodeData`に`interactionCount`追加、`NodeInteractionTrigger`型追加、`NodeSourceContext`に`trigger`追加、`NodeFilter`に`minInteractionCount`追加
+  - `src/services/nodemap/nodeClient.service.ts` — 全面改修：`isActiveInteraction()`で受動登録フィルタ、`deriveLevel()`でinteractionCount→レベル自動導出、`upsertNode()`がnull返却対応
+  - `src/services/ai/keywordExtractor.service.ts` — `assessUnderstandingLevel()`を@deprecated化
+  - `src/components/nodemap/NetworkGraph.tsx` — `getNodeSize()`/`getNodeColor()`追加、interactionCount基準の色濃淡（blue系6段階）
+  - `src/components/nodemap/MapStats.tsx` — 「理解度分布」→「インタラクション強度」に変更（浅い/中程度/深い）
+  - `supabase/005_phase16_interaction_count.sql` — `interaction_count`カラム・`trigger`カラム追加
+  - `src/components/inbox/MessageDetail.tsx` — group.channel バグ修正（Phase 14のバグ）
+- **5つの登録トリガー：** reply / task_link / ai_conversation / seed / manual_mark
+- **色濃淡ルール：** blue-300(1回)→blue-400(2回)→blue-500(3+)→blue-600(5+)→blue-700(8+)→blue-900(10+)
+- **注意：** Supabase DBに `005_phase16_interaction_count.sql` を実行する必要あり
+- **後方互換：** `understandingLevel`型とフィールドは残存。`frequency`も`interactionCount`と同値で保持
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -715,6 +730,7 @@ node_map/
 - ✅ 添付ファイル・画像の表示・保存 — メールMIME添付抽出・Chatworkファイル取得・画像プレビュー・DL機能（2026-02-20）
 - ✅ Chatwork内部タグ整形 — 生タグ→リッチレンダリング（info/code/quote/hr/メンション/引用返信）（2026-02-20）
 - ✅ Slack接続 — 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化（2026-02-20）
+- ✅ ノード登録・カウント設計変更 — interactionCount導入・受動登録廃止・5トリガー定義・色濃淡表示・MapStats更新（2026-02-20）
 
 ---
 
@@ -762,8 +778,8 @@ node_map/
 
 ---
 
-#### Phase 16：ノード登録・カウント設計の変更（仕様書①）
-- **優先度：** ★★★（高）| **実装難易度：** 中 | **依存：** なし（基盤変更）
+#### Phase 16：ノード登録・カウント設計の変更（仕様書①） ✅ 完了
+- **優先度：** ★★★（高）| **実装難易度：** 中 | **依存：** なし（基盤変更） | **完了日：** 2026-02-20
 - **仕様書対応：** ①ノード登録・カウント設計の変更
 - **理由：** メルマガ等の一方的受信がノイズとして蓄積される問題を解決。NodeMapの根幹に関わる設計変更であり、後続Phase全ての基盤
 - **現状の問題：**

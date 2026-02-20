@@ -364,7 +364,7 @@ function EmailThreadDetail({
                   {msg.timestamp}
                 </span>
               </div>
-              {group.channel === 'chatwork' ? (
+              {message.channel === 'chatwork' ? (
                 <ChatworkBody body={msg.body} className="text-[13px]" />
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed text-[13px]">

@@ -18,7 +18,7 @@ interface NetworkGraphProps {
   checkpoints?: CheckpointData[];
 }
 
-// 理解度レベルに応じたサイズ
+// Phase 16: interactionCount に基づくサイズ（後方互換でlevel名キーも残す）
 const LEVEL_SIZE: Record<string, number> = {
   recognition: 6,
   understanding: 10,
@@ -32,12 +32,41 @@ const NODE_SHAPE: Record<string, string> = {
   project: 'square',
 };
 
-// 理解度の色（3色システム準拠：slate / primary-blue / success-green）
+// Phase 16: interactionCount に基づく色の濃淡（同系色で濃淡表現）
+// カウント少＝薄い色、カウント多＝濃い色
 const LEVEL_COLOR: Record<string, string> = {
-  recognition: '#94A3B8',   // nm-text-muted (slate-400)
-  understanding: '#2563EB', // nm-primary (blue-600)
-  mastery: '#16A34A',       // nm-success (green-600)
+  recognition: '#93C5FD',   // blue-300 (薄い)
+  understanding: '#2563EB', // blue-600 (中間)
+  mastery: '#1E3A5F',       // blue-900に近い (濃い)
 };
+
+/**
+ * Phase 16: interactionCount からノードサイズを算出
+ * 最小5px、最大18px、カウントに応じて段階的に大きくなる
+ */
+function getNodeSize(node: NodeData): number {
+  const count = node.interactionCount ?? node.frequency ?? 1;
+  if (count >= 10) return 18;
+  if (count >= 5) return 13;
+  if (count >= 3) return 10;
+  if (count >= 2) return 8;
+  return 6;
+}
+
+/**
+ * Phase 16: interactionCount から色を算出（同系色の濃淡）
+ * カウントが多いほど色が濃くなる
+ */
+function getNodeColor(node: NodeData): string {
+  const count = node.interactionCount ?? node.frequency ?? 1;
+  // 段階的に濃くする（blue系）
+  if (count >= 10) return '#1E3A8A'; // blue-900
+  if (count >= 8) return '#1D4ED8';  // blue-700
+  if (count >= 5) return '#2563EB';  // blue-600
+  if (count >= 3) return '#3B82F6';  // blue-500
+  if (count >= 2) return '#60A5FA';  // blue-400
+  return '#93C5FD';                  // blue-300
+}
 
 export default function NetworkGraph({
   nodes,
@@ -246,12 +275,14 @@ export default function NetworkGraph({
     // ノード形状の描画
     node.each(function (d) {
       const el = d3.select(this);
-      const size = LEVEL_SIZE[d.understandingLevel] || 8;
+      // Phase 16: interactionCount ベースのサイズ
+      const size = getNodeSize(d);
       const isHighlighted = !hasSelection || highlightedNodeIds.has(d.id);
       const isCheckpointed = checkpointNodeIds.has(d.id);
 
       // ドメイン色分けモード時はドメイン色を使う
       // Phase 9: 人物ノードは関係属性色を適用
+      // Phase 16: デフォルトは interactionCount による濃淡
       let fillColor: string;
       if (!isHighlighted) {
         fillColor = '#E2E8F0';
@@ -261,7 +292,7 @@ export default function NetworkGraph({
       } else if (colorByDomain && d.domainId && KNOWLEDGE_DOMAIN_CONFIG[d.domainId]) {
         fillColor = KNOWLEDGE_DOMAIN_CONFIG[d.domainId].color;
       } else {
-        fillColor = LEVEL_COLOR[d.understandingLevel] || '#94A3B8';
+        fillColor = getNodeColor(d);
       }
       const opacity = isHighlighted ? 1 : 0.3;
       const shape = NODE_SHAPE[d.type] || 'circle';
@@ -335,9 +366,8 @@ export default function NetworkGraph({
       .style('box-shadow', '0 4px 12px rgba(0,0,0,0.3)');
 
     node.on('mouseover', (event, d) => {
-      const levelLabel =
-        d.understandingLevel === 'recognition' ? '認知' :
-        d.understandingLevel === 'understanding' ? '理解' : '習熟';
+      // Phase 16: interactionCount を主表示に変更
+      const count = d.interactionCount ?? d.frequency ?? 0;
       const typeLabel =
         d.type === 'keyword' ? 'キーワード' :
         d.type === 'person' ? '人物' : 'プロジェクト';
@@ -345,7 +375,7 @@ export default function NetworkGraph({
         ? `<br/>関係: ${RELATIONSHIP_TYPE_CONFIG[d.relationshipType].label}` : '';
       const cpLabel = checkpointNodeIds.has(d.id) ? '<br/>📍 チェックポイント記録あり' : '';
       tooltip
-        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>理解度: ${levelLabel}<br/>頻出度: ${d.frequency}回${relationLabel}${cpLabel}`)
+        .html(`<strong>${d.label}</strong><br/>種別: ${typeLabel}<br/>インタラクション: ${count}回${relationLabel}${cpLabel}`)
         .style('visibility', 'visible')
         .style('top', `${event.pageY - 10}px`)
         .style('left', `${event.pageX + 15}px`);

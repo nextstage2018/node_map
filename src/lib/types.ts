@@ -412,8 +412,16 @@ export interface ConnectionTestResponse {
 
 // ===== Phase 4: データ収集基盤（点・線・面） =====
 
-// 理解度レベル（認知→理解→習熟）
+// 理解度レベル（認知→理解→習熟）— Phase 16で廃止予定だが後方互換のため残す
 export type UnderstandingLevel = 'recognition' | 'understanding' | 'mastery';
+
+// Phase 16: ノード登録トリガー（能動的インタラクションのみ）
+export type NodeInteractionTrigger =
+  | 'reply'             // 自分が返信した
+  | 'task_link'         // タスクに紐づけた
+  | 'ai_conversation'   // AI会話の中で使用した
+  | 'seed'              // 「種にする」ボタンを押した
+  | 'manual_mark';      // 手動で「認知マーク」をつけた
 
 // ノードの種類
 export type NodeType = 'keyword' | 'person' | 'project';
@@ -424,8 +432,10 @@ export interface NodeData {
   label: string;           // キーワード・人名・案件名
   type: NodeType;
   userId: string;           // このノードの所有ユーザー
-  frequency: number;        // 頻出度（触れた回数）
-  understandingLevel: UnderstandingLevel;
+  frequency: number;        // 頻出度（触れた回数）— 後方互換用
+  // Phase 16: interactionCount が新しい主要指標
+  interactionCount: number; // 累計インタラクション回数（能動的トリガーの合計）
+  understandingLevel: UnderstandingLevel; // Phase 16: 廃止予定だが後方互換で残す
   // 出現コンテキスト
   firstSeenAt: string;      // 初めて触れた日時
   lastSeenAt: string;       // 最後に触れた日時
@@ -446,6 +456,7 @@ export interface NodeSourceContext {
   sourceType: 'message' | 'task_conversation' | 'task_ideation' | 'task_result';
   sourceId: string;         // メッセージIDまたはタスクID
   direction: 'received' | 'sent' | 'self'; // 受信/送信/自分のメモ
+  trigger?: NodeInteractionTrigger; // Phase 16: 登録トリガー種別
   phase?: TaskPhase;        // タスク会話の場合のフェーズ
   timestamp: string;
 }
@@ -525,8 +536,9 @@ export interface NodeMapView {
 export interface NodeFilter {
   userId?: string;
   type?: NodeType;
-  understandingLevel?: UnderstandingLevel;
+  understandingLevel?: UnderstandingLevel; // Phase 16: 後方互換用
   minFrequency?: number;
+  minInteractionCount?: number; // Phase 16: インタラクション回数フィルター
   searchQuery?: string;
 }
 
