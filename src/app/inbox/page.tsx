@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { UnifiedMessage, ChannelType } from '@/lib/types';
+import { MessageGroup, ChannelType } from '@/lib/types';
 import { useMessages } from '@/hooks/useMessages';
 import Header from '@/components/shared/Header';
 import Sidebar from '@/components/shared/Sidebar';
@@ -9,11 +9,9 @@ import MessageList from '@/components/inbox/MessageList';
 import MessageDetail from '@/components/inbox/MessageDetail';
 
 export default function InboxPage() {
-  const { messages, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts } =
+  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts } =
     useMessages();
-  const [selectedMessage, setSelectedMessage] = useState<UnifiedMessage | null>(
-    null
-  );
+  const [selectedGroup, setSelectedGroup] = useState<MessageGroup | null>(null);
   const [filter, setFilter] = useState<ChannelType | 'all'>('all');
 
   return (
@@ -53,8 +51,9 @@ export default function InboxPage() {
             ) : (
               <MessageList
                 messages={messages}
-                selectedId={selectedMessage?.id}
-                onSelect={setSelectedMessage}
+                messageGroups={messageGroups}
+                selectedGroupKey={selectedGroup?.groupKey}
+                onSelectGroup={setSelectedGroup}
                 filter={filter}
                 onFilterChange={setFilter}
                 onLoadMore={loadMore}
@@ -66,7 +65,10 @@ export default function InboxPage() {
 
           {/* メッセージ詳細 */}
           <div className="flex-1">
-            <MessageDetail message={selectedMessage} />
+            <MessageDetail
+              message={selectedGroup?.latestMessage ?? null}
+              group={selectedGroup}
+            />
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { UnifiedMessage, ChannelType } from '@/lib/types';
+import { UnifiedMessage, MessageGroup, ChannelType } from '@/lib/types';
 import { CHANNEL_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, truncate, stripHtml } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -10,8 +10,10 @@ import StatusBadge from '@/components/ui/StatusBadge';
 
 interface MessageListProps {
   messages: UnifiedMessage[];
-  selectedId?: string;
-  onSelect: (message: UnifiedMessage) => void;
+  messageGroups: MessageGroup[];
+  selectedGroupKey?: string;
+  selectedMessageId?: string;
+  onSelectGroup: (group: MessageGroup) => void;
   filter: ChannelType | 'all';
   onFilterChange: (filter: ChannelType | 'all') => void;
   onLoadMore?: () => void;
@@ -20,19 +22,19 @@ interface MessageListProps {
 }
 
 export default function MessageList({
-  messages,
-  selectedId,
-  onSelect,
+  messageGroups,
+  selectedGroupKey,
+  onSelectGroup,
   filter,
   onFilterChange,
   onLoadMore,
   isLoadingMore,
   hasMore,
 }: MessageListProps) {
-  const filteredMessages =
+  const filteredGroups =
     filter === 'all'
-      ? messages
-      : messages.filter((m) => m.channel === filter);
+      ? messageGroups
+      : messageGroups.filter((g) => g.channel === filter);
 
   const filters: { value: ChannelType | 'all'; label: string; icon?: string }[] = [
     { value: 'all', label: 'すべて' },
@@ -64,63 +66,21 @@ export default function MessageList({
         ))}
       </div>
 
-      {/* メッセージ一覧 */}
+      {/* メッセージグループ一覧 */}
       <div className="flex-1 overflow-y-auto">
-        {filteredMessages.length === 0 ? (
+        {filteredGroups.length === 0 ? (
           <div className="p-8 text-center text-slate-400">
             メッセージがありません
           </div>
         ) : (
           <>
-            {filteredMessages.map((message) => (
-              <button
-                key={message.id}
-                onClick={() => onSelect(message)}
-                className={cn(
-                  'w-full text-left p-4 border-b border-slate-100 hover:bg-blue-50 transition-colors',
-                  selectedId === message.id && 'bg-blue-50 border-l-2 border-l-blue-600',
-                  message.status === 'unread' && 'bg-white'
-                )}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <ChannelBadge channel={message.channel} />
-                    <span className={cn(
-                      'text-sm text-slate-900',
-                      message.status === 'unread' ? 'font-bold' : 'font-normal'
-                    )}>
-                      {message.from.name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge status={message.status} />
-                    <span className="text-xs text-slate-400">
-                      {formatRelativeTime(message.timestamp)}
-                    </span>
-                  </div>
-                </div>
-                {message.subject && (
-                  <div className={cn(
-                    'text-sm mb-0.5',
-                    message.status === 'unread' ? 'text-slate-900 font-semibold' : 'text-slate-700'
-                  )}>
-                    {truncate(message.subject, 40)}
-                  </div>
-                )}
-                {message.metadata.slackChannelName && (
-                  <div className="text-xs text-slate-400 mb-0.5">
-                    #{message.metadata.slackChannelName}
-                  </div>
-                )}
-                {message.metadata.chatworkRoomName && (
-                  <div className="text-xs text-slate-400 mb-0.5">
-                    {message.metadata.chatworkRoomName}
-                  </div>
-                )}
-                <div className="text-xs text-slate-500 line-clamp-2">
-                  {truncate(stripHtml(message.body), 80)}
-                </div>
-              </button>
+            {filteredGroups.map((group) => (
+              <GroupItem
+                key={group.groupKey}
+                group={group}
+                isSelected={selectedGroupKey === group.groupKey}
+                onSelect={() => onSelectGroup(group)}
+              />
             ))}
 
             {/* もっと読み込むボタン */}
@@ -140,4 +100,98 @@ export default function MessageList({
       </div>
     </div>
   );
+}
+
+/**
+ * グループアイテム：1つのスレッド/ルーム/チャンネルをまとめて表示
+ */
+function GroupItem({
+  group,
+  isSelected,
+  onSelect,
+}: {
+  group: MessageGroup;
+  isSelected: boolean;
+  onSelect: () => void;
+}) {
+  const { latestMessage, messageCount, unreadCount, groupLabel } = group;
+  const hasMultiple = messageCount > 1;
+
+  return (
+    <button
+      onClick={onSelect}
+      className={cn(
+        'w-full text-left p-4 border-b border-slate-100 hover:bg-blue-50 transition-colors',
+        isSelected && 'bg-blue-50 border-l-2 border-l-blue-600',
+        unreadCount > 0 && 'bg-white'
+      )}
+    >
+      {/* 上段: チャネル・送信者・日時 */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <ChannelBadge channel={latestMessage.channel} />
+          <span
+            className={cn(
+              'text-sm text-slate-900',
+              unreadCount > 0 ? 'font-bold' : 'font-normal'
+            )}
+          >
+            {latestMessage.from.name}
+          </span>
+          {hasMultiple && (
+            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">
+              {messageCount}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {unreadCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+              {unreadCount}
+            </span>
+          )}
+          <span className="text-xs text-slate-400">
+            {formatRelativeTime(group.latestTimestamp)}
+          </span>
+        </div>
+      </div>
+
+      {/* グループラベル（ルーム名/チャンネル名/件名） */}
+      <div
+        className={cn(
+          'text-sm mb-0.5',
+          unreadCount > 0 ? 'text-slate-900 font-semibold' : 'text-slate-700'
+        )}
+      >
+        {groupLabel}
+      </div>
+
+      {/* 複数メッセージの場合は参加者一覧を表示 */}
+      {hasMultiple && (
+        <div className="text-[11px] text-slate-400 mb-0.5">
+          {getParticipants(group.messages)}
+        </div>
+      )}
+
+      {/* 最新メッセージのプレビュー */}
+      <div className="text-xs text-slate-500 line-clamp-2">
+        {hasMultiple && (
+          <span className="text-slate-400">{latestMessage.from.name}: </span>
+        )}
+        {truncate(stripHtml(latestMessage.body), 80)}
+      </div>
+    </button>
+  );
+}
+
+/**
+ * グループ内のユニークな参加者名をカンマ区切りで返す
+ */
+function getParticipants(messages: UnifiedMessage[]): string {
+  const names = new Set(messages.map((m) => m.from.name));
+  const nameArray = Array.from(names);
+  if (nameArray.length <= 3) {
+    return nameArray.join('、');
+  }
+  return `${nameArray.slice(0, 3).join('、')} 他${nameArray.length - 3}名`;
 }

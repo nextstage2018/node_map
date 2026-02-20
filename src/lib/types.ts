@@ -55,6 +55,18 @@ export interface ThreadMessage {
   isOwn: boolean; // 自分の送信か
 }
 
+// メッセージグループ（同一スレッド/ルーム/チャンネルの統合表示用）
+export interface MessageGroup {
+  groupKey: string;           // グループ識別子
+  channel: ChannelType;
+  groupLabel: string;         // 表示名（ルーム名/チャンネル名/件名）
+  latestMessage: UnifiedMessage; // 最新メッセージ（一覧のプレビュー用）
+  messages: UnifiedMessage[];    // グループ内の全メッセージ（時系列順）
+  messageCount: number;
+  unreadCount: number;
+  latestTimestamp: string;
+}
+
 // 返信リクエスト
 export interface ReplyRequest {
   messageId: string;

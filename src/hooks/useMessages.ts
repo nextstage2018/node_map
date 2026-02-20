@@ -1,7 +1,52 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { UnifiedMessage, ChannelType } from '@/lib/types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { UnifiedMessage, ChannelType, MessageGroup } from '@/lib/types';
+import { getMessageGroupKey, getGroupLabel } from '@/lib/utils';
+
+/**
+ * メッセージをグループ化する
+ * 同一ルーム/チャンネル/スレッドのメッセージを1つのグループにまとめる
+ */
+function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
+  const groupMap = new Map<string, UnifiedMessage[]>();
+
+  for (const msg of messages) {
+    const key = getMessageGroupKey(msg);
+    if (!groupMap.has(key)) {
+      groupMap.set(key, []);
+    }
+    groupMap.get(key)!.push(msg);
+  }
+
+  const groups: MessageGroup[] = [];
+
+  for (const [groupKey, msgs] of Array.from(groupMap.entries())) {
+    // グループ内メッセージを時系列順（古い→新しい）にソート
+    const sorted = [...msgs].sort(
+      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+    const latest = sorted[sorted.length - 1];
+
+    groups.push({
+      groupKey,
+      channel: latest.channel,
+      groupLabel: getGroupLabel(latest),
+      latestMessage: latest,
+      messages: sorted,
+      messageCount: sorted.length,
+      unreadCount: sorted.filter((m) => !m.isRead).length,
+      latestTimestamp: latest.timestamp,
+    });
+  }
+
+  // グループを最新メッセージの日時で降順ソート
+  groups.sort(
+    (a, b) => new Date(b.latestTimestamp).getTime() - new Date(a.latestTimestamp).getTime()
+  );
+
+  return groups;
+}
 
 export function useMessages() {
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
@@ -61,6 +106,9 @@ export function useMessages() {
     fetchMessages();
   }, [fetchMessages]);
 
+  // グループ化されたメッセージ
+  const messageGroups = useMemo(() => groupMessages(messages), [messages]);
+
   // チャネルごとのメッセージ数
   const messageCounts: Record<ChannelType, number> = {
     email: messages.filter((m) => m.channel === 'email').length,
@@ -77,6 +125,7 @@ export function useMessages() {
 
   return {
     messages,
+    messageGroups,
     isLoading,
     isLoadingMore,
     error,

@@ -1,4 +1,5 @@
 import { UnifiedMessage } from '@/lib/types';
+import { cleanChatworkBody } from '@/lib/utils';
 
 /**
  * Chatwork連携サービス
@@ -100,7 +101,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
               name: msg.account?.name || '不明',
               address: String(msg.account?.account_id || ''),
             },
-            body: msg.body || '',
+            body: cleanChatworkBody(msg.body || ''),
             timestamp: new Date(msg.send_time * 1000).toISOString(),
             isRead: false,
             status: 'unread' as const,
@@ -163,7 +164,7 @@ function getDemoChatworkMessages(): UnifiedMessage[] {
       channel: 'chatwork',
       channelIcon: '🔵',
       from: { name: '中村四郎', address: '4001' },
-      body: '[info][title]週次報告[/title]今週の進捗を共有します。タスクAは完了、タスクBは80%、タスクCは来週着手予定です。[/info]',
+      body: '■ 週次報告\n今週の進捗を共有します。タスクAは完了、タスクBは80%、タスクCは来週着手予定です。',
       timestamp: new Date(now.getTime() - 20 * 60000).toISOString(),
       isRead: false,
       status: 'unread' as const,
