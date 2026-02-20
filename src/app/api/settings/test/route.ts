@@ -15,9 +15,8 @@ export async function POST(req: Request) {
 
     const startTime = Date.now();
 
-    // デモモード: シミュレーション
-    // 本番: 各サービスAPIに実際にリクエストして疎通確認
-    const result = await simulateConnectionTest(service);
+    // 実API接続テスト（トークンがあれば実際にリクエスト）
+    const result = await runConnectionTest(service);
 
     const latencyMs = Date.now() - startTime;
 
@@ -35,13 +34,68 @@ export async function POST(req: Request) {
   }
 }
 
-async function simulateConnectionTest(
+/**
+ * 各サービスの接続テスト
+ * トークンが設定されている場合は実際にAPIリクエストで疎通確認
+ * 未設定の場合はデモモードとしてシミュレーション
+ */
+async function runConnectionTest(
   service: ServiceType
 ): Promise<{ success: boolean; message: string }> {
-  // 実際の接続テストのシミュレーション
-  await new Promise((resolve) => setTimeout(resolve, 800 + Math.random() * 700));
+  // --- Slack: 実API接続テスト ---
+  if (service === 'slack') {
+    const token = process.env.SLACK_BOT_TOKEN;
+    if (token) {
+      try {
+        const { WebClient } = await import('@slack/web-api');
+        const client = new WebClient(token);
+        const authResult = await client.auth.test();
+        const team = authResult.team || 'Unknown';
+        const user = authResult.user || 'Unknown';
+        return {
+          success: true,
+          message: `Slack接続成功（ワークスペース: ${team}、Bot: ${user}）`,
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          message: `Slack接続失敗: ${errorMsg}`,
+        };
+      }
+    }
+  }
 
-  // 環境変数が設定されているかチェック
+  // --- Chatwork: 実API接続テスト ---
+  if (service === 'chatwork') {
+    const token = process.env.CHATWORK_API_TOKEN;
+    if (token) {
+      try {
+        const res = await fetch('https://api.chatwork.com/v2/me', {
+          headers: { 'X-ChatWorkToken': token },
+        });
+        if (res.ok) {
+          const me = await res.json();
+          return {
+            success: true,
+            message: `Chatwork接続成功（${me.name || 'OK'}）`,
+          };
+        }
+        return {
+          success: false,
+          message: `Chatwork接続失敗: HTTP ${res.status}`,
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          message: `Chatwork接続失敗: ${errorMsg}`,
+        };
+      }
+    }
+  }
+
+  // --- 他サービス: 環境変数チェック ---
   const envChecks: Record<ServiceType, boolean> = {
     email: !!(process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID),
     slack: !!process.env.SLACK_BOT_TOKEN,
@@ -54,7 +108,8 @@ async function simulateConnectionTest(
     return { success: true, message: `${service} への接続に成功しました` };
   }
 
-  // デモモード: 50%の確率で成功をシミュレート
+  // デモモード: シミュレーション
+  await new Promise((resolve) => setTimeout(resolve, 500 + Math.random() * 500));
   const isSuccess = Math.random() > 0.5;
 
   if (isSuccess) {

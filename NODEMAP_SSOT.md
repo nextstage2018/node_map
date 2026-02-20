@@ -43,6 +43,7 @@
 | Phase 12後半：インボックス改善 | ✅ 完了 | 2026-02-20 | メールMIMEパース・Chatwork接続・ページネーション・エラーハンドリング |
 | Phase 13：インボックスUX改善 | ✅ 完了 | 2026-02-20 | Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・要約スクロール・自動スクロール |
 | Phase 14：Chatwork内部タグ整形 | ✅ 完了 | 2026-02-20 | 生タグ整形表示・リッチレンダリング（info/code/quote/hr/メンション） |
+| Phase 15：Slack接続 | ✅ 完了 | 2026-02-20 | 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -650,6 +651,26 @@ node_map/
 - **ChatworkBody.tsx：** 整形済みテキストをブロック分解→info=青ボックス, code=黒背景モノスペース, quote=左ボーダー引用, hr=水平線, @メンション=青ハイライト, >>返信=↩マーク
 - **MessageDetail.tsx：** ConversationBubble/GroupDetail/SingleMessageDetail/スレッド履歴の4箇所でchannel==='chatwork'分岐
 
+### Phase 15（Slack接続）→ Phase 16（ノード設計変更）への引き継ぎ
+- **変更ファイル：** `src/services/slack/slackClient.service.ts`（全面改修）, `src/app/api/settings/test/route.ts`
+- **slackClient.service.ts改修内容：**
+  - ユーザー情報キャッシュ（`userCache: Map`）でN+1問題解消
+  - `formatSlackText()`: `<@U123>` → `@名前`, `<#C123|name>` → `#name`, `<!channel>` → `@channel`, HTMLエンティティデコード
+  - `convertSlackFile()`: 添付ファイル→Attachment型変換、画像サムネイル対応
+  - `fetchSlackMessages()`: public/private/DM対応, `exclude_archived`, Bot ID検出(`auth.test()`), 最大15チャンネル
+  - DM表示名: `DM: ユーザー名`, グループDM名整形
+  - トークン未設定時はデモモードにフォールバック（3件のデモメッセージ）
+- **settings/test/route.ts改修内容：**
+  - Slack: `auth.test()` で実接続テスト（ワークスペース名・Bot名を返却）
+  - Chatwork: `GET /me` で実接続テスト
+  - 他サービス: 環境変数存在チェック（従来通り）
+- **現在の接続状態（Vercel環境変数）：**
+  - Supabase: ✅ | Anthropic: ✅ | Gmail: ✅ | Slack: ✅ | Chatwork: ✅
+- **注意点：**
+  - Slack Bot Tokenのスコープ: `channels:history`, `channels:read`, `chat:write`, `users:read` が必要
+  - プライベートチャンネルは `groups:history`, `groups:read` も必要
+  - Vercel Serverless 10秒制限に注意（チャンネル数が多い場合）
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -664,8 +685,8 @@ node_map/
   - Supabase: ✅ 接続済み
   - Anthropic: ✅ 設定済み（デプロイ後に設定画面で確認要）
   - Gmail: ✅ 設定済み（デプロイ後に設定画面で確認要）
-  - Slack: ❌ 未設定
-  - Chatwork: ❌ 未設定
+  - Slack: ✅ 設定済み（Vercel環境変数）
+  - Chatwork: ✅ 設定済み（Vercel環境変数）
 - **注意点：**
   - 接続テスト（`/api/settings/test`）は現在シミュレーション。本番は実際のAPI呼び出しに変更要
   - Gmailは IMAP/SMTP 方式。Google Workspace の場合、管理者が「安全性の低いアプリ」を許可している必要あり
@@ -693,6 +714,7 @@ node_map/
 - ✅ インボックスUX改善 — Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・スクロール改善（2026-02-20）
 - ✅ 添付ファイル・画像の表示・保存 — メールMIME添付抽出・Chatworkファイル取得・画像プレビュー・DL機能（2026-02-20）
 - ✅ Chatwork内部タグ整形 — 生タグ→リッチレンダリング（info/code/quote/hr/メンション/引用返信）（2026-02-20）
+- ✅ Slack接続 — 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化（2026-02-20）
 
 ---
 
@@ -719,20 +741,24 @@ node_map/
 
 ---
 
-#### Phase 15：Slack接続
-- **優先度：** ★★☆（中）| **実装難易度：** 中 | **依存：** なし
+#### Phase 15：Slack接続 ✅ 完了
+- **優先度：** ★★☆（中）| **実装難易度：** 中 | **依存：** なし | **完了日：** 2026-02-20
 - **仕様書対応：** なし（インフラ改善）
 - **理由：** メール・Chatworkが動いている今、Slackがつながれば3チャネル全てが実データで揃う
-- **前提：** sjinji さん側でSlack Bot Tokenの取得が必要
-  - Slack API（https://api.slack.com/apps）でAppを作成
-  - Bot Token Scopes: `channels:history`, `channels:read`, `chat:write`, `users:read`
-  - ワークスペースにインストール → `xoxb-` で始まるBot Tokenを取得
-  - Vercel環境変数に `SLACK_BOT_TOKEN` として設定
-- **内容：**
-  - `slackClient.service.ts` を実API対応に改修
-  - チャンネル一覧取得 → メッセージ取得 → UnifiedMessage変換
-  - Slackの `msg.files` 配列から添付ファイル情報を取得（画像プレビュー対応）
-  - 設定画面のSlack接続ステータスを実API対応に修正
+- **前提：** Vercel環境変数に `SLACK_BOT_TOKEN` 設定済み
+- **実装内容：**
+  - `slackClient.service.ts` を全面改修（実API対応）
+    - ユーザー情報キャッシュ（N+1問題解消）
+    - Slack書式変換（`<@U123>` → `@名前`、`<#C123|name>` → `#name`、HTMLエンティティ等）
+    - 添付ファイル・画像プレビュー対応（`convertSlackFile()`）
+    - DM・グループDM名表示対応
+    - Bot自身のID検出（`auth.test()`）で送信済み判定
+    - チャンネル15件×各メッセージ取得、`exclude_archived: true`
+    - トークン未設定時はデモモードにフォールバック
+  - `settings/test/route.ts` を実API接続テスト対応に改修
+    - Slack: `auth.test()` で実接続確認（ワークスペース名・Bot名を返却）
+    - Chatwork: `/me` エンドポイントで実接続確認
+    - 他サービス: 環境変数チェック（従来通り）
 
 ---
 
