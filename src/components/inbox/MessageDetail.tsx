@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { UnifiedMessage, MessageGroup } from '@/lib/types';
+import { UnifiedMessage, MessageGroup, Attachment } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import ChannelBadge from '@/components/ui/ChannelBadge';
@@ -106,6 +106,16 @@ function GroupDetail({
           参加者: {getUniqueParticipants(group.messages)}
         </div>
       </div>
+
+      {/* グループ内の添付ファイルまとめ表示 */}
+      {(() => {
+        const allAttachments = group.messages.flatMap(m => m.attachments || []);
+        return allAttachments.length > 0 ? (
+          <div className="px-6 py-3 border-t border-slate-200">
+            <AttachmentList attachments={allAttachments} />
+          </div>
+        ) : null;
+      })()}
 
       {/* 会話一覧（最新メッセージへ自動スクロール） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -309,6 +319,13 @@ function EmailThreadDetail({
         )}
       </div>
 
+      {/* 添付ファイル（メールスレッド） */}
+      {message.attachments && message.attachments.length > 0 && (
+        <div className="px-6 py-3 border-t border-slate-200">
+          <AttachmentList attachments={message.attachments} />
+        </div>
+      )}
+
       {/* 会話一覧（古い順・最新メッセージへ自動スクロール） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {threadMessages.map((msg) => (
@@ -440,6 +457,11 @@ function SingleMessageDetail({
         <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">
           {message.body}
         </div>
+
+        {/* 添付ファイル */}
+        {message.attachments && message.attachments.length > 0 && (
+          <AttachmentList attachments={message.attachments} />
+        )}
       </div>
 
       {/* スレッド履歴（既存のthreadMessages） */}
@@ -511,6 +533,98 @@ function SingleMessageDetail({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 添付ファイル表示コンポーネント
+ * 画像はインラインプレビュー、その他はファイルアイコン+ダウンロードリンク
+ */
+function AttachmentList({ attachments }: { attachments: Attachment[] }) {
+  const [expandedImage, setExpandedImage] = useState<string | null>(null);
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const getFileIcon = (mimeType: string): string => {
+    if (mimeType.startsWith('image/')) return '🖼';
+    if (mimeType === 'application/pdf') return '📄';
+    if (mimeType.includes('word') || mimeType.includes('document')) return '📝';
+    if (mimeType.includes('excel') || mimeType.includes('spreadsheet')) return '📊';
+    if (mimeType.includes('powerpoint') || mimeType.includes('presentation')) return '📎';
+    if (mimeType.includes('zip') || mimeType.includes('gzip') || mimeType.includes('compressed')) return '🗜';
+    if (mimeType.startsWith('video/')) return '🎬';
+    if (mimeType.startsWith('audio/')) return '🎵';
+    if (mimeType === 'text/csv') return '📊';
+    return '📁';
+  };
+
+  const imageAttachments = attachments.filter(a => a.mimeType.startsWith('image/') && a.previewUrl);
+  const fileAttachments = attachments.filter(a => !a.mimeType.startsWith('image/') || !a.previewUrl);
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center gap-1.5 mb-2">
+        <span className="text-slate-500 text-xs font-semibold">📎 添付ファイル（{attachments.length}件）</span>
+      </div>
+
+      {/* 画像プレビュー */}
+      {imageAttachments.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-2">
+          {imageAttachments.map((att) => (
+            <div key={att.id} className="relative group">
+              <button
+                onClick={() => setExpandedImage(expandedImage === att.id ? null : att.id)}
+                className="block rounded-lg overflow-hidden border border-slate-200 hover:border-blue-400 transition-colors"
+              >
+                <img
+                  src={att.previewUrl}
+                  alt={att.filename}
+                  className={cn(
+                    'object-cover transition-all',
+                    expandedImage === att.id ? 'max-w-full max-h-96' : 'w-20 h-20'
+                  )}
+                />
+              </button>
+              <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[9px] px-1 py-0.5 truncate opacity-0 group-hover:opacity-100 transition-opacity">
+                {att.filename} ({formatFileSize(att.size)})
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ファイル一覧 */}
+      {fileAttachments.length > 0 && (
+        <div className="space-y-1">
+          {fileAttachments.map((att) => (
+            <div
+              key={att.id}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors"
+            >
+              <span className="text-lg">{getFileIcon(att.mimeType)}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-slate-700 truncate">{att.filename}</p>
+                <p className="text-[10px] text-slate-400">{formatFileSize(att.size)}</p>
+              </div>
+              {att.downloadUrl && (
+                <a
+                  href={att.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"
+                >
+                  DL
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

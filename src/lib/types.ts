@@ -6,6 +6,18 @@ export type ChannelType = 'email' | 'slack' | 'chatwork';
 // メッセージのステータス
 export type MessageStatus = 'unread' | 'read' | 'replied';
 
+// 添付ファイル
+export interface Attachment {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;           // バイト数
+  contentId?: string;     // インライン画像用（CID）
+  isInline?: boolean;     // インライン添付か
+  previewUrl?: string;    // 画像のbase64プレビューURL（data:image/...）
+  downloadUrl?: string;   // ダウンロード用APIパス
+}
+
 // 統合メッセージの共通型
 export interface UnifiedMessage {
   id: string;
@@ -28,6 +40,7 @@ export interface UnifiedMessage {
   bodyFull?: string;        // 引用含む全文（「引用を表示」用）
   bodyHtml?: string;
   hasQuote?: boolean;       // 引用部分が除去されたか
+  attachments?: Attachment[]; // 添付ファイル
   timestamp: string; // ISO 8601
   isRead: boolean;
   status: MessageStatus;

@@ -1,4 +1,4 @@
-import { UnifiedMessage, ThreadMessage } from '@/lib/types';
+import { UnifiedMessage, ThreadMessage, Attachment } from '@/lib/types';
 import { parseEmailThread } from '@/lib/utils';
 
 /**
@@ -26,24 +26,68 @@ function getConfig(): EmailConfig {
   };
 }
 
+interface ParsedEmail {
+  body: string;
+  attachments: Attachment[];
+}
+
 /**
- * 生メールソースから本文を抽出する
- * MIME構造を解析してテキスト部分のみを取り出す
+ * 生メールソースから本文と添付ファイルを抽出する
+ * MIME構造を解析してテキスト部分と添付ファイルを取り出す
  */
 function parseEmailBody(rawSource: string): string {
-  if (!rawSource) return '';
+  return parseEmailFull(rawSource).body;
+}
+
+function parseEmailFull(rawSource: string): ParsedEmail {
+  if (!rawSource) return { body: '', attachments: [] };
 
   // ヘッダーと本文を分離（最初の空行で区切る）
   const headerBodySplit = rawSource.indexOf('\r\n\r\n');
   if (headerBodySplit === -1) {
-    // \n\nで試す
     const altSplit = rawSource.indexOf('\n\n');
-    if (altSplit === -1) return rawSource.substring(0, 500);
-    return decodeEmailContent(rawSource.substring(altSplit + 2), rawSource.substring(0, altSplit));
+    if (altSplit === -1) return { body: rawSource.substring(0, 500), attachments: [] };
+    return {
+      body: decodeEmailContent(rawSource.substring(altSplit + 2), rawSource.substring(0, altSplit)),
+      attachments: [],
+    };
   }
 
   const headers = rawSource.substring(0, headerBodySplit);
   const body = rawSource.substring(headerBodySplit + 4);
+
+  const attachments: Attachment[] = [];
+  const textBody = decodeEmailContentWithAttachments(body, headers, attachments);
+
+  return { body: textBody, attachments };
+}
+
+/**
+ * メール本文をデコードし、添付ファイルも抽出する
+ */
+function decodeEmailContentWithAttachments(body: string, headers: string, attachments: Attachment[]): string {
+  const unfolded = unfoldHeaders(headers);
+  const contentTypeLineMatch = unfolded.match(/Content-Type:\s*([^\r\n]+)/i);
+  const contentTypeLine = contentTypeLineMatch ? contentTypeLineMatch[1].trim() : 'text/plain';
+  const contentType = contentTypeLine.split(';')[0].trim().toLowerCase();
+
+  if (contentType.startsWith('multipart/')) {
+    const boundaryMatch = contentTypeLine.match(/boundary="?([^"\s;]+)"?/i);
+    if (boundaryMatch) {
+      return extractFromMultipartWithAttachments(body, boundaryMatch[1].replace(/^"+|"+$/g, ''), attachments);
+    }
+  }
+
+  // フォールバック: MIMEバウンダリパターンが見つかる場合
+  if (body.match(/^--[\w=_.-]+\r?\n/m) && !contentType.startsWith('multipart/')) {
+    const boundaryLineMatch = body.match(/^--([\w=_.-]+)\r?\n/m);
+    if (boundaryLineMatch) {
+      const result = extractFromMultipartWithAttachments(body, boundaryLineMatch[1], attachments);
+      if (result && result !== '[本文を取得できませんでした]') {
+        return result;
+      }
+    }
+  }
 
   return decodeEmailContent(body, headers);
 }
@@ -171,6 +215,178 @@ function extractFromMultipart(body: string, boundary: string): string {
 
   // text/plainを優先、なければHTMLから抽出
   return textPlainContent || textHtmlContent || '[本文を取得できませんでした]';
+}
+
+/**
+ * multipartメールからテキスト部分と添付ファイルを抽出
+ */
+function extractFromMultipartWithAttachments(body: string, boundary: string, attachments: Attachment[]): string {
+  const parts = body.split(`--${boundary}`);
+
+  let textPlainContent = '';
+  let textHtmlContent = '';
+
+  for (const part of parts) {
+    if (part.trim() === '--' || part.trim() === '') continue;
+
+    const partSplit = part.indexOf('\r\n\r\n');
+    const altPartSplit = part.indexOf('\n\n');
+    const splitPos = partSplit !== -1 ? partSplit : altPartSplit;
+    const splitLen = partSplit !== -1 ? 4 : 2;
+
+    if (splitPos === -1) continue;
+
+    const partHeaders = unfoldHeaders(part.substring(0, splitPos));
+    const partBody = part.substring(splitPos + splitLen);
+
+    const partContentTypeLine = partHeaders.match(/Content-Type:\s*([^\r\n]+)/i);
+    const partTypeFull = partContentTypeLine ? partContentTypeLine[1].trim() : '';
+    const partType = partTypeFull.split(';')[0].trim().toLowerCase();
+
+    // ネストされたmultipartの場合
+    if (partType.startsWith('multipart/')) {
+      const nestedBoundary = partTypeFull.match(/boundary="?([^"\s;]+)"?/i);
+      if (nestedBoundary) {
+        const nested = extractFromMultipartWithAttachments(partBody, nestedBoundary[1].replace(/^"+|"+$/g, ''), attachments);
+        if (nested) {
+          if (!textPlainContent) textPlainContent = nested;
+        }
+      }
+      continue;
+    }
+
+    // Content-Dispositionを解析
+    const dispositionMatch = partHeaders.match(/Content-Disposition:\s*([^\r\n]+)/i);
+    const disposition = dispositionMatch ? dispositionMatch[1].trim().toLowerCase() : '';
+    const isAttachment = disposition.startsWith('attachment');
+    const isInline = disposition.startsWith('inline');
+
+    // Content-IDを取得（インライン画像用）
+    const cidMatch = partHeaders.match(/Content-ID:\s*<?([^>\r\n]+)>?/i);
+    const contentId = cidMatch ? cidMatch[1].trim() : undefined;
+
+    // ファイル名を取得（dispositionまたはContent-Typeから）
+    let filename = '';
+    const filenameMatch = partHeaders.match(/filename="?([^"\r\n;]+)"?/i);
+    if (filenameMatch) {
+      filename = filenameMatch[1].trim();
+      // RFC 2047エンコードされたファイル名をデコード
+      if (filename.startsWith('=?')) {
+        try {
+          const decoded = decodeRFC2047(filename);
+          if (decoded) filename = decoded;
+        } catch { /* keep original */ }
+      }
+    }
+    const nameMatch = partTypeFull.match(/name="?([^"\r\n;]+)"?/i);
+    if (!filename && nameMatch) {
+      filename = nameMatch[1].trim();
+      if (filename.startsWith('=?')) {
+        try {
+          const decoded = decodeRFC2047(filename);
+          if (decoded) filename = decoded;
+        } catch { /* keep original */ }
+      }
+    }
+
+    // 添付ファイルまたはインライン画像（テキスト系以外）
+    if (isAttachment || (isInline && !partType.startsWith('text/')) || (filename && !partType.startsWith('text/'))) {
+      const encodingMatch = partHeaders.match(/Content-Transfer-Encoding:\s*([^\r\n;]+)/i);
+      const encoding = encodingMatch ? encodingMatch[1].trim().toLowerCase() : '7bit';
+
+      let rawData = partBody.trim();
+      // 終端のバウンダリ区切り文字を除去
+      if (rawData.endsWith('--')) {
+        rawData = rawData.substring(0, rawData.length - 2).trim();
+      }
+
+      let sizeBytes = 0;
+      let previewUrl: string | undefined;
+
+      if (encoding === 'base64') {
+        const cleaned = rawData.replace(/[\r\n\s]/g, '');
+        sizeBytes = Math.floor(cleaned.length * 3 / 4);
+        // 画像の場合はプレビューURLを生成
+        if (partType.startsWith('image/')) {
+          previewUrl = `data:${partType};base64,${cleaned}`;
+        }
+      } else {
+        sizeBytes = Buffer.byteLength(rawData, 'utf-8');
+      }
+
+      if (!filename) {
+        // ファイル名がない場合、MIMEタイプから推測
+        const ext = mimeToExtension(partType);
+        filename = `attachment${attachments.length + 1}${ext}`;
+      }
+
+      attachments.push({
+        id: `att-${attachments.length}-${Date.now()}`,
+        filename,
+        mimeType: partType,
+        size: sizeBytes,
+        contentId,
+        isInline: isInline || !!contentId,
+        previewUrl,
+        downloadUrl: undefined, // フロントで組み立て
+      });
+
+      continue;
+    }
+
+    // テキストパート
+    if (partType === 'text/plain') {
+      textPlainContent = decodeEmailContent(partBody, partHeaders);
+    } else if (partType === 'text/html') {
+      textHtmlContent = decodeEmailContent(partBody, partHeaders);
+    }
+  }
+
+  return textPlainContent || textHtmlContent || '[本文を取得できませんでした]';
+}
+
+/**
+ * RFC 2047エンコードされた文字列をデコード
+ * 例: =?UTF-8?B?44OV44Kh44Kk44Or?= → ファイル
+ */
+function decodeRFC2047(encoded: string): string | null {
+  const match = encoded.match(/=\?([^?]+)\?([BQ])\?([^?]+)\?=/i);
+  if (!match) return null;
+  const [, charset, encoding, data] = match;
+  if (encoding.toUpperCase() === 'B') {
+    return Buffer.from(data, 'base64').toString(charset.toLowerCase() === 'utf-8' ? 'utf-8' : 'latin1');
+  } else if (encoding.toUpperCase() === 'Q') {
+    const decoded = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    );
+    return decoded;
+  }
+  return null;
+}
+
+/**
+ * MIMEタイプからファイル拡張子を推測
+ */
+function mimeToExtension(mimeType: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'image/svg+xml': '.svg',
+    'application/pdf': '.pdf',
+    'application/msword': '.doc',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+    'application/vnd.ms-excel': '.xls',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+    'application/vnd.ms-powerpoint': '.ppt',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+    'application/zip': '.zip',
+    'application/x-gzip': '.gz',
+    'text/csv': '.csv',
+    'text/plain': '.txt',
+  };
+  return map[mimeType] || '';
 }
 
 /**
@@ -317,9 +533,11 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
       })) {
         const envelope = message.envelope!;
 
-        // 生ソースから本文を抽出・パース
+        // 生ソースから本文と添付ファイルを抽出・パース
         const rawSource = message.source?.toString() || '';
-        const parsedBody = parseEmailBody(rawSource);
+        const parsed = parseEmailFull(rawSource);
+        const parsedBody = parsed.body;
+        const emailAttachments = parsed.attachments;
 
         // 引用チェーンをパースしてスレッドメッセージに変換
         const parsedThread = parseEmailThread(parsedBody);
@@ -366,6 +584,7 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
           body: displayBody,
           bodyFull: hasQuote ? parsedBody : undefined,
           hasQuote,
+          attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
           timestamp: envelope.date?.toISOString() || new Date().toISOString(),
           isRead: false,
           status: 'unread' as const,

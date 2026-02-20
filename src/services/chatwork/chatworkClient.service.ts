@@ -1,4 +1,4 @@
-import { UnifiedMessage } from '@/lib/types';
+import { UnifiedMessage, Attachment } from '@/lib/types';
 import { cleanChatworkBody } from '@/lib/utils';
 
 /**
@@ -91,8 +91,30 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
 
         console.log(`[Chatwork] ルーム ${room.name}: ${roomMessages.length}件取得`);
 
+        // ルームのファイル一覧を取得（エラーは無視）
+        let roomFiles: Attachment[] = [];
+        try {
+          roomFiles = await fetchRoomFiles(String(room.room_id));
+        } catch { /* ignore */ }
+
         // 最新のメッセージを取得
         for (const msg of roomMessages.slice(-perRoom)) {
+          // メッセージ本文にファイル参照があるかチェック（[dw aid=XXX]等）
+          const msgBody = msg.body || '';
+          const fileRefs = msgBody.match(/\[dw aid=(\d+)\]/g) || [];
+          const msgAttachments: Attachment[] = [];
+
+          for (const ref of fileRefs) {
+            const aidMatch = ref.match(/\[dw aid=(\d+)\]/);
+            if (aidMatch) {
+              // ルームファイルから該当IDを探す
+              const file = roomFiles.find(f => f.id === `cw-file-${aidMatch[1]}`);
+              if (file) {
+                msgAttachments.push(file);
+              }
+            }
+          }
+
           messages.push({
             id: `chatwork-${room.room_id}-${msg.message_id}`,
             channel: 'chatwork',
@@ -101,7 +123,8 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
               name: msg.account?.name || '不明',
               address: String(msg.account?.account_id || ''),
             },
-            body: cleanChatworkBody(msg.body || ''),
+            body: cleanChatworkBody(msgBody),
+            attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
             timestamp: new Date(msg.send_time * 1000).toISOString(),
             isRead: false,
             status: 'unread' as const,
@@ -125,6 +148,72 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
   } catch (error) {
     console.error('[Chatwork] 全体エラー:', error);
     return getDemoChatworkMessages();
+  }
+}
+
+/**
+ * Chatworkルームのファイル一覧を取得
+ */
+async function fetchRoomFiles(roomId: string): Promise<Attachment[]> {
+  try {
+    const res = await chatworkFetch(`/rooms/${roomId}/files`);
+    if (!res.ok || res.status === 204) return [];
+
+    const files = await res.json();
+    if (!Array.isArray(files)) return [];
+
+    return files.map((f: {
+      file_id: number;
+      message_id?: string;
+      filename: string;
+      filesize: number;
+      upload_time?: number;
+    }) => {
+      const mimeType = guessMimeType(f.filename);
+      return {
+        id: `cw-file-${f.file_id}`,
+        filename: f.filename,
+        mimeType,
+        size: f.filesize,
+        isInline: false,
+        downloadUrl: `/api/attachments/chatwork?roomId=${roomId}&fileId=${f.file_id}`,
+      };
+    });
+  } catch (err) {
+    console.error(`[Chatwork] ファイル取得エラー (room: ${roomId}):`, err);
+    return [];
+  }
+}
+
+/**
+ * ファイル名からMIMEタイプを推測
+ */
+function guessMimeType(filename: string): string {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+    webp: 'image/webp', svg: 'image/svg+xml',
+    pdf: 'application/pdf',
+    doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    zip: 'application/zip', csv: 'text/csv', txt: 'text/plain',
+    mp4: 'video/mp4', mp3: 'audio/mpeg',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+/**
+ * Chatwork特定ファイルのダウンロードURLを取得
+ */
+export async function getChatworkFileDownloadUrl(roomId: string, fileId: string): Promise<string | null> {
+  try {
+    const res = await chatworkFetch(`/rooms/${roomId}/files/${fileId}?create_download_url=1`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.download_url || null;
+  } catch {
+    return null;
   }
 }
 

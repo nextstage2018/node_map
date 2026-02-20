@@ -41,6 +41,7 @@
 | Phase 11：Supabase接続 | ✅ 完了 | 2026-02-19 | 16テーブル作成・全7サービスのDB切り替え・デモモード併存 |
 | Phase 12：APIキー準備（前半） | ✅ 完了 | 2026-02-19 | Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正 |
 | Phase 12後半：インボックス改善 | ✅ 完了 | 2026-02-20 | メールMIMEパース・Chatwork接続・ページネーション・エラーハンドリング |
+| Phase 13：インボックスUX改善 | ✅ 完了 | 2026-02-20 | Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・要約スクロール・自動スクロール |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -285,6 +286,13 @@
 | 2026-02-20 | IMAP pagination対応 | fetchEmails(limit,page)でシーケンス番号による範囲取得。MessageListに「過去のメッセージを読み込む」ボタン追加 |
 | 2026-02-20 | Chatworkエラーハンドリング改善 | 204ステータス正常処理、エラーログ強化、ルームスキャン数10→15拡大 |
 | 2026-02-20 | GitHub Personal Access Token再生成 | nodemap-cowork-deploy。node_mapリポへのRead/Write権限。有効期限2026-03-22 |
+| 2026-02-20 | Gmail引用チェーンを会話バブルに変換 | parseQuoteChain()でネストされた「>」引用を個別メッセージにパース。24通の会話を確認済み |
+| 2026-02-20 | AI要約（タイムライン形式）を導入 | Claude Sonnet（claude-sonnet-4-5-20250929）で「・日付 - 要約」形式のスレッド要約を自動生成 |
+| 2026-02-20 | Reply All機能を実装 | To=送信者、CC=全受信者からの自動設定。「全員に返信」/「送信者のみ」トグル |
+| 2026-02-20 | 2層キャッシュ（サーバー+クライアント）を導入 | サーバー: MemoryCache(TTL付き)、クライアント: SWR(stale-while-revalidate)パターン。AI要約はバックグラウンド事前生成 |
+| 2026-02-20 | 日本語日付パーサーを追加 | parseDateStrToISO()で「2026年1月19日(月) 16:36」「2026/1/19 16:36」→ISO変換 |
+| 2026-02-20 | AI要約エリアをスクロール可能に | max-h-[100px]+overflow-y-auto。直近3〜4件表示、上スクロールで過去確認 |
+| 2026-02-20 | 全チャネル最新メッセージ自動スクロール | EmailThreadDetail/GroupDetail/SingleMessageDetailの全てでuseRef+scrollIntoViewで最新表示 |
 
 ---
 
@@ -331,7 +339,8 @@ node_map/
 │   │       │   ├── route.ts           ← メッセージ一覧取得
 │   │       │   └── reply/route.ts     ← 返信送信
 │   │       ├── ai/
-│   │       │   └── draft-reply/route.ts ← AI返信下書き
+│   │       │   ├── draft-reply/route.ts ← AI返信下書き
+│   │       │   └── thread-summary/route.ts ← スレッドAI要約（キャッシュ対応）
 │   │       ├── tasks/
 │   │       │   ├── route.ts           ← タスクCRUD
 │   │       │   ├── chat/route.ts      ← AI会話・要約生成
@@ -429,6 +438,7 @@ node_map/
 │   │   ├── types.ts                   ← 全型定義
 │   │   ├── constants.ts               ← 全定数
 │   │   ├── utils.ts
+│   │   ├── cache.ts                   ← Phase 13: サーバーサイドインメモリキャッシュ（TTL付き）
 │   │   └── supabase.ts
 │   └── services/
 │       ├── email/emailClient.service.ts
@@ -594,6 +604,32 @@ node_map/
   - 関係属性のバッチ一括確認UIは未実装（個別確認のみ）
   - チャネル登録フロー（設定画面連携）は未実装
 
+### Phase 13（インボックスUX改善）への引き継ぎ
+- **実装したファイル構成：** cache.ts(新規), thread-summary/route.ts(新規), SummaryScrollArea(新規コンポーネント), emailClient.service.ts, aiClient.service.ts, MessageDetail.tsx, ReplyForm.tsx, useMessages.ts, messages/route.ts, reply/route.ts, types.ts
+- **Gmail引用チェーン会話変換：**
+  - parseQuoteChain()でネスト引用をThreadMessage[]に分解。「YYYY年M月D日(曜) HH:MM sender wrote:」パターン対応
+  - EmailThreadDetailコンポーネントでチャットバブルUIに表示
+  - 24通のメールスレッドで動作確認済み
+- **AI要約（タイムライン形式）：**
+  - Claude Sonnet（claude-sonnet-4-5-20250929, max_tokens:500）で「・M/D\n  - 要約」形式を生成
+  - /api/ai/thread-summary エンドポイント。messageIdベースでキャッシュ（30分TTL）
+  - バックグラウンド事前生成：messages API取得時に非同期でgenerateThreadSummary()を呼び出し
+  - SummaryScrollArea: max-h-[100px]+overflow-y-auto、最下部（直近）に自動スクロール
+- **Reply All：**
+  - UnifiedMessage.cc フィールド追加（IMAP envelope.ccから取得）
+  - ReplyForm: To=送信者、CC=全受信者(重複排除)。「👥 全員に返信」/「👤 送信者のみ」トグル
+  - reply/route.ts: to/cc/subjectをリクエストから受け取り、sendEmail()に渡す
+- **2層キャッシュ：**
+  - サーバーサイド: cache.ts MemoryCacheシングルトン（globalThis永続化）。messages 3分TTL、summary 30分TTL
+  - クライアントサイド: useMessages.ts内clientMessageCache変数。2分TTL+バックグラウンドリバリデーション
+  - ?refresh=trueパラメータでキャッシュ強制無効化
+- **自動スクロール：**
+  - EmailThreadDetail/GroupDetail/SingleMessageDetail全てにuseRef+scrollIntoViewで最新メッセージ表示
+- **注意点：**
+  - サーバーサイドキャッシュはVercel Serverless Functions内インメモリ。コールドスタートでリセット
+  - AI要約のコスト管理：1スレッド500トークン上限。大量スレッドではAPI呼び出し回数に注意
+  - 引用チェーンパーサーは日本語メール形式に特化。英語メールの「On ... wrote:」形式も対応済みだが、他言語は未対応
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -638,8 +674,10 @@ node_map/
 9. **Supabase接続** — ✅完了（2026-02-19）16テーブル作成・全7サービスのDB切り替え・デモモード併存
 10. **APIキー準備（前半）** — ✅完了（2026-02-19）Anthropic API + Gmail(IMAP/SMTP)接続設定・接続検出バグ修正
 11. **インボックス改善** — ✅完了（2026-02-20）メールMIMEパース・Chatwork API接続・ページネーション・エラーハンドリング
-12. **インボックスUX改善** — 同一グループ/スレッドのメッセージ統合表示 + Chatwork内部タグ（[rp aid=...]等）の除去・整形
-13. **Slack接続** — Bot Token取得 + 実データ取得テスト
+12. **インボックスUX改善** — ✅完了（2026-02-20）Gmail引用チェーン会話変換・AI要約・Reply All・キャッシュ・要約スクロール・自動スクロール
+13. **添付ファイル・画像の表示・保存** — メール添付/Chatworkファイル/Slack画像の取得・プレビュー・ダウンロード機能
+14. **Chatwork内部タグの整形** — [rp aid=...]等の除去・整形
+15. **Slack接続** — Bot Token取得 + 実データ取得テスト
 
 ---
 
