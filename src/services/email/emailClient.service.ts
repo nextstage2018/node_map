@@ -395,13 +395,19 @@ function extractFromMultipartWithAttachments(body: string, boundary: string, att
 
       let sizeBytes = 0;
       let previewUrl: string | undefined;
+      let downloadUrl: string | undefined;
 
       if (encoding === 'base64') {
         const cleaned = rawData.replace(/[\r\n\s]/g, '');
         sizeBytes = Math.floor(cleaned.length * 3 / 4);
+        const dataUri = `data:${partType};base64,${cleaned}`;
         // 画像の場合はプレビューURLを生成
         if (partType.startsWith('image/')) {
-          previewUrl = `data:${partType};base64,${cleaned}`;
+          previewUrl = dataUri;
+        }
+        // ダウンロード用データURL（10MB以下のみ）
+        if (sizeBytes < 10 * 1024 * 1024) {
+          downloadUrl = dataUri;
         }
       } else {
         sizeBytes = Buffer.byteLength(rawData, 'utf-8');
@@ -421,7 +427,7 @@ function extractFromMultipartWithAttachments(body: string, boundary: string, att
         contentId,
         isInline: isInline || !!contentId,
         previewUrl,
-        downloadUrl: undefined, // フロントで組み立て
+        downloadUrl,
       });
 
       continue;

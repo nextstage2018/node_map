@@ -58,7 +58,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
     }
 
     const messages: UnifiedMessage[] = [];
-    const perRoom = Math.max(5, Math.ceil(limit / Math.min(rooms.length, 10)));
+    const perRoom = Math.max(5, Math.ceil(limit / Math.min(rooms.length, 15)));
 
     // 直近のメッセージがありそうなルームを優先（last_update_timeでソート）
     const sortedRooms = [...rooms].sort(
@@ -66,7 +66,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
         (b.last_update_time || 0) - (a.last_update_time || 0)
     );
 
-    for (const room of sortedRooms.slice(0, 15)) {
+    for (const room of sortedRooms.slice(0, 30)) {
       try {
         // force=1: 最新100件取得。force=0だと未読のみ
         const msgRes = await chatworkFetch(`/rooms/${room.room_id}/messages?force=1`);

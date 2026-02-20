@@ -10,6 +10,53 @@ import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
 import ChatworkBody from '@/components/inbox/ChatworkBody';
 
+/**
+ * URLをリンク化するコンポーネント
+ * テキスト中のURLを検出してクリッカブルリンクに変換
+ */
+function LinkifiedText({ text, className }: { text: string; className?: string }) {
+  const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/g;
+  const parts: (string | { url: string; key: number })[] = [];
+  let lastIndex = 0;
+  let match;
+  let keyCounter = 0;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push({ url: match[1], key: keyCounter++ });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  if (parts.length === 0 || (parts.length === 1 && typeof parts[0] === 'string')) {
+    return <p className={className} style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>{text}</p>;
+  }
+
+  return (
+    <p className={className} style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>
+      {parts.map((part, i) =>
+        typeof part === 'string' ? (
+          part
+        ) : (
+          <a
+            key={part.key}
+            href={part.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 underline break-all"
+          >
+            {part.url.length > 60 ? part.url.slice(0, 57) + '...' : part.url}
+          </a>
+        )
+      )}
+    </p>
+  );
+}
+
 interface MessageDetailProps {
   message: UnifiedMessage | null;
   group: MessageGroup | null;
@@ -199,9 +246,17 @@ function ConversationBubble({ message }: { message: UnifiedMessage }) {
         {message.channel === 'chatwork' ? (
           <ChatworkBody body={message.body} className="text-[13px]" />
         ) : (
-          <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-            {message.body}
-          </p>
+          <LinkifiedText text={message.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
+        )}
+        {/* リアクション表示 */}
+        {message.metadata?.reactions && message.metadata.reactions.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {message.metadata.reactions.map((r: { name: string; count: number }, i: number) => (
+              <span key={i} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-white/20 rounded-full text-[11px]">
+                {r.name.startsWith(':') ? r.name : `${r.name}`} <span className="font-medium">{r.count}</span>
+              </span>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -466,8 +521,17 @@ function SingleMessageDetail({
         {message.channel === 'chatwork' ? (
           <ChatworkBody body={message.body} />
         ) : (
-          <div className="text-slate-700 whitespace-pre-wrap leading-relaxed">
-            {message.body}
+          <LinkifiedText text={message.body} className="text-slate-700 whitespace-pre-wrap leading-relaxed" />
+        )}
+
+        {/* リアクション表示 */}
+        {message.metadata?.reactions && message.metadata.reactions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3">
+            {message.metadata.reactions.map((r: { name: string; count: number }, i: number) => (
+              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 rounded-full text-xs border border-slate-200">
+                {r.name} <span className="font-semibold text-slate-600">{r.count}</span>
+              </span>
+            ))}
           </div>
         )}
 
@@ -520,9 +584,7 @@ function SingleMessageDetail({
                   {message.channel === 'chatwork' ? (
                     <ChatworkBody body={msg.body} className="text-[13px]" />
                   ) : (
-                    <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-                      {msg.body}
-                    </p>
+                    <LinkifiedText text={msg.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
                   )}
                 </div>
               </div>
@@ -631,6 +693,7 @@ function AttachmentList({ attachments }: { attachments: Attachment[] }) {
               {att.downloadUrl && (
                 <a
                   href={att.downloadUrl}
+                  download={att.filename}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-xs text-blue-600 hover:text-blue-800 font-medium shrink-0"

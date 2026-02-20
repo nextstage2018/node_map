@@ -59,6 +59,8 @@ export interface UnifiedMessage {
     chatworkRoomId?: string;
     chatworkRoomName?: string;
     chatworkMessageId?: string;
+    // リアクション（Slack/Chatwork共通）
+    reactions?: { name: string; count: number }[];
   };
 }
 

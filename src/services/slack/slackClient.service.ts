@@ -100,19 +100,25 @@ async function formatSlackText(text: string, client: any): Promise<string> {
 function convertSlackFile(file: any): Attachment {
   const mimeType = (file.mimetype as string) || 'application/octet-stream';
   const isImage = mimeType.startsWith('image/');
+  const fileId = file.id || Math.random().toString(36);
+
+  // Slackファイルはトークン認証が必要なため、プロキシ経由でアクセス
+  const proxyBase = `/api/attachments/slack?fileId=${fileId}`;
 
   return {
-    id: `slack-file-${file.id || Math.random().toString(36)}`,
+    id: `slack-file-${fileId}`,
     filename: file.name || file.title || 'file',
     mimeType,
     size: file.size || 0,
     isInline: isImage,
-    // Slack画像のサムネイル（公開URL優先）
-    previewUrl: isImage
-      ? (file.thumb_360 || file.thumb_160 || file.thumb_80 || undefined)
+    // プロキシ経由で画像プレビュー取得
+    previewUrl: isImage && (file.thumb_360 || file.thumb_160 || file.thumb_80)
+      ? `${proxyBase}&type=thumb`
       : undefined,
-    downloadUrl: file.url_private_download || file.url_private || undefined,
-  };
+    downloadUrl: (file.url_private_download || file.url_private)
+      ? `${proxyBase}&type=download`
+      : undefined,
+  } as Attachment;
 }
 
 /**
@@ -132,7 +138,7 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
     // チャンネル一覧取得（public/private/DM）
     const channelsResult = await client.conversations.list({
       types: 'public_channel,private_channel,im',
-      limit: 20,
+      limit: 100,
       exclude_archived: true,
     });
 
@@ -151,7 +157,7 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
       // 取得失敗しても続行
     }
 
-    for (const channel of channels.slice(0, 15)) {
+    for (const channel of channels.slice(0, 30)) {
       try {
         const historyResult = await client.conversations.history({
           channel: channel.id!,
@@ -191,6 +197,17 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
             }
           }
 
+          // リアクション取得
+          const reactions: { name: string; count: number }[] = [];
+          if (msg.reactions && Array.isArray(msg.reactions)) {
+            for (const r of msg.reactions) {
+              reactions.push({
+                name: (r as { name?: string }).name || '?',
+                count: ((r as { count?: number }).count) || 1,
+              });
+            }
+          }
+
           messages.push({
             id: `slack-${channel.id}-${msg.ts}`,
             channel: 'slack',
@@ -210,6 +227,7 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
               slackChannelName: channelDisplayName,
               slackTs: msg.ts,
               slackThreadTs: msg.thread_ts,
+              reactions: reactions.length > 0 ? reactions : undefined,
             },
           });
         }

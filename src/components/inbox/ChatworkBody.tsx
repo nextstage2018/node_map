@@ -187,12 +187,25 @@ function BlockRenderer({ block }: { block: FormattedBlock }) {
  * テキスト内の@メンション・引用返信マークをハイライト表示
  */
 function FormattedText({ text }: { text: string }) {
-  // @メンション、>> 引用返信マーク をハイライト
-  const parts = text.split(/(@[^\s@\n]+|@全員|>> )/g);
+  // URL, @メンション、>> 引用返信マーク をハイライト
+  const parts = text.split(/(https?:\/\/[^\s<>"{}|\\^`[\]]+|@[^\s@\n]+|@全員|>> )/g);
 
   return (
-    <>
+    <span style={{ overflowWrap: 'anywhere', wordBreak: 'break-all' }}>
       {parts.map((part, i) => {
+        if (part.match(/^https?:\/\//)) {
+          return (
+            <a
+              key={i}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 underline break-all"
+            >
+              {part.length > 60 ? part.slice(0, 57) + '...' : part}
+            </a>
+          );
+        }
         if (part.startsWith('@')) {
           return (
             <span key={i} className="text-blue-600 font-medium">
@@ -209,6 +222,6 @@ function FormattedText({ text }: { text: string }) {
         }
         return <span key={i}>{part}</span>;
       })}
-    </>
+    </span>
   );
 }
