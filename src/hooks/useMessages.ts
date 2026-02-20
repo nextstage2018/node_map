@@ -175,6 +175,15 @@ export function useMessages() {
     return fetchMessages(true);
   }, [fetchMessages]);
 
+  // 送信メッセージをローカルに追加（即時表示用）
+  const addSentMessage = useCallback((msg: UnifiedMessage) => {
+    setMessages((prev) => {
+      const newMessages = [msg, ...prev];
+      clientMessageCache = { messages: newMessages, timestamp: Date.now(), page };
+      return newMessages;
+    });
+  }, [page]);
+
   return {
     messages,
     messageGroups,
@@ -186,5 +195,6 @@ export function useMessages() {
     hasMore,
     messageCounts,
     unreadCounts,
+    addSentMessage,
   };
 }

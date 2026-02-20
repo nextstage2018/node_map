@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChannelType } from '@/lib/types';
+import { ChannelType, UnifiedMessage } from '@/lib/types';
 import Button from '@/components/ui/Button';
 import Image from 'next/image';
 import { CHANNEL_CONFIG } from '@/lib/constants';
@@ -9,6 +9,7 @@ import { CHANNEL_CONFIG } from '@/lib/constants';
 interface ComposeMessageProps {
   onClose: () => void;
   onSent?: () => void;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }
 
 /**
@@ -80,7 +81,7 @@ function RecipientInput({
   );
 }
 
-export default function ComposeMessage({ onClose, onSent }: ComposeMessageProps) {
+export default function ComposeMessage({ onClose, onSent, onSentMessage }: ComposeMessageProps) {
   const [channel, setChannel] = useState<ChannelType>('email');
   const [toRecipients, setToRecipients] = useState<string[]>([]);
   const [ccRecipients, setCcRecipients] = useState<string[]>([]);
@@ -122,15 +123,17 @@ export default function ComposeMessage({ onClose, onSent }: ComposeMessageProps)
     setIsLoading(true);
     setStatusMessage('');
 
+    const finalBody = channel === 'chatwork' && chatworkTo.length > 0
+      ? `${chatworkTo.map((n) => `[To:${n}]`).join('')}\n${body}`
+      : body;
+
     try {
       const res = await fetch('/api/messages/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           channel,
-          body: channel === 'chatwork' && chatworkTo.length > 0
-            ? `${chatworkTo.map((n) => `[To:${n}]`).join('')}\n${body}`
-            : body,
+          body: finalBody,
           to: channel === 'email' ? toRecipients : undefined,
           cc: channel === 'email' ? ccRecipients : undefined,
           bcc: channel === 'email' ? bccRecipients : undefined,
@@ -141,6 +144,28 @@ export default function ComposeMessage({ onClose, onSent }: ComposeMessageProps)
       });
       const data = await res.json();
       if (data.success) {
+        // 送信メッセージをローカルに追加
+        const sentMsg: UnifiedMessage = {
+          id: `sent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          channel,
+          channelIcon: channel === 'email' ? '📧' : channel === 'slack' ? '💬' : '🔵',
+          from: { name: 'あなた', address: 'me' },
+          to: channel === 'email' ? toRecipients.map(addr => ({ name: addr, address: addr })) : undefined,
+          cc: channel === 'email' && ccRecipients.length > 0 ? ccRecipients.map(addr => ({ name: addr, address: addr })) : undefined,
+          subject: channel === 'email' ? subject : undefined,
+          body: finalBody,
+          timestamp: new Date().toISOString(),
+          isRead: true,
+          status: 'read',
+          metadata: {
+            slackChannel: channel === 'slack' ? slackChannel.replace(/^#/, '') : undefined,
+            slackChannelName: channel === 'slack' ? slackChannel.replace(/^#/, '') : undefined,
+            chatworkRoomId: channel === 'chatwork' ? chatworkRoomId : undefined,
+            chatworkRoomName: channel === 'chatwork' ? `ルーム ${chatworkRoomId}` : undefined,
+          },
+        };
+        onSentMessage?.(sentMsg);
+
         setStatusMessage('✅ メッセージを送信しました！');
         setTimeout(() => {
           onSent?.();

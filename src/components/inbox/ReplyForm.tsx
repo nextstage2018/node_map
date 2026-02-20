@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 interface ReplyFormProps {
   message: UnifiedMessage;
   onClose: () => void;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }
 
 /**
@@ -88,7 +89,7 @@ function RecipientInput({
  * Slack: メンション追加可能
  * Chatwork: 宛先指定可能
  */
-export default function ReplyForm({ message, onClose }: ReplyFormProps) {
+export default function ReplyForm({ message, onClose, onSentMessage }: ReplyFormProps) {
   const [replyText, setReplyText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
@@ -191,6 +192,26 @@ export default function ReplyForm({ message, onClose }: ReplyFormProps) {
       });
       const data = await res.json();
       if (data.success) {
+        // 送信メッセージをローカルに追加（即時表示）
+        const sentMsg: UnifiedMessage = {
+          id: `sent-reply-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          channel: message.channel,
+          channelIcon: message.channelIcon,
+          from: { name: 'あなた', address: 'me' },
+          to: isEmail ? toRecipients.map(addr => ({ name: addr, address: addr })) : message.to,
+          cc: isEmail && ccRecipients.length > 0 ? ccRecipients.map(addr => ({ name: addr, address: addr })) : undefined,
+          subject: isEmail ? replySubject : message.subject,
+          body: finalBody,
+          timestamp: new Date().toISOString(),
+          isRead: true,
+          status: 'read',
+          threadId: message.threadId,
+          metadata: {
+            ...message.metadata,
+          },
+        };
+        onSentMessage?.(sentMsg);
+
         setStatusMessage('✅ 返信を送信しました！');
         setReplyText('');
         setTimeout(onClose, 1500);

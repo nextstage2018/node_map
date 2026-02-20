@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSettings } from '@/hooks/useSettings';
 import type { ServiceType, ChannelAuthType, ChannelAuth, UserPreferences } from '@/lib/types';
 import { cn } from '@/lib/utils';
+import Header from '@/components/shared/Header';
 import ConnectionOverview from '@/components/settings/ConnectionOverview';
 import ServiceSettingsCard from '@/components/settings/ServiceSettingsCard';
 import ProfileSettings from '@/components/settings/ProfileSettings';
@@ -77,10 +78,13 @@ export default function SettingsPage() {
 
   if (isLoading || !settings) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <div className="animate-spin text-2xl mb-2">⚙️</div>
-          <p className="text-sm text-slate-500">設定を読み込み中...</p>
+      <div className="flex flex-col h-screen bg-white">
+        <Header />
+        <div className="flex items-center justify-center flex-1">
+          <div className="text-center">
+            <div className="animate-spin text-2xl mb-2">⚙️</div>
+            <p className="text-sm text-slate-500">設定を読み込み中...</p>
+          </div>
         </div>
       </div>
     );
@@ -95,10 +99,12 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-        {/* ページヘッダー */}
-        <div>
+    <div className="flex flex-col h-screen bg-white">
+      <Header />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+          {/* ページヘッダー */}
+          <div>
           <h1 className="text-xl font-bold text-slate-900">設定</h1>
           <p className="text-sm text-slate-500 mt-1">
             API接続・認証・プロフィールを管理します
@@ -239,6 +245,7 @@ export default function SettingsPage() {
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   );

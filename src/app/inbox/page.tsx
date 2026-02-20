@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { MessageGroup, ChannelType } from '@/lib/types';
+import { useState, useCallback } from 'react';
+import { MessageGroup, ChannelType, UnifiedMessage } from '@/lib/types';
 import { useMessages } from '@/hooks/useMessages';
 import Header from '@/components/shared/Header';
 import Sidebar from '@/components/shared/Sidebar';
@@ -10,11 +10,16 @@ import MessageDetail from '@/components/inbox/MessageDetail';
 import ComposeMessage from '@/components/inbox/ComposeMessage';
 
 export default function InboxPage() {
-  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts } =
+  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, addSentMessage } =
     useMessages();
   const [selectedGroup, setSelectedGroup] = useState<MessageGroup | null>(null);
   const [filter, setFilter] = useState<ChannelType | 'all'>('all');
   const [showCompose, setShowCompose] = useState(false);
+
+  // 送信後に送信メッセージを追加してリフレッシュ
+  const handleSentMessage = useCallback((msg: UnifiedMessage) => {
+    addSentMessage(msg);
+  }, [addSentMessage]);
 
   return (
     <div className="flex flex-col h-screen bg-white">
@@ -23,8 +28,8 @@ export default function InboxPage() {
         <Sidebar messageCounts={messageCounts} unreadCounts={unreadCounts} />
         <div className="flex flex-1 overflow-hidden">
           {/* メッセージ一覧 */}
-          <div className="w-96 border-r border-slate-200 flex flex-col">
-            <div className="p-3 border-b border-slate-200 flex items-center justify-between">
+          <div className="w-96 border-r border-slate-200 flex flex-col overflow-hidden">
+            <div className="p-3 border-b border-slate-200 flex items-center justify-between shrink-0">
               <h2 className="text-sm font-semibold text-slate-900">
                 統合インボックス
               </h2>
@@ -49,7 +54,7 @@ export default function InboxPage() {
             </div>
 
             {error && (
-              <div className="p-3 bg-red-50 text-red-700 text-sm">
+              <div className="p-3 bg-red-50 text-red-700 text-sm shrink-0">
                 {error}
               </div>
             )}
@@ -80,7 +85,7 @@ export default function InboxPage() {
           </div>
 
           {/* メッセージ詳細 or 新規作成 */}
-          <div className="flex-1">
+          <div className="flex-1 overflow-hidden">
             {showCompose ? (
               <ComposeMessage
                 onClose={() => setShowCompose(false)}
@@ -88,11 +93,13 @@ export default function InboxPage() {
                   setShowCompose(false);
                   refresh();
                 }}
+                onSentMessage={handleSentMessage}
               />
             ) : (
               <MessageDetail
                 message={selectedGroup?.latestMessage ?? null}
                 group={selectedGroup}
+                onSentMessage={handleSentMessage}
               />
             )}
           </div>

@@ -44,9 +44,9 @@ export default function MessageList({
   ];
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* フィルターバー */}
-      <div className="flex gap-1 p-3 border-b border-slate-200 bg-slate-50">
+      <div className="flex gap-1 p-3 border-b border-slate-200 bg-slate-50 shrink-0">
         {filters.map((f) => (
           <button
             key={f.value}

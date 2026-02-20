@@ -313,9 +313,10 @@ function LinkifiedText({ text, className }: { text: string; className?: string }
 interface MessageDetailProps {
   message: UnifiedMessage | null;
   group: MessageGroup | null;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }
 
-export default function MessageDetail({ message, group }: MessageDetailProps) {
+export default function MessageDetail({ message, group, onSentMessage }: MessageDetailProps) {
   const [showReply, setShowReply] = useState(false);
 
   if (!message && !group) {
@@ -337,6 +338,7 @@ export default function MessageDetail({ message, group }: MessageDetailProps) {
         showReply={showReply}
         onToggleReply={() => setShowReply(!showReply)}
         onCloseReply={() => setShowReply(false)}
+        onSentMessage={onSentMessage}
       />
     );
   }
@@ -352,6 +354,7 @@ export default function MessageDetail({ message, group }: MessageDetailProps) {
         showReply={showReply}
         onToggleReply={() => setShowReply(!showReply)}
         onCloseReply={() => setShowReply(false)}
+        onSentMessage={onSentMessage}
       />
     );
   }
@@ -362,6 +365,7 @@ export default function MessageDetail({ message, group }: MessageDetailProps) {
       showReply={showReply}
       onToggleReply={() => setShowReply(!showReply)}
       onCloseReply={() => setShowReply(false)}
+      onSentMessage={onSentMessage}
     />
   );
 }
@@ -374,11 +378,13 @@ function GroupDetail({
   showReply,
   onToggleReply,
   onCloseReply,
+  onSentMessage,
 }: {
   group: MessageGroup;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
@@ -432,6 +438,7 @@ function GroupDetail({
           <ReplyForm
             message={latestMessage}
             onClose={onCloseReply}
+            onSentMessage={onSentMessage}
           />
         ) : (
           <div className="flex gap-2">
@@ -521,11 +528,13 @@ function EmailThreadDetail({
   showReply,
   onToggleReply,
   onCloseReply,
+  onSentMessage,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }) {
   const threadMessages = message.threadMessages || [];
   const [summary, setSummary] = useState<string>('');
@@ -684,7 +693,7 @@ function EmailThreadDetail({
       {/* アクションバー */}
       <div className="p-4 border-t border-slate-200 bg-slate-50">
         {showReply ? (
-          <ReplyForm message={message} onClose={onCloseReply} />
+          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} />
         ) : (
           <div className="flex gap-2">
             <Button onClick={onToggleReply}>↩ 返信</Button>
@@ -711,11 +720,13 @@ function SingleMessageDetail({
   showReply,
   onToggleReply,
   onCloseReply,
+  onSentMessage,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
+  onSentMessage?: (msg: UnifiedMessage) => void;
 }) {
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
   const singleThreadEndRef = useRef<HTMLDivElement>(null);
@@ -845,6 +856,7 @@ function SingleMessageDetail({
           <ReplyForm
             message={message}
             onClose={onCloseReply}
+            onSentMessage={onSentMessage}
           />
         ) : (
           <div className="flex gap-2">
