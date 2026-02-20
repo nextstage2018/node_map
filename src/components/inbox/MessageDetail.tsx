@@ -47,6 +47,8 @@ function ReactionBar({
   const [myReactions, setMyReactions] = useState<ReactionData[]>([]);
   const [loading, setLoading] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
 
   // ツール内リアクション取得
   useEffect(() => {
@@ -159,18 +161,31 @@ function ReactionBar({
         ))}
 
         {/* リアクション追加ボタン */}
-        <div className="relative" ref={pickerRef}>
+        <div ref={pickerRef}>
           <button
-            onClick={() => setShowPicker(!showPicker)}
+            ref={buttonRef}
+            onClick={() => {
+              if (!showPicker && buttonRef.current) {
+                const rect = buttonRef.current.getBoundingClientRect();
+                setPickerPos({
+                  top: rect.top - 140,
+                  left: rect.left,
+                });
+              }
+              setShowPicker(!showPicker);
+            }}
             className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs border border-dashed border-slate-300 text-slate-400 hover:bg-slate-50 hover:text-slate-600 hover:border-slate-400 transition-colors"
             title="リアクションを追加"
           >
             😀 +
           </button>
 
-          {/* 絵文字ピッカー */}
-          {showPicker && (
-            <div className="absolute bottom-8 left-0 z-50 bg-white border border-slate-200 rounded-xl shadow-lg p-2 min-w-[200px]">
+          {/* 絵文字ピッカー（fixedポジションで親のoverflowに影響されない） */}
+          {showPicker && pickerPos && (
+            <div
+              className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-lg p-2 min-w-[200px]"
+              style={{ top: pickerPos.top, left: pickerPos.left }}
+            >
               <div className="text-[10px] text-slate-400 mb-1.5 px-1">リアクションを選択</div>
               <div className="grid grid-cols-4 gap-1">
                 {REACTION_EMOJIS.map((item) => {
