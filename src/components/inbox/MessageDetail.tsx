@@ -310,6 +310,192 @@ function LinkifiedText({ text, className }: { text: string; className?: string }
   );
 }
 
+/**
+ * 種にする（Seed）ボタンの状態管理hook
+ */
+function useSeedAction() {
+  const [seedingId, setSeedingId] = useState<string | null>(null);
+  const [seedResult, setSeedResult] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+
+  const createSeed = async (msg: UnifiedMessage) => {
+    if (seedingId) return;
+    setSeedingId(msg.id);
+    setSeedResult(null);
+    try {
+      const body = msg.subject
+        ? `【${msg.subject}】\n${msg.body}`
+        : msg.body;
+      const res = await fetch('/api/seeds', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: body.slice(0, 500),
+          sourceChannel: msg.channel,
+          sourceMessageId: msg.id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSeedResult({ id: msg.id, type: 'success', text: '種ボックスに追加しました' });
+      } else {
+        setSeedResult({ id: msg.id, type: 'error', text: data.error || '追加に失敗しました' });
+      }
+    } catch {
+      setSeedResult({ id: msg.id, type: 'error', text: '通信エラーが発生しました' });
+    } finally {
+      setSeedingId(null);
+      setTimeout(() => setSeedResult(null), 3000);
+    }
+  };
+
+  return { seedingId, seedResult, createSeed };
+}
+
+/**
+ * 種にするボタンコンポーネント
+ */
+function SeedButton({
+  targetMessage,
+  seedingId,
+  seedResult,
+  onSeed,
+}: {
+  targetMessage: UnifiedMessage;
+  seedingId: string | null;
+  seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
+  onSeed: (msg: UnifiedMessage) => void;
+}) {
+  const isSeeding = seedingId === targetMessage.id;
+  const result = seedResult?.id === targetMessage.id ? seedResult : null;
+
+  if (result) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
+          result.type === 'success'
+            ? 'bg-green-50 text-green-700 border border-green-200'
+            : 'bg-red-50 text-red-700 border border-red-200'
+        )}
+      >
+        {result.type === 'success' ? '✅' : '❌'} {result.text}
+      </span>
+    );
+  }
+
+  return (
+    <Button
+      variant="secondary"
+      onClick={() => onSeed(targetMessage)}
+      disabled={isSeeding}
+    >
+      {isSeeding ? (
+        <span className="flex items-center gap-1">
+          <span className="animate-spin">⟳</span> 追加中...
+        </span>
+      ) : (
+        '🌱 種にする'
+      )}
+    </Button>
+  );
+}
+
+/**
+ * AIタスク化提案バナー
+ */
+function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
+  const [suggestion, setSuggestion] = useState<{
+    shouldTaskify: boolean;
+    reason: string;
+    minimalTask: string;
+    recommendedTask: string;
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const fetchedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 自分の送信メッセージは分析しない
+    if (message.from.name === 'あなた') return;
+    // 同じメッセージの重複フェッチ防止
+    if (fetchedRef.current === message.id) return;
+    fetchedRef.current = message.id;
+    setDismissed(false);
+    setSuggestion(null);
+
+    const fetchSuggestion = async () => {
+      setIsLoading(true);
+      try {
+        const res = await fetch('/api/ai/task-suggestion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messageId: message.id,
+            channel: message.channel,
+            from: message.from.name,
+            subject: message.subject || '',
+            body: message.body.slice(0, 1000),
+            timestamp: message.timestamp,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.data?.shouldTaskify) {
+          setSuggestion(data.data);
+        }
+      } catch {
+        // AI提案はオプションなので失敗しても何もしない
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSuggestion();
+  }, [message.id, message.from.name, message.channel, message.subject, message.body, message.timestamp]);
+
+  if (dismissed || (!isLoading && !suggestion)) return null;
+
+  if (isLoading) {
+    return (
+      <div className="mx-6 mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-center gap-2 text-xs text-blue-600">
+          <span className="animate-spin">⟳</span>
+          AIがタスク化を分析中...
+        </div>
+      </div>
+    );
+  }
+
+  if (!suggestion) return null;
+
+  return (
+    <div className="mx-6 mt-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm">🤖</span>
+          <span className="text-xs font-bold text-amber-800">タスク化を推奨します</span>
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="text-amber-400 hover:text-amber-600 text-xs"
+        >
+          ✕
+        </button>
+      </div>
+      <p className="text-xs text-amber-700 mb-3">{suggestion.reason}</p>
+      <div className="space-y-2">
+        <div className="p-2.5 bg-white rounded-lg border border-amber-200">
+          <div className="text-[10px] text-amber-500 font-semibold mb-0.5">最低限の対応</div>
+          <p className="text-xs text-slate-700">{suggestion.minimalTask}</p>
+        </div>
+        <div className="p-2.5 bg-white rounded-lg border border-blue-200">
+          <div className="text-[10px] text-blue-500 font-semibold mb-0.5">推奨対応 ⭐</div>
+          <p className="text-xs text-slate-700">{suggestion.recommendedTask}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface MessageDetailProps {
   message: UnifiedMessage | null;
   group: MessageGroup | null;
@@ -318,6 +504,7 @@ interface MessageDetailProps {
 
 export default function MessageDetail({ message, group, onSentMessage }: MessageDetailProps) {
   const [showReply, setShowReply] = useState(false);
+  const { seedingId, seedResult, createSeed } = useSeedAction();
 
   if (!message && !group) {
     return (
@@ -330,6 +517,8 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
     );
   }
 
+  const seedProps = { seedingId, seedResult, onSeed: createSeed };
+
   // グループが選択されている場合（複数メッセージのグループ）
   if (group && group.messageCount > 1) {
     return (
@@ -339,6 +528,7 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
         onToggleReply={() => setShowReply(!showReply)}
         onCloseReply={() => setShowReply(false)}
         onSentMessage={onSentMessage}
+        seedProps={seedProps}
       />
     );
   }
@@ -355,6 +545,7 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
         onToggleReply={() => setShowReply(!showReply)}
         onCloseReply={() => setShowReply(false)}
         onSentMessage={onSentMessage}
+        seedProps={seedProps}
       />
     );
   }
@@ -366,6 +557,7 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
       onToggleReply={() => setShowReply(!showReply)}
       onCloseReply={() => setShowReply(false)}
       onSentMessage={onSentMessage}
+      seedProps={seedProps}
     />
   );
 }
@@ -373,18 +565,26 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
 /**
  * グループ表示：グループ内の全メッセージを会話形式で表示
  */
+interface SeedProps {
+  seedingId: string | null;
+  seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
+  onSeed: (msg: UnifiedMessage) => void;
+}
+
 function GroupDetail({
   group,
   showReply,
   onToggleReply,
   onCloseReply,
   onSentMessage,
+  seedProps,
 }: {
   group: MessageGroup;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
+  seedProps: SeedProps;
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
@@ -424,6 +624,9 @@ function GroupDetail({
         ) : null;
       })()}
 
+      {/* AIタスク化提案 */}
+      <AiTaskSuggestionBanner message={latestMessage} />
+
       {/* 会話一覧（最新メッセージへ自動スクロール） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {group.messages.map((msg) => (
@@ -448,6 +651,12 @@ function GroupDetail({
             <Button variant="secondary" onClick={onToggleReply}>
               🤖 AIで下書き
             </Button>
+            <SeedButton
+              targetMessage={latestMessage}
+              seedingId={seedProps.seedingId}
+              seedResult={seedProps.seedResult}
+              onSeed={seedProps.onSeed}
+            />
           </div>
         )}
       </div>
@@ -529,12 +738,14 @@ function EmailThreadDetail({
   onToggleReply,
   onCloseReply,
   onSentMessage,
+  seedProps,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
+  seedProps: SeedProps;
 }) {
   const threadMessages = message.threadMessages || [];
   const [summary, setSummary] = useState<string>('');
@@ -637,6 +848,9 @@ function EmailThreadDetail({
         )}
       </div>
 
+      {/* AIタスク化提案 */}
+      <AiTaskSuggestionBanner message={message} />
+
       {/* 添付ファイル（メールスレッド） */}
       {message.attachments && message.attachments.length > 0 && (
         <div className="px-6 py-3 border-t border-slate-200">
@@ -700,6 +914,12 @@ function EmailThreadDetail({
             <Button variant="secondary" onClick={onToggleReply}>
               🤖 AIで下書き
             </Button>
+            <SeedButton
+              targetMessage={message}
+              seedingId={seedProps.seedingId}
+              seedResult={seedProps.seedResult}
+              onSeed={seedProps.onSeed}
+            />
           </div>
         )}
       </div>
@@ -721,12 +941,14 @@ function SingleMessageDetail({
   onToggleReply,
   onCloseReply,
   onSentMessage,
+  seedProps,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
+  seedProps: SeedProps;
 }) {
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
   const singleThreadEndRef = useRef<HTMLDivElement>(null);
@@ -775,6 +997,9 @@ function SingleMessageDetail({
           </span>
         </div>
       </div>
+
+      {/* AIタスク化提案 */}
+      <AiTaskSuggestionBanner message={message} />
 
       {/* 本文 */}
       <div className="flex-1 overflow-y-auto p-6">
@@ -866,6 +1091,12 @@ function SingleMessageDetail({
             <Button variant="secondary" onClick={onToggleReply}>
               🤖 AIで下書き
             </Button>
+            <SeedButton
+              targetMessage={message}
+              seedingId={seedProps.seedingId}
+              seedResult={seedProps.seedResult}
+              onSeed={seedProps.onSeed}
+            />
           </div>
         )}
       </div>
