@@ -101,6 +101,50 @@ function unfoldHeaders(headers: string): string {
 }
 
 /**
+ * Content-Typeヘッダーからcharsetを抽出する
+ */
+function extractCharset(contentTypeLine: string): string {
+  const charsetMatch = contentTypeLine.match(/charset="?([^"\s;]+)"?/i);
+  if (!charsetMatch) return 'utf-8';
+  const raw = charsetMatch[1].toLowerCase().replace(/^["']|["']$/g, '');
+  // charset名の正規化
+  const aliasMap: Record<string, string> = {
+    'iso-2022-jp': 'iso-2022-jp',
+    'iso2022jp': 'iso-2022-jp',
+    'shift_jis': 'shift_jis',
+    'shift-jis': 'shift_jis',
+    'sjis': 'shift_jis',
+    'windows-31j': 'shift_jis',
+    'cp932': 'shift_jis',
+    'euc-jp': 'euc-jp',
+    'eucjp': 'euc-jp',
+    'utf-8': 'utf-8',
+    'utf8': 'utf-8',
+    'us-ascii': 'utf-8',
+    'ascii': 'utf-8',
+    'iso-8859-1': 'iso-8859-1',
+    'latin1': 'iso-8859-1',
+  };
+  return aliasMap[raw] || raw;
+}
+
+/**
+ * バイト列を指定charsetでデコードする（TextDecoder使用）
+ */
+function decodeWithCharset(bytes: Uint8Array, charset: string): string {
+  try {
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    // TextDecoderが非対応の場合、UTF-8でフォールバック
+    try {
+      return new TextDecoder('utf-8').decode(bytes);
+    } catch {
+      return Buffer.from(bytes).toString('utf-8');
+    }
+  }
+}
+
+/**
  * メール本文をデコードする
  */
 function decodeEmailContent(body: string, headers: string): string {
@@ -111,6 +155,9 @@ function decodeEmailContent(body: string, headers: string): string {
   const contentTypeLineMatch = unfolded.match(/Content-Type:\s*([^\r\n]+)/i);
   const contentTypeLine = contentTypeLineMatch ? contentTypeLineMatch[1].trim() : 'text/plain';
   const contentType = contentTypeLine.split(';')[0].trim().toLowerCase();
+
+  // charsetを抽出
+  const charset = extractCharset(contentTypeLine);
 
   // Transfer-Encodingを取得
   const encodingMatch = unfolded.match(/Content-Transfer-Encoding:\s*([^\r\n;]+)/i);
@@ -137,11 +184,12 @@ function decodeEmailContent(body: string, headers: string): string {
     }
   }
 
-  // base64 デコード
+  // base64 デコード（charset対応）
   if (encoding === 'base64') {
     try {
       const cleaned = body.replace(/[\r\n\s]/g, '');
-      const decoded = Buffer.from(cleaned, 'base64').toString('utf-8');
+      const buf = Buffer.from(cleaned, 'base64');
+      const decoded = decodeWithCharset(new Uint8Array(buf), charset);
       if (contentType === 'text/html') {
         return stripHtmlTags(decoded);
       }
@@ -151,13 +199,27 @@ function decodeEmailContent(body: string, headers: string): string {
     }
   }
 
-  // quoted-printable デコード
+  // quoted-printable デコード（charset対応）
   if (encoding === 'quoted-printable') {
-    const decoded = decodeQuotedPrintable(body);
+    const decoded = decodeQuotedPrintable(body, charset);
     if (contentType === 'text/html') {
       return stripHtmlTags(decoded);
     }
     return decoded;
+  }
+
+  // 7bit/8bit でも非UTF-8 charsetの場合はデコードを試みる
+  if (charset !== 'utf-8' && charset !== 'us-ascii') {
+    try {
+      const buf = Buffer.from(body, 'binary');
+      const decoded = decodeWithCharset(new Uint8Array(buf), charset);
+      if (contentType === 'text/html') {
+        return stripHtmlTags(decoded);
+      }
+      return decoded;
+    } catch {
+      // フォールバック
+    }
   }
 
   // text/html の場合、HTMLタグを除去
@@ -352,14 +414,29 @@ function extractFromMultipartWithAttachments(body: string, boundary: string, att
 function decodeRFC2047(encoded: string): string | null {
   const match = encoded.match(/=\?([^?]+)\?([BQ])\?([^?]+)\?=/i);
   if (!match) return null;
-  const [, charset, encoding, data] = match;
+  const [, charsetRaw, encoding, data] = match;
+  const charset = extractCharset(`charset=${charsetRaw}`);
   if (encoding.toUpperCase() === 'B') {
-    return Buffer.from(data, 'base64').toString(charset.toLowerCase() === 'utf-8' ? 'utf-8' : 'latin1');
+    const buf = Buffer.from(data, 'base64');
+    return decodeWithCharset(new Uint8Array(buf), charset);
   } else if (encoding.toUpperCase() === 'Q') {
-    const decoded = data.replace(/_/g, ' ').replace(/=([0-9A-Fa-f]{2})/g, (_, hex) =>
-      String.fromCharCode(parseInt(hex, 16))
-    );
-    return decoded;
+    // QPデコード: _をスペースに、=XXをバイトに変換
+    const bytes: number[] = [];
+    let i = 0;
+    const qpData = data.replace(/_/g, ' ');
+    while (i < qpData.length) {
+      if (qpData[i] === '=' && i + 2 < qpData.length) {
+        const hex = qpData.substring(i + 1, i + 3);
+        if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+          bytes.push(parseInt(hex, 16));
+          i += 3;
+          continue;
+        }
+      }
+      bytes.push(qpData.charCodeAt(i));
+      i++;
+    }
+    return decodeWithCharset(new Uint8Array(bytes), charset);
   }
   return null;
 }
@@ -390,13 +467,13 @@ function mimeToExtension(mimeType: string): string {
 }
 
 /**
- * Quoted-Printableデコード（UTF-8対応）
+ * Quoted-Printableデコード（charset対応）
  */
-function decodeQuotedPrintable(input: string): string {
+function decodeQuotedPrintable(input: string, charset: string = 'utf-8'): string {
   // soft line breaksを除去
   const cleaned = input.replace(/=\r?\n/g, '');
 
-  // =XX をバイト値に変換し、UTF-8としてデコード
+  // =XX をバイト値に変換
   const bytes: number[] = [];
   let i = 0;
   while (i < cleaned.length) {
@@ -413,15 +490,8 @@ function decodeQuotedPrintable(input: string): string {
     i++;
   }
 
-  // Uint8ArrayからUTF-8文字列にデコード
-  try {
-    return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
-  } catch {
-    // フォールバック: 元の方法で試す
-    return cleaned.replace(/=([0-9A-Fa-f]{2})/g, (_, hex) => {
-      return String.fromCharCode(parseInt(hex, 16));
-    });
-  }
+  // 指定charsetでデコード
+  return decodeWithCharset(new Uint8Array(bytes), charset);
 }
 
 /**
@@ -429,8 +499,10 @@ function decodeQuotedPrintable(input: string): string {
  */
 function stripHtmlTags(html: string): string {
   return html
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '') // style要素を除去
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '') // script要素を除去
+    .replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, '') // style要素を除去（閉じタグの前後空白も対応）
+    .replace(/<style[^>]*\/>/gi, '') // 自己閉じstyleタグ
+    .replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, '') // script要素を除去
+    .replace(/<head[^>]*>[\s\S]*?<\/head\s*>/gi, '') // head要素全体を除去（CSSなど含む）
     .replace(/<br\s*\/?>/gi, '\n') // br→改行
     .replace(/<\/p>/gi, '\n\n') // p閉じ→改行
     .replace(/<\/div>/gi, '\n') // div閉じ→改行
@@ -443,6 +515,8 @@ function stripHtmlTags(html: string): string {
     .replace(/&gt;/gi, '>')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;/gi, "'")
+    .replace(/&#\d+;/g, '') // 数値文字参照を除去
+    .replace(/\{[^}]*\}/g, '') // 残存CSSルール（{...}）を除去
     .replace(/\n{3,}/g, '\n\n') // 連続改行を整理
     .trim();
 }
