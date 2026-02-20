@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { UnifiedMessage, MessageGroup } from '@/lib/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { cn } from '@/lib/utils';
@@ -80,6 +80,14 @@ function GroupDetail({
   onCloseReply: () => void;
 }) {
   const latestMessage = group.latestMessage;
+  const groupEndRef = useRef<HTMLDivElement>(null);
+
+  // 最新メッセージに自動スクロール
+  useEffect(() => {
+    if (groupEndRef.current) {
+      groupEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [group.groupKey, group.messageCount]);
 
   return (
     <div className="flex flex-col h-full">
@@ -99,11 +107,12 @@ function GroupDetail({
         </div>
       </div>
 
-      {/* 会話一覧 */}
+      {/* 会話一覧（最新メッセージへ自動スクロール） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {group.messages.map((msg) => (
           <ConversationBubble key={msg.id} message={msg} />
         ))}
+        <div ref={groupEndRef} />
       </div>
 
       {/* アクションバー */}
@@ -203,6 +212,7 @@ function EmailThreadDetail({
   const [summary, setSummary] = useState<string>('');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState(false);
+  const threadEndRef = useRef<HTMLDivElement>(null);
 
   const fetchSummary = useCallback(async () => {
     if (threadMessages.length < 2) return;
@@ -238,6 +248,13 @@ function EmailThreadDetail({
     }
   }, [message.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 最新メッセージに自動スクロール
+  useEffect(() => {
+    if (threadEndRef.current) {
+      threadEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [message.id, threadMessages.length]);
+
   return (
     <div className="flex flex-col h-full">
       {/* ヘッダー */}
@@ -260,7 +277,7 @@ function EmailThreadDetail({
           参加者: {getUniqueThreadParticipants(threadMessages)}
         </div>
 
-        {/* AI要約 */}
+        {/* AI要約（スクロール可能・直近3〜4件表示、上スクロールで過去を確認） */}
         {threadMessages.length >= 2 && (
           <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
             <div className="flex items-center gap-1.5 mb-1">
@@ -270,29 +287,7 @@ function EmailThreadDetail({
               )}
             </div>
             {summary ? (
-              <div className="text-xs text-amber-900 leading-relaxed">
-                {summary.split('\n').map((line, i) => {
-                  const trimmed = line.trim();
-                  if (trimmed.startsWith('・')) {
-                    // 日付行
-                    return (
-                      <div key={i} className={i > 0 ? 'mt-1.5' : ''}>
-                        <span className="font-semibold text-amber-800">{trimmed}</span>
-                      </div>
-                    );
-                  } else if (trimmed.startsWith('-') || trimmed.startsWith('- ')) {
-                    // 要約行
-                    return (
-                      <div key={i} className="ml-4 text-amber-700">
-                        {trimmed}
-                      </div>
-                    );
-                  } else if (trimmed) {
-                    return <div key={i}>{trimmed}</div>;
-                  }
-                  return null;
-                })}
-              </div>
+              <SummaryScrollArea summary={summary} />
             ) : summaryError ? (
               <p className="text-xs text-amber-600">
                 要約の生成に失敗しました。
@@ -314,7 +309,7 @@ function EmailThreadDetail({
         )}
       </div>
 
-      {/* 会話一覧（古い順） */}
+      {/* 会話一覧（古い順・最新メッセージへ自動スクロール） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {threadMessages.map((msg) => (
           <div
@@ -353,6 +348,7 @@ function EmailThreadDetail({
             </div>
           </div>
         ))}
+        <div ref={threadEndRef} />
       </div>
 
       {/* アクションバー */}
@@ -392,6 +388,14 @@ function SingleMessageDetail({
   onCloseReply: () => void;
 }) {
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
+  const singleThreadEndRef = useRef<HTMLDivElement>(null);
+
+  // スレッド履歴の最新メッセージに自動スクロール
+  useEffect(() => {
+    if (singleThreadEndRef.current) {
+      singleThreadEndRef.current.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [message.id]);
 
   return (
     <div className="flex flex-col h-full">
@@ -484,6 +488,7 @@ function SingleMessageDetail({
                 </div>
               </div>
             ))}
+            <div ref={singleThreadEndRef} />
           </div>
         </div>
       )}
@@ -506,6 +511,50 @@ function SingleMessageDetail({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * AI要約スクロールエリア
+ * 直近3〜4件の日付エントリを表示し、上スクロールで過去分を確認可能
+ */
+function SummaryScrollArea({ summary }: { summary: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 要約が表示されたら最下部（直近）にスクロール
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [summary]);
+
+  return (
+    <div
+      ref={scrollRef}
+      className="max-h-[100px] overflow-y-auto text-xs text-amber-900 leading-relaxed"
+    >
+      {summary.split('\n').map((line, i) => {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('\u30FB')) {
+          // 日付行（・）
+          return (
+            <div key={i} className={i > 0 ? 'mt-1.5' : ''}>
+              <span className="font-semibold text-amber-800">{trimmed}</span>
+            </div>
+          );
+        } else if (trimmed.startsWith('-') || trimmed.startsWith('- ')) {
+          // 要約行
+          return (
+            <div key={i} className="ml-4 text-amber-700">
+              {trimmed}
+            </div>
+          );
+        } else if (trimmed) {
+          return <div key={i}>{trimmed}</div>;
+        }
+        return null;
+      })}
     </div>
   );
 }
