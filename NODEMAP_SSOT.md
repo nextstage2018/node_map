@@ -46,6 +46,8 @@
 | Phase 15：Slack接続 | ✅ 完了 | 2026-02-20 | 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化 |
 | Phase 16：ノード登録・カウント設計変更 | ✅ 完了 | 2026-02-20 | interactionCount導入・受動登録廃止・色濃淡表示・DB migration |
 | Phase 17：会話ログ構造化分類+タイムスタンプ | ✅ 完了 | 2026-02-20 | 会話タグ7種自動分類・フェーズ遷移時刻記録・UI表示・DB migration |
+| Hotfix：メール文字化け修正 | ✅ 完了 | 2026-02-20 | charset対応(ISO-2022-JP/Shift_JIS)・QP自動検出・CSS漏れ除去・HTMLエンティティ対応 |
+| Hotfix：インボックスUX改善 | 🔧 進行中 | 2026-02-20 | URLリンク化・時間順ソート・リアクション表示・リンク折り返し・バッジ数修正・添付開覧修正 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -699,6 +701,19 @@ node_map/
 - **タイムスタンプ：** タスク作成時にideationAt自動記録、フェーズ遷移時に対応カラム自動記録
 - **注意：** Supabase DBに `006_phase17_conversation_tags.sql` を実行する必要あり
 
+### Hotfix：メール文字化け修正（3コミット）
+- **変更ファイル：** `src/services/email/emailClient.service.ts`
+- **修正内容（コミット f35dd59 → 644b781 → 0b23f15）：**
+  - `extractCharset()`: Content-Typeからcharsetを抽出し正規化（ISO-2022-JP, Shift_JIS, EUC-JP等）
+  - `decodeWithCharset()`: Node.js TextDecoderでcharset対応デコード
+  - `decodeQuotedPrintable()`: charset引数追加で非UTF-8 QP対応
+  - `decodeRFC2047()`: charset対応デコード
+  - QP自動検出をtext/html処理より前に移動（Meta/DMMプレミアム等のQP未デコード修正）
+  - Base64自動検出フォールバック追加
+  - `stripHtmlTags()`: CSS除去大幅強化（コメント除去、ネスト`{}`対応、CSSプロパティ行包括除去）
+  - HTMLエンティティ変換追加（`&shy;`, `&#数値;`, `&#x16進;`, 名前付きエンティティ）
+- **修正対象の送信元：** SMBC日興証券, 魂ウェブ商店, 島の人, Meta for Business, DMMプレミアム, DMMブックス, TikTok, 三陸気仙沼 波座, Uber Eats, Instagram via Facinique
+
 ### Phase 12前半（APIキー準備：Anthropic + Gmail）への引き継ぎ
 - **設定した環境変数（Vercel）：**
   - `ANTHROPIC_API_KEY` — Anthropic Claude API（AI返信下書き・タスク会話・キーワード抽出）
@@ -745,6 +760,7 @@ node_map/
 - ✅ Slack接続 — 実API対応・ユーザーキャッシュ・書式変換・DM対応・接続テスト実API化（2026-02-20）
 - ✅ ノード登録・カウント設計変更 — interactionCount導入・受動登録廃止・5トリガー定義・色濃淡表示・MapStats更新（2026-02-20）
 - ✅ 会話ログ構造化分類+タイムスタンプ — 会話タグ7種自動分類・フェーズ遷移時刻記録・TaskAiChat UI表示・DB migration（2026-02-20）
+- ✅ メール文字化け修正 — charset対応(ISO-2022-JP/Shift_JIS)・QP自動検出順序修正・CSS漏れ除去・HTMLエンティティ対応（2026-02-20）
 
 ---
 
