@@ -143,7 +143,15 @@ export interface ParsedEmailMessage {
 export function parseEmailThread(body: string): ParsedEmailMessage[] {
   if (!body) return [];
 
-  const lines = body.split('\n');
+  // --- 前処理: 改行正規化 & 折り返しヘッダーの結合 ---
+  let normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Gmailが長いヘッダーを折り返すケースを結合:
+  // "2026年2月20日(金) 8:00 名前 <\n email@example.com>:" → 1行に
+  // また "On Feb 19, 2026, Name <\n email@example.com> wrote:" も同様
+  normalized = normalized.replace(/<\n\s*/g, '<');
+
+  const lines = normalized.split('\n');
   const messages: ParsedEmailMessage[] = [];
 
   // --- Step 1: 最新の返信（引用なし部分）を抽出 ---
