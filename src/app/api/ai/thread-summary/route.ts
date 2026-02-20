@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ThreadMessage } from '@/lib/types';
 import { generateThreadSummary } from '@/services/ai/aiClient.service';
+import { cache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
 
 export async function POST(request: NextRequest) {
   try {
-    const body: { subject: string; threadMessages: ThreadMessage[] } = await request.json();
-    const { subject, threadMessages } = body;
+    const body: { messageId: string; subject: string; threadMessages: ThreadMessage[] } = await request.json();
+    const { messageId, subject, threadMessages } = body;
 
     if (!threadMessages || threadMessages.length === 0) {
       return NextResponse.json(
@@ -14,11 +15,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // キャッシュチェック
+    if (messageId) {
+      const cached = cache.get<string>(CACHE_KEYS.threadSummary(messageId));
+      if (cached) {
+        return NextResponse.json({
+          success: true,
+          data: { summary: cached, cached: true },
+        });
+      }
+    }
+
     const summary = await generateThreadSummary(subject, threadMessages);
+
+    // キャッシュに保存
+    if (messageId) {
+      cache.set(CACHE_KEYS.threadSummary(messageId), summary, CACHE_TTL.threadSummary);
+    }
 
     return NextResponse.json({
       success: true,
-      data: { summary },
+      data: { summary, cached: false },
     });
   } catch (error) {
     console.error('スレッド要約エラー:', error);

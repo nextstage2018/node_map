@@ -1,8 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UnifiedMessage, ChannelType, MessageGroup } from '@/lib/types';
 import { getMessageGroupKey, getGroupLabel } from '@/lib/utils';
+
+// クライアント側メッセージキャッシュ（ブラウザタブ内で有効）
+let clientMessageCache: {
+  messages: UnifiedMessage[];
+  timestamp: number;
+  page: number;
+} | null = null;
+
+const CLIENT_CACHE_TTL = 2 * 60 * 1000; // 2分
 
 /**
  * メッセージをグループ化する
@@ -49,22 +58,59 @@ function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
 }
 
 export function useMessages() {
-  const [messages, setMessages] = useState<UnifiedMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [messages, setMessages] = useState<UnifiedMessage[]>(() => {
+    // 初期値: クライアントキャッシュがあれば即表示
+    if (clientMessageCache && Date.now() - clientMessageCache.timestamp < CLIENT_CACHE_TTL) {
+      return clientMessageCache.messages;
+    }
+    return [];
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    // キャッシュがあればローディング不要
+    return !(clientMessageCache && Date.now() - clientMessageCache.timestamp < CLIENT_CACHE_TTL);
+  });
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  const isRevalidating = useRef(false);
 
-  const fetchMessages = useCallback(async () => {
+  const fetchMessages = useCallback(async (forceRefresh = false) => {
+    // キャッシュがあり、強制更新でなければバックグラウンド更新
+    const hasCache = clientMessageCache && Date.now() - clientMessageCache.timestamp < CLIENT_CACHE_TTL;
+    if (hasCache && !forceRefresh) {
+      // Stale-While-Revalidate: キャッシュを表示しつつバックグラウンドで更新
+      if (isRevalidating.current) return; // 既に更新中ならスキップ
+      isRevalidating.current = true;
+      try {
+        const res = await fetch('/api/messages?page=1&limit=50');
+        const data = await res.json();
+        if (data.success) {
+          setMessages(data.data);
+          clientMessageCache = { messages: data.data, timestamp: Date.now(), page: 1 };
+          setHasMore(data.pagination?.hasMore ?? false);
+        }
+      } catch {
+        // バックグラウンド更新失敗はキャッシュ維持
+      } finally {
+        isRevalidating.current = false;
+      }
+      return;
+    }
+
+    // キャッシュなし or 強制更新: フル読み込み
     setIsLoading(true);
     setError(null);
     setPage(1);
     try {
-      const res = await fetch('/api/messages?page=1&limit=50');
+      const url = forceRefresh
+        ? '/api/messages?page=1&limit=50&refresh=true'
+        : '/api/messages?page=1&limit=50';
+      const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
         setMessages(data.data);
+        clientMessageCache = { messages: data.data, timestamp: Date.now(), page: 1 };
         setHasMore(data.pagination?.hasMore ?? false);
       } else {
         setError(data.error || 'メッセージの取得に失敗しました');
@@ -123,13 +169,19 @@ export function useMessages() {
     chatwork: messages.filter((m) => m.channel === 'chatwork' && !m.isRead).length,
   };
 
+  // 強制更新（更新ボタン用）
+  const forceRefresh = useCallback(() => {
+    clientMessageCache = null; // キャッシュ破棄
+    return fetchMessages(true);
+  }, [fetchMessages]);
+
   return {
     messages,
     messageGroups,
     isLoading,
     isLoadingMore,
     error,
-    refresh: fetchMessages,
+    refresh: forceRefresh,
     loadMore,
     hasMore,
     messageCounts,

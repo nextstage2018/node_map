@@ -213,6 +213,7 @@ function EmailThreadDetail({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          messageId: message.id,
           subject: message.subject || '',
           threadMessages,
         }),
@@ -269,9 +270,29 @@ function EmailThreadDetail({
               )}
             </div>
             {summary ? (
-              <p className="text-xs text-amber-900 leading-relaxed whitespace-pre-wrap">
-                {summary}
-              </p>
+              <div className="text-xs text-amber-900 leading-relaxed">
+                {summary.split('\n').map((line, i) => {
+                  const trimmed = line.trim();
+                  if (trimmed.startsWith('・')) {
+                    // 日付行
+                    return (
+                      <div key={i} className={i > 0 ? 'mt-1.5' : ''}>
+                        <span className="font-semibold text-amber-800">{trimmed}</span>
+                      </div>
+                    );
+                  } else if (trimmed.startsWith('-') || trimmed.startsWith('- ')) {
+                    // 要約行
+                    return (
+                      <div key={i} className="ml-4 text-amber-700">
+                        {trimmed}
+                      </div>
+                    );
+                  } else if (trimmed) {
+                    return <div key={i}>{trimmed}</div>;
+                  }
+                  return null;
+                })}
+              </div>
             ) : summaryError ? (
               <p className="text-xs text-amber-600">
                 要約の生成に失敗しました。

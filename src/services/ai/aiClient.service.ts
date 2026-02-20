@@ -126,22 +126,34 @@ export async function generateThreadSummary(
     const client = new Anthropic({ apiKey });
 
     const conversationText = threadMessages
-      .map((m) => `[${m.from.name}] ${m.body}`)
+      .map((m) => {
+        const dateLabel = m.timestamp ? formatDateForSummary(m.timestamp) : '';
+        return `[${dateLabel}] ${m.from.name}: ${m.body}`;
+      })
       .join('\n---\n');
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 300,
+      max_tokens: 500,
       system: `あなたはメールスレッドの要約を生成するアシスタントです。
 以下のルールに従ってください：
-- 3行以内で簡潔に要約する
-- 「誰が」「何を」「どういう状態か」を含める
-- 箇条書きは使わず、自然な文章で書く
-- 日本語で出力する`,
+- 日付ごとに時系列で要約する
+- 出力フォーマットは必ず以下の形式にする：
+
+・M/D
+  - 要約文（誰が何をした/決まったこと）
+・M/D
+  - 要約文
+
+- 同じ日付の出来事は同じ日付の下にまとめる
+- 各要約文は1行で簡潔に（30文字以内目安）
+- 「誰が」を主語に含める
+- 日本語で出力する
+- 日付はスレッド内のメッセージのタイムスタンプから判断する`,
       messages: [
         {
           role: 'user',
-          content: `以下のメールスレッドを3行以内で要約してください。
+          content: `以下のメールスレッドを日付ごとの時系列で要約してください。
 
 【件名】${subject}
 【やり取り】
@@ -158,12 +170,45 @@ ${conversationText}`,
 }
 
 /**
- * デモ用スレッド要約
+ * 要約用の日付フォーマット（M/D形式）
+ */
+function formatDateForSummary(timestamp: string): string {
+  try {
+    const d = new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * デモ用スレッド要約（時系列フォーマット）
  */
 function getDemoThreadSummary(subject: string, threadMessages: ThreadMessage[]): string {
-  const participants = Array.from(new Set(threadMessages.map((m) => m.from.name))).join('、');
-  const count = threadMessages.length;
-  return `${participants}による${count}件のやり取り。${subject}について議論が進行中。最新のメッセージで対応方針の確認が求められています。`;
+  // 日付ごとにグループ化
+  const dateGroups = new Map<string, string[]>();
+  for (const msg of threadMessages) {
+    const dateKey = formatDateForSummary(msg.timestamp) || '不明';
+    if (!dateGroups.has(dateKey)) {
+      dateGroups.set(dateKey, []);
+    }
+    const action = msg.body.substring(0, 25).replace(/\n/g, ' ');
+    dateGroups.get(dateKey)!.push(`${msg.from.name}が${action}...`);
+  }
+
+  const lines: string[] = [];
+  for (const [date, actions] of Array.from(dateGroups.entries())) {
+    lines.push(`・${date}`);
+    // 同一日付は最初の2件まで
+    for (const action of actions.slice(0, 2)) {
+      lines.push(`  - ${action}`);
+    }
+    if (actions.length > 2) {
+      lines.push(`  - 他${actions.length - 2}件のやり取り`);
+    }
+  }
+  return lines.join('\n');
 }
 
 // ===== Phase 2: タスクAI会話 =====
