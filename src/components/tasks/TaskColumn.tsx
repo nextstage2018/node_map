@@ -12,6 +12,7 @@ interface TaskColumnProps {
   tasks: Task[];
   selectedTaskId: string | null;
   onSelectTask: (task: Task) => void;
+  onQuickChat?: (taskId: string, message: string) => Promise<void>;
 }
 
 export default function TaskColumn({
@@ -19,6 +20,7 @@ export default function TaskColumn({
   tasks,
   selectedTaskId,
   onSelectTask,
+  onQuickChat,
 }: TaskColumnProps) {
   const config = TASK_STATUS_CONFIG[status];
 
@@ -26,6 +28,12 @@ export default function TaskColumn({
     id: `column-${status}`,
     data: { type: 'column', status },
   });
+
+  // 未読カウント（最新メッセージがAIの返信であるタスク数）
+  const unreadCount = tasks.filter((t) => {
+    if (t.conversations.length === 0) return false;
+    return t.conversations[t.conversations.length - 1].role === 'assistant';
+  }).length;
 
   return (
     <div className="flex flex-col min-w-[260px] max-w-[300px] w-full">
@@ -36,6 +44,11 @@ export default function TaskColumn({
         <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5">
           {tasks.length}
         </span>
+        {unreadCount > 0 && (
+          <span className="text-[10px] font-medium bg-blue-100 text-blue-600 rounded-full px-1.5 py-0.5" title="AIからの未読返信">
+            🤖 {unreadCount}
+          </span>
+        )}
       </div>
 
       {/* タスクリスト（ドロップ対象） */}
@@ -61,6 +74,7 @@ export default function TaskColumn({
                 task={task}
                 isSelected={task.id === selectedTaskId}
                 onClick={() => onSelectTask(task)}
+                onQuickChat={onQuickChat}
               />
             ))
           )}

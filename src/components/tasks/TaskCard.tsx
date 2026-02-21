@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useRef } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Task } from '@/lib/types';
@@ -10,11 +11,15 @@ interface TaskCardProps {
   task: Task;
   isSelected: boolean;
   onClick: () => void;
+  onQuickChat?: (taskId: string, message: string) => Promise<void>;
 }
 
-export default function TaskCard({ task, isSelected, onClick }: TaskCardProps) {
+export default function TaskCard({ task, isSelected, onClick, onQuickChat }: TaskCardProps) {
   const priority = TASK_PRIORITY_CONFIG[task.priority];
   const phase = TASK_PHASE_CONFIG[task.phase];
+  const [quickInput, setQuickInput] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const {
     attributes,
@@ -32,6 +37,31 @@ export default function TaskCard({ task, isSelected, onClick }: TaskCardProps) {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+  };
+
+  // 最新のAI発言を取得
+  const lastAiMessage = [...task.conversations]
+    .reverse()
+    .find((c) => c.role === 'assistant');
+
+  // 未読判定：最新メッセージがAIの場合は未読の可能性
+  const hasUnread = lastAiMessage && task.conversations.length > 0 &&
+    task.conversations[task.conversations.length - 1].role === 'assistant';
+
+  // クイック送信
+  const handleQuickSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!quickInput.trim() || isSending || !onQuickChat) return;
+    setIsSending(true);
+    try {
+      await onQuickChat(task.id, quickInput.trim());
+      setQuickInput('');
+    } catch {
+      // エラー処理
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -54,16 +84,36 @@ export default function TaskCard({ task, isSelected, onClick }: TaskCardProps) {
         <h3 className="text-sm font-medium text-slate-900 leading-tight line-clamp-2">
           {task.title}
         </h3>
-        <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0', priority.badgeColor)}>
-          {priority.label}
-        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          {hasUnread && (
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" title="未読の返信あり" />
+          )}
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded font-bold', priority.badgeColor)}>
+            {priority.label}
+          </span>
+        </div>
       </div>
 
       {/* 説明 */}
-      {task.description && (
+      {task.description && !lastAiMessage && (
         <p className="text-xs text-slate-500 mb-2 line-clamp-2">
           {task.description}
         </p>
+      )}
+
+      {/* 最新AI発言プレビュー */}
+      {lastAiMessage && (
+        <div className="mb-2 p-1.5 rounded-md bg-slate-50 border border-slate-100">
+          <div className="flex items-center gap-1 mb-0.5">
+            <span className="text-[9px] text-slate-400">🤖 AI</span>
+            <span className="text-[9px] text-slate-300">
+              {formatRelativeTime(lastAiMessage.timestamp)}
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-600 line-clamp-2 leading-snug">
+            {lastAiMessage.content}
+          </p>
+        </div>
       )}
 
       {/* タグ */}
@@ -90,16 +140,47 @@ export default function TaskCard({ task, isSelected, onClick }: TaskCardProps) {
         >
           {phase.icon} {phase.label}
         </span>
-        <span className="text-[10px] text-slate-400">
-          {formatRelativeTime(task.updatedAt)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {task.conversations.length > 0 && (
+            <span className="text-[10px] text-slate-400">
+              💬 {task.conversations.length}
+            </span>
+          )}
+          <span className="text-[10px] text-slate-400">
+            {formatRelativeTime(task.updatedAt)}
+          </span>
+        </div>
       </div>
 
-      {/* 会話数 */}
-      {task.conversations.length > 0 && (
-        <div className="mt-1.5 text-[10px] text-slate-400">
-          💬 {task.conversations.length}件の会話
-        </div>
+      {/* インライン入力フィールド（カードを開かずにAIに話しかける） */}
+      {task.status !== 'done' && (
+        <form
+          onSubmit={handleQuickSend}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="mt-2 flex gap-1"
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            value={quickInput}
+            onChange={(e) => setQuickInput(e.target.value)}
+            placeholder="AIにひとこと..."
+            disabled={isSending}
+            className="flex-1 min-w-0 px-2 py-1 text-[11px] border border-slate-200 rounded-md bg-white
+              focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400
+              placeholder:text-slate-300 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={!quickInput.trim() || isSending}
+            className="shrink-0 px-2 py-1 text-[10px] font-medium rounded-md
+              bg-blue-600 text-white hover:bg-blue-700
+              disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+          >
+            {isSending ? '...' : '送信'}
+          </button>
+        </form>
       )}
     </div>
   );

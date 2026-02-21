@@ -127,6 +127,27 @@ export default function TasksPage() {
     });
   }, [refresh, selectedTask]);
 
+  // Phase 19: カードからのクイックチャット
+  const handleQuickChat = useCallback(async (taskId: string, message: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return;
+    try {
+      const res = await fetch('/api/tasks/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId, message, phase: task.phase }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        refresh();
+        // 送信したタスクを選択状態にする
+        setSelectedTask(task);
+      }
+    } catch {
+      // エラー処理
+    }
+  }, [tasks, refresh]);
+
   // ジョブアクション
   const handleExecuteJob = useCallback(async (jobId: string) => {
     await updateJobStatus(jobId, 'executed');
@@ -262,6 +283,7 @@ export default function TasksPage() {
                         tasks={tasks.filter((t) => t.status === status)}
                         selectedTaskId={selectedTask?.id || null}
                         onSelectTask={(task) => setSelectedTask(task)}
+                        onQuickChat={handleQuickChat}
                       />
                     ))}
                   </div>
