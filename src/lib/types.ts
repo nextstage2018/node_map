@@ -6,18 +6,6 @@ export type ChannelType = 'email' | 'slack' | 'chatwork';
 // メッセージのステータス
 export type MessageStatus = 'unread' | 'read' | 'replied';
 
-// 添付ファイル
-export interface Attachment {
-  id: string;
-  filename: string;
-  mimeType: string;
-  size: number;           // バイト数
-  contentId?: string;     // インライン画像用（CID）
-  isInline?: boolean;     // インライン添付か
-  previewUrl?: string;    // 画像のbase64プレビューURL（data:image/...）
-  downloadUrl?: string;   // ダウンロード用APIパス
-}
-
 // 統合メッセージの共通型
 export interface UnifiedMessage {
   id: string;
@@ -31,16 +19,9 @@ export interface UnifiedMessage {
     name: string;
     address: string;
   }[];
-  cc?: {
-    name: string;
-    address: string;
-  }[];
   subject?: string; // email only
-  body: string;             // 表示用本文（引用・署名除去済み）
-  bodyFull?: string;        // 引用含む全文（「引用を表示」用）
+  body: string;
   bodyHtml?: string;
-  hasQuote?: boolean;       // 引用部分が除去されたか
-  attachments?: Attachment[]; // 添付ファイル
   timestamp: string; // ISO 8601
   isRead: boolean;
   status: MessageStatus;
@@ -59,8 +40,6 @@ export interface UnifiedMessage {
     chatworkRoomId?: string;
     chatworkRoomName?: string;
     chatworkMessageId?: string;
-    // リアクション（Slack/Chatwork共通）
-    reactions?: { name: string; count: number }[];
   };
 }
 
@@ -93,9 +72,6 @@ export interface ReplyRequest {
   messageId: string;
   channel: ChannelType;
   body: string;
-  to?: string[];      // 宛先メールアドレス群
-  cc?: string[];       // CCメールアドレス群
-  subject?: string;    // 件名
   metadata: UnifiedMessage['metadata'];
 }
 
@@ -136,16 +112,6 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done';
 // タスクの優先度
 export type TaskPriority = 'high' | 'medium' | 'low';
 
-// Phase 17: 会話ログの構造化分類タグ（固定7種類）
-export type ConversationTag =
-  | '情報収集'         // 「〜とは何か」「〜の事例を教えて」
-  | '判断相談'         // 「〜と〜どちらがいいか」
-  | '壁の突破'         // 「うまくいかない」「詰まっている」
-  | 'アウトプット生成'  // 「〜を作って」「〜を書いて」
-  | '確認・検証'       // 「これで合っているか」
-  | '整理・構造化'     // 「整理したい」「まとめて」
-  | 'その他';          // 上記に該当しないもの
-
 // AI会話メッセージ
 export interface AiConversationMessage {
   id: string;
@@ -153,7 +119,6 @@ export interface AiConversationMessage {
   content: string;
   timestamp: string;
   phase: TaskPhase;
-  conversationTag?: ConversationTag; // Phase 17: AI自動分類タグ
 }
 
 // タスク
@@ -177,11 +142,6 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
-  // Phase 17: フェーズ遷移タイムスタンプ
-  seedAt?: string;       // 種として登録された日時
-  ideationAt?: string;   // 構想フェーズに入った日時
-  progressAt?: string;   // 進行フェーズに入った日時
-  resultAt?: string;     // 結果フェーズに入った日時
   // メタ情報
   tags: string[];
   assignee?: string;
@@ -223,8 +183,7 @@ export interface TaskAiChatRequest {
 // AI会話レスポンス
 export interface TaskAiChatResponse {
   reply: string;
-  conversationTag?: ConversationTag;     // Phase 17: 分類タグ
-  suggestedPhaseTransition?: TaskPhase;  // フェーズ遷移の提案
+  suggestedPhaseTransition?: TaskPhase; // フェーズ遷移の提案
 }
 
 // タスク提案（メッセージからの自動提案）
@@ -431,16 +390,8 @@ export interface ConnectionTestResponse {
 
 // ===== Phase 4: データ収集基盤（点・線・面） =====
 
-// 理解度レベル（認知→理解→習熟）— Phase 16で廃止予定だが後方互換のため残す
+// 理解度レベル（認知→理解→習熟）
 export type UnderstandingLevel = 'recognition' | 'understanding' | 'mastery';
-
-// Phase 16: ノード登録トリガー（能動的インタラクションのみ）
-export type NodeInteractionTrigger =
-  | 'reply'             // 自分が返信した
-  | 'task_link'         // タスクに紐づけた
-  | 'ai_conversation'   // AI会話の中で使用した
-  | 'seed'              // 「種にする」ボタンを押した
-  | 'manual_mark';      // 手動で「認知マーク」をつけた
 
 // ノードの種類
 export type NodeType = 'keyword' | 'person' | 'project';
@@ -451,10 +402,8 @@ export interface NodeData {
   label: string;           // キーワード・人名・案件名
   type: NodeType;
   userId: string;           // このノードの所有ユーザー
-  frequency: number;        // 頻出度（触れた回数）— 後方互換用
-  // Phase 16: interactionCount が新しい主要指標
-  interactionCount: number; // 累計インタラクション回数（能動的トリガーの合計）
-  understandingLevel: UnderstandingLevel; // Phase 16: 廃止予定だが後方互換で残す
+  frequency: number;        // 頻出度（触れた回数）
+  understandingLevel: UnderstandingLevel;
   // 出現コンテキスト
   firstSeenAt: string;      // 初めて触れた日時
   lastSeenAt: string;       // 最後に触れた日時
@@ -468,6 +417,9 @@ export interface NodeData {
   // Phase 9: コンタクト連携（人物ノードのみ）
   contactId?: string;       // 紐付くContactPersonのID
   relationshipType?: PersonRelationshipType; // コンタクトの関係属性（キャッシュ）
+  // Phase 20: 週次確認
+  userConfirmed?: boolean;  // ユーザーが週次バナーで確認済み
+  confirmedAt?: string;     // 確認日時
 }
 
 // ノードの出現コンテキスト
@@ -475,7 +427,6 @@ export interface NodeSourceContext {
   sourceType: 'message' | 'task_conversation' | 'task_ideation' | 'task_result';
   sourceId: string;         // メッセージIDまたはタスクID
   direction: 'received' | 'sent' | 'self'; // 受信/送信/自分のメモ
-  trigger?: NodeInteractionTrigger; // Phase 16: 登録トリガー種別
   phase?: TaskPhase;        // タスク会話の場合のフェーズ
   timestamp: string;
 }
@@ -555,9 +506,8 @@ export interface NodeMapView {
 export interface NodeFilter {
   userId?: string;
   type?: NodeType;
-  understandingLevel?: UnderstandingLevel; // Phase 16: 後方互換用
+  understandingLevel?: UnderstandingLevel;
   minFrequency?: number;
-  minInteractionCount?: number; // Phase 16: インタラクション回数フィルター
   searchQuery?: string;
 }
 
@@ -723,3 +673,25 @@ export interface CheckpointData {
 
 // ノード表示フィルターモード
 export type NodeFilterMode = 'keyword_only' | 'with_person' | 'with_project' | 'all';
+
+// ===== Phase 20: 週次ノードバナー =====
+
+// 週次確認リクエスト
+export interface WeeklyNodeConfirmRequest {
+  userId: string;
+  nodeIds: string[];         // 選択されたノードID群
+  weekStart: string;         // その週の月曜日（ISO日付 YYYY-MM-DD）
+}
+
+// 週次確認レスポンス
+export interface WeeklyNodeConfirmResponse {
+  confirmedCount: number;
+  updatedNodes: NodeData[];
+}
+
+// 週次ノード取得レスポンス
+export interface WeeklyNodesResponse {
+  nodes: NodeData[];
+  weekStart: string;
+  alreadyConfirmed: boolean; // 今週すでに確認済みか
+}

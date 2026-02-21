@@ -21,6 +21,7 @@ import TaskSuggestions from '@/components/tasks/TaskSuggestions';
 import SeedBox from '@/components/seeds/SeedBox';
 import JobList from '@/components/jobs/JobList';
 import TimelineView from '@/components/timeline/TimelineView';
+import WeeklyNodeBanner from '@/components/weekly/WeeklyNodeBanner';
 import Button from '@/components/ui/Button';
 import { TASK_PRIORITY_CONFIG, TASK_PHASE_CONFIG, BOARD_TAB_CONFIG, VIEW_MODE_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, cn } from '@/lib/utils';
@@ -168,6 +169,9 @@ export default function TasksPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* 左：メインコンテンツ */}
         <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Phase 20: 週次ノードバナー */}
+          <WeeklyNodeBanner userId="demo-user" />
+
           {/* 種ボックス */}
           <div className="px-4 pt-3">
             <SeedBox
