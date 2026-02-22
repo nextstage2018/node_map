@@ -1,12 +1,16 @@
 'use client';
 
 import Image from 'next/image';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { APP_NAME } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { LogOut } from 'lucide-react';
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, isDemo, signOut } = useAuth();
 
   const navItems = [
     { href: '/inbox', label: 'インボックス', icon: '/icons/nav-inbox.svg', enabled: true },
@@ -16,6 +20,11 @@ export default function Header() {
     { href: '/master', label: 'ナレッジマスタ', icon: '/icons/nav-master.svg', enabled: true },
     { href: '/contacts', label: 'コンタクト', icon: '/icons/nav-contacts.svg', enabled: true },
   ];
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
 
   return (
     <header className="h-14 border-b border-slate-200 bg-white flex items-center px-6 shrink-0">
@@ -56,6 +65,27 @@ export default function Header() {
           )
         )}
       </nav>
+      <div className="ml-auto flex items-center gap-3">
+        {!isDemo && user && (
+          <span className="text-xs text-slate-400 hidden sm:block">
+            {user.email}
+          </span>
+        )}
+        {isDemo && (
+          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+            デモ
+          </span>
+        )}
+        {!isDemo && (
+          <button
+            onClick={handleSignOut}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+            title="ログアウト"
+          >
+            <LogOut size={18} />
+          </button>
+        )}
+      </div>
     </header>
   );
 }
