@@ -112,6 +112,16 @@ export type TaskStatus = 'todo' | 'in_progress' | 'done';
 // タスクの優先度
 export type TaskPriority = 'high' | 'medium' | 'low';
 
+// Phase 17: 会話タグ分類（BugFix①: 型定義追加）
+export type ConversationTag =
+  | '情報収集'
+  | '判断相談'
+  | '壁の突破'
+  | 'アウトプット生成'
+  | '確認・検証'
+  | '整理・構造化'
+  | 'その他';
+
 // AI会話メッセージ
 export interface AiConversationMessage {
   id: string;
@@ -119,6 +129,7 @@ export interface AiConversationMessage {
   content: string;
   timestamp: string;
   phase: TaskPhase;
+  conversationTag?: ConversationTag; // Phase 17: 会話タグ
 }
 
 // タスク
@@ -184,6 +195,7 @@ export interface TaskAiChatRequest {
 export interface TaskAiChatResponse {
   reply: string;
   suggestedPhaseTransition?: TaskPhase; // フェーズ遷移の提案
+  conversationTag?: ConversationTag; // Phase 17: 会話タグ
 }
 
 // タスク提案（メッセージからの自動提案）
@@ -345,8 +357,8 @@ export type AuthStatus = 'authenticated' | 'unauthenticated' | 'expired';
 export interface ChannelAuth {
   channel: ChannelAuthType;
   status: AuthStatus;
-  accountName?: string; // 認証済みアカウント名（例: tanaka@company.com）
-  accountIcon?: string; // アバターURL
+  accountName?: string;
+  accountIcon?: string;
   authenticatedAt?: string;
   expiresAt?: string;
 }
@@ -399,51 +411,46 @@ export type NodeType = 'keyword' | 'person' | 'project';
 // ノード（点）：知識・情報の単位
 export interface NodeData {
   id: string;
-  label: string;           // キーワード・人名・案件名
+  label: string;
   type: NodeType;
-  userId: string;           // このノードの所有ユーザー
-  frequency: number;        // 頻出度（触れた回数）
+  userId: string;
+  frequency: number;
   understandingLevel: UnderstandingLevel;
-  // 出現コンテキスト
-  firstSeenAt: string;      // 初めて触れた日時
-  lastSeenAt: string;       // 最後に触れた日時
-  sourceContexts: NodeSourceContext[]; // どこで出現したか
+  firstSeenAt: string;
+  lastSeenAt: string;
+  sourceContexts: NodeSourceContext[];
   createdAt: string;
   updatedAt: string;
-  // Phase 8: ナレッジマスタとの紐付け
-  masterEntryId?: string;   // マスタキーワードへの参照
-  domainId?: string;        // 分類された領域ID
-  fieldId?: string;         // 分類された分野ID
-  // Phase 9: コンタクト連携（人物ノードのみ）
-  contactId?: string;       // 紐付くContactPersonのID
-  relationshipType?: PersonRelationshipType; // コンタクトの関係属性（キャッシュ）
-  // Phase 20: 週次確認
-  userConfirmed?: boolean;  // ユーザーが週次バナーで確認済み
-  confirmedAt?: string;     // 確認日時
+  masterEntryId?: string;
+  domainId?: string;
+  fieldId?: string;
+  contactId?: string;
+  relationshipType?: PersonRelationshipType;
+  userConfirmed?: boolean;
+  confirmedAt?: string;
 }
 
 // ノードの出現コンテキスト
 export interface NodeSourceContext {
   sourceType: 'message' | 'task_conversation' | 'task_ideation' | 'task_result';
-  sourceId: string;         // メッセージIDまたはタスクID
-  direction: 'received' | 'sent' | 'self'; // 受信/送信/自分のメモ
-  phase?: TaskPhase;        // タスク会話の場合のフェーズ
+  sourceId: string;
+  direction: 'received' | 'sent' | 'self';
+  phase?: TaskPhase;
   timestamp: string;
 }
 
 // エッジ（線）：ノード間の思考のつながり
 export interface EdgeData {
   id: string;
-  sourceNodeId: string;     // 始点ノード
-  targetNodeId: string;     // 終点ノード
+  sourceNodeId: string;
+  targetNodeId: string;
   userId: string;
-  weight: number;           // 線の太さ（共起頻度）
-  taskIds: string[];        // 関連するタスクID群
-  edgeType: 'co_occurrence' | 'causal' | 'sequence'; // 共起/因果/順序
-  // Phase 10: 本流/支流・方向性
-  flowType: 'main' | 'tributary';                     // 本流/支流
-  direction: 'forward' | 'backward' | 'bidirectional'; // 方向性
-  checkpointId?: string;                               // 関連するチェックポイント
+  weight: number;
+  taskIds: string[];
+  edgeType: 'co_occurrence' | 'causal' | 'sequence';
+  flowType: 'main' | 'tributary';
+  direction: 'forward' | 'backward' | 'bidirectional';
+  checkpointId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -451,11 +458,11 @@ export interface EdgeData {
 // クラスター（面）：タスクに対する認識範囲
 export interface ClusterData {
   id: string;
-  taskId: string;           // 対応するタスク
+  taskId: string;
   userId: string;
-  clusterType: 'ideation' | 'result'; // 構想面 or 結果面
-  nodeIds: string[];        // 含まれるノードID群
-  summary?: string;         // AIによる要約
+  clusterType: 'ideation' | 'result';
+  nodeIds: string[];
+  summary?: string;
   createdAt: string;
 }
 
@@ -465,9 +472,9 @@ export interface ClusterDiff {
   userId: string;
   ideationNodeIds: string[];
   resultNodeIds: string[];
-  addedNodeIds: string[];   // 結果にあって構想になかったノード
-  removedNodeIds: string[]; // 構想にあって結果になかったノード
-  discoveredOnPath: string[]; // 経路上で発見されたノード
+  addedNodeIds: string[];
+  removedNodeIds: string[];
+  discoveredOnPath: string[];
 }
 
 // キーワード抽出リクエスト
@@ -491,10 +498,10 @@ export interface KeywordExtractionResponse {
 export interface ExtractedKeyword {
   label: string;
   type: NodeType;
-  confidence: number;       // 信頼度 0.0〜1.0
+  confidence: number;
 }
 
-// ノードマップ全体ビュー（Phase 5 UI用の事前定義）
+// ノードマップ全体ビュー
 export interface NodeMapView {
   nodes: NodeData[];
   edges: EdgeData[];
@@ -513,36 +520,30 @@ export interface NodeFilter {
 
 // ===== Phase 5: 思考マップUI =====
 
-// マップの表示モード
 export type MapViewMode = 'base' | 'ideation' | 'path' | 'result';
 
-// 比較モード用ユーザー情報
 export interface MapUser {
   id: string;
   displayName: string;
   avatarColor: string;
 }
 
-// D3用のノード拡張型
 export interface D3Node extends NodeData {
   x?: number;
   y?: number;
   fx?: number | null;
   fy?: number | null;
-  // 表示用
   isHighlighted: boolean;
   isInCluster: boolean;
   clusterType?: 'ideation' | 'result';
 }
 
-// D3用のエッジ拡張型
 export interface D3Edge extends EdgeData {
   source: string | D3Node;
   target: string | D3Node;
   isHighlighted: boolean;
 }
 
-// マップ操作の状態
 export interface MapState {
   viewMode: MapViewMode;
   selectedTaskId: string | null;
@@ -553,103 +554,92 @@ export interface MapState {
 
 // ===== Phase 8: ナレッジマスタ基盤 =====
 
-// 第1階層：領域（組織共通）
 export interface KnowledgeDomain {
   id: string;
   name: string;
   description: string;
-  color: string;           // 表示色（hex）
+  color: string;
   sortOrder: number;
   createdAt: string;
 }
 
-// 第2階層：分野（組織共通）
 export interface KnowledgeField {
   id: string;
-  domainId: string;        // 所属領域
+  domainId: string;
   name: string;
   description: string;
   sortOrder: number;
   createdAt: string;
 }
 
-// 第3階層：マスタキーワード（組織共通）
 export interface KnowledgeMasterEntry {
   id: string;
-  fieldId: string;         // 所属分野
-  label: string;           // 正式名称
-  synonyms: string[];      // 同義語・別名（マッチング用）
+  fieldId: string;
+  label: string;
+  synonyms: string[];
   description?: string;
   createdAt: string;
 }
 
-// ユーザーノード↔マスタの紐付け
 export interface NodeMasterLink {
   nodeId: string;
   masterEntryId: string;
-  confidence: number;      // AI分類の信頼度 0.0〜1.0
-  confirmed: boolean;      // ユーザーが確認済みか
+  confidence: number;
+  confirmed: boolean;
   createdAt: string;
 }
 
-// ナレッジマスタの階層ツリー（API応答用）
 export interface KnowledgeHierarchy {
   domains: (KnowledgeDomain & {
     fields: (KnowledgeField & {
       entries: KnowledgeMasterEntry[];
-      nodeCount: number;    // この分野にリンクされたノード数
+      nodeCount: number;
     })[];
   })[];
   totalEntries: number;
   unclassifiedCount: number;
 }
 
-// 分類結果
 export interface ClassificationResult {
   domainId: string;
   domainName: string;
   fieldId: string;
   fieldName: string;
-  masterEntryId?: string;  // 既存マスタにマッチした場合
+  masterEntryId?: string;
   confidence: number;
 }
 
 // ===== Phase 9: 関係値情報基盤 =====
 
-// 関係属性（自社メンバー / クライアント / パートナー）
 export type PersonRelationshipType = 'internal' | 'client' | 'partner';
 
-// コンタクトのチャネル別アドレス
 export interface ContactChannel {
   channel: ChannelType;
-  address: string;        // メールアドレス / Slack UID / Chatwork AID
-  frequency: number;      // このチャネルでの通信回数
+  address: string;
+  frequency: number;
 }
 
-// 統合コンタクト情報
 export interface ContactPerson {
   id: string;
   name: string;
   channels: ContactChannel[];
   relationshipType: PersonRelationshipType;
-  confidence: number;     // AI推定の信頼度 0.0〜1.0
-  confirmed: boolean;     // ユーザーが関係属性を確認済みか
-  mainChannel: ChannelType; // 最頻出チャネル
-  associatedNodeIds: string[]; // 紐付く人物ノードID群
-  messageCount: number;   // 全チャネル合計の通信回数
-  lastContactAt: string;  // 最終接触日時
+  confidence: number;
+  confirmed: boolean;
+  mainChannel: ChannelType;
+  associatedNodeIds: string[];
+  messageCount: number;
+  lastContactAt: string;
   createdAt: string;
   updatedAt: string;
 }
 
-// コンタクトフィルター
 export interface ContactFilter {
   relationshipType?: PersonRelationshipType;
   channel?: ChannelType;
   searchQuery?: string;
 }
 
-// コンタクト統計
 export interface ContactStats {
   total: number;
   byRelationship: Record<PersonRelationshipType, number>;
@@ -659,39 +649,34 @@ export interface ContactStats {
 
 // ===== Phase 10: 思考マップUI改修 =====
 
-// チェックポイント（タスク進行中のスナップショット）
 export interface CheckpointData {
   id: string;
   taskId: string;
   userId: string;
-  nodeIds: string[];        // スナップショット時のノードID群
+  nodeIds: string[];
   timestamp: string;
-  source: 'auto' | 'manual'; // AI自動記録 or ユーザー手動
-  summary?: string;         // AI要約
+  source: 'auto' | 'manual';
+  summary?: string;
   createdAt: string;
 }
 
-// ノード表示フィルターモード
 export type NodeFilterMode = 'keyword_only' | 'with_person' | 'with_project' | 'all';
 
 // ===== Phase 20: 週次ノードバナー =====
 
-// 週次確認リクエスト
 export interface WeeklyNodeConfirmRequest {
   userId: string;
-  nodeIds: string[];         // 選択されたノードID群
-  weekStart: string;         // その週の月曜日（ISO日付 YYYY-MM-DD）
+  nodeIds: string[];
+  weekStart: string;
 }
 
-// 週次確認レスポンス
 export interface WeeklyNodeConfirmResponse {
   confirmedCount: number;
   updatedNodes: NodeData[];
 }
 
-// 週次ノード取得レスポンス
 export interface WeeklyNodesResponse {
   nodes: NodeData[];
   weekStart: string;
-  alreadyConfirmed: boolean; // 今週すでに確認済みか
+  alreadyConfirmed: boolean;
 }

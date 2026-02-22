@@ -1,5 +1,7 @@
 'use client';
 
+// BugFix⑪: 非同期エラーハンドリング追加
+
 import { useDroppable } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { Task, TaskStatus } from '@/lib/types';
@@ -30,10 +32,24 @@ export default function TaskColumn({
   });
 
   // 未読カウント（最新メッセージがAIの返信であるタスク数）
+  // BugFix⑪: conversations が undefined/null の場合の安全性追加
   const unreadCount = tasks.filter((t) => {
-    if (t.conversations.length === 0) return false;
-    return t.conversations[t.conversations.length - 1].role === 'assistant';
+    const convos = t.conversations;
+    if (!convos || convos.length === 0) return false;
+    return convos[convos.length - 1].role === 'assistant';
   }).length;
+
+  // BugFix⑪: onQuickChat のエラーハンドリングラッパー
+  const handleQuickChat = onQuickChat
+    ? async (taskId: string, message: string) => {
+        try {
+          await onQuickChat(taskId, message);
+        } catch (error) {
+          console.error('Quick chat error:', error);
+          // エラーを握りつぶさず、UIには影響させない
+        }
+      }
+    : undefined;
 
   return (
     <div className="flex flex-col min-w-[260px] max-w-[300px] w-full">
@@ -74,7 +90,7 @@ export default function TaskColumn({
                 task={task}
                 isSelected={task.id === selectedTaskId}
                 onClick={() => onSelectTask(task)}
-                onQuickChat={onQuickChat}
+                onQuickChat={handleQuickChat}
               />
             ))
           )}
