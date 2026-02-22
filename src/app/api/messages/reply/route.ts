@@ -1,7 +1,7 @@
 // src/app/api/messages/reply/route.ts
 // BugFix②: 宛先が空の場合はエラーレスポンスを返す（空文字列配列フォールバック除去）
 // BugFix③: メールアドレスバリデーション追加
-// BugFix④: sendEmailの戻り値型修正（boolean対応）
+// BugFix④: sendEmailの引数形式修正（オブジェクト→個別引数）
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { ChannelType, UnifiedMessage } from '@/lib/types';
@@ -29,17 +29,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // BugFix②: to が空・未指定の場合はエラーを返す（空文字列配列にフォールバックしない）
     const toAddresses: string[] = Array.isArray(to)
       ? to.filter((addr: string) => addr && addr.trim() !== '')
       : [];
 
-    // BugFix④: resultの型を柔軟にし、sendEmailのboolean戻り値に対応
     let result: { messageId?: string } = {};
 
     switch (channel as ChannelType) {
       case 'email': {
-        // BugFix②: メール返信は宛先必須
         if (toAddresses.length === 0) {
           return NextResponse.json(
             { success: false, error: '返信先メールアドレスが指定されていません' },
@@ -47,7 +44,6 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // BugFix③: メールアドレスバリデーション
         const invalidEmails = toAddresses.filter((addr: string) => !isValidEmail(addr));
         if (invalidEmails.length > 0) {
           return NextResponse.json(
@@ -56,21 +52,20 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // BugFix④: sendEmailは booleanを返すため、直接resultに代入せず成否をチェック
-        const emailSuccess = await sendEmail({
-          to: toAddresses,
-          cc: cc || [],
-          subject: subject || 'Re:',
-          body: messageBody,
-          inReplyTo: metadata?.messageId,
-        });
+        // BugFix④: sendEmailは個別引数形式: (to, subject, body, inReplyTo?, cc?)
+        const emailSuccess = await sendEmail(
+          toAddresses,
+          subject || 'Re:',
+          messageBody,
+          metadata?.messageId,
+          cc || []
+        );
         if (!emailSuccess) {
           return NextResponse.json(
             { success: false, error: 'メール送信に失敗しました' },
             { status: 500 }
           );
         }
-        // emailの場合はmessageIdなし（resultは空オブジェクトのまま）
         break;
       }
 
@@ -112,7 +107,6 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    // 送信済みメッセージをDBに保存
     const now = new Date().toISOString();
     const sentMessage: UnifiedMessage = {
       id: `sent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -132,7 +126,6 @@ export async function POST(request: NextRequest) {
       await saveMessages([sentMessage]);
     } catch (saveErr) {
       console.error('Failed to save sent message:', saveErr);
-      // 送信自体は成功しているので、保存失敗は警告のみ
     }
 
     return NextResponse.json({
