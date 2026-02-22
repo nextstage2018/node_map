@@ -1,14 +1,14 @@
-// チェックポイント管理サービス
-// タスク進行中のスナップショットを記録し、思考の軌跡を可視化する
-// AI自動記録＋ユーザー手動記録の2方式
+// ãã§ãã¯ãã¤ã³ãç®¡çãµã¼ãã¹
+// ã¿ã¹ã¯é²è¡ä¸­ã®ã¹ãããã·ã§ãããè¨é²ããæèã®è»è·¡ãå¯è¦åãã
+// AIèªåè¨é²ï¼ã¦ã¼ã¶ã¼æåè¨é²ã®2æ¹å¼
 
 import type { CheckpointData } from '@/lib/types';
 import { getSupabase } from '@/lib/supabase';
 
-// インメモリストア（本番はSupabase）
+// ã¤ã³ã¡ã¢ãªã¹ãã¢ï¼æ¬çªã¯Supabaseï¼
 let checkpointsStore: CheckpointData[] = [];
 
-// デモ用初期データ
+// ãã¢ç¨åæãã¼ã¿
 function initDemoData(): void {
   if (checkpointsStore.length > 0) return;
 
@@ -21,7 +21,7 @@ function initDemoData(): void {
       nodeIds: ['node-1', 'node-2', 'node-9'],
       timestamp: '2026-02-05T10:30:00Z',
       source: 'auto',
-      summary: 'マーケティングとSEO対策の関連性を認識、WebリニューアルPJと紐付け',
+      summary: 'ãã¼ã±ãã£ã³ã°ã¨SEOå¯¾ç­ã®é¢é£æ§ãèªè­ãWebãªãã¥ã¼ã¢ã«PJã¨ç´ä»ã',
       createdAt: '2026-02-05T10:30:00Z',
     },
     {
@@ -31,7 +31,7 @@ function initDemoData(): void {
       nodeIds: ['node-1', 'node-2', 'node-3', 'node-11', 'node-9'],
       timestamp: '2026-02-08T15:00:00Z',
       source: 'manual',
-      summary: 'コンテンツ戦略とユーザーリサーチの視点を追加',
+      summary: 'ã³ã³ãã³ãæ¦ç¥ã¨ã¦ã¼ã¶ã¼ãªãµã¼ãã®è¦ç¹ãè¿½å ',
       createdAt: '2026-02-08T15:00:00Z',
     },
     // ===== user_self: task-demo-2 =====
@@ -42,7 +42,7 @@ function initDemoData(): void {
       nodeIds: ['node-4', 'node-5', 'node-12', 'node-10'],
       timestamp: '2026-02-12T11:00:00Z',
       source: 'auto',
-      summary: 'リスティング広告→LTV分析→コンバージョン率の経路を記録',
+      summary: 'ãªã¹ãã£ã³ã°åºåâLTVåæâã³ã³ãã¼ã¸ã§ã³çã®çµè·¯ãè¨é²',
       createdAt: '2026-02-12T11:00:00Z',
     },
     // ===== user_tanaka: task-tanaka-1 =====
@@ -53,7 +53,7 @@ function initDemoData(): void {
       nodeIds: ['t-node-1', 't-node-2', 't-node-3', 't-node-13'],
       timestamp: '2026-01-22T14:00:00Z',
       source: 'auto',
-      summary: '経営戦略→マーケティング→KPI設計→ROIの流れを整理',
+      summary: 'çµå¶æ¦ç¥âãã¼ã±ãã£ã³ã°âKPIè¨­è¨âROIã®æµããæ´ç',
       createdAt: '2026-01-22T14:00:00Z',
     },
     // ===== user_sato: task-sato-1 =====
@@ -64,7 +64,7 @@ function initDemoData(): void {
       nodeIds: ['s-node-1', 's-node-2', 's-node-3', 's-node-7'],
       timestamp: '2026-02-01T14:00:00Z',
       source: 'manual',
-      summary: 'デザイン→UI/UX→プロトタイプ→フィグマの制作フロー記録',
+      summary: 'ãã¶ã¤ã³âUI/UXâãã­ãã¿ã¤ãâãã£ã°ãã®å¶ä½ãã­ã¼è¨é²',
       createdAt: '2026-02-01T14:00:00Z',
     },
     // ===== user_yamada: task-yamada-1 =====
@@ -75,7 +75,7 @@ function initDemoData(): void {
       nodeIds: ['y-node-1', 'y-node-2', 'y-node-3'],
       timestamp: '2026-01-22T15:00:00Z',
       source: 'auto',
-      summary: 'バックエンド→API設計→データベースの技術構成を記録',
+      summary: 'ããã¯ã¨ã³ãâAPIè¨­è¨âãã¼ã¿ãã¼ã¹ã®æè¡æ§æãè¨é²',
       createdAt: '2026-01-22T15:00:00Z',
     },
   ];
@@ -83,7 +83,7 @@ function initDemoData(): void {
 
 export class CheckpointService {
   /**
-   * タスクのチェックポイント一覧を取得
+   * ã¿ã¹ã¯ã®ãã§ãã¯ãã¤ã³ãä¸è¦§ãåå¾
    */
   static async getCheckpoints(taskId?: string, userId?: string): Promise<CheckpointData[]> {
     const sb = getSupabase();
@@ -133,19 +133,23 @@ export class CheckpointService {
   }
 
   /**
-   * チェックポイントを追加
+   * ãã§ãã¯ãã¤ã³ããè¿½å 
    */
   static async addCheckpoint(
     taskId: string,
     userId: string,
     nodeIds: string[],
     source: 'auto' | 'manual',
-    summary?: string
+    summary?: string,
+    snapshotTimestamp?: string  // チェックポイント対象時点（省略時は現在時刻）
   ): Promise<CheckpointData> {
     const sb = getSupabase();
     if (sb) {
       try {
         const now = new Date().toISOString();
+    // timestamp: チェックポイントが示す時点（スナップショットの対象時刻）
+    // createdAt: このレコードが作成された時刻（常にnow）
+    const targetTimestamp = snapshotTimestamp || now;
 
         const { data, error } = await sb
           .from('checkpoints')
@@ -153,7 +157,7 @@ export class CheckpointService {
             task_id: taskId,
             user_id: userId,
             node_ids: nodeIds,
-            timestamp: now,
+            timestamp: targetTimestamp,  // スナップショット対象時点
             source,
             summary,
             created_at: now,
@@ -187,7 +191,7 @@ export class CheckpointService {
       taskId,
       userId,
       nodeIds,
-      timestamp: now,
+      timestamp: targetTimestamp,  // スナップショット対象時点
       source,
       summary,
       createdAt: now,
@@ -198,7 +202,7 @@ export class CheckpointService {
   }
 
   /**
-   * チェックポイントをIDで取得
+   * ãã§ãã¯ãã¤ã³ããIDã§åå¾
    */
   static async getCheckpointById(id: string): Promise<CheckpointData | null> {
     const sb = getSupabase();
