@@ -1,26 +1,26 @@
-// クラスター（面）管理サービス
-// タスクに対する認識範囲（構想面・結果面）を管理する
+// ã¯ã©ã¹ã¿ã¼ï¼é¢ï¼ç®¡çãµã¼ãã¹
+// ã¿ã¹ã¯ã«å¯¾ããèªè­ç¯å²ï¼æ§æ³é¢ã»çµæé¢ï¼ãç®¡çãã
 
 import { ClusterData, ClusterDiff, NodeData } from '@/lib/types';
 import { getSupabase } from '@/lib/supabase';
 
-// インメモリストア（本番はSupabase）
+// ã¤ã³ã¡ã¢ãªã¹ãã¢ï¼æ¬çªã¯Supabaseï¼
 let clustersStore: ClusterData[] = [];
 
-// デモ用初期データ
+// ãã¢ç¨åæãã¼ã¿
 function initDemoData(): void {
   if (clustersStore.length > 0) return;
 
   clustersStore = [
-    // ===== user_self のクラスター =====
-    // タスク1: Webリニューアル マーケティング方針
+    // ===== user_self ã®ã¯ã©ã¹ã¿ã¼ =====
+    // ã¿ã¹ã¯1: Webãªãã¥ã¼ã¢ã« ãã¼ã±ãã£ã³ã°æ¹é
     {
       id: 'cluster-1',
       taskId: 'task-demo-1',
       userId: 'user_self',
       clusterType: 'ideation',
       nodeIds: ['node-1', 'node-2', 'node-6', 'node-9'],
-      summary: 'Webリニューアル マーケティング方針',
+      summary: 'Webãªãã¥ã¼ã¢ã« ãã¼ã±ãã£ã³ã°æ¹é',
       createdAt: '2026-02-08T09:00:00Z',
     },
     {
@@ -29,17 +29,17 @@ function initDemoData(): void {
       userId: 'user_self',
       clusterType: 'result',
       nodeIds: ['node-1', 'node-2', 'node-3', 'node-6', 'node-9', 'node-11', 'node-12', 'node-13', 'node-14'],
-      summary: 'コンテンツ戦略・ユーザーリサーチ・ブランディング・SNS運用を含む総合方針に拡大',
+      summary: 'ã³ã³ãã³ãæ¦ç¥ã»ã¦ã¼ã¶ã¼ãªãµã¼ãã»ãã©ã³ãã£ã³ã°ã»SNSéç¨ãå«ãç·åæ¹éã«æ¡å¤§',
       createdAt: '2026-02-10T17:00:00Z',
     },
-    // タスク2: 新規顧客獲得の広告施策
+    // ã¿ã¹ã¯2: æ°è¦é¡§å®¢ç²å¾ã®åºåæ½ç­
     {
       id: 'cluster-3',
       taskId: 'task-demo-2',
       userId: 'user_self',
       clusterType: 'ideation',
       nodeIds: ['node-1', 'node-4', 'node-10'],
-      summary: '新規顧客獲得の広告施策',
+      summary: 'æ°è¦é¡§å®¢ç²å¾ã®åºåæ½ç­',
       createdAt: '2026-02-12T09:00:00Z',
     },
     {
@@ -48,18 +48,18 @@ function initDemoData(): void {
       userId: 'user_self',
       clusterType: 'result',
       nodeIds: ['node-1', 'node-2', 'node-4', 'node-5', 'node-10', 'node-12'],
-      summary: 'リスティング広告にSEO・LTV分析・コンバージョン率の視点を加えた施策に拡張',
+      summary: 'ãªã¹ãã£ã³ã°åºåã«SEOã»LTVåæã»ã³ã³ãã¼ã¸ã§ã³çã®è¦ç¹ãå ããæ½ç­ã«æ¡å¼µ',
       createdAt: '2026-02-14T18:00:00Z',
     },
-    // ===== user_tanaka のクラスター =====
-    // タスク: Webリニューアル全体戦略
+    // ===== user_tanaka ã®ã¯ã©ã¹ã¿ã¼ =====
+    // ã¿ã¹ã¯: Webãªãã¥ã¼ã¢ã«å¨ä½æ¦ç¥
     {
       id: 'cluster-t1',
       taskId: 'task-tanaka-1',
       userId: 'user_tanaka',
       clusterType: 'ideation',
       nodeIds: ['t-node-1', 't-node-2', 't-node-10', 't-node-4'],
-      summary: 'Webリニューアル全体戦略',
+      summary: 'Webãªãã¥ã¼ã¢ã«å¨ä½æ¦ç¥',
       createdAt: '2026-01-20T09:00:00Z',
     },
     {
@@ -68,17 +68,17 @@ function initDemoData(): void {
       userId: 'user_tanaka',
       clusterType: 'result',
       nodeIds: ['t-node-1', 't-node-2', 't-node-3', 't-node-4', 't-node-10', 't-node-12', 't-node-13'],
-      summary: 'KPI設計・競合分析・ROIを含む包括的な戦略に発展',
+      summary: 'KPIè¨­è¨ã»ç«¶ååæã»ROIãå«ãåæ¬çãªæ¦ç¥ã«çºå±',
       createdAt: '2026-02-05T17:00:00Z',
     },
-    // タスク: 顧客獲得コスト最適化
+    // ã¿ã¹ã¯: é¡§å®¢ç²å¾ã³ã¹ãæé©å
     {
       id: 'cluster-t3',
       taskId: 'task-tanaka-2',
       userId: 'user_tanaka',
       clusterType: 'ideation',
       nodeIds: ['t-node-11', 't-node-6', 't-node-7'],
-      summary: '顧客獲得コスト最適化',
+      summary: 'é¡§å®¢ç²å¾ã³ã¹ãæé©å',
       createdAt: '2026-02-03T09:00:00Z',
     },
     {
@@ -87,17 +87,17 @@ function initDemoData(): void {
       userId: 'user_tanaka',
       clusterType: 'result',
       nodeIds: ['t-node-5', 't-node-6', 't-node-7', 't-node-11', 't-node-12'],
-      summary: 'SEO・競合分析の視点を追加し、コスト効率の高い施策を特定',
+      summary: 'SEOã»ç«¶ååæã®è¦ç¹ãè¿½å ããã³ã¹ãå¹çã®é«ãæ½ç­ãç¹å®',
       createdAt: '2026-02-10T17:00:00Z',
     },
-    // ===== user_sato のクラスター =====
+    // ===== user_sato ã®ã¯ã©ã¹ã¿ã¼ =====
     {
       id: 'cluster-s1',
       taskId: 'task-sato-1',
       userId: 'user_sato',
       clusterType: 'ideation',
       nodeIds: ['s-node-1', 's-node-2', 's-node-6'],
-      summary: 'WebリニューアルPJ デザイン刷新',
+      summary: 'Webãªãã¥ã¼ã¢ã«PJ ãã¶ã¤ã³å·æ°',
       createdAt: '2026-01-22T09:00:00Z',
     },
     {
@@ -106,17 +106,17 @@ function initDemoData(): void {
       userId: 'user_sato',
       clusterType: 'result',
       nodeIds: ['s-node-1', 's-node-2', 's-node-3', 's-node-4', 's-node-5', 's-node-6', 's-node-7', 's-node-9'],
-      summary: 'プロトタイプ・ユーザーリサーチ・アクセシビリティを加えた包括的なデザイン方針に',
+      summary: 'ãã­ãã¿ã¤ãã»ã¦ã¼ã¶ã¼ãªãµã¼ãã»ã¢ã¯ã»ã·ããªãã£ãå ããåæ¬çãªãã¶ã¤ã³æ¹éã«',
       createdAt: '2026-02-12T17:00:00Z',
     },
-    // ===== user_yamada のクラスター =====
+    // ===== user_yamada ã®ã¯ã©ã¹ã¿ã¼ =====
     {
       id: 'cluster-y1',
       taskId: 'task-yamada-1',
       userId: 'user_yamada',
       clusterType: 'ideation',
       nodeIds: ['y-node-1', 'y-node-2', 'y-node-5'],
-      summary: 'WebリニューアルPJ バックエンド設計',
+      summary: 'Webãªãã¥ã¼ã¢ã«PJ ããã¯ã¨ã³ãè¨­è¨',
       createdAt: '2026-01-22T09:00:00Z',
     },
     {
@@ -125,7 +125,7 @@ function initDemoData(): void {
       userId: 'user_yamada',
       clusterType: 'result',
       nodeIds: ['y-node-1', 'y-node-2', 'y-node-3', 'y-node-4', 'y-node-5', 'y-node-6', 'y-node-7'],
-      summary: 'データベース・セキュリティ・CI/CD・パフォーマンス最適化を含む総合設計に',
+      summary: 'ãã¼ã¿ãã¼ã¹ã»ã»ã­ã¥ãªãã£ã»CI/CDã»ããã©ã¼ãã³ã¹æé©åãå«ãç·åè¨­è¨ã«',
       createdAt: '2026-02-10T17:00:00Z',
     },
   ];
@@ -133,7 +133,7 @@ function initDemoData(): void {
 
 export class ClusterService {
   /**
-   * クラスター一覧取得
+   * ã¯ã©ã¹ã¿ã¼ä¸è¦§åå¾
    */
   static async getClusters(userId: string, taskId?: string): Promise<ClusterData[]> {
     const sb = getSupabase();
@@ -175,7 +175,7 @@ export class ClusterService {
   }
 
   /**
-   * クラスターを作成または更新
+   * ã¯ã©ã¹ã¿ã¼ãä½æã¾ãã¯æ´æ°
    */
   static async upsertCluster(
     taskId: string,
@@ -190,54 +190,38 @@ export class ClusterService {
         const now = new Date().toISOString();
         const uniqueNodeIds = Array.from(new Set(nodeIds));
 
-        // Try to find existing cluster
-        const { data: existing } = await sb
+        // BugFix⑦: ON CONFLICTベースの真のupsert（race condition回避）
+        const { data: upserted, error: upsertError } = await sb
           .from('node_clusters')
-          .select('id')
-          .eq('task_id', taskId)
-          .eq('user_id', userId)
-          .eq('cluster_type', clusterType)
-          .single();
-
-        let clusterId: string;
-        let createdAt: string = now;
-
-        if (existing) {
-          clusterId = existing.id;
-          // Update existing cluster
-          await sb
-            .from('node_clusters')
-            .update({ summary })
-            .eq('id', clusterId);
-
-          // Clear and re-add cluster nodes
-          await sb.from('cluster_nodes').delete().eq('cluster_id', clusterId);
-        } else {
-          // Insert new cluster
-          const { data: newCluster, error: insertError } = await sb
-            .from('node_clusters')
-            .insert({
+          .upsert(
+            {
               task_id: taskId,
               user_id: userId,
               cluster_type: clusterType,
-              summary,
+              summary: summary || '',
               created_at: now,
-            })
-            .select()
-            .single();
+            },
+            {
+              onConflict: 'task_id,user_id,cluster_type',
+            }
+          )
+          .select()
+          .single();
 
-          if (insertError) throw insertError;
-          clusterId = newCluster.id;
-          createdAt = newCluster.created_at;
+        if (upsertError) throw upsertError;
+
+        const clusterId = upserted.id;
+
+        // cluster_nodes をリプレース（DELETE→INSERT）
+        await sb.from('cluster_nodes').delete().eq('cluster_id', clusterId);
+
+        if (uniqueNodeIds.length > 0) {
+          const clusterNodeRows = uniqueNodeIds.map((nodeId: string) => ({
+            cluster_id: clusterId,
+            node_id: nodeId,
+          }));
+          await sb.from('cluster_nodes').insert(clusterNodeRows);
         }
-
-        // Insert cluster node relationships
-        const clusterNodeRows = uniqueNodeIds.map((nodeId) => ({
-          cluster_id: clusterId,
-          node_id: nodeId,
-        }));
-
-        await sb.from('cluster_nodes').insert(clusterNodeRows);
 
         return {
           id: clusterId,
@@ -246,7 +230,7 @@ export class ClusterService {
           clusterType,
           nodeIds: uniqueNodeIds,
           summary,
-          createdAt,
+          createdAt: upserted.created_at,
         };
       } catch (error) {
         console.error('Error upserting cluster to Supabase:', error);
@@ -284,7 +268,7 @@ export class ClusterService {
   }
 
   /**
-   * タスクの構想面と結果面の差分を計算する
+   * ã¿ã¹ã¯ã®æ§æ³é¢ã¨çµæé¢ã®å·®åãè¨ç®ãã
    */
   static async getClusterDiff(taskId: string, userId: string): Promise<ClusterDiff | null> {
     const sb = getSupabase();
@@ -356,7 +340,7 @@ export class ClusterService {
   }
 
   /**
-   * タスクの構想フェーズ会話からクラスターを自動生成する
+   * ã¿ã¹ã¯ã®æ§æ³ãã§ã¼ãºä¼è©±ããã¯ã©ã¹ã¿ã¼ãèªåçæãã
    */
   static async buildIdeationCluster(
     taskId: string,
@@ -369,12 +353,12 @@ export class ClusterService {
       userId,
       'ideation',
       nodeIds,
-      `構想フェーズで認識していた ${nodeIds.length} 個のノード`
+      `æ§æ³ãã§ã¼ãºã§èªè­ãã¦ãã ${nodeIds.length} åã®ãã¼ã`
     );
   }
 
   /**
-   * タスクの結果フェーズ要約からクラスターを自動生成する
+   * ã¿ã¹ã¯ã®çµæãã§ã¼ãºè¦ç´ããã¯ã©ã¹ã¿ã¼ãèªåçæãã
    */
   static async buildResultCluster(
     taskId: string,
@@ -387,7 +371,7 @@ export class ClusterService {
       userId,
       'result',
       nodeIds,
-      `結果フェーズの最終着地範囲 ${nodeIds.length} 個のノード`
+      `çµæãã§ã¼ãºã®æçµçå°ç¯å² ${nodeIds.length} åã®ãã¼ã`
     );
   }
 }
