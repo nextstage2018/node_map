@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       const { error: bulkError } = await supabase
         .from('user_nodes')
         .update({
-          frequency: supabase.rpc ? undefined : undefined, // プレースホルダー
+                  frequency: undefined, // プレースホルダー（RPC未定義時のフォールバック）
         })
         .in('id', nodeIds)
         .eq('user_id', userId);
