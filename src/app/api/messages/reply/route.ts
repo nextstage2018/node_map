@@ -1,7 +1,7 @@
 // src/app/api/messages/reply/route.ts
-// BugFix②: 宛先が空の場合はエラーレスポンスを返す（空文字列配列フォールバック除去）
+// BugFix②: 宛先が空の場合はエラーレスポンスを返す
 // BugFix③: メールアドレスバリデーション追加
-// BugFix④: sendEmailの引数形式修正（オブジェクト→個別引数）
+// BugFix④: 全サービスの引数形式・戻り値型修正
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { ChannelType, UnifiedMessage } from '@/lib/types';
@@ -10,7 +10,6 @@ import { sendSlackMessage } from '@/services/slack/slackClient.service';
 import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service';
 import { saveMessages } from '@/services/inbox/inboxStorage.service';
 
-// BugFix③: メールアドレス簡易バリデーション
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isValidEmail(email: string): boolean {
@@ -33,8 +32,6 @@ export async function POST(request: NextRequest) {
       ? to.filter((addr: string) => addr && addr.trim() !== '')
       : [];
 
-    let result: { messageId?: string } = {};
-
     switch (channel as ChannelType) {
       case 'email': {
         if (toAddresses.length === 0) {
@@ -52,7 +49,7 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // BugFix④: sendEmailは個別引数形式: (to, subject, body, inReplyTo?, cc?)
+        // sendEmail(to, subject, body, inReplyTo?, cc?) => boolean
         const emailSuccess = await sendEmail(
           toAddresses,
           subject || 'Re:',
@@ -77,11 +74,18 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        result = await sendSlackMessage({
-          channel: slackChannel,
-          text: messageBody,
-          threadTs: metadata?.slackThreadTs,
-        });
+        // sendSlackMessage(channelId, text, threadTs?) => boolean
+        const slackSuccess = await sendSlackMessage(
+          slackChannel,
+          messageBody,
+          metadata?.slackThreadTs
+        );
+        if (!slackSuccess) {
+          return NextResponse.json(
+            { success: false, error: 'Slack送信に失敗しました' },
+            { status: 500 }
+          );
+        }
         break;
       }
 
@@ -93,10 +97,17 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        result = await sendChatworkMessage({
+        // sendChatworkMessage(roomId, body) => boolean
+        const cwSuccess = await sendChatworkMessage(
           roomId,
-          body: messageBody,
-        });
+          messageBody
+        );
+        if (!cwSuccess) {
+          return NextResponse.json(
+            { success: false, error: 'Chatwork送信に失敗しました' },
+            { status: 500 }
+          );
+        }
         break;
       }
 
@@ -130,7 +141,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { messageId: result.messageId },
+      data: {},
     });
   } catch (error) {
     console.error('Reply API error:', error);
