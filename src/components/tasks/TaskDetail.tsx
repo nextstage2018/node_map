@@ -25,8 +25,8 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <div className="text-center">
-          <div className="text-4xl mb-3">📋</div>
-          <p>タスクを選択してください</p>
+          <div className="text-4xl mb-3">ð</div>
+          <p>ã¿ã¹ã¯ãé¸æãã¦ãã ãã</p>
         </div>
       </div>
     );
@@ -54,7 +54,7 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
 
   return (
     <div className="flex flex-col h-full">
-      {/* ヘッダー */}
+      {/* ãããã¼ */}
       <div className="px-4 py-3 border-b border-slate-200 bg-white">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2">
@@ -66,7 +66,7 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             </span>
             {task.sourceChannel && (
               <span className="text-[10px] text-slate-400">
-                {CHANNEL_CONFIG[task.sourceChannel].label}から
+                {CHANNEL_CONFIG[task.sourceChannel].label}ãã
               </span>
             )}
           </div>
@@ -76,19 +76,19 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             className="text-xs"
           >
             {task.status === 'todo'
-              ? '▶ 開始'
+              ? 'â¶ éå§'
               : task.status === 'in_progress'
-              ? '✅ 完了'
-              : '↩ 再開'}
+              ? 'â å®äº'
+              : 'â© åé'}
           </Button>
         </div>
         <h2 className="text-base font-bold text-slate-900">{task.title}</h2>
         <p className="text-xs text-slate-400 mt-0.5">
-          作成: {formatRelativeTime(task.createdAt)} ・ 更新: {formatRelativeTime(task.updatedAt)}
+          ä½æ: {formatRelativeTime(task.createdAt)} ã» æ´æ°: {formatRelativeTime(task.updatedAt)}
         </p>
       </div>
 
-      {/* タブ */}
+      {/* ã¿ã */}
       <div className="flex border-b border-slate-200 bg-white">
         <button
           onClick={() => setActiveTab('chat')}
@@ -99,7 +99,7 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
               : 'border-transparent text-slate-400 hover:text-slate-600'
           )}
         >
-          🤖 AI会話
+          ð¤ AIä¼è©±
         </button>
         <button
           onClick={() => setActiveTab('info')}
@@ -110,11 +110,11 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
               : 'border-transparent text-slate-400 hover:text-slate-600'
           )}
         >
-          📝 詳細
+          ð è©³ç´°
         </button>
       </div>
 
-      {/* コンテンツ */}
+      {/* ã³ã³ãã³ã */}
       {activeTab === 'chat' ? (
         <TaskAiChat
           task={task}
@@ -123,14 +123,14 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
         />
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* 進捗サマリー */}
+          {/* é²æãµããªã¼ */}
           <div className="p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
             <div className="flex items-center justify-between mb-2">
               <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', phaseConfig.color)}>
                 {phaseConfig.icon} {phaseConfig.label}
               </span>
               <span className="text-[10px] text-slate-400">
-                作成 {formatRelativeTime(task.createdAt)}
+                ä½æ {formatRelativeTime(task.createdAt)}
               </span>
             </div>
             <div className="flex items-center gap-1 mb-1.5">
@@ -155,38 +155,38 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             </p>
           </div>
 
-          {/* 説明 */}
+          {/* èª¬æ */}
           <div>
             <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              📄 概要
+              ð æ¦è¦
             </h3>
             <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {task.description || '説明なし'}
+              {task.description || 'èª¬æãªã'}
             </p>
           </div>
 
-          {/* 構想メモ（構造化表示） */}
+          {/* æ§æ³ã¡ã¢ï¼æ§é åè¡¨ç¤ºï¼ */}
           {task.ideationSummary && (
             <div>
               <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                💡 構想メモ
+                ð¡ æ§æ³ã¡ã¢
               </h3>
               <div className="space-y-2">
-                {task.ideationSummary.split('\n').map((line, idx) => {
-                  const match = line.match(/^【(.+?)】(.+)$/);
+                {(task.ideationSummary ?? '').split('\n').map((line, idx) => {
+                  const match = line.match(/^ã(.+?)ã(.+)$/);
                   if (match) {
                     const label = match[1];
                     const value = match[2];
                     const iconMap: Record<string, string> = {
-                      'ゴール': '🎯',
-                      '主な内容': '📝',
-                      '気になる点': '⚠️',
-                      '期限日': '📅',
+                      'ã´ã¼ã«': 'ð¯',
+                      'ä¸»ãªåå®¹': 'ð',
+                      'æ°ã«ãªãç¹': 'â ï¸',
+                      'æéæ¥': 'ð',
                     };
                     return (
                       <div key={idx} className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
                         <div className="text-[10px] font-semibold text-amber-600 mb-0.5">
-                          {iconMap[label] || '📌'} {label}
+                          {iconMap[label] || 'ð'} {label}
                         </div>
                         <p className="text-sm text-amber-900">{value}</p>
                       </div>
@@ -202,11 +202,11 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             </div>
           )}
 
-          {/* 結果要約 */}
+          {/* çµæè¦ç´ */}
           {task.resultSummary && (
             <div>
               <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                ✅ 結果要約
+                â çµæè¦ç´
               </h3>
               <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-800 whitespace-pre-wrap leading-relaxed">
                 {task.resultSummary}
@@ -214,11 +214,11 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
             </div>
           )}
 
-          {/* ソース情報 */}
+          {/* ã½ã¼ã¹æå ± */}
           {task.sourceChannel && (
             <div>
               <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                📨 起点メッセージ
+                ð¨ èµ·ç¹ã¡ãã»ã¼ã¸
               </h3>
               <div className="p-3 bg-slate-50 rounded-lg border border-slate-100">
                 <div className="flex items-center gap-2 text-xs text-slate-600">
@@ -228,20 +228,20 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
                   )}>
                     {CHANNEL_CONFIG[task.sourceChannel].label}
                   </span>
-                  <span className="text-slate-400">から作成</span>
+                  <span className="text-slate-400">ããä½æ</span>
                 </div>
               </div>
             </div>
           )}
 
-          {/* タグ */}
+          {/* ã¿ã° */}
           <div>
             <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              🏷️ タグ
+              ð·ï¸ ã¿ã°
             </h3>
             <div className="flex flex-wrap gap-1.5">
-              {task.tags.length > 0 ? (
-                task.tags.map((tag) => (
+              {(task.tags ?? []).length > 0 ? (
+                (task.tags ?? []).map((tag) => (
                   <span
                     key={tag}
                     className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 font-medium"
@@ -250,54 +250,54 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
                   </span>
                 ))
               ) : (
-                <span className="text-xs text-slate-400">タグなし</span>
+                <span className="text-xs text-slate-400">ã¿ã°ãªã</span>
               )}
             </div>
           </div>
 
-          {/* タイムライン & 会話統計 */}
+          {/* ã¿ã¤ã ã©ã¤ã³ & ä¼è©±çµ±è¨ */}
           <div>
             <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              📊 アクティビティ
+              ð ã¢ã¯ãã£ããã£
             </h3>
             <div className="space-y-2">
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span className="text-xs text-slate-600">構想</span>
+                  <span className="text-xs text-slate-600">æ§æ³</span>
                 </div>
                 <span className="text-xs font-medium text-slate-700">
-                  {task.conversations.filter((c) => c.phase === 'ideation').length}件
+                  {(task.conversations ?? []).filter((c) => c.phase === 'ideation').length}ä»¶
                 </span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  <span className="text-xs text-slate-600">進行</span>
+                  <span className="text-xs text-slate-600">é²è¡</span>
                 </div>
                 <span className="text-xs font-medium text-slate-700">
-                  {task.conversations.filter((c) => c.phase === 'progress').length}件
+                  {(task.conversations ?? []).filter((c) => c.phase === 'progress').length}ä»¶
                 </span>
               </div>
               <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
                 <div className="flex items-center gap-2">
                   <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                  <span className="text-xs text-slate-600">結果</span>
+                  <span className="text-xs text-slate-600">çµæ</span>
                 </div>
                 <span className="text-xs font-medium text-slate-700">
-                  {task.conversations.filter((c) => c.phase === 'result').length}件
+                  {(task.conversations ?? []).filter((c) => c.phase === 'result').length}ä»¶
                 </span>
               </div>
             </div>
             <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">最終更新</span>
+              <span className="text-[10px] text-slate-400">æçµæ´æ°</span>
               <span className="text-[10px] text-slate-500 font-medium">
                 {formatRelativeTime(task.updatedAt)}
               </span>
             </div>
             {task.completedAt && (
               <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-slate-400">完了日</span>
+                <span className="text-[10px] text-slate-400">å®äºæ¥</span>
                 <span className="text-[10px] text-green-600 font-medium">
                   {formatRelativeTime(task.completedAt)}
                 </span>
