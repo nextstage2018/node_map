@@ -1,6 +1,7 @@
 // src/app/api/messages/reply/route.ts
 // BugFix②: 宛先が空の場合はエラーレスポンスを返す（空文字列配列フォールバック除去）
 // BugFix③: メールアドレスバリデーション追加
+// BugFix④: sendEmailの戻り値型修正（boolean対応）
 
 import { NextRequest, NextResponse } from 'next/server';
 import type { ChannelType, UnifiedMessage } from '@/lib/types';
@@ -29,8 +30,11 @@ export async function POST(request: NextRequest) {
     }
 
     // BugFix②: to が空・未指定の場合はエラーを返す（空文字列配列にフォールバックしない）
-    const toAddresses: string[] = Array.isArray(to) ? to.filter((addr: string) => addr && addr.trim() !== '') : [];
+    const toAddresses: string[] = Array.isArray(to)
+      ? to.filter((addr: string) => addr && addr.trim() !== '')
+      : [];
 
+    // BugFix④: resultの型を柔軟にし、sendEmailのboolean戻り値に対応
     let result: { messageId?: string } = {};
 
     switch (channel as ChannelType) {
@@ -42,6 +46,7 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
+
         // BugFix③: メールアドレスバリデーション
         const invalidEmails = toAddresses.filter((addr: string) => !isValidEmail(addr));
         if (invalidEmails.length > 0) {
@@ -50,13 +55,22 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        result = await sendEmail({
+
+        // BugFix④: sendEmailは booleanを返すため、直接resultに代入せず成否をチェック
+        const emailSuccess = await sendEmail({
           to: toAddresses,
           cc: cc || [],
           subject: subject || 'Re:',
           body: messageBody,
           inReplyTo: metadata?.messageId,
         });
+        if (!emailSuccess) {
+          return NextResponse.json(
+            { success: false, error: 'メール送信に失敗しました' },
+            { status: 500 }
+          );
+        }
+        // emailの場合はmessageIdなし（resultは空オブジェクトのまま）
         break;
       }
 
