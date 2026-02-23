@@ -3,12 +3,14 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const taskId = searchParams.get('taskId');
-    const userId = searchParams.get('userId') || 'demo-user';
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
 
     if (!taskId) {
       return NextResponse.json(
