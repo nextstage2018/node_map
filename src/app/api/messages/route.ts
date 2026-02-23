@@ -8,12 +8,16 @@ import { cache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
 import { generateThreadSummary } from '@/services/ai/aiClient.service';
 import { saveMessages, getBlocklist } from '@/services/inbox/inboxStorage.service';
 import { isSupabaseConfigured } from '@/lib/supabase';
+import { getServerUserId } from '@/lib/serverAuth';
 // force dynamic rendering to prevent static cache
 export const dynamic = 'force-dynamic';
 
 
 export async function GET(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを取得
+    const userId = await getServerUserId();
+
     // ページネーションパラメータ
     const searchParams = request.nextUrl.searchParams;
     const page = Number(searchParams.get('page')) || 1;
@@ -113,6 +117,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 【Phase 4】メッセージからキーワードを抽出してノードに蓄積（非同期・エラー無視）
+    // Phase 22: 認証ユーザーIDを使用
     Promise.allSettled(
       allMessages.map((msg) =>
         NodeService.processText({
@@ -120,7 +125,7 @@ export async function GET(request: NextRequest) {
           sourceType: 'message',
           sourceId: msg.id,
           direction: msg.from.name === 'あなた' ? 'sent' : 'received',
-          userId: 'demo-user',
+          userId: userId,
         })
       )
     ).catch(() => {
