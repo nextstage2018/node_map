@@ -1,24 +1,36 @@
 /**
  * Phase 22: サーバーサイド認証ヘルパー
  * APIルートでログインユーザーIDを取得するためのユーティリティ
+ * 
+ * Phase 22.5: デモモード廃止 → 認証必須化
  */
+
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { isSupabaseConfigured } from './supabase';
 
-const DEMO_USER_ID = 'demo-user-001';
+/**
+ * 認証エラークラス
+ * API ルートで catch してステータス 401 を返すために使用
+ */
+export class AuthenticationError extends Error {
+  constructor(message = '認証が必要です。ログインしてください。') {
+    super(message);
+    this.name = 'AuthenticationError';
+  }
+}
 
 /**
  * サーバーサイドでリクエストから認証済みユーザーIDを取得する
- * Supabase未設定時（デモモード）は固定のデモユーザーIDを返す
+ * 未認証の場合は AuthenticationError をスローする
  *
  * 使い方（APIルート内）:
  *   const userId = await getServerUserId();
  */
 export async function getServerUserId(): Promise<string> {
-  // デモモード: Supabase未設定時
+  // Supabase未設定時はエラー（デモモード廃止）
   if (!isSupabaseConfigured()) {
-    return DEMO_USER_ID;
+    throw new AuthenticationError('Supabase が設定されていません。');
   }
 
   try {
@@ -52,9 +64,7 @@ export async function getServerUserId(): Promise<string> {
     }
 
     if (!accessToken) {
-      // トークンが見つからない場合はデモモードにフォールバック
-      console.warn('[serverAuth] No auth token found in cookies, falling back to demo mode');
-      return DEMO_USER_ID;
+      throw new AuthenticationError('認証トークンが見つかりません。ログインしてください。');
     }
 
     // トークンを使ってSupabaseクライアントを作成し、ユーザー情報を取得
@@ -69,24 +79,28 @@ export async function getServerUserId(): Promise<string> {
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
-      console.warn('[serverAuth] Failed to get user from token:', error?.message);
-      return DEMO_USER_ID;
+      throw new AuthenticationError('セッションが無効です。再ログインしてください。');
     }
 
     return user.id;
   } catch (error) {
+    // AuthenticationError はそのまま再スロー
+    if (error instanceof AuthenticationError) {
+      throw error;
+    }
     console.error('[serverAuth] Unexpected error:', error);
-    return DEMO_USER_ID;
+    throw new AuthenticationError('認証処理中にエラーが発生しました。');
   }
 }
 
 /**
  * サーバーサイドで認証済みSupabaseクライアントを作成する
  * RLSポリシーがユーザーのコンテキストで適用される
+ * 未認証の場合は null ではなく AuthenticationError をスロー
  */
 export async function createAuthenticatedClient() {
   if (!isSupabaseConfigured()) {
-    return null;
+    throw new AuthenticationError('Supabase が設定されていません。');
   }
 
   try {
@@ -115,7 +129,7 @@ export async function createAuthenticatedClient() {
     }
 
     if (!accessToken) {
-      return null;
+      throw new AuthenticationError('認証トークンが見つかりません。');
     }
 
     return createClient(supabaseUrl, supabaseAnonKey, {
@@ -125,7 +139,10 @@ export async function createAuthenticatedClient() {
         },
       },
     });
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof AuthenticationError) {
+      throw error;
+    }
+    throw new AuthenticationError('認証クライアントの作成に失敗しました。');
   }
 }
