@@ -19,6 +19,10 @@ export interface UnifiedMessage {
     name: string;
     address: string;
   }[];
+    cc?: {
+          name: string;
+          address: string;
+    }[];
   subject?: string; // email only
   body: string;
   bodyHtml?: string;
