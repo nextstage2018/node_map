@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { CreateJobRequest, JobStatus } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
-// ジョブ一覧取得
+// ジョブ一覧取得（Phase 22: 認証ユーザーIDでフィルタリング）
 export async function GET() {
   try {
-    const jobs = await TaskService.getJobs();
+    const userId = await getServerUserId();
+    const jobs = await TaskService.getJobs(userId);
     return NextResponse.json({ success: true, data: jobs });
   } catch (error) {
     console.error('ジョブ取得エラー:', error);
@@ -16,9 +18,10 @@ export async function GET() {
   }
 }
 
-// ジョブ作成
+// ジョブ作成（Phase 22: 認証ユーザーIDを付与）
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body: CreateJobRequest = await request.json();
     if (!body.title) {
       return NextResponse.json(
@@ -26,7 +29,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const job = await TaskService.createJob(body);
+    const job = await TaskService.createJob({ ...body, userId });
     return NextResponse.json({ success: true, data: job });
   } catch (error) {
     console.error('ジョブ作成エラー:', error);
