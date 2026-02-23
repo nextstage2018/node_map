@@ -8,7 +8,7 @@ import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, Target, FileText, A
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   '/icons/nav-inbox.svg': Inbox,
   '/icons/nav-tasks.svg': CheckSquare,
-  '/icons/nav-map.svg': Map
+  '/icons/nav-map.svg': Map,
   '/icons/nav-contacts.svg': Users,
   '/icons/nav-master.svg': BookOpen,
   '/icons/nav-settings.svg': Settings,
