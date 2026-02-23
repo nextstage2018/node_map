@@ -4,6 +4,9 @@ import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 // GET: ノードマップ全体データ取得（Phase 22: 認証ユーザーIDを使用）
 export async function GET(req: NextRequest) {
   try {
