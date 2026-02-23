@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 /**
  * リアクション管理API
  *
