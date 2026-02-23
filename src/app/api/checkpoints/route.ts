@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { CheckpointService } from '@/services/nodemap/checkpoint.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // GET: チェックポイント一覧取得
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const taskId = searchParams.get('taskId') || undefined;
-  const userId = searchParams.get('userId') || undefined;
+  // Phase 22: 認証ユーザーIDを使用
+  const userId = await getServerUserId();
 
   const checkpoints = await CheckpointService.getCheckpoints(taskId, userId);
   return NextResponse.json(checkpoints);
@@ -13,11 +15,13 @@ export async function GET(request: Request) {
 
 // POST: チェックポイント追加
 export async function POST(request: Request) {
+  // Phase 22: 認証ユーザーIDを使用
+  const userId = await getServerUserId();
   const body = await request.json();
-  const { taskId, userId, nodeIds, source, summary } = body;
+  const { taskId, nodeIds, source, summary } = body;
 
-  if (!taskId || !userId || !nodeIds) {
-    return NextResponse.json({ error: 'taskId, userId, nodeIds are required' }, { status: 400 });
+  if (!taskId || !nodeIds) {
+    return NextResponse.json({ error: 'taskId, nodeIds are required' }, { status: 400 });
   }
 
   const checkpoint = await CheckpointService.addCheckpoint(
