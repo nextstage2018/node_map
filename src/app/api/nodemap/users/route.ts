@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { MapUser } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // デモ用ユーザーリスト
 const demoUsers: MapUser[] = [
@@ -10,5 +11,7 @@ const demoUsers: MapUser[] = [
 ];
 
 export async function GET() {
+  // Phase 22: 認証確認（将来的にユーザーDB連携予定）
+  await getServerUserId();
   return NextResponse.json({ success: true, data: demoUsers });
 }
