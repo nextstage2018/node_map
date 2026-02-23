@@ -1,54 +1,47 @@
-// ノード（点）API
-// GET: ノード一覧取得（フィルター対応）
-// POST: ノード手動追加
-
 import { NextRequest, NextResponse } from 'next/server';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
-import { NodeFilter, NodeType } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
+// ノード一覧取得（Phase 22: 認証ユーザーID適用）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const filter: NodeFilter = {};
+    // Phase 22: クエリパラメータのuserIdではなく認証ユーザーIDを使用
+    const userId = await getServerUserId();
+    const type = searchParams.get('type') || undefined;
+    const level = searchParams.get('level') || undefined;
+    const minFrequency = searchParams.get('minFrequency')
+      ? Number(searchParams.get('minFrequency'))
+      : undefined;
+    const q = searchParams.get('q') || undefined;
 
-    const userId = searchParams.get('userId') || 'demo-user';
-    filter.userId = userId;
+    // バリデーション
+    const validTypes = ['keyword', 'person', 'project'];
+    const validLevels = ['recognition', 'understanding', 'mastery'];
 
-    const type = searchParams.get('type');
-    if (type && ['keyword', 'person', 'project'].includes(type)) {
-      filter.type = type as NodeType;
-    }
+    const filters: Record<string, unknown> = { userId };
+    if (type && validTypes.includes(type)) filters.type = type;
+    if (level && validLevels.includes(level)) filters.level = level;
+    if (minFrequency) filters.minFrequency = minFrequency;
+    if (q) filters.q = q;
 
-    const level = searchParams.get('level');
-    if (level && ['recognition', 'understanding', 'mastery'].includes(level)) {
-      filter.understandingLevel = level as NodeFilter['understandingLevel'];
-    }
-
-    const minFreq = searchParams.get('minFrequency');
-    if (minFreq) {
-      filter.minFrequency = parseInt(minFreq, 10);
-    }
-
-    const q = searchParams.get('q');
-    if (q) {
-      filter.searchQuery = q;
-    }
-
-    const nodes = await NodeService.getNodes(filter);
+    const nodes = await NodeService.getNodes(filters);
     return NextResponse.json({ success: true, data: nodes });
   } catch (error) {
     console.error('ノード取得エラー:', error);
     return NextResponse.json(
-      { success: false, error: 'ノード一覧の取得に失敗しました' },
+      { success: false, error: 'ノードの取得に失敗しました' },
       { status: 500 }
     );
   }
 }
 
+// ノード手動登録/更新（Phase 22: 認証ユーザーID適用）
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body = await request.json();
-    const { label, type, userId } = body;
+    const { label, type, sourceId, direction } = body;
 
     if (!label || !type) {
       return NextResponse.json(
@@ -59,23 +52,17 @@ export async function POST(request: NextRequest) {
 
     const context = {
       sourceType: 'message' as const,
-      sourceId: body.sourceId || 'manual',
-      direction: body.direction || ('self' as const),
+      sourceId: sourceId || 'manual',
+      direction: direction || ('self' as const),
       timestamp: new Date().toISOString(),
     };
 
-    const node = await NodeService.upsertNode(
-      label,
-      type as NodeType,
-      userId || 'demo-user',
-      context
-    );
-
+    const node = await NodeService.upsertNode(label, type, userId, context);
     return NextResponse.json({ success: true, data: node });
   } catch (error) {
-    console.error('ノード作成エラー:', error);
+    console.error('ノード登録エラー:', error);
     return NextResponse.json(
-      { success: false, error: 'ノードの作成に失敗しました' },
+      { success: false, error: 'ノードの登録に失敗しました' },
       { status: 500 }
     );
   }
