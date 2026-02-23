@@ -5,6 +5,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     // Phase 22: 認証ユーザーIDを使用
