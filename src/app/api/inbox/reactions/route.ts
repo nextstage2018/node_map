@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import { getServerUserId } from '@/lib/serverAuth';
 
 /**
  * リアクション管理API
@@ -11,6 +12,9 @@ import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 // リアクション一覧取得
 export async function GET(req: NextRequest) {
+  // Phase 22: 認証確認
+  await getServerUserId();
+
   const messageId = req.nextUrl.searchParams.get('messageId');
 
   if (!messageId) {
@@ -44,6 +48,9 @@ export async function GET(req: NextRequest) {
 // リアクション追加
 export async function POST(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
+
     const body = await req.json();
     const { messageId, channel, emoji, emojiName } = body;
 
@@ -94,6 +101,9 @@ export async function POST(req: NextRequest) {
 
 // リアクション削除
 export async function DELETE(req: NextRequest) {
+  // Phase 22: 認証確認
+  await getServerUserId();
+
   const messageId = req.nextUrl.searchParams.get('messageId');
   const emoji = req.nextUrl.searchParams.get('emoji');
 
