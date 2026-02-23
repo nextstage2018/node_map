@@ -111,7 +111,7 @@
 | フロントエンド | Next.js 14 (App Router) + React + TypeScript | ✅ 確定 |
 | CSS | Tailwind CSS 3 | ✅ 確定 |
 | ホスティング | Vercel | ✅ 確定 |
-| データベース | Supabase（PostgreSQL） | ✅ 確定（スキーマ作成済・未接続） |
+| データベース | Supabase（PostgreSQL） | ✅ 確定（全テーブル作成済・実接続済み） |
 | AI | Anthropic Claude API（claude-opus-4-5） | ✅ 確定（デモモード対応） |
 | D&D | @dnd-kit/core + @dnd-kit/sortable | ✅ 確定 |
 | グラフ表示 | D3.js（@types/d3） | ✅ 確定 |
@@ -124,12 +124,14 @@
 | サービス | APIキー取得 | 備考 |
 |----------|-----------|------|
 | Gmail / メール | ✅ 接続済み | IMAP/SMTP。Vercel環境変数に設定済み。MIMEパーサー実装済み |
-| Slack | ⬜ 未取得 | Bot Token。設定画面のadmin設定で入力可能 |
+| Slack | ✅ 接続済み | Bot Token。Vercel環境変数に設定済み。実API対応・ユーザーキャッシュ・DM対応 |
 | Chatwork | ✅ 接続済み | APIトークン。Vercel環境変数に設定済み。75メッセージ取得確認済み |
 | Anthropic | ✅ 接続済み | APIキー。Vercel環境変数に設定済み |
 | Supabase | ✅ 接続済み | URL + Anon Key。Vercel連携で自動設定済み |
 
-> Gmail・Chatwork・Anthropic・Supabaseが実接続済み。Slackのみ未接続（Bot Token未取得）。
+| Supabase Auth | ✅ 接続済み | メール+パスワード認証。Phase 21で実装済み |
+
+> 全6サービスが実接続済み。
 
 ---
 
@@ -914,7 +916,7 @@ node_map/
 
 ---
 
-#### Phase 18：インボックスから「種にする」+ AIタスク化提案（仕様書④）
+#### Phase 18：インボックスから「種にする」+ AIタスク化提案（仕様書④） ✅ 完了（2026-02-20）
 - **優先度：** ★★☆（中）| **実装難易度：** 中 | **依存：** Phase 16（ノード登録にトリガー④が関連）
 - **仕様書対応：** ④受信メッセージへのAIタスク化提案 + 既存の「種にする」機能
 - **理由：** インボックスとタスクボードをつなぐ重要機能。AIが「タスク化すべきか」を判断し、対応範囲の選択肢も提示
