@@ -366,7 +366,8 @@ function mapSeedFromDb(dbRow: any): Seed {
 
 export class TaskService {
   // タスク一覧取得
-  static async getTasks(): Promise<Task[]> {
+  // Phase 22: userIdパラメータ追加（認証ユーザーでフィルタリング）
+  static async getTasks(userId?: string): Promise<Task[]> {
     const sb = getSupabase();
 
     if (!sb) {
@@ -378,10 +379,17 @@ export class TaskService {
 
     try {
       // Query tasks ordered by updated_at DESC
-      const { data: tasks, error } = await sb
+      let query = sb
         .from('tasks')
         .select('*')
         .order('updated_at', { ascending: false });
+
+      // Phase 22: userIdが指定されていればフィルタリング
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data: tasks, error } = await query;
 
       if (error) throw error;
 
@@ -491,6 +499,7 @@ export class TaskService {
           tags: newTask.tags,
           created_at: newTask.createdAt,
           updated_at: newTask.updatedAt,
+          user_id: (req as any).userId,  // Phase 22: ユーザーID付与
         })
         .select()
         .single();
@@ -682,7 +691,8 @@ export class TaskService {
 
   // ===== ジョブ管理 =====
 
-  static async getJobs(): Promise<Job[]> {
+  // Phase 22: userIdパラメータ追加（認証ユーザーでフィルタリング）
+  static async getJobs(userId?: string): Promise<Job[]> {
     const sb = getSupabase();
 
     if (!sb) {
@@ -693,10 +703,17 @@ export class TaskService {
     }
 
     try {
-      const { data: jobs, error } = await sb
+      let query = sb
         .from('jobs')
         .select('*')
         .order('updated_at', { ascending: false });
+
+      // Phase 22: userIdが指定されていればフィルタリング
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data: jobs, error } = await query;
 
       if (error) throw error;
 
@@ -746,6 +763,7 @@ export class TaskService {
           source_channel: newJob.sourceChannel,
           created_at: newJob.createdAt,
           updated_at: newJob.updatedAt,
+          user_id: (req as any).userId,  // Phase 22: ユーザーID付与
         })
         .select()
         .single();
