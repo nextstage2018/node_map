@@ -6,9 +6,12 @@ import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { KeywordExtractionRequest } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
     const body: KeywordExtractionRequest = await request.json();
 
     if (!body.text) {
@@ -24,7 +27,7 @@ export async function POST(request: NextRequest) {
       sourceType: body.sourceType || 'message',
       sourceId: body.sourceId || `extract-${Date.now()}`,
       direction: body.direction || 'self',
-      userId: body.userId || 'demo-user',
+      userId: userId,
       phase: body.phase,
     });
 
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
       const taskId = body.sourceId || `extract-${Date.now()}`;
       edges = await EdgeService.createCoOccurrenceEdges(
         extractedNodes,
-        body.userId || 'demo-user',
+        userId,
         taskId
       );
     }
@@ -44,13 +47,13 @@ export async function POST(request: NextRequest) {
     if (body.sourceType === 'task_ideation' && extractedNodes.length > 0) {
       cluster = await ClusterService.buildIdeationCluster(
         body.sourceId,
-        body.userId || 'demo-user',
+        userId,
         extractedNodes
       );
     } else if (body.sourceType === 'task_result' && extractedNodes.length > 0) {
       cluster = await ClusterService.buildResultCluster(
         body.sourceId,
-        body.userId || 'demo-user',
+        userId,
         extractedNodes
       );
     }
