@@ -3,6 +3,9 @@ import { TaskService } from '@/services/task/taskClient.service';
 import { CreateJobRequest, JobStatus } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 // ジョブ一覧取得（Phase 22: 認証ユーザーIDでフィルタリング）
 export async function GET() {
   try {
