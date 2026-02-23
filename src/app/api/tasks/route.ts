@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { CreateTaskRequest, UpdateTaskRequest } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
-// タスク一覧取得
+// タスク一覧取得（Phase 22: 認証ユーザーIDでフィルタリング）
 export async function GET() {
   try {
-    const tasks = await TaskService.getTasks();
+    const userId = await getServerUserId();
+    const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
   } catch (error) {
     console.error('タスク取得エラー:', error);
@@ -16,9 +18,10 @@ export async function GET() {
   }
 }
 
-// タスク作成
+// タスク作成（Phase 22: 認証ユーザーIDを付与）
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body: CreateTaskRequest = await request.json();
 
     if (!body.title) {
@@ -28,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const task = await TaskService.createTask(body);
+    const task = await TaskService.createTask({ ...body, userId });
     return NextResponse.json({ success: true, data: task });
   } catch (error) {
     console.error('タスク作成エラー:', error);
