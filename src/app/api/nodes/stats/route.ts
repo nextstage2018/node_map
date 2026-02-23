@@ -3,11 +3,12 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || 'demo-user';
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
 
     const stats = await NodeService.getStats(userId);
     return NextResponse.json({ success: true, data: stats });
