@@ -1165,3 +1165,23 @@ ai-agent/
 > - 次のフェーズへの引き継ぎメモを記入する
 > - sjinjiさんはCHECKPOINTの確認結果を口頭でエージェントに伝えればOK
 
+
+**Vercelデプロイ確認（2026-02-23）：**
+- /inbox ページ：サイドバー日本語表示（チャンネル・すべて）正常確認済み
+- login/signup ページ：日本語表示正常確認済み
+
+**Phase 21 総点検結果（2026-02-23）：**
+- 認証フロー関連の全10ファイルを確認完了
+- AuthProvider.tsx — Context/セッション管理正常
+- middleware.ts — パス除外・デモモード対応正常（未使用import軽微）
+- login/page.tsx — 日本語UI正常
+- signup/page.tsx — パスワード検証・メール確認フロー正常
+- useAuthUserId.ts — デモフォールバック正常
+- Header.tsx — ログアウト・デモバッジ正常
+- auth/callback/route.ts — コード交換・エラーリダイレクト正常
+- layout.tsx — AuthProvider適用正常
+- next.config.mjs — ignoreBuildErrors:true（既知の一時対応）
+- Sidebar.tsx — 文字化け3箇所修正済み + Mapカンマ復元済み
+
+**ビルド修正追記（2026-02-23）：**
+- Sidebar.tsx — 文字化け修正（チャンネル・すべて 3箇所）+ Mapカンマ復元
