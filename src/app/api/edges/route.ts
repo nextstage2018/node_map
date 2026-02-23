@@ -1,14 +1,12 @@
-// エッジ（線）API
-// GET: エッジ一覧取得
-// POST: エッジ手動追加
-
 import { NextRequest, NextResponse } from 'next/server';
 import { EdgeService } from '@/services/nodemap/edgeClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
+// エッジ一覧取得（Phase 22: 認証ユーザーID適用）
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || 'demo-user';
+    const userId = await getServerUserId();
     const taskId = searchParams.get('taskId') || undefined;
 
     const edges = await EdgeService.getEdges(userId, taskId);
@@ -16,16 +14,18 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('エッジ取得エラー:', error);
     return NextResponse.json(
-      { success: false, error: 'エッジ一覧の取得に失敗しました' },
+      { success: false, error: 'エッジの取得に失敗しました' },
       { status: 500 }
     );
   }
 }
 
+// エッジ作成/更新（Phase 22: 認証ユーザーID適用）
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body = await request.json();
-    const { sourceNodeId, targetNodeId, userId, taskId, edgeType } = body;
+    const { sourceNodeId, targetNodeId, taskId, edgeType } = body;
 
     if (!sourceNodeId || !targetNodeId) {
       return NextResponse.json(
@@ -37,11 +37,10 @@ export async function POST(request: NextRequest) {
     const edge = await EdgeService.upsertEdge(
       sourceNodeId,
       targetNodeId,
-      userId || 'demo-user',
-      taskId || 'manual',
+      userId,
+      taskId,
       edgeType || 'co_occurrence'
     );
-
     return NextResponse.json({ success: true, data: edge });
   } catch (error) {
     console.error('エッジ作成エラー:', error);
