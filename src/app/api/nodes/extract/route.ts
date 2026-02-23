@@ -8,6 +8,9 @@ import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { KeywordExtractionRequest } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 
+// force dynamic rendering to prevent static cache
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Phase 22: 認証ユーザーIDを使用
