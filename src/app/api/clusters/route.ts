@@ -4,11 +4,13 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || 'demo-user';
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
     const taskId = searchParams.get('taskId') || undefined;
 
     const clusters = await ClusterService.getClusters(userId, taskId);
@@ -24,8 +26,10 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
     const body = await request.json();
-    const { taskId, userId, clusterType, nodeIds, summary } = body;
+    const { taskId, clusterType, nodeIds, summary } = body;
 
     if (!taskId || !clusterType || !nodeIds || !Array.isArray(nodeIds)) {
       return NextResponse.json(
@@ -36,7 +40,7 @@ export async function POST(request: NextRequest) {
 
     const cluster = await ClusterService.upsertCluster(
       taskId,
-      userId || 'demo-user',
+      userId,
       clusterType,
       nodeIds,
       summary
