@@ -1,6 +1,9 @@
+/**
+ * Phase 22.5: 認証ミドルウェア
+ * デモモード廃止 → 未認証ユーザーはログイン画面にリダイレクト
+ */
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
 // Supabaseが設定されているか判定
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -13,29 +16,53 @@ const publicPaths = ['/login', '/signup', '/auth/callback'];
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Supabase未設定時はデモモード（リダイレクトしない）
-  if (!isConfigured) {
-    return NextResponse.next();
-  }
-
-  // 公開パス、APIルート、静的ファイルはスキップ
+  // 公開パス、静的ファイルはスキップ
   if (
     publicPaths.some(p => pathname.startsWith(p)) ||
-    pathname.startsWith('/api/') ||
     pathname.startsWith('/_next/') ||
     pathname.includes('.')
   ) {
     return NextResponse.next();
   }
 
-  // Supabase Authのセッショントークンを確認
-  const accessToken = request.cookies.get('sb-access-token')?.value
-    || request.cookies.get(`sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`)?.value;
+  // Supabase未設定時もログインページにリダイレクト（デモモード廃止）
+  if (!isConfigured) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: 'Supabase が設定されていません' },
+        { status: 503 }
+      );
+    }
+    // ログインページ自体は表示（エラーメッセージ表示用）
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('error', 'not_configured');
+    return NextResponse.redirect(loginUrl);
+  }
 
-  if (!accessToken) {
-    // トークンがない場合、localStorageのトークンはサーバー側で確認できないため
-    // クライアント側でAuthProviderがリダイレクトを処理
-    return NextResponse.next();
+  // Supabase Authのセッショントークンを確認
+  let hasToken = false;
+  const allCookies = request.cookies.getAll();
+
+  for (const cookie of allCookies) {
+    if (cookie.name.includes('auth-token')) {
+      hasToken = true;
+      break;
+    }
+  }
+
+  if (!hasToken) {
+    // APIルートの場合は 401 JSON を返す
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です。ログインしてください。' },
+        { status: 401 }
+      );
+    }
+
+    // ページの場合はログイン画面にリダイレクト
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirect', pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
