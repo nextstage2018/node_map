@@ -123,13 +123,30 @@ export default function SettingsPage() {
     const params = new URLSearchParams(window.location.search);
     const authResult = params.get('auth');
     const service = params.get('service');
+    const errorParam = params.get('error');
+    const successParam = params.get('success');
+
     if (authResult === 'success' && service) {
       setMessage({ type: 'success', text: `${service} を連携しました！` });
       loadTokens();
-      // URLパラメータをクリーンアップ
       window.history.replaceState({}, '', '/settings');
-    } else if (authResult === 'error') {
-      setMessage({ type: 'error', text: `${service || 'サービス'} の連携に失敗しました` });
+    } else if (successParam) {
+      setMessage({ type: 'success', text: `${successParam} 連携完了！` });
+      loadTokens();
+      window.history.replaceState({}, '', '/settings');
+    } else if (errorParam) {
+      const errorMessages: Record<string, string> = {
+        gmail_denied: 'Gmailの認証が拒否されました',
+        gmail_invalid: 'Gmailの認証パラメータが不正です',
+        gmail_not_configured: 'Gmail OAuth設定が未完了です',
+        gmail_token_failed: 'Gmailのトークン取得に失敗しました（リダイレクトURIの不一致の可能性）',
+        gmail_save_failed: 'Gmailトークンのデータベース保存に失敗しました',
+        gmail_callback_failed: 'Gmailの認証コールバックでエラーが発生しました',
+        slack_denied: 'Slackの認証が拒否されました',
+        slack_token_failed: 'Slackのトークン取得に失敗しました',
+        slack_save_failed: 'Slackトークンのデータベース保存に失敗しました',
+      };
+      setMessage({ type: 'error', text: errorMessages[errorParam] || `認証エラー: ${errorParam}` });
       window.history.replaceState({}, '', '/settings');
     }
   }, [loadTokens]);
