@@ -68,6 +68,9 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
 
     for (const room of sortedRooms.slice(0, 30)) {
       try {
+        // Phase 25: ルームの未読数を取得
+        const unreadNum = room.unread_num || 0;
+
         // force=1: 最新100件取得。force=0だと未読のみ
         const msgRes = await chatworkFetch(`/rooms/${room.room_id}/messages?force=1`);
 
@@ -89,7 +92,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
           continue;
         }
 
-        console.log(`[Chatwork] ルーム ${room.name}: ${roomMessages.length}件取得`);
+        console.log(`[Chatwork] ルーム ${room.name}: ${roomMessages.length}件取得 (未読: ${unreadNum}件)`);
 
         // ルームのファイル一覧を取得（エラーは無視）
         let roomFiles: Attachment[] = [];
@@ -97,8 +100,14 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
           roomFiles = await fetchRoomFiles(String(room.room_id));
         } catch { /* ignore */ }
 
-        // 最新のメッセージを取得
-        for (const msg of roomMessages.slice(-perRoom)) {
+        // Phase 25: 最新メッセージから未読数分が未読
+        const latestMessages = roomMessages.slice(-perRoom);
+        for (let i = 0; i < latestMessages.length; i++) {
+          const msg = latestMessages[i];
+          // 未読判定: 配列末尾からunreadNum件分が未読
+          const posFromEnd = latestMessages.length - 1 - i;
+          const msgIsRead = posFromEnd >= unreadNum;
+
           // メッセージ本文にファイル参照があるかチェック（[dw aid=XXX]等）
           const msgBody = msg.body || '';
           const fileRefs = msgBody.match(/\[dw aid=(\d+)\]/g) || [];
@@ -126,8 +135,8 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
             body: cleanChatworkBody(msgBody),
             attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
             timestamp: new Date(msg.send_time * 1000).toISOString(),
-            isRead: false,
-            status: 'unread' as const,
+            isRead: msgIsRead,
+            status: msgIsRead ? ('read' as const) : ('unread' as const),
             metadata: {
               chatworkRoomId: String(room.room_id),
               chatworkRoomName: room.name || '',

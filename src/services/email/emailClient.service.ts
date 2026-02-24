@@ -674,6 +674,7 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
       for await (const message of client.fetch(fetchRange, {
         envelope: true,
         source: true,
+        flags: true,
       })) {
         const envelope = message.envelope!;
 
@@ -730,8 +731,8 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
           hasQuote,
           attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
           timestamp: envelope.date?.toISOString() || new Date().toISOString(),
-          isRead: false,
-          status: 'unread' as const,
+          isRead: message.flags?.has('\\Seen') ?? false,
+          status: (message.flags?.has('\\Seen') ? 'read' : 'unread') as const,
           threadId: envelope.inReplyTo || undefined,
           threadMessages,
           metadata: {

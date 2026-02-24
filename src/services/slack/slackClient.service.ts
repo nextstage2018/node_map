@@ -164,6 +164,15 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
           limit: perChannelLimit,
         });
 
+        // Phase 25: チャンネルの最終既読タイムスタンプを取得
+        let lastRead = '0';
+        try {
+          const channelInfo = await client.conversations.info({ channel: channel.id! });
+          lastRead = (channelInfo.channel as any)?.last_read || '0';
+        } catch {
+          // last_read取得失敗時は全て未読扱い
+        }
+
         // DMの場合、相手の名前をチャンネル名として使用
         let channelDisplayName = channel.name || '';
         if (channel.is_im) {
@@ -219,8 +228,8 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
             body,
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: new Date(Number(msg.ts) * 1000).toISOString(),
-            isRead: userId === botUserId,
-            status: userId === botUserId ? ('replied' as const) : ('unread' as const),
+            isRead: userId === botUserId || (msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false),
+            status: userId === botUserId ? ('replied' as const) : ((msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false) ? ('read' as const) : ('unread' as const)),
             threadId: msg.thread_ts || undefined,
             metadata: {
               slackChannel: channel.id,
