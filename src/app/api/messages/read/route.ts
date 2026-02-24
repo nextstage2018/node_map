@@ -149,12 +149,18 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 2. 元サービス側の既読をバックグラウンドで実行（レスポンスを待たない）
-    Promise.allSettled(
-      messageRows.map((row) =>
-        markReadOnService(row.channel, row.metadata || {}, userId)
-      )
-    ).catch(() => {});
+    // 2. 元サービス側の既読を実行（Vercelではレスポンス後にバックグラウンド処理が打ち切られるためawaitする）
+    try {
+      const serviceResults = await Promise.allSettled(
+        messageRows.map((row) =>
+          markReadOnService(row.channel, row.metadata || {}, userId)
+        )
+      );
+      const succeeded = serviceResults.filter((r) => r.status === 'fulfilled').length;
+      console.log(`[Messages/Read] 元サービス既読: ${succeeded}/${messageRows.length}件`);
+    } catch {
+      // 元サービスの既読失敗はDB既読に影響させない
+    }
 
     console.log(`[Messages/Read] ${updated}/${messageIds.length}件をDB既読に更新`);
 

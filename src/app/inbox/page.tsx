@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { MessageGroup, ChannelType, UnifiedMessage } from '@/lib/types';
 import { useMessages } from '@/hooks/useMessages';
 import Header from '@/components/shared/Header';
@@ -12,19 +12,42 @@ import ComposeMessage from '@/components/inbox/ComposeMessage';
 export default function InboxPage() {
   const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, addSentMessage, markGroupAsRead } =
     useMessages();
-  const [selectedGroup, setSelectedGroup] = useState<MessageGroup | null>(null);
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [filter, setFilter] = useState<ChannelType | 'all'>('all');
   const [showCompose, setShowCompose] = useState(false);
 
+  // messageGroupsから最新のselectedGroupを取得（既読状態が反映される）
+  const selectedGroup = useMemo(() => {
+    if (!selectedGroupKey) return null;
+    return messageGroups.find((g) => g.groupKey === selectedGroupKey) || null;
+  }, [selectedGroupKey, messageGroups]);
+
   // Phase 25: グループ選択時に既読処理を実行
   const handleSelectGroup = useCallback((group: MessageGroup) => {
-    setSelectedGroup(group);
+    setSelectedGroupKey(group.groupKey);
     setShowCompose(false);
     // 未読メッセージがあれば既読にする
     if (group.unreadCount > 0) {
       markGroupAsRead(group);
     }
   }, [markGroupAsRead]);
+
+  // ブロック処理
+  const handleBlockSender = useCallback(async (address: string, matchType: 'exact' | 'domain') => {
+    try {
+      const res = await fetch('/api/inbox/blocklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, matchType, reason: 'ユーザーが手動ブロック' }),
+      });
+      if (res.ok) {
+        // ブロック後にメッセージ一覧を更新（ブロック対象が非表示になる）
+        refresh();
+      }
+    } catch (err) {
+      console.error('[InboxPage] ブロックエラー:', err);
+    }
+  }, [refresh]);
 
   // 送信後に送信メッセージを追加してリフレッシュ
   const handleSentMessage = useCallback((msg: UnifiedMessage) => {
@@ -86,7 +109,7 @@ export default function InboxPage() {
               <MessageList
                 messages={messages}
                 messageGroups={messageGroups}
-                selectedGroupKey={selectedGroup?.groupKey}
+                selectedGroupKey={selectedGroupKey}
                 onSelectGroup={handleSelectGroup}
                 filter={filter}
                 onFilterChange={setFilter}
@@ -113,6 +136,7 @@ export default function InboxPage() {
                 message={selectedGroup?.latestMessage ?? null}
                 group={selectedGroup}
                 onSentMessage={handleSentMessage}
+                onBlockSender={handleBlockSender}
               />
             )}
           </div>
