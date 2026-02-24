@@ -99,29 +99,74 @@ async function updateSyncTimestamp(channel: string): Promise<void> {
 }
 
 // ========================================
-// Phase 26: スパム判定（バックグラウンド）
+// Phase 26: スパム判定（直接実行・バックグラウンド）
 // ========================================
+function ruleBasedSpamCheck(msg: {
+  from_address: string;
+  from_name: string;
+  subject: string;
+  body: string;
+}): { isSpam: boolean; reason: string; confidence: number } {
+  const addr = (msg.from_address || '').toLowerCase();
+  const subject = (msg.subject || '').toLowerCase();
+  const body = (msg.body || '').toLowerCase();
+
+  // 1. no-reply送信者
+  if (addr.includes('noreply') || addr.includes('no-reply') || addr.includes('do-not-reply')) {
+    return { isSpam: true, reason: '自動送信アドレス（noreply）', confidence: 0.85 };
+  }
+  // 2. メルマガキーワード
+  const nlKw = ['ニュースレター','newsletter','メルマガ','メールマガジン','配信停止','unsubscribe','購読解除','定期配信','weekly digest','daily digest'];
+  for (const kw of nlKw) {
+    if (subject.includes(kw) || body.slice(0, 500).includes(kw)) {
+      return { isSpam: true, reason: `メルマガキーワード: "${kw}"`, confidence: 0.8 };
+    }
+  }
+  // 3. 配信停止リンク
+  const unsub = ['unsubscribe','配信停止','配信解除','opt-out','optout','メール配信を停止','購読を解除'];
+  for (const pat of unsub) {
+    if (body.includes(pat)) return { isSpam: true, reason: '配信停止リンクを検出', confidence: 0.75 };
+  }
+  // 4. 大量送信ドメイン
+  const bulkDomains = ['sendgrid.net','mailchimp.com','constantcontact.com','hubspot.com'];
+  for (const d of bulkDomains) {
+    if (addr.includes(d)) return { isSpam: true, reason: `一括送信ドメイン: ${d}`, confidence: 0.7 };
+  }
+  // 5. プロモーション
+  const promo = ['セール','sale','キャンペーン','campaign','クーポン','coupon','期間限定','今だけ','特別価格','割引','discount'];
+  let cnt = 0;
+  for (const kw of promo) { if (subject.includes(kw) || body.slice(0, 300).includes(kw)) cnt++; }
+  if (cnt >= 2) return { isSpam: true, reason: `プロモーション系キーワード(${cnt}個)`, confidence: 0.7 };
+
+  return { isSpam: false, reason: '', confidence: 0 };
+}
+
 async function runSpamCheck(messages: UnifiedMessage[]): Promise<void> {
   const emailMessages = messages.filter((m) => m.channel === 'email' && !m.metadata?.spam_flag);
   if (emailMessages.length === 0) return;
 
-  try {
-    await fetch(new URL('/api/ai/spam-check', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: emailMessages.slice(0, 20).map((m) => ({
-          id: m.id,
-          channel: m.channel,
-          from_address: m.from.address,
-          from_name: m.from.name,
-          subject: m.subject || '',
-          body: m.body.slice(0, 500),
-        })),
-      }),
+  const supabase = createServerClient();
+  if (!supabase) return;
+
+  for (const msg of emailMessages.slice(0, 20)) {
+    const check = ruleBasedSpamCheck({
+      from_address: msg.from.address || '',
+      from_name: msg.from.name || '',
+      subject: msg.subject || '',
+      body: msg.body || '',
     });
-  } catch {
-    // スパム判定失敗は無視
+    if (check.isSpam) {
+      try {
+        const { data: existing } = await supabase
+          .from('inbox_messages')
+          .select('metadata')
+          .eq('id', msg.id)
+          .single();
+        const metadata = existing?.metadata || {};
+        metadata.spam_flag = { isSpam: true, reason: check.reason, confidence: check.confidence, checkedAt: new Date().toISOString() };
+        await supabase.from('inbox_messages').update({ metadata }).eq('id', msg.id);
+      } catch { /* 個別失敗は無視 */ }
+    }
   }
 }
 

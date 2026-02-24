@@ -618,7 +618,7 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
       const res = await fetch('/api/inbox/blocklist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addresses: [{ address, matchType }] }),
+        body: JSON.stringify({ address, matchType, reason: 'ユーザーが手動ブロック' }),
       });
       const data = await res.json();
       if (data.success) {
