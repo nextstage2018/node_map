@@ -101,7 +101,8 @@ export async function GET(request: NextRequest) {
 
       if (dbError) {
         console.error('Gmail トークンDB保存エラー:', dbError);
-        return NextResponse.redirect(`${appUrl}/settings?error=gmail_save_failed`);
+        const errDetail = encodeURIComponent(dbError.message || JSON.stringify(dbError));
+        return NextResponse.redirect(`${appUrl}/settings?error=gmail_save_failed&detail=${errDetail}`);
       }
     } else {
       console.error('Supabase未設定のためトークン保存をスキップ');

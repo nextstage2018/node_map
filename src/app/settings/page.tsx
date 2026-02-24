@@ -146,7 +146,9 @@ export default function SettingsPage() {
         slack_token_failed: 'Slackのトークン取得に失敗しました',
         slack_save_failed: 'Slackトークンのデータベース保存に失敗しました',
       };
-      setMessage({ type: 'error', text: errorMessages[errorParam] || `認証エラー: ${errorParam}` });
+      const detail = params.get('detail');
+      const baseMsg = errorMessages[errorParam] || `認証エラー: ${errorParam}`;
+      setMessage({ type: 'error', text: detail ? `${baseMsg}（詳細: ${detail}）` : baseMsg });
       window.history.replaceState({}, '', '/settings');
     }
   }, [loadTokens]);
