@@ -191,6 +191,33 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Phase 25: 日付範囲フィルタ
+    // page=1（初期読み込み）: 過去30日分のみ
+    // page=2以降（もっと読み込む）: 30日ずつ遡る（page2=30-60日前, page3=60-90日前...）
+    if (!isDemo) {
+      const now = new Date();
+      const rangeEnd = new Date(now);
+      rangeEnd.setDate(rangeEnd.getDate() - (page - 1) * 30);
+      const rangeStart = new Date(now);
+      rangeStart.setDate(rangeStart.getDate() - page * 30);
+
+      const beforeCount = allMessages.length;
+      allMessages = allMessages.filter((msg) => {
+        const msgDate = new Date(msg.timestamp);
+        if (page === 1) {
+          // 初期: 30日以内のみ
+          return msgDate >= rangeStart;
+        } else {
+          // ページ送り: 該当期間のメッセージのみ
+          return msgDate >= rangeStart && msgDate < rangeEnd;
+        }
+      });
+      const filtered = beforeCount - allMessages.length;
+      if (filtered > 0) {
+        console.log(`[Messages API] 日付フィルタ(page=${page}): ${filtered}件除外 (${beforeCount} → ${allMessages.length}), 範囲: ${rangeStart.toISOString().slice(0,10)} ~ ${rangeEnd.toISOString().slice(0,10)}`);
+      }
+    }
+
     // 時系列ソート
     allMessages.sort(
       (a, b) =>
