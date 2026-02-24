@@ -351,6 +351,12 @@
 | 2026-02-24 | Slackトークン取得をDBから（user_service_tokens経由） | 環境変数SLACK_BOT_TOKENではなく、ユーザーごとのDB保存トークンを使用 |
 | 2026-02-24 | Slack Bot自動join + リトライ方式 | not_in_channelエラー時にconversations.joinで自動参加→即リトライ。channels:joinスコープ必須 |
 | 2026-02-24 | 既読/未読をサービス実データから取得 | Gmail=\\Seenフラグ、Slack=last_readタイムスタンプ比較、Chatwork=unread_num |
+| 2026-02-24 | 未読バッジ: ローカル即時更新 + DB永続化のオプティミスティック方式 | クリック時にローカルstateを即更新→UIが即反映。バックグラウンドでPOST /api/messages/readでDB更新 |
+| 2026-02-24 | サイドバー・メッセージリストのグレー件数バッジを削除 | 未読時の青バッジのみ表示。既読後はバッジなしでスッキリしたUI |
+| 2026-02-24 | 既読永続化: messages/route.tsでDB既読状態を取得し再フェッチ時も維持 | サービスAPIからの再取得時にisReadがfalseに戻る問題を解決 |
+| 2026-02-24 | saveMessages: DB上の既読(is_read=true)を上書きしない保護ロジック | upsert前に既読IDを取得し、trueのものはfalseに戻さない |
+| 2026-02-24 | 元サービス既読反映: Gmail=UNREADラベル除去、Slack=conversations.mark、Chatwork=messages/read | NodeMapで既読→元サービスも既読。バックグラウンド実行でレスポンス遅延なし |
+| 2026-02-24 | 現状は毎回APIから全量取得→DB upsert方式（差分取得は未実装） | getSyncTimestamp()は定義済みだが未使用。次フェーズで差分取得に移行予定 |
 
 ---
 
@@ -1376,10 +1382,16 @@ Phase 25 (リファクタリング) ←── 任意タイミング
   - Slack `not_in_channel`エラー対応: `conversations.join`で自動参加＋リトライ（`channels:join`スコープ必須）
   - `inbox_sync_state`テーブルによる同期タイムスタンプ管理
   - 30日超の古いメッセージをDBから削除済み
+  - 未読バッジ修正: グループ選択時にローカル即時更新 + `/api/messages/read`でDB永続化（オプティミスティック方式）
+  - サイドバー・メッセージリストのグレー件数バッジ削除（未読青バッジのみに統一）
+  - 既読永続化: DB既読状態をAPI再取得時にも維持（`messages/route.ts`で事前チェック）
+  - `saveMessages`で既読(is_read=true)をupsertで上書きしない保護ロジック追加
+  - 元サービス既読反映: `/api/messages/read`からGmail/Slack/Chatwork APIへバックグラウンド既読通知
 - **注意事項：**
   - Slackボットには`channels:join`スコープが必須（api.slack.comで追加後、ワークスペースに再インストール必要）
-  - 未読バッジがメッセージ開封時に更新されない問題が残存（次フェーズで対応予定）
   - `getSyncTimestamp()`は定義済みだがフェッチ時の差分取得には未活用（現在はページネーションで代替）
+  - 現状は毎回APIから全量取得→DB upsert方式。差分取得は次フェーズで実装予定
+  - Gmail既読はアクセストークンの有効期限に注意（期限切れ時はリフレッシュが必要）
 
 ---
 
@@ -1530,6 +1542,7 @@ src/app/api/checkpoints/route.ts
 src/app/api/clusters/route.ts + clusters/diff/route.ts
 src/app/api/jobs/route.ts
 src/app/api/messages/route.ts
+src/app/api/messages/read/route.ts          ← 既読更新API（POST）
 src/app/api/nodemap/route.ts + nodemap/users/route.ts
 src/app/api/nodes/extract/route.ts + nodes/stats/route.ts
 src/app/api/inbox/blocklist/route.ts
