@@ -59,11 +59,6 @@ export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'a
                   {totalUnread}
                 </span>
               )}
-              {totalMessages > 0 && totalUnread === 0 && (
-                <span className="text-xs text-slate-400">
-                  {totalMessages}
-                </span>
-              )}
             </span>
           </li>
           {/* 各チャネル */}
@@ -96,11 +91,6 @@ export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'a
                   {unread > 0 && (
                     <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
                       {unread}
-                    </span>
-                  )}
-                  {count > 0 && unread === 0 && (
-                    <span className="text-xs text-slate-400">
-                      {count}
                     </span>
                   )}
                 </span>
