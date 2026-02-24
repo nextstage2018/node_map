@@ -1,278 +1,449 @@
 'use client';
 
-import { useState } from 'react';
-import { useSettings } from '@/hooks/useSettings';
-import type { ServiceType, ChannelAuthType, ChannelAuth, UserPreferences } from '@/lib/types';
-import { SERVICE_CONFIG, CONNECTION_STATUS_CONFIG } from '@/lib/constants';
-import { cn } from '@/lib/utils';
-import Header from '@/components/shared/Header';
-import ConnectionOverview from '@/components/settings/ConnectionOverview';
-import ProfileSettings from '@/components/settings/ProfileSettings';
-import ChannelAuthCard from '@/components/settings/ChannelAuthCard';
-import UserPreferencesCard from '@/components/settings/UserPreferencesCard';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@/components/AuthProvider';
 
-type SettingsTab = 'admin' | 'personal';
+// トークン入力フォームの設定
+const TOKEN_FORM_CONFIG: Record<string, { label: string; fields: { key: string; label: string; type: string; placeholder: string }[] }> = {
+  email: {
+    label: 'Gmail (IMAP)',
+    fields: [
+      { key: 'email', label: 'メールアドレス', type: 'email', placeholder: 'you@gmail.com' },
+      { key: 'appPassword', label: 'アプリパスワード', type: 'password', placeholder: 'xxxx xxxx xxxx xxxx' },
+    ],
+  },
+  slack: {
+    label: 'Slack',
+    fields: [
+      { key: 'botToken', label: 'Bot Token (xoxb-...)', type: 'password', placeholder: 'xoxb-xxxx-xxxx' },
+      { key: 'workspace', label: 'ワークスペース名', type: 'text', placeholder: 'my-workspace' },
+    ],
+  },
+  chatwork: {
+    label: 'Chatwork',
+    fields: [
+      { key: 'apiToken', label: 'APIトークン', type: 'password', placeholder: 'xxxxxxxxxxxxxxxx' },
+      { key: 'accountName', label: 'アカウント名', type: 'text', placeholder: 'your_account' },
+    ],
+  },
+};
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('admin');
-  const {
-    settings,
-    isLoading,
-    saveServiceSettings,
-    saveProfile,
-    testConnection,
-    getConnection,
-  } = useSettings();
-
-  // デモ用: 個人認証状態
-  const [channelAuths, setChannelAuths] = useState<ChannelAuth[]>([
-    { channel: 'email', status: 'unauthenticated' },
-    { channel: 'slack', status: 'unauthenticated' },
-    { channel: 'chatwork', status: 'unauthenticated' },
-  ]);
-
-  const [userPreferences, setUserPreferences] = useState<UserPreferences>({
-    notificationsEnabled: true,
-    emailDigest: 'daily',
-    defaultInboxFilter: 'all',
-    aiAutoSuggest: true,
-  });
-
-  // OAuth認証シミュレーション
-  const handleAuth = async (channel: ChannelAuthType) => {
-    // 本番: OAuth2フローを開始（ポップアップ or リダイレクト）
-    await new Promise((r) => setTimeout(r, 1500));
-    setChannelAuths((prev) =>
-      prev.map((a) =>
-        a.channel === channel
-          ? {
-              ...a,
-              status: 'authenticated' as const,
-              accountName:
-                channel === 'email'
-                  ? 'suzuki@company.com'
-                  : channel === 'slack'
-                  ? 'suzuki@workspace'
-                  : 'suzuki_cw',
-              authenticatedAt: new Date().toISOString(),
-            }
-          : a
-      )
-    );
-  };
-
-  const handleRevoke = async (channel: ChannelAuthType) => {
-    setChannelAuths((prev) =>
-      prev.map((a) =>
-        a.channel === channel
-          ? { ...a, status: 'unauthenticated' as const, accountName: undefined, authenticatedAt: undefined }
-          : a
-      )
-    );
-  };
-
-  const handleSavePreferences = async (prefs: Partial<UserPreferences>) => {
-    setUserPreferences((prev) => ({ ...prev, ...prefs }));
-    return { success: true };
-  };
-
-  if (isLoading || !settings) {
-    return (
-      <div className="flex flex-col h-screen bg-white">
-        <Header />
-        <div className="flex items-center justify-center flex-1">
-          <div className="text-center">
-            <div className="animate-spin text-2xl mb-2">⚙️</div>
-            <p className="text-sm text-slate-500">設定を読み込み中...</p>
-          </div>
+// チャンネル認証カード
+function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke }: {
+  channel: string; label: string; icon: string; isConnected: boolean; accountName: string;
+  onAuth: () => void; onRevoke: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between p-4 border rounded-lg">
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{icon}</span>
+        <div>
+          <h3 className="font-medium">{label}</h3>
+          {isConnected && <p className="text-sm text-gray-500">{accountName}</p>}
         </div>
       </div>
-    );
-  }
+      <div className="flex items-center gap-2">
+        {isConnected ? (
+          <>
+            <span className="text-sm text-green-600 font-medium">接続済み</span>
+            <button onClick={onRevoke} className="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">
+              解除
+            </button>
+          </>
+        ) : (
+          <button onClick={onAuth} className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700">
+            接続する
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
-  const channelServices: ServiceType[] = ['email', 'slack', 'chatwork'];
-  const infraServices: ServiceType[] = ['anthropic', 'supabase'];
+export default function SettingsPage() {
+  const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState('channels');
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showTokenForm, setShowTokenForm] = useState<string | null>(null);
+  const [tokenFormData, setTokenFormData] = useState<Record<string, string>>({});
 
-  const tabs: { key: SettingsTab; label: string; icon: string; description: string }[] = [
-    { key: 'admin', label: '管理者設定', icon: '🔧', description: 'API接続・インフラ基盤' },
-    { key: 'personal', label: '個人設定', icon: '👤', description: '認証・プロフィール・表示' },
+  // チャンネル接続状態
+  const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string }>>({
+    email: { connected: false, accountName: '' },
+    slack: { connected: false, accountName: '' },
+    chatwork: { connected: false, accountName: '' },
+  });
+
+  // プロフィール
+  const [profile, setProfile] = useState({
+    displayName: '',
+    email: '',
+    timezone: 'Asia/Tokyo',
+    language: 'ja',
+  });
+
+  // 通知設定
+  const [notifications, setNotifications] = useState({
+    emailNotification: true,
+    desktopNotification: true,
+    mentionOnly: false,
+    digestFrequency: 'realtime' as string,
+  });
+
+  // トークン読み込み
+  const loadTokens = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/tokens');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const newChannels = { ...channels };
+        for (const token of data.data) {
+          if (newChannels[token.service_type]) {
+            newChannels[token.service_type] = {
+              connected: token.is_active,
+              accountName: token.accountName || '',
+            };
+          }
+        }
+        setChannels(newChannels);
+      }
+    } catch (e) {
+      console.error('トークン読み込みエラー:', e);
+    }
+  }, []);
+
+  // プロフィール読み込み
+  const loadProfile = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/profile');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setProfile(data.data);
+      }
+    } catch (e) {
+      console.error('プロフィール読み込みエラー:', e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTokens();
+    loadProfile();
+  }, [loadTokens, loadProfile]);
+
+  // チャンネル認証ハンドラ
+  const handleAuth = async (channel: string) => {
+    if (!showTokenForm || showTokenForm !== channel) {
+      setShowTokenForm(channel);
+      setTokenFormData({});
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          service_type: channel,
+          credentials: tokenFormData,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: TOKEN_FORM_CONFIG[channel].label + ' を接続しました' });
+        setShowTokenForm(null);
+        setTokenFormData({});
+        loadTokens();
+      } else {
+        setMessage({ type: 'error', text: data.error || '接続に失敗しました' });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: '接続に失敗しました' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // チャンネル認証解除
+  const handleRevoke = async (channel: string) => {
+    if (!confirm(TOKEN_FORM_CONFIG[channel].label + ' の接続を解除しますか？')) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/settings/tokens?service_type=' + channel, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: '接続を解除しました' });
+        loadTokens();
+      } else {
+        setMessage({ type: 'error', text: data.error || '解除に失敗しました' });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: '解除に失敗しました' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // プロフィール保存
+  const handleSaveProfile = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profile),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: 'プロフィールを保存しました' });
+      } else {
+        setMessage({ type: 'error', text: data.error || '保存に失敗しました' });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: '保存に失敗しました' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 通知設定保存
+  const handleSaveNotifications = async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notifications }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage({ type: 'success', text: '通知設定を保存しました' });
+      } else {
+        setMessage({ type: 'error', text: data.error || '保存に失敗しました' });
+      }
+    } catch (e) {
+      setMessage({ type: 'error', text: '保存に失敗しました' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const tabs = [
+    { id: 'channels', label: 'チャンネル接続' },
+    { id: 'profile', label: 'プロフィール' },
+    { id: 'notifications', label: '通知設定' },
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-          {/* ページヘッダー */}
-          <div>
-          <h1 className="text-xl font-bold text-slate-900">設定</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            API接続・認証・プロフィールを管理します
-          </p>
-        </div>
+    <div className="max-w-4xl mx-auto p-6">
+      <h1 className="text-2xl font-bold mb-6">個人設定</h1>
 
-        {/* タブ切り替え */}
-        <div className="flex gap-3">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                'flex-1 p-4 rounded-2xl border-2 transition-all text-left',
-                activeTab === tab.key
-                  ? 'border-blue-500 bg-blue-50'
-                  : 'border-slate-200 bg-white hover:border-slate-300'
+      {message && (
+        <div className={`mb-4 p-3 rounded ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+          {message.text}
+        </div>
+      )}
+
+      {/* タブ */}
+      <div className="flex border-b mb-6">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium ${activeTab === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* チャンネル接続タブ */}
+      {activeTab === 'channels' && (
+        <div className="space-y-4">
+          <p className="text-sm text-gray-600 mb-4">
+            各サービスのAPIトークンを入力して接続してください。
+          </p>
+          {[
+            { channel: 'email', label: 'Gmail', icon: '📧' },
+            { channel: 'slack', label: 'Slack', icon: '💬' },
+            { channel: 'chatwork', label: 'Chatwork', icon: '🔵' },
+          ].map(({ channel, label, icon }) => (
+            <div key={channel}>
+              <ChannelAuthCard
+                channel={channel}
+                label={label}
+                icon={icon}
+                isConnected={channels[channel].connected}
+                accountName={channels[channel].accountName}
+                onAuth={() => handleAuth(channel)}
+                onRevoke={() => handleRevoke(channel)}
+              />
+              {showTokenForm === channel && !channels[channel].connected && (
+                <div className="mt-2 ml-12 p-4 bg-gray-50 rounded-lg border">
+                  <h4 className="text-sm font-medium mb-3">{TOKEN_FORM_CONFIG[channel].label} の認証情報</h4>
+                  {TOKEN_FORM_CONFIG[channel].fields.map((field) => (
+                    <div key={field.key} className="mb-3">
+                      <label className="block text-xs text-gray-600 mb-1">{field.label}</label>
+                      <input
+                        type={field.type}
+                        placeholder={field.placeholder}
+                        value={tokenFormData[field.key] || ''}
+                        onChange={(e) => setTokenFormData({ ...tokenFormData, [field.key]: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  ))}
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={() => handleAuth(channel)}
+                      disabled={loading}
+                      className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {loading ? '接続中...' : '保存して接続'}
+                    </button>
+                    <button
+                      onClick={() => { setShowTokenForm(null); setTokenFormData({}); }}
+                      className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50"
+                    >
+                      キャンセル
+                    </button>
+                  </div>
+                </div>
               )}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lg">{tab.icon}</span>
-                <span
-                  className={cn(
-                    'text-sm font-bold',
-                    activeTab === tab.key ? 'text-blue-700' : 'text-slate-700'
-                  )}
-                >
-                  {tab.label}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500">{tab.description}</p>
-            </button>
+            </div>
           ))}
         </div>
+      )}
 
-        {/* ===== 管理者設定タブ ===== */}
-        {activeTab === 'admin' && (
-          <div className="space-y-6">
-            {/* 接続ステータス概要 */}
-            <ConnectionOverview
-              connections={settings.connections}
-              connectedCount={settings.connections.filter((c) => c.status === 'connected').length}
-              totalCount={settings.connections.length}
-            />
-
-            {/* チャネル連携ステータス */}
-            <div>
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
-                📨 チャネル連携
-              </h2>
-              <div className="space-y-3">
-                {channelServices.map((type) => {
-                  const conn = getConnection(type);
-                  const svcConfig = SERVICE_CONFIG[type as keyof typeof SERVICE_CONFIG];
-                  const stConfig = CONNECTION_STATUS_CONFIG[conn.status];
-                  return (
-                    <div key={type} className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', svcConfig.color.split(' ')[0])}>
-                          <img src={svcConfig.icon} alt={svcConfig.label} width={24} height={24} />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900">{svcConfig.label}</h3>
-                          <p className="text-xs text-slate-500">{svcConfig.description}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn('w-2.5 h-2.5 rounded-full', stConfig.dotColor)} />
-                        <span className={cn('text-sm font-medium', stConfig.color.split(' ')[1])}>
-                          {stConfig.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* AI・データベース ステータス */}
-            <div>
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">
-                🤖 AI・データベース
-              </h2>
-              <div className="space-y-3">
-                {infraServices.map((type) => {
-                  const conn = getConnection(type);
-                  const svcConfig = SERVICE_CONFIG[type as keyof typeof SERVICE_CONFIG];
-                  const stConfig = CONNECTION_STATUS_CONFIG[conn.status];
-                  return (
-                    <div key={type} className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', svcConfig.color.split(' ')[0])}>
-                          <img src={svcConfig.icon} alt={svcConfig.label} width={24} height={24} />
-                        </div>
-                        <div>
-                          <h3 className="text-sm font-bold text-slate-900">{svcConfig.label}</h3>
-                          <p className="text-xs text-slate-500">{svcConfig.description}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <div className={cn('w-2.5 h-2.5 rounded-full', stConfig.dotColor)} />
-                        <span className={cn('text-sm font-medium', stConfig.color.split(' ')[1])}>
-                          {stConfig.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 環境変数の案内 */}
-            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-              <div className="flex items-start gap-2">
-                <span className="text-sm">ℹ️</span>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-700 mb-1">接続設定について</h3>
-                  <p className="text-xs text-slate-500 leading-relaxed">
-                    各サービスのAPI情報はVercelの環境変数で管理されています。接続状況を変更する場合は、Vercelダッシュボードから環境変数を更新してください。
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== 個人設定タブ ===== */}
-        {activeTab === 'personal' && (
-          <div className="space-y-6">
-            {/* チャネル認証 */}
-            <div>
-              <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-1">
-                🔑 アカウント認証
-              </h2>
-              <p className="text-xs text-slate-500 mb-3">
-                各チャネルに自分のアカウントでログインします。管理者によるAPI基盤設定が完了している必要があります。
-              </p>
-              <div className="space-y-3">
-                {channelAuths.map((auth) => (
-                  <ChannelAuthCard
-                    key={auth.channel}
-                    channel={auth.channel}
-                    auth={auth}
-                    adminReady={
-                      getConnection(auth.channel as ServiceType).status === 'connected'
-                    }
-                    onAuth={handleAuth}
-                    onRevoke={handleRevoke}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* プロフィール */}
-            <ProfileSettings
-              profile={settings.profile}
-              onSave={saveProfile}
-            />
-
-            {/* 表示・通知設定 */}
-            <UserPreferencesCard
-              preferences={userPreferences}
-              onSave={handleSavePreferences}
+      {/* プロフィールタブ */}
+      {activeTab === 'profile' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">表示名</label>
+            <input
+              type="text"
+              value={profile.displayName}
+              onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
+              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-        )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
+            <input
+              type="email"
+              value={profile.email}
+              disabled
+              className="w-full px-3 py-2 border rounded bg-gray-100 text-gray-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">メールアドレスはログイン情報から取得されます</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">タイムゾーン</label>
+            <select
+              value={profile.timezone}
+              onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
+              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">America/New_York (EST)</option>
+              <option value="Europe/London">Europe/London (GMT)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">言語</label>
+            <select
+              value={profile.language}
+              onChange={(e) => setProfile({ ...profile, language: e.target.value })}
+              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+          <button
+            onClick={handleSaveProfile}
+            disabled={loading}
+            className="px-6 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? '保存中...' : 'プロフィールを保存'}
+          </button>
         </div>
-      </div>
+      )}
+
+      {/* 通知設定タブ */}
+      {activeTab === 'notifications' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 border rounded">
+            <div>
+              <h3 className="font-medium">メール通知</h3>
+              <p className="text-sm text-gray-500">新着メッセージをメールで通知</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifications.emailNotification}
+                onChange={(e) => setNotifications({ ...notifications, emailNotification: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+          </div>
+          <div className="flex items-center justify-between p-3 border rounded">
+            <div>
+              <h3 className="font-medium">デスクトップ通知</h3>
+              <p className="text-sm text-gray-500">ブラウザのプッシュ通知</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifications.desktopNotification}
+                onChange={(e) => setNotifications({ ...notifications, desktopNotification: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+          </div>
+          <div className="flex items-center justify-between p-3 border rounded">
+            <div>
+              <h3 className="font-medium">メンションのみ</h3>
+              <p className="text-sm text-gray-500">自分宛てのメンションのみ通知</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifications.mentionOnly}
+                onChange={(e) => setNotifications({ ...notifications, mentionOnly: e.target.checked })}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">通知頻度</label>
+            <select
+              value={notifications.digestFrequency}
+              onChange={(e) => setNotifications({ ...notifications, digestFrequency: e.target.value })}
+              className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="realtime">リアルタイム</option>
+              <option value="hourly">1時間ごと</option>
+              <option value="daily">1日1回</option>
+            </select>
+          </div>
+          <button
+            onClick={handleSaveNotifications}
+            disabled={loading}
+            className="px-6 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {loading ? '保存中...' : '通知設定を保存'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
