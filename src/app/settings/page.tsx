@@ -3,34 +3,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/shared/Header';
 
-// トークン入力フォームの設定
-const TOKEN_FORM_CONFIG: Record<string, { label: string; fields: { key: string; label: string; type: string; placeholder: string }[] }> = {
-  email: {
-    label: 'Gmail (IMAP)',
-    fields: [
-      { key: 'email', label: 'メールアドレス', type: 'email', placeholder: 'you@gmail.com' },
-      { key: 'appPassword', label: 'アプリパスワード', type: 'password', placeholder: 'xxxx xxxx xxxx xxxx' },
-    ],
-  },
-  slack: {
-    label: 'Slack',
-    fields: [
-      { key: 'botToken', label: 'Bot Token (xoxb-...)', type: 'password', placeholder: 'xoxb-xxxx-xxxx' },
-      { key: 'workspace', label: 'ワークスペース名', type: 'text', placeholder: 'my-workspace' },
-    ],
-  },
-  chatwork: {
-    label: 'Chatwork',
-    fields: [
-      { key: 'apiToken', label: 'APIトークン', type: 'password', placeholder: 'xxxxxxxxxxxxxxxx' },
-      { key: 'accountName', label: 'アカウント名', type: 'text', placeholder: 'your_account' },
-    ],
-  },
+// Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
+const CHATWORK_FORM_CONFIG = {
+  label: 'Chatwork',
+  fields: [
+    { key: 'api_token', label: 'APIトークン', type: 'password', placeholder: 'xxxxxxxxxxxxxxxx' },
+    { key: 'account_name', label: 'アカウント名', type: 'text', placeholder: 'your_account' },
+  ],
 };
 
 // チャンネル認証カード
-function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke }: {
-  channel: string; label: string; icon: string; isConnected: boolean; accountName: string; onAuth: () => void; onRevoke: () => void;
+function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke, authLabel }: {
+  channel: string; label: string; icon: string; isConnected: boolean; accountName: string; onAuth: () => void; onRevoke: () => void; authLabel?: string;
 }) {
   return (
     <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -51,7 +35,7 @@ function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAut
           </>
         ) : (
           <button onClick={onAuth} className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700">
-            接続する
+            {authLabel || '接続する'}
           </button>
         )}
       </div>
@@ -63,12 +47,12 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('channels');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showTokenForm, setShowTokenForm] = useState<string | null>(null);
-  const [tokenFormData, setTokenFormData] = useState<Record<string, string>>({});
+  const [showChatworkForm, setShowChatworkForm] = useState(false);
+  const [chatworkFormData, setChatworkFormData] = useState<Record<string, string>>({});
 
   // チャンネル接続状態
   const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string }>>({
-    email: { connected: false, accountName: '' },
+    gmail: { connected: false, accountName: '' },
     slack: { connected: false, accountName: '' },
     chatwork: { connected: false, accountName: '' },
   });
@@ -96,15 +80,16 @@ export default function SettingsPage() {
       const data = await res.json();
       if (data.success && data.data) {
         const newChannels: Record<string, { connected: boolean; accountName: string }> = {
-          email: { connected: false, accountName: '' },
+          gmail: { connected: false, accountName: '' },
           slack: { connected: false, accountName: '' },
           chatwork: { connected: false, accountName: '' },
         };
         for (const token of data.data) {
-          if (newChannels[token.service_type]) {
-            newChannels[token.service_type] = {
+          const serviceName = token.service_name;
+          if (newChannels[serviceName]) {
+            newChannels[serviceName] = {
               connected: token.is_active,
-              accountName: token.accountName || '',
+              accountName: token.token_data?.email || token.token_data?.team_name || token.token_data?.account_name || '接続済み',
             };
           }
         }
@@ -133,11 +118,37 @@ export default function SettingsPage() {
     loadProfile();
   }, [loadTokens, loadProfile]);
 
-  // チャンネル認証ハンドラ
-  const handleAuth = async (channel: string) => {
-    if (!showTokenForm || showTokenForm !== channel) {
-      setShowTokenForm(channel);
-      setTokenFormData({});
+  // OAuth認証コールバック結果チェック
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authResult = params.get('auth');
+    const service = params.get('service');
+    if (authResult === 'success' && service) {
+      setMessage({ type: 'success', text: `${service} を連携しました！` });
+      loadTokens();
+      // URLパラメータをクリーンアップ
+      window.history.replaceState({}, '', '/settings');
+    } else if (authResult === 'error') {
+      setMessage({ type: 'error', text: `${service || 'サービス'} の連携に失敗しました` });
+      window.history.replaceState({}, '', '/settings');
+    }
+  }, [loadTokens]);
+
+  // Gmail OAuth開始（リダイレクト）
+  const handleGmailAuth = () => {
+    window.location.href = '/api/auth/gmail';
+  };
+
+  // Slack OAuth開始（リダイレクト）
+  const handleSlackAuth = () => {
+    window.location.href = '/api/auth/slack';
+  };
+
+  // Chatwork手動トークン保存
+  const handleChatworkAuth = async () => {
+    if (!showChatworkForm) {
+      setShowChatworkForm(true);
+      setChatworkFormData({});
       return;
     }
     setLoading(true);
@@ -146,13 +157,16 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ service_type: channel, credentials: tokenFormData }),
+        body: JSON.stringify({
+          serviceName: 'chatwork',
+          tokenData: chatworkFormData,
+        }),
       });
       const data = await res.json();
       if (data.success) {
-        setMessage({ type: 'success', text: TOKEN_FORM_CONFIG[channel].label + ' を接続しました' });
-        setShowTokenForm(null);
-        setTokenFormData({});
+        setMessage({ type: 'success', text: 'Chatwork を接続しました' });
+        setShowChatworkForm(false);
+        setChatworkFormData({});
         loadTokens();
       } else {
         setMessage({ type: 'error', text: data.error || '接続に失敗しました' });
@@ -165,11 +179,12 @@ export default function SettingsPage() {
   };
 
   // チャンネル認証解除
-  const handleRevoke = async (channel: string) => {
-    if (!confirm(TOKEN_FORM_CONFIG[channel].label + ' の接続を解除しますか？')) return;
+  const handleRevoke = async (serviceName: string) => {
+    const labels: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', chatwork: 'Chatwork' };
+    if (!confirm(labels[serviceName] + ' の接続を解除しますか？')) return;
     setLoading(true);
     try {
-      const res = await fetch('/api/settings/tokens?service_type=' + channel, { method: 'DELETE' });
+      const res = await fetch('/api/settings/tokens?serviceName=' + serviceName, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setMessage({ type: 'success', text: '接続を解除しました' });
@@ -266,57 +281,81 @@ export default function SettingsPage() {
           {activeTab === 'channels' && (
             <div className="space-y-4">
               <p className="text-sm text-gray-600 mb-4">
-                各サービスのAPIトークンを入力して接続してください。
+                Gmail・Slackはボタンを押すだけで連携できます。ChatworkはAPIトークンを入力してください。
               </p>
-              {[
-                { channel: 'email', label: 'Gmail', icon: '📧' },
-                { channel: 'slack', label: 'Slack', icon: '💬' },
-                { channel: 'chatwork', label: 'Chatwork', icon: '🔵' },
-              ].map(({ channel, label, icon }) => (
-                <div key={channel}>
-                  <ChannelAuthCard
-                    channel={channel}
-                    label={label}
-                    icon={icon}
-                    isConnected={channels[channel].connected}
-                    accountName={channels[channel].accountName}
-                    onAuth={() => handleAuth(channel)}
-                    onRevoke={() => handleRevoke(channel)}
-                  />
-                  {showTokenForm === channel && !channels[channel].connected && (
-                    <div className="mt-2 ml-12 p-4 bg-gray-50 rounded-lg border">
-                      <h4 className="text-sm font-medium mb-3">{TOKEN_FORM_CONFIG[channel].label} の認証情報</h4>
-                      {TOKEN_FORM_CONFIG[channel].fields.map((field) => (
-                        <div key={field.key} className="mb-3">
-                          <label className="block text-xs text-gray-600 mb-1">{field.label}</label>
-                          <input
-                            type={field.type}
-                            placeholder={field.placeholder}
-                            value={tokenFormData[field.key] || ''}
-                            onChange={(e) => setTokenFormData({ ...tokenFormData, [field.key]: e.target.value })}
-                            className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      ))}
-                      <div className="flex gap-2 mt-3">
-                        <button
-                          onClick={() => handleAuth(channel)}
-                          disabled={loading}
-                          className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          {loading ? '接続中...' : '保存して接続'}
-                        </button>
-                        <button
-                          onClick={() => { setShowTokenForm(null); setTokenFormData({}); }}
-                          className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50"
-                        >
-                          キャンセル
-                        </button>
+
+              {/* Gmail（OAuth） */}
+              <ChannelAuthCard
+                channel="gmail"
+                label="Gmail"
+                icon="📧"
+                isConnected={channels.gmail.connected}
+                accountName={channels.gmail.accountName}
+                onAuth={handleGmailAuth}
+                onRevoke={() => handleRevoke('gmail')}
+                authLabel="Googleアカウントで連携"
+              />
+
+              {/* Slack（OAuth） */}
+              <ChannelAuthCard
+                channel="slack"
+                label="Slack"
+                icon="💬"
+                isConnected={channels.slack.connected}
+                accountName={channels.slack.accountName}
+                onAuth={handleSlackAuth}
+                onRevoke={() => handleRevoke('slack')}
+                authLabel="Slackワークスペースで連携"
+              />
+
+              {/* Chatwork（手動トークン入力） */}
+              <div>
+                <ChannelAuthCard
+                  channel="chatwork"
+                  label="Chatwork"
+                  icon="🔵"
+                  isConnected={channels.chatwork.connected}
+                  accountName={channels.chatwork.accountName}
+                  onAuth={handleChatworkAuth}
+                  onRevoke={() => handleRevoke('chatwork')}
+                  authLabel="APIトークンで接続"
+                />
+                {showChatworkForm && !channels.chatwork.connected && (
+                  <div className="mt-2 ml-12 p-4 bg-gray-50 rounded-lg border">
+                    <h4 className="text-sm font-medium mb-3">Chatwork の認証情報</h4>
+                    {CHATWORK_FORM_CONFIG.fields.map((field) => (
+                      <div key={field.key} className="mb-3">
+                        <label className="block text-xs text-gray-600 mb-1">{field.label}</label>
+                        <input
+                          type={field.type}
+                          placeholder={field.placeholder}
+                          value={chatworkFormData[field.key] || ''}
+                          onChange={(e) => setChatworkFormData({ ...chatworkFormData, [field.key]: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
                       </div>
+                    ))}
+                    <p className="text-xs text-gray-400 mb-3">
+                      APIトークンは Chatwork &gt; 動作設定 &gt; API設定 から取得できます
+                    </p>
+                    <div className="flex gap-2 mt-3">
+                      <button
+                        onClick={handleChatworkAuth}
+                        disabled={loading}
+                        className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {loading ? '接続中...' : '保存して接続'}
+                      </button>
+                      <button
+                        onClick={() => { setShowChatworkForm(false); setChatworkFormData({}); }}
+                        className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50"
+                      >
+                        キャンセル
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
