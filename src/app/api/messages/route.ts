@@ -155,7 +155,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (isDemo || hasSlackSubs) {
-      fetchPromises.push(fetchSlackMessages(limit));
+      fetchPromises.push(fetchSlackMessages(limit, userId));
     } else {
       fetchPromises.push(Promise.resolve([]));
     }

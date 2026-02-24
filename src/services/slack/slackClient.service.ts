@@ -6,7 +6,7 @@ import { createServerClient } from '@/lib/supabase';
  * Slack Web APIを使用してメッセージの取得・送信を行う
  *
  * Phase 15: 実API対応改修
- * Phase 25: DBからトークン取得に変更
+ * Phase 25: DBからトークン取得に変更 + userId対応
  */
 
 function getToken(): string {
@@ -15,25 +15,44 @@ function getToken(): string {
 
 /**
  * Phase 25: DBからSlackトークンを取得（ユーザーのOAuth接続トークン）
+ * userId を渡すことで正確にトークンを特定する
  */
-async function getTokenFromDB(): Promise<string> {
+async function getTokenFromDB(userId?: string): Promise<string> {
   const supabase = createServerClient();
-  if (!supabase) return getToken();
+  if (!supabase) {
+    console.log('[Slack] createServerClient() が null — 環境変数フォールバック');
+    return getToken();
+  }
 
   try {
-    const { data } = await supabase
+    let query = supabase
       .from('user_service_tokens')
       .select('token_data')
       .eq('service_name', 'slack')
-      .eq('is_active', true)
-      .limit(1)
-      .single();
+      .eq('is_active', true);
 
-    if (data?.token_data?.access_token) {
-      return data.token_data.access_token;
+    // userId がある場合はフィルタ（available APIと同じパターン）
+    if (userId) {
+      query = query.eq('user_id', userId);
     }
-  } catch {
-    // DB取得失敗時は環境変数にフォールバック
+
+    const { data, error } = await query.limit(1).single();
+
+    if (error) {
+      console.error('[Slack] トークンDB取得エラー:', error.message);
+      return getToken();
+    }
+
+    // access_token または bot_token を取得（available APIと同じ）
+    const token = data?.token_data?.access_token || data?.token_data?.bot_token;
+    if (token) {
+      console.log(`[Slack] DBからトークン取得成功 (${token.substring(0, 10)}...)`);
+      return token;
+    }
+
+    console.warn('[Slack] token_data にaccess_tokenが見つかりません:', Object.keys(data?.token_data || {}));
+  } catch (e) {
+    console.error('[Slack] トークンDB取得例外:', e);
   }
   return getToken();
 }
@@ -145,12 +164,15 @@ function convertSlackFile(file: any): Attachment {
 
 /**
  * Slackメッセージを取得し、UnifiedMessage形式に変換
+ * @param limit 取得件数上限
+ * @param userId 認証ユーザーID（DBトークン取得に使用）
  */
-export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMessage[]> {
+export async function fetchSlackMessages(limit: number = 50, userId?: string): Promise<UnifiedMessage[]> {
   // Phase 25: まずDBからトークン取得、なければ環境変数
-  const token = await getTokenFromDB();
+  const token = await getTokenFromDB(userId);
 
   if (!token) {
+    console.log('[Slack] トークン無し → デモデータ返却');
     return getDemoSlackMessages();
   }
 
@@ -158,9 +180,9 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
     const { WebClient } = await import('@slack/web-api');
     const client = new WebClient(token);
 
-    // チャンネル一覧取得（public/private/DM）
+    // チャンネル一覧取得（public/private/DM/グループDM）
     const channelsResult = await client.conversations.list({
-      types: 'public_channel,private_channel,im',
+      types: 'public_channel,private_channel,mpim,im',
       limit: 100,
       exclude_archived: true,
     });
@@ -171,16 +193,25 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
 
     console.log(`[Slack] ${channels.length}チャンネル検出、各${perChannelLimit}件取得`);
 
+    if (channels.length === 0) {
+      console.warn('[Slack] チャンネルが0件です。Botがチャンネルに参加しているか確認してください。');
+      return [];
+    }
+
     // Bot自身のIDを取得（自分のメッセージ判定用）
     let botUserId = '';
     try {
       const authResult = await client.auth.test();
       botUserId = (authResult.user_id as string) || '';
-    } catch {
-      // 取得失敗しても続行
+      console.log(`[Slack] auth.test成功: user_id=${botUserId}`);
+    } catch (authErr) {
+      console.warn('[Slack] auth.test失敗:', authErr);
     }
 
-    for (const channel of channels.slice(0, 30)) {
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const channel of channels.slice(0, 20)) {
       try {
         const historyResult = await client.conversations.history({
           channel: channel.id!,
@@ -215,8 +246,8 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
           if (msg.subtype && msg.subtype !== 'file_share') continue;
 
           // ユーザー情報取得
-          const userId = msg.user || '';
-          const userInfo = userId ? await getUserInfo(client, userId) : { name: 'Unknown', realName: 'Unknown' };
+          const msgUserId = msg.user || '';
+          const userInfo = msgUserId ? await getUserInfo(client, msgUserId) : { name: 'Unknown', realName: 'Unknown' };
 
           // 本文のSlack書式を整形
           const body = await formatSlackText(msg.text || '', client);
@@ -246,13 +277,13 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
             channelIcon: '💬',
             from: {
               name: userInfo.realName,
-              address: userId,
+              address: msgUserId,
             },
             body,
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: new Date(Number(msg.ts) * 1000).toISOString(),
-            isRead: userId === botUserId || (msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false),
-            status: userId === botUserId ? ('replied' as const) : ((msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false) ? ('read' as const) : ('unread' as const)),
+            isRead: msgUserId === botUserId || (msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false),
+            status: msgUserId === botUserId ? ('replied' as const) : ((msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false) ? ('read' as const) : ('unread' as const)),
             threadId: msg.thread_ts || undefined,
             metadata: {
               slackChannel: channel.id,
@@ -263,18 +294,33 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
             },
           });
         }
-      } catch (err) {
-        console.error(`[Slack] チャンネル ${channel.name || channel.id} メッセージ取得エラー:`, err);
+
+        successCount++;
+      } catch (err: any) {
+        errorCount++;
+        const errMsg = err?.data?.error || err?.message || String(err);
+        console.error(`[Slack] チャンネル ${channel.name || channel.id} エラー: ${errMsg}`);
+
+        // not_in_channel の場合、Botをjoinさせる（publicチャンネルのみ）
+        if (errMsg === 'not_in_channel' && !channel.is_im && !channel.is_mpim && !channel.is_private) {
+          try {
+            await client.conversations.join({ channel: channel.id! });
+            console.log(`[Slack] チャンネル ${channel.name} にjoinしました。次回から取得可能です。`);
+          } catch (joinErr) {
+            console.warn(`[Slack] チャンネル ${channel.name} へのjoin失敗:`, joinErr);
+          }
+        }
       }
     }
 
-    console.log(`[Slack] 合計 ${messages.length} メッセージ取得`);
+    console.log(`[Slack] 完了: ${successCount}チャンネル成功, ${errorCount}チャンネルエラー, ${messages.length}メッセージ取得`);
 
     return messages.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
-  } catch (error) {
-    console.error('[Slack] 接続エラー:', error);
+  } catch (error: any) {
+    const errDetail = error?.data?.error || error?.message || String(error);
+    console.error('[Slack] 接続エラー:', errDetail);
     return getDemoSlackMessages();
   }
 }
@@ -285,9 +331,10 @@ export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMes
 export async function sendSlackMessage(
   channelId: string,
   text: string,
-  threadTs?: string
+  threadTs?: string,
+  userId?: string
 ): Promise<boolean> {
-  const token = await getTokenFromDB();
+  const token = await getTokenFromDB(userId);
 
   if (!token) {
     console.log('[デモモード] Slack送信:', { channelId, text, threadTs });
