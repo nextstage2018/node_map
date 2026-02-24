@@ -176,17 +176,17 @@ export async function GET(request: NextRequest) {
     ];
 
     // Phase 25: 購読チャネルでフィルタリング（サービスレベルの大枠は上で制御済み）
-    // ここではチャネルID単位での細かいフィルタリングを行う
+    // msg.channel（email/slack/chatwork）→ subscriptionsキー（gmail/slack/chatwork）のマッピング
     if (!isDemo) {
+      const channelToServiceMap: Record<string, string> = {
+        email: 'gmail',
+        slack: 'slack',
+        chatwork: 'chatwork',
+      };
       allMessages = allMessages.filter((msg) => {
-        const subs = subscriptions[msg.channel];
-        // 購読設定がないサービスはそもそも取得しないが、念のため
+        const serviceName = channelToServiceMap[msg.channel] || msg.channel;
+        const subs = subscriptions[serviceName];
         if (!subs || subs.length === 0) return false;
-
-        // Gmail: ラベル単位のフィルタ（メッセージにlabelIdsがあれば使用）
-        // Slack/Chatwork: チャンネルID/ルームID単位のフィルタ
-        // 注: 現在のUnifiedMessage型にchannel_idがない場合は全メッセージを通す
-        // 将来的にUnifiedMessageにsource_channel_idを追加して完全なフィルタリングを実装
         return true;
       });
     }
