@@ -1,7 +1,9 @@
+// Phase 25: 設定画面 — チャネル購読設定を追加
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/shared/Header';
+import ChannelSubscriptionModal from '@/components/settings/ChannelSubscriptionModal';
 
 // Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
 const CHATWORK_FORM_CONFIG = {
@@ -13,32 +15,53 @@ const CHATWORK_FORM_CONFIG = {
 };
 
 // チャンネル認証カード
-function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke, authLabel }: {
+function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke, authLabel, onConfigureChannels, subscriptionCount }: {
   channel: string; label: string; icon: string; isConnected: boolean; accountName: string; onAuth: () => void; onRevoke: () => void; authLabel?: string;
+  onConfigureChannels?: () => void; subscriptionCount?: number;
 }) {
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg">
-      <div className="flex items-center gap-3">
-        <span className="text-2xl">{icon}</span>
-        <div>
-          <h3 className="font-medium">{label}</h3>
-          {isConnected && <p className="text-sm text-gray-500">{accountName}</p>}
+    <div className="border rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">{icon}</span>
+          <div>
+            <h3 className="font-medium">{label}</h3>
+            {isConnected && <p className="text-sm text-gray-500">{accountName}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {isConnected ? (
+            <>
+              <span className="text-sm text-green-600 font-medium">接続済み</span>
+              <button onClick={onRevoke} className="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">
+                解除
+              </button>
+            </>
+          ) : (
+            <button onClick={onAuth} className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700">
+              {authLabel || '接続する'}
+            </button>
+          )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        {isConnected ? (
-          <>
-            <span className="text-sm text-green-600 font-medium">接続済み</span>
-            <button onClick={onRevoke} className="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">
-              解除
-            </button>
-          </>
-        ) : (
-          <button onClick={onAuth} className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700">
-            {authLabel || '接続する'}
+
+      {/* Phase 25: 接続済みサービスにチャネル設定ボタンを表示 */}
+      {isConnected && onConfigureChannels && (
+        <div className="px-4 pb-3 pt-0">
+          <button
+            onClick={onConfigureChannels}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+          >
+            <span>📋</span>
+            <span>取得対象チャネル設定</span>
+            {subscriptionCount !== undefined && subscriptionCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+                {subscriptionCount}件
+              </span>
+            )}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -49,6 +72,20 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showChatworkForm, setShowChatworkForm] = useState(false);
   const [chatworkFormData, setChatworkFormData] = useState<Record<string, string>>({});
+
+  // Phase 25: チャネル購読モーダル
+  const [channelModal, setChannelModal] = useState<{
+    isOpen: boolean;
+    service: 'gmail' | 'slack' | 'chatwork';
+    label: string;
+  }>({ isOpen: false, service: 'gmail', label: '' });
+
+  // Phase 25: 各サービスの購読数
+  const [subscriptionCounts, setSubscriptionCounts] = useState<Record<string, number>>({
+    gmail: 0,
+    slack: 0,
+    chatwork: 0,
+  });
 
   // チャンネル接続状態
   const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string }>>({
@@ -100,6 +137,25 @@ export default function SettingsPage() {
     }
   }, []);
 
+  // Phase 25: 購読数を読み込み
+  const loadSubscriptionCounts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/channels');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const counts: Record<string, number> = { gmail: 0, slack: 0, chatwork: 0 };
+        for (const sub of data.data) {
+          if (sub.is_active && counts[sub.service_name] !== undefined) {
+            counts[sub.service_name]++;
+          }
+        }
+        setSubscriptionCounts(counts);
+      }
+    } catch (e) {
+      console.error('購読数読み込みエラー:', e);
+    }
+  }, []);
+
   // プロフィール読み込み
   const loadProfile = useCallback(async () => {
     try {
@@ -116,7 +172,8 @@ export default function SettingsPage() {
   useEffect(() => {
     loadTokens();
     loadProfile();
-  }, [loadTokens, loadProfile]);
+    loadSubscriptionCounts();
+  }, [loadTokens, loadProfile, loadSubscriptionCounts]);
 
   // OAuth認証コールバック結果チェック
   useEffect(() => {
@@ -153,12 +210,12 @@ export default function SettingsPage() {
     }
   }, [loadTokens]);
 
-  // Gmail OAuth開始（リダイレクト）
+  // Gmail OAuth開始
   const handleGmailAuth = () => {
     window.location.href = '/api/auth/gmail';
   };
 
-  // Slack OAuth開始（リダイレクト）
+  // Slack OAuth開始
   const handleSlackAuth = () => {
     window.location.href = '/api/auth/slack';
   };
@@ -208,6 +265,9 @@ export default function SettingsPage() {
       if (data.success) {
         setMessage({ type: 'success', text: '接続を解除しました' });
         loadTokens();
+        // Phase 25: 接続解除時に購読も削除
+        await fetch(`/api/settings/channels?service=${serviceName}`, { method: 'DELETE' });
+        loadSubscriptionCounts();
       } else {
         setMessage({ type: 'error', text: data.error || '解除に失敗しました' });
       }
@@ -216,6 +276,11 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Phase 25: チャネル設定モーダルを開く
+  const openChannelModal = (service: 'gmail' | 'slack' | 'chatwork', label: string) => {
+    setChannelModal({ isOpen: true, service, label });
   };
 
   // プロフィール保存
@@ -301,6 +366,7 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <p className="text-sm text-gray-600 mb-4">
                 Gmail・Slackはボタンを押すだけで連携できます。ChatworkはAPIトークンを入力してください。
+                接続後、「取得対象チャネル設定」で取得するチャネルを選択できます。
               </p>
 
               {/* Gmail（OAuth） */}
@@ -313,6 +379,8 @@ export default function SettingsPage() {
                 onAuth={handleGmailAuth}
                 onRevoke={() => handleRevoke('gmail')}
                 authLabel="Googleアカウントで連携"
+                onConfigureChannels={() => openChannelModal('gmail', 'Gmail')}
+                subscriptionCount={subscriptionCounts.gmail}
               />
 
               {/* Slack（OAuth） */}
@@ -325,6 +393,8 @@ export default function SettingsPage() {
                 onAuth={handleSlackAuth}
                 onRevoke={() => handleRevoke('slack')}
                 authLabel="Slackワークスペースで連携"
+                onConfigureChannels={() => openChannelModal('slack', 'Slack')}
+                subscriptionCount={subscriptionCounts.slack}
               />
 
               {/* Chatwork（手動トークン入力） */}
@@ -338,6 +408,8 @@ export default function SettingsPage() {
                   onAuth={handleChatworkAuth}
                   onRevoke={() => handleRevoke('chatwork')}
                   authLabel="APIトークンで接続"
+                  onConfigureChannels={() => openChannelModal('chatwork', 'Chatwork')}
+                  subscriptionCount={subscriptionCounts.chatwork}
                 />
                 {showChatworkForm && !channels.chatwork.connected && (
                   <div className="mt-2 ml-12 p-4 bg-gray-50 rounded-lg border">
@@ -374,6 +446,16 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Phase 25: データ取得ルール説明 */}
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">データ取得ルール</h3>
+                <ul className="text-xs text-gray-500 space-y-1">
+                  <li>・初回接続時は過去30日分のメッセージを取得します</li>
+                  <li>・2回目以降は前回取得以降の新着メッセージのみ取得します</li>
+                  <li>・チャネルが未選択の場合、そのサービスのメッセージは取得されません</li>
+                </ul>
               </div>
             </div>
           )}
@@ -490,6 +572,18 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+
+      {/* Phase 25: チャネル購読モーダル */}
+      <ChannelSubscriptionModal
+        isOpen={channelModal.isOpen}
+        onClose={() => setChannelModal({ ...channelModal, isOpen: false })}
+        serviceName={channelModal.service}
+        serviceLabel={channelModal.label}
+        onSaved={() => {
+          loadSubscriptionCounts();
+          setMessage({ type: 'success', text: '取得対象チャネルを更新しました' });
+        }}
+      />
     </div>
   );
 }
