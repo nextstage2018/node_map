@@ -807,6 +807,7 @@ function GroupDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={latestMessage} onBlock={onBlock} />}
           </div>
         )}
       </div>
@@ -1078,6 +1079,7 @@ function EmailThreadDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
       </div>
@@ -1263,6 +1265,7 @@ function SingleMessageDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
       </div>
