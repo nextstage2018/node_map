@@ -175,6 +175,39 @@ export async function GET(request: NextRequest) {
       ...chatworkMessages,
     ];
 
+    // Phase 25: DB上の既読状態を反映（サービスAPIのisReadを上書き）
+    if (isSupabaseConfigured()) {
+      const supabaseRead = createServerClient();
+      if (supabaseRead && allMessages.length > 0) {
+        try {
+          const messageIds = allMessages.map((m) => m.id);
+          // 50件ずつバッチで既読IDを取得
+          const readIdSet = new Set<string>();
+          for (let i = 0; i < messageIds.length; i += 50) {
+            const batch = messageIds.slice(i, i + 50);
+            const { data: readRows } = await supabaseRead
+              .from('inbox_messages')
+              .select('id')
+              .in('id', batch)
+              .eq('is_read', true);
+            if (readRows) {
+              readRows.forEach((r) => readIdSet.add(r.id));
+            }
+          }
+          if (readIdSet.size > 0) {
+            allMessages = allMessages.map((m) =>
+              readIdSet.has(m.id)
+                ? { ...m, isRead: true, status: 'read' as const }
+                : m
+            );
+            console.log(`[Messages API] DB既読反映: ${readIdSet.size}件`);
+          }
+        } catch (e) {
+          console.error('[Messages API] DB既読チェックエラー:', e);
+        }
+      }
+    }
+
     // Phase 25: 購読チャネルでフィルタリング（サービスレベルの大枠は上で制御済み）
     // msg.channel（email/slack/chatwork）→ subscriptionsキー（gmail/slack/chatwork）のマッピング
     if (!isDemo) {

@@ -24,6 +24,21 @@ export async function saveMessages(messages: UnifiedMessage[]): Promise<number> 
   if (!supabase || !isSupabaseConfigured() || messages.length === 0) return 0;
 
   try {
+    // Phase 25: DB上で既読済みのメッセージIDを事前取得（既読を上書きしない）
+    const allIds = messages.map((m) => m.id);
+    const existingReadIds = new Set<string>();
+    for (let i = 0; i < allIds.length; i += 50) {
+      const batch = allIds.slice(i, i + 50);
+      const { data: readRows } = await supabase
+        .from('inbox_messages')
+        .select('id')
+        .in('id', batch)
+        .eq('is_read', true);
+      if (readRows) {
+        readRows.forEach((r) => existingReadIds.add(r.id));
+      }
+    }
+
     const rows = messages.map((msg) => ({
       id: msg.id,
       channel: msg.channel,
@@ -36,8 +51,9 @@ export async function saveMessages(messages: UnifiedMessage[]): Promise<number> 
       body_full: msg.bodyFull || null,
       attachments: msg.attachments || [],
       timestamp: msg.timestamp,
-      is_read: msg.isRead,
-      status: msg.status,
+      // DB上で既読なら true を維持（サービス側のisReadで上書きしない）
+      is_read: existingReadIds.has(msg.id) ? true : msg.isRead,
+      status: existingReadIds.has(msg.id) ? 'read' : msg.status,
       thread_id: msg.threadId || null,
       metadata: msg.metadata,
       thread_messages: msg.threadMessages || [],
@@ -58,7 +74,11 @@ export async function saveMessages(messages: UnifiedMessage[]): Promise<number> 
       }
     }
 
-    console.log(`[InboxStorage] ${savedCount}/${messages.length}件を保存`);
+    if (existingReadIds.size > 0) {
+      console.log(`[InboxStorage] ${savedCount}/${messages.length}件を保存（既読保持: ${existingReadIds.size}件）`);
+    } else {
+      console.log(`[InboxStorage] ${savedCount}/${messages.length}件を保存`);
+    }
     return savedCount;
   } catch (error) {
     console.error('[InboxStorage] 保存処理エラー:', error);
