@@ -52,8 +52,9 @@
 | リアクション機能 | ✅ 完了 | 2026-02-20 | 全チャネル対応リアクション・Slack API連携・絵文字ピッカーUI・Supabase保存 |
 | AUDIT Phase1-20 + BugFix | ✅ 完了 | 2026-02-22 | 全13件中13件修正完了（④⑥⑦⑧⑩⑫⑬ 本コミットで対応） |
 | Phase 21：Supabase Auth認証 | ✅ 完了 | 2026-02-23 | AuthProvider・login/signup画面・middleware・useAuthUserId・Header更新・Vercelデプロイ確認済・SSOT重複修正 |
-| Phase 22：RLS + マルチユーザー対応 | 🔄 進行中（前半完了） | 2026-02-24 | RLS migration SQL作成済・serverAuth.ts作成済・主要APIルート更新済。残：副APIルート更新・サービスファイル全置換・Supabase SQL実行 |
+| Phase 22：RLS + マルチユーザー対応 | ✅ 完了 | 2026-02-24 | RLS有効化・serverAuth.ts・全APIルートgetServerUserId()適用・Supabase SQL実行済 |
 | Phase 23：設定画面リニューアル + 共通ヘッダー | ✅ 完了 | 2026-02-24 | 設定3タブ（チャネル/プロフィール/通知）・user_service_tokens設計・共通Header全ページ適用 |
+| Phase 24：OAuth実装 + 認証Cookie修正 | ✅ 完了 | 2026-02-24 | Gmail/Slack OAuth・Chatwork APIトークン手動入力・auth-helpers-nextjsによるCookie認証統一・プロフィール実データ表示 |
 
 > **注意：** 設計書のPhase 3（データ収集基盤）の前に「設定画面」を追加実装したため、
 > 設計書のPhase番号と実装のPhase番号に1つズレがあります。
@@ -132,8 +133,11 @@
 | Supabase | ✅ 接続済み | URL + Anon Key。Vercel連携で自動設定済み |
 
 | Supabase Auth | ✅ 接続済み | メール+パスワード認証。Phase 21で実装済み |
+| Gmail OAuth | ✅ 接続済み | Google Cloud Console OAuth 2.0。ユーザー別トークンをuser_service_tokensに保存 |
+| Slack OAuth | ✅ 接続済み | Slack App OAuth 2.0。ユーザー別トークンをuser_service_tokensに保存 |
+| Chatwork APIトークン | ✅ 接続済み | 手動入力方式。ユーザー別トークンをuser_service_tokensに保存 |
 
-> 全6サービスが実接続済み。
+> 全9サービス/認証が実接続済み。
 
 ---
 
@@ -333,6 +337,19 @@
 | 2026-02-24 | user_service_tokensテーブルでユーザー別APIトークン管理 | マルチユーザー対応。各ユーザーが自分のGmail/Slack/Chatworkトークンを保存 |
 | 2026-02-24 | 共通Headerコンポーネントを設定ページにも適用 | 全ページで統一ナビゲーション。設定画面からの画面遷移が不能だった問題を解決 |
 | 2026-02-24 | OAuth認証の実現可能性を調査：Gmail/Slack=OAuth可、Chatwork=APIトークンのみ | Chatwork APIにはOAuthフローが公開されていないため、手動トークン入力が必要 |
+| 2026-02-24 | Gmail OAuth 2.0を実装（Google Cloud Console） | /api/auth/gmail + /api/auth/gmail/callback。トークンはuser_service_tokensに保存 |
+| 2026-02-24 | Slack OAuth 2.0を実装（既存Slack App利用） | /api/auth/slack + /api/auth/slack/callback。channels:read等のスコープ |
+| 2026-02-24 | Chatworkは手動APIトークン入力で確定 | settings/page.tsxにAPIトークン入力フォーム。/api/settings/tokensで保存 |
+| 2026-02-24 | OAuthコールバックでcreateServerClient()（Service Role Key）を使用 | anon keyではRLSに阻まれるため。OAuthコールバックにはユーザー認証コンテキストが無い |
+| 2026-02-24 | トークンCRUD APIもcreateServerClient()に変更 | 同様のRLS問題回避。/api/settings/tokens |
+| 2026-02-24 | OAuthリダイレクトURLをリクエストから自動検出 | getAppUrl(request)関数。NEXT_PUBLIC_APP_URL未設定でもVercelで動作 |
+| 2026-02-24 | user_service_tokensのCHECK制約をgmail/slack/chatworkに更新 | 旧service_type_check(email等)→新service_name_check(gmail/slack/chatwork) |
+| 2026-02-24 | ログインページをcreateClientComponentClient()に変更 | getSupabase()(localStorage保存)→auth-helpers-nextjs(Cookie保存)に統一。サーバーサイド認証が機能するように |
+| 2026-02-24 | AuthProviderもcreateClientComponentClient()に変更 | 同上。認証状態のCookie管理を統一 |
+| 2026-02-24 | serverAuth.tsをcreateRouteHandlerClient()に変更 | 手動Cookie解析→auth-helpers-nextjsに委譲。チャンクCookie対応 |
+| 2026-02-24 | プロフィールAPIをcreateRouteHandlerClient()に変更 | 同上。実ユーザーのemail/user_metadataを正しく取得 |
+| 2026-02-24 | ミドルウェアに/api/auth/を公開パスとして追加 | OAuthコールバック（Google/Slackからのリダイレクト）が認証チェックに阻まれないように |
+| 2026-02-24 | user_service_tokensのuser_idをdemo-user-001から実UUIDに移行 | SQL UPDATE文で一括変更。既存トークンの再接続不要 |
 
 ---
 
@@ -373,7 +390,7 @@ node_map/
 │   │   ├── globals.css
 │   │   ├── inbox/page.tsx             ← 画面①統合インボックス
 │   │   ├── tasks/page.tsx             ← 画面②タスクボード（DndContext）
-│   │   ├── settings/page.tsx          ← Phase 23: 個人設定画面（3タブ：チャネル/プロフィール/通知）+ 共通ヘッダー
+│   │   ├── settings/page.tsx          ← Phase 24: 個人設定画面（3タブ：チャネル連携OAuth/プロフィール/通知）+ 共通ヘッダー
 │   │   ├── nodemap/page.tsx          ← 画面③④思考マップ（D3.jsグラフ）
 │   │   ├── master/page.tsx           ← Phase 8: ナレッジマスタ管理画面
 │   │   ├── contacts/page.tsx        ← Phase 9: コンタクト管理画面
@@ -395,8 +412,14 @@ node_map/
 │   │       │   └── [id]/confirm/route.ts ← 種→タスク変換
 │   │       ├── settings/
 │   │       │   ├── route.ts           ← 設定取得・保存
-│   │       │   ├── profile/route.ts   ← Phase 23: プロフィール更新（Supabase Auth連携）
+│   │       │   ├── profile/route.ts   ← Phase 23: プロフィール更新（createRouteHandlerClient）
+│   │       │   ├── tokens/route.ts   ← Phase 24: トークンCRUD（createServerClient）
 │   │       │   └── test/route.ts      ← 接続テスト
+│   │       ├── auth/
+│   │       │   ├── gmail/route.ts     ← Phase 24: Gmail OAuth開始
+│   │       │   ├── gmail/callback/route.ts ← Phase 24: Gmail OAuthコールバック
+│   │       │   ├── slack/route.ts     ← Phase 24: Slack OAuth開始
+│   │       │   └── slack/callback/route.ts ← Phase 24: Slack OAuthコールバック
 │   │       ├── nodes/
 │   │       │   ├── route.ts           ← ノードCRUD
 │   │       │   ├── extract/route.ts   ← キーワード抽出→ノード蓄積
@@ -485,7 +508,7 @@ node_map/
 │   │   ├── utils.ts
 │   │   ├── cache.ts                   ← Phase 13: サーバーサイドインメモリキャッシュ（TTL付き）
 │   │   ├── supabase.ts
-│   │   └── serverAuth.ts          ← Phase 22: サーバーサイド認証ヘルパー
+│   │   └── serverAuth.ts          ← Phase 22→24: サーバーサイド認証ヘルパー（createRouteHandlerClient）
 │   └── services/
 │       ├── email/emailClient.service.ts
 │       ├── slack/slackClient.service.ts
@@ -508,7 +531,8 @@ node_map/
 │   ├── 002_tasks_schema.sql
 │   ├── 003_nodemap_schema.sql        ← ノード・エッジ・クラスターDB
 │   ├── 004_phase7_10_schema.sql     ← Phase 7-10追加テーブル・カラム
-│   └── 005_phase22_rls_policies.sql  ← Phase 22: 全テーブルRLSポリシー定義
+│   ├── 005_phase22_rls_policies.sql  ← Phase 22: 全テーブルRLSポリシー定義（実行済み）
+│   └── 006_phase24_user_service_tokens.sql ← Phase 24: user_service_tokensテーブル（実行済み）
 └── package.json
 ```
 
@@ -821,6 +845,11 @@ node_map/
 - ✅ インボックス大幅強化 — 宛先指定(TO/CC/BCC/Chatwork宛先/Slackメンション)・新規メッセージ送信・Supabaseメッセージ保存・メールブロックリスト・サイドバーバッジ2重修正・デモモード削除（2026-02-20）
 - ✅ リアクション機能 — 全チャネル対応・Slack API連携(reactions.add/remove)・絵文字ピッカーUI(8種)・Supabase保存・トグル操作（2026-02-20）
 - ✅ Supabase SQL全実行 — 001〜008全て実行完了（2026-02-20）
+- ✅ AUDIT Phase1-20 + BugFix — 全13件中13件修正完了（2026-02-22）
+- ✅ Phase 21: Supabase Auth認証 — AuthProvider・login/signup・middleware・useAuthUserId・Header更新（2026-02-23）
+- ✅ Phase 22: RLS + マルチユーザー対応 — RLS有効化・serverAuth.ts・全APIルート更新・SQL実行（2026-02-24）
+- ✅ Phase 23: 設定画面リニューアル — 3タブ構成・user_service_tokens設計・共通Header（2026-02-24）
+- ✅ Phase 24: OAuth実装 + 認証Cookie修正 — Gmail/Slack OAuth・Chatwork手動入力・auth-helpers-nextjs統一・プロフィール実データ表示（2026-02-24）
 
 ---
 
@@ -1017,20 +1046,20 @@ node_map/
 
 ### 将来対応（複数人利用・SaaS化時）
 
-**認証・ユーザー管理**
-- Supabase Auth連携（メール認証 or Google OAuth）
-- ユーザーごとのセッション管理
-- 現在の固定ユーザーIDを認証ユーザーIDに置き換え
+**認証・ユーザー管理** ✅ 完了（Phase 21 + 24）
+- ~~Supabase Auth連携（メール認証 or Google OAuth）~~ → Phase 21で実装済み
+- ~~ユーザーごとのセッション管理~~ → Cookie認証で実装済み（auth-helpers-nextjs）
+- ~~現在の固定ユーザーIDを認証ユーザーIDに置き換え~~ → Phase 22+24で実装済み
 
-**Supabase実データ保存の本格運用**
-- デモモードから完全DB移行
-- 設定データの暗号化保存（settingsClient.service.ts対応）
-- バックアップ運用
+**Supabase実データ保存の本格運用** 🔄 一部完了
+- ~~デモモードから完全DB移行~~ → Phase 11で実装済み（デモモードは未設定時のフォールバックとして残存）
+- 設定データの暗号化保存（settingsClient.service.ts対応）→ 未対応
+- バックアップ運用 → 未対応
 
-**RLS（Row Level Security）**
-- 全テーブルにuser_idベースのRLSポリシー設定
-- 他ユーザーのデータが見えない状態を保証
-- SaaS外販時に必須
+**RLS（Row Level Security）** ✅ 完了（Phase 22）
+- ~~全テーブルにuser_idベースのRLSポリシー設定~~ → 実装済み
+- ~~他ユーザーのデータが見えない状態を保証~~ → auth.uid()::text = user_id パターンで実装
+- SaaS外販時に必須 → 基盤完了
 
 **設計書v2作成**
 - 再定義v2の内容を反映した設計書を作成
@@ -1056,7 +1085,8 @@ Phase 19 (会話UI改善) ──────────→ タスクボードUX
 Phase 20 (週次バナー) ─────────→ Phase 16のノード設計に依存
                                     │
 将来: 架空の同僚 ──────────────→ Phase 16〜20全完了が前提
-将来: 認証/RLS/SaaS化 ─────────→ 複数人利用開始時
+Phase 21-24 (認証/RLS/OAuth) ────→ ✅ 完了（マルチユーザー基盤確立）
+将来: SaaS化（料金体系・テナント分離）→ 外販開始時
 ```
 
 ## Phase 21（Supabase Auth認証）完了 → 次フェーズへの引き継ぎ
@@ -1099,27 +1129,22 @@ Phase 20 (週次バナー) ─────────→ Phase 16のノード�
 
 ---
 
-## Phase 22（RLS + マルチユーザー対応）前半完了 → 後半への引き継ぎ
+## Phase 22（RLS + マルチユーザー対応）完了 → Phase 24への引き継ぎ
 
-### 完了日：2026-02-24（前半）
+### 完了日：2026-02-24
 
 ### 完了事項
-- RLS migration SQL作成（`supabase/migrations/005_phase22_rls_policies.sql`）
+- RLS migration SQL作成・実行済み（`supabase/migrations/005_phase22_rls_policies.sql`）
   - 全テーブルにRLS有効化 + auth.uid()ベースのポリシー設定
   - ユーザー個人テーブル: unified_messages, tasks, task_conversations, user_nodes等
   - 組織共有テーブル（認証済み全員アクセス可）: knowledge_domains, knowledge_fields, knowledge_master_entries
   - コンタクト系（user_id未実装、認証済み全員）: contact_persons, contact_channels
 - サーバーサイド認証ヘルパー作成（`src/lib/serverAuth.ts`）
-  - `getServerUserId()`: cookieからSupabase認証トークン取得→ユーザーID返却。未認証時はデモモードフォールバック
-  - `createAuthenticatedClient()`: RLS対応の認証済みSupabaseクライアント作成
-- 主要APIルート更新（`getServerUserId()`導入）
-  - `src/app/api/tasks/route.ts` / `nodes/route.ts` / `edges/route.ts`
-
-### 残タスク（Phase 22 後半）
-1. 残りのAPIルートに`getServerUserId()`を適用（checkpoints, clusters, jobs, messages, nodemap等）
-2. TaskService.getTasks()にuserId引数対応を追加
-3. Supabase SQL Editorで `005_phase22_rls_policies.sql` を実行
-4. 動作確認：ユーザーA/Bでログインしてデータ分離を検証
+  - `getServerUserId()`: createRouteHandlerClient()でCookieから認証ユーザーID取得。未認証時はデモモードフォールバック
+- 全APIルート更新（`getServerUserId()`導入）
+  - tasks, nodes, edges, checkpoints, clusters, jobs, messages, nodemap, settings等の全ルート
+- Supabase SQL実行済み（RLS有効化）
+- 13件のマージコンフリクト解決（git pull --rebase origin main）
 
 ---
 
@@ -1141,9 +1166,66 @@ Phase 20 (週次バナー) ─────────→ Phase 16のノード�
 | `src/app/api/settings/profile/route.ts` | Supabase Auth連携プロフィール更新 |
 
 ### 注意点
-- OAuth実装は未着手（調査のみ）。将来フェーズで実装予定
-- user_service_tokensテーブルはDB未作成（設計のみ）
+- OAuth実装はPhase 24で完了
+- user_service_tokensテーブルは作成済み・運用中
 - Chatwork APIにはOAuthフロー無し→手動トークン入力が最終形
+
+---
+
+## Phase 24（OAuth実装 + 認証Cookie修正）完了 → 次フェーズへの引き継ぎ
+
+### 完了日：2026-02-24
+
+### 実装内容
+
+**OAuth認証フロー実装**
+- Gmail OAuth 2.0: Google Cloud Console でOAuth認証情報を作成。`/api/auth/gmail` → Google認証画面 → `/api/auth/gmail/callback` でトークン取得・保存
+- Slack OAuth 2.0: 既存Slack Appにリダイレクト URIを追加。`/api/auth/slack` → Slack認証画面 → `/api/auth/slack/callback` でトークン取得・保存
+- Chatwork: APIトークン手動入力。設定画面のフォームから `/api/settings/tokens` に保存
+- 全トークンは `user_service_tokens` テーブルにユーザー別保存
+
+**認証Cookie統一（クリティカル修正）**
+- **問題:** ログインページが `getSupabase()`（createClient）を使用 → トークンがlocalStorageに保存 → サーバーサイドのCookieベース認証 (`getServerUserId()`) がトークンを見つけられない → 常にdemo-user-001にフォールバック → プロフィールがデモ情報表示
+- **修正:** 全クライアント/サーバーコンポーネントを `@supabase/auth-helpers-nextjs` に統一
+  - クライアント側: `createClientComponentClient()` → Cookie保存
+  - サーバー側: `createRouteHandlerClient()` → Cookie読み取り
+
+**DB修正**
+- user_service_tokensのCHECK制約を更新（旧: email/slack/chatwork → 新: gmail/slack/chatwork）
+- user_service_tokensのuser_idをdemo-user-001から実Supabase Auth UUIDに一括移行
+
+### 実装ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `src/app/api/auth/gmail/route.ts` | Gmail OAuth開始（リダイレクト） |
+| `src/app/api/auth/gmail/callback/route.ts` | Gmail OAuthコールバック（トークン保存） |
+| `src/app/api/auth/slack/route.ts` | Slack OAuth開始（リダイレクト） |
+| `src/app/api/auth/slack/callback/route.ts` | Slack OAuthコールバック（トークン保存） |
+| `src/app/api/settings/tokens/route.ts` | トークンCRUD API（createServerClient使用） |
+| `src/app/settings/page.tsx` | OAuth連携ボタンUI + Chatwork手動入力フォーム |
+| `src/app/login/page.tsx` | getSupabase() → createClientComponentClient() |
+| `src/components/auth/AuthProvider.tsx` | getSupabase() → createClientComponentClient() |
+| `src/lib/serverAuth.ts` | 手動Cookie解析 → createRouteHandlerClient() |
+| `src/app/api/settings/profile/route.ts` | 手動Cookie解析 → createRouteHandlerClient() |
+| `src/middleware.ts` | publicPathsに `/api/auth/` を追加 |
+
+### Vercel環境変数（Phase 24で追加）
+
+| 変数名 | 用途 |
+|--------|------|
+| `GOOGLE_CLIENT_ID` | Gmail OAuth Client ID |
+| `GOOGLE_CLIENT_SECRET` | Gmail OAuth Client Secret |
+| `SLACK_CLIENT_ID` | Slack OAuth Client ID |
+| `SLACK_CLIENT_SECRET` | Slack OAuth Client Secret |
+| `NEXT_PUBLIC_APP_URL` | OAuthリダイレクトURL（自動検出にもフォールバック） |
+
+### 注意点
+- Gmail OAuthのスコープ: `https://www.googleapis.com/auth/gmail.readonly` + `https://www.googleapis.com/auth/gmail.send`
+- Slack OAuthのスコープ: `channels:read`, `channels:history`, `chat:write`, `users:read`
+- OAuthコールバックは `createServerClient()`（Service Role Key）を使用。anon keyではRLSにブロックされるため
+- Google Cloud ConsoleのOAuth同意画面が「テスト」モードの場合、テストユーザーの登録が必要
+- user_service_tokensの既存トークンは実UUID移行済み。新規ユーザー登録→OAuth接続で正常動作
 
 ---
 
