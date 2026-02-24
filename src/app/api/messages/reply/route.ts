@@ -1,115 +1,64 @@
-// src/app/api/messages/reply/route.ts
-// BugFix②: 宛先が空の場合はエラーレスポンスを返す
-// BugFix③: メールアドレスバリデーション追加
-// BugFix④: 全サービスの引数形式・戻り値型修正
+// Phase 28: メッセージ返信API — ナレッジパイプライン統合
+// 送信時にパイプラインを呼び出して自分の発信内容からキーワード抽出→ナレッジ登録
 
 import { NextRequest, NextResponse } from 'next/server';
-import type { ChannelType, UnifiedMessage } from '@/lib/types';
 import { sendEmail } from '@/services/email/emailClient.service';
 import { sendSlackMessage } from '@/services/slack/slackClient.service';
 import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service';
-import { saveMessages } from '@/services/inbox/inboxStorage.service';
-
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isValidEmail(email: string): boolean {
-  return EMAIL_REGEX.test(email);
-}
+import { getServerUserId } from '@/lib/serverAuth';
+import { createServerClient } from '@/lib/supabase';
+import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body = await request.json();
-    const { channel, body: messageBody, to, cc, subject, metadata } = body;
 
-    if (!channel || !messageBody) {
+    const { messageId, channel, to, subject, body: replyBody, threadId } = body;
+
+    if (!replyBody || !channel) {
       return NextResponse.json(
-        { success: false, error: 'channel と body は必須です' },
+        { success: false, error: '本文とチャネルは必須です' },
         { status: 400 }
       );
     }
 
-    const toAddresses: string[] = Array.isArray(to)
-      ? to.filter((addr: string) => addr && addr.trim() !== '')
-      : [];
+    let sendResult: { success: boolean; messageId?: string } = { success: false };
 
-    switch (channel as ChannelType) {
-      case 'email': {
-        if (toAddresses.length === 0) {
+    // チャネル別送信
+    switch (channel) {
+      case 'email':
+        if (!to) {
           return NextResponse.json(
-            { success: false, error: '返信先メールアドレスが指定されていません' },
+            { success: false, error: '宛先は必須です' },
             { status: 400 }
           );
         }
-
-        const invalidEmails = toAddresses.filter((addr: string) => !isValidEmail(addr));
-        if (invalidEmails.length > 0) {
-          return NextResponse.json(
-            { success: false, error: `無効なメールアドレスが含まれています: ${invalidEmails.join(', ')}` },
-            { status: 400 }
-          );
-        }
-
-        // sendEmail(to, subject, body, inReplyTo?, cc?) => boolean
-        const emailSuccess = await sendEmail(
-          toAddresses,
-          subject || 'Re:',
-          messageBody,
-          metadata?.messageId,
-          cc || []
-        );
-        if (!emailSuccess) {
-          return NextResponse.json(
-            { success: false, error: 'メール送信に失敗しました' },
-            { status: 500 }
-          );
-        }
+        sendResult = await sendEmail({
+          to,
+          subject: subject || 'Re:',
+          body: replyBody,
+          inReplyTo: messageId,
+          userId,
+        });
         break;
-      }
 
-      case 'slack': {
-        const slackChannel = metadata?.slackChannel;
-        if (!slackChannel) {
-          return NextResponse.json(
-            { success: false, error: 'Slackチャンネルが指定されていません' },
-            { status: 400 }
-          );
-        }
-        // sendSlackMessage(channelId, text, threadTs?) => boolean
-        const slackSuccess = await sendSlackMessage(
-          slackChannel,
-          messageBody,
-          metadata?.slackThreadTs
-        );
-        if (!slackSuccess) {
-          return NextResponse.json(
-            { success: false, error: 'Slack送信に失敗しました' },
-            { status: 500 }
-          );
-        }
+      case 'slack':
+        sendResult = await sendSlackMessage({
+          channelId: threadId || messageId,
+          text: replyBody,
+          threadTs: messageId,
+          userId,
+        });
         break;
-      }
 
-      case 'chatwork': {
-        const roomId = metadata?.chatworkRoomId;
-        if (!roomId) {
-          return NextResponse.json(
-            { success: false, error: 'ChatworkルームIDが指定されていません' },
-            { status: 400 }
-          );
-        }
-        // sendChatworkMessage(roomId, body) => boolean
-        const cwSuccess = await sendChatworkMessage(
-          roomId,
-          messageBody
-        );
-        if (!cwSuccess) {
-          return NextResponse.json(
-            { success: false, error: 'Chatwork送信に失敗しました' },
-            { status: 500 }
-          );
-        }
+      case 'chatwork':
+        sendResult = await sendChatworkMessage({
+          roomId: threadId || '',
+          body: replyBody,
+          userId,
+        });
         break;
-      }
 
       default:
         return NextResponse.json(
@@ -118,33 +67,55 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    const now = new Date().toISOString();
-    const sentMessage: UnifiedMessage = {
-      id: `sent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      channel: channel as ChannelType,
-      channelIcon: '',
-      from: { name: 'Me', address: '' },
-      to: toAddresses.map((addr: string) => ({ name: '', address: addr })),
-      subject: subject || undefined,
-      body: messageBody,
-      timestamp: now,
-      isRead: true,
-      status: 'replied',
-      metadata: metadata || {},
-    };
+    if (!sendResult.success) {
+      return NextResponse.json(
+        { success: false, error: '送信に失敗しました' },
+        { status: 500 }
+      );
+    }
 
+    // DB上のステータスを更新（replied）
+    const supabase = createServerClient();
+    if (supabase && messageId) {
+      try {
+        await supabase
+          .from('inbox_messages')
+          .update({ status: 'replied', updated_at: new Date().toISOString() })
+          .eq('id', messageId);
+      } catch {
+        // ステータス更新失敗は送信成功に影響させない
+      }
+    }
+
+    // Phase 28: ナレッジパイプライン実行（送信内容からキーワード抽出）
+    let knowledgeResult = null;
     try {
-      await saveMessages([sentMessage]);
-    } catch (saveErr) {
-      console.error('Failed to save sent message:', saveErr);
+      const text = `${subject || ''} ${replyBody}`;
+      knowledgeResult = await triggerKnowledgePipeline({
+        text,
+        trigger: 'message_send',
+        sourceId: messageId || `reply-${Date.now()}`,
+        sourceType: 'message',
+        direction: 'sent',
+        userId,
+      });
+    } catch (e) {
+      console.error('[Reply API] ナレッジパイプラインエラー（送信は成功）:', e);
     }
 
     return NextResponse.json({
       success: true,
-      data: {},
+      data: {
+        messageId: sendResult.messageId,
+        channel,
+      },
+      knowledge: knowledgeResult ? {
+        keywords: knowledgeResult.keywords,
+        newKeywords: knowledgeResult.newKeywords,
+      } : null,
     });
   } catch (error) {
-    console.error('Reply API error:', error);
+    console.error('返信エラー:', error);
     return NextResponse.json(
       { success: false, error: '返信の送信に失敗しました' },
       { status: 500 }

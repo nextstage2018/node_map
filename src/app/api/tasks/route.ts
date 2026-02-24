@@ -1,12 +1,15 @@
+// Phase 28: タスクAPI — ナレッジパイプライン統合
+// タスク作成時にパイプラインを呼び出してキーワード抽出→ナレッジ登録
+
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
-import { CreateTaskRequest, UpdateTaskRequest } from '@/lib/types';
+import { CreateTaskRequest } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
+import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 
-// タスク一覧取得（Phase 22: 認証ユーザーIDでフィルタリング）
+// タスク一覧取得
 export async function GET() {
   try {
-    // Phase 22: 認証ユーザーIDでフィルタリング
     const userId = await getServerUserId();
     const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
@@ -19,10 +22,9 @@ export async function GET() {
   }
 }
 
-// タスク作成（Phase 22: 認証ユーザーIDを付与）
+// タスク作成 + ナレッジパイプライン
 export async function POST(request: NextRequest) {
   try {
-    // Phase 22: 認証ユーザーIDを付与
     const userId = await getServerUserId();
     const body: CreateTaskRequest = await request.json();
 
@@ -33,8 +35,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const task = await TaskService.createTask({ ...body, userId } as any);
-    return NextResponse.json({ success: true, data: task });
+    const task = await TaskService.createTask({ ...body, userId });
+
+    // Phase 28: ナレッジパイプライン実行
+    let knowledgeResult = null;
+    try {
+      const text = `${task.title} ${task.description || ''}`;
+      knowledgeResult = await triggerKnowledgePipeline({
+        text,
+        trigger: 'task_create',
+        sourceId: task.id,
+        sourceType: 'task',
+        direction: 'self',
+        userId,
+      });
+    } catch (e) {
+      console.error('[Tasks API] ナレッジパイプラインエラー（タスク作成は成功）:', e);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: task,
+      knowledge: knowledgeResult ? {
+        keywords: knowledgeResult.keywords,
+        newKeywords: knowledgeResult.newKeywords,
+        nodeCount: knowledgeResult.nodeCount,
+      } : null,
+    });
   } catch (error) {
     console.error('タスク作成エラー:', error);
     return NextResponse.json(
@@ -44,22 +71,20 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// タスク更新
+// タスク更新 + 完了時にナレッジパイプライン
 export async function PUT(request: NextRequest) {
   try {
-    // Phase 22: 認証確認
-    await getServerUserId();
-    const body: UpdateTaskRequest & { id: string } = await request.json();
-    const { id, ...updateData } = body;
+    const userId = await getServerUserId();
+    const body = await request.json();
 
-    if (!id) {
+    if (!body.id) {
       return NextResponse.json(
-        { success: false, error: 'タスクIDは必須です' },
+        { success: false, error: 'IDは必須です' },
         { status: 400 }
       );
     }
 
-    const task = await TaskService.updateTask(id, updateData);
+    const task = await TaskService.updateTask(body.id, body);
     if (!task) {
       return NextResponse.json(
         { success: false, error: 'タスクが見つかりません' },
@@ -67,7 +92,32 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, data: task });
+    // Phase 28: タスク完了時にナレッジパイプライン実行
+    let knowledgeResult = null;
+    if (body.status === 'done' && task.resultSummary) {
+      try {
+        const text = `${task.title} ${task.resultSummary}`;
+        knowledgeResult = await triggerKnowledgePipeline({
+          text,
+          trigger: 'task_complete',
+          sourceId: task.id,
+          sourceType: 'task',
+          direction: 'self',
+          userId,
+        });
+      } catch (e) {
+        console.error('[Tasks API] ナレッジパイプラインエラー（タスク完了は成功）:', e);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: task,
+      knowledge: knowledgeResult ? {
+        keywords: knowledgeResult.keywords,
+        newKeywords: knowledgeResult.newKeywords,
+      } : null,
+    });
   } catch (error) {
     console.error('タスク更新エラー:', error);
     return NextResponse.json(
