@@ -10,11 +10,21 @@ import MessageDetail from '@/components/inbox/MessageDetail';
 import ComposeMessage from '@/components/inbox/ComposeMessage';
 
 export default function InboxPage() {
-  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, addSentMessage } =
+  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, addSentMessage, markGroupAsRead } =
     useMessages();
   const [selectedGroup, setSelectedGroup] = useState<MessageGroup | null>(null);
   const [filter, setFilter] = useState<ChannelType | 'all'>('all');
   const [showCompose, setShowCompose] = useState(false);
+
+  // Phase 25: グループ選択時に既読処理を実行
+  const handleSelectGroup = useCallback((group: MessageGroup) => {
+    setSelectedGroup(group);
+    setShowCompose(false);
+    // 未読メッセージがあれば既読にする
+    if (group.unreadCount > 0) {
+      markGroupAsRead(group);
+    }
+  }, [markGroupAsRead]);
 
   // 送信後に送信メッセージを追加してリフレッシュ
   const handleSentMessage = useCallback((msg: UnifiedMessage) => {
@@ -77,10 +87,7 @@ export default function InboxPage() {
                 messages={messages}
                 messageGroups={messageGroups}
                 selectedGroupKey={selectedGroup?.groupKey}
-                onSelectGroup={(group) => {
-                  setSelectedGroup(group);
-                  setShowCompose(false);
-                }}
+                onSelectGroup={handleSelectGroup}
                 filter={filter}
                 onFilterChange={setFilter}
                 onLoadMore={loadMore}

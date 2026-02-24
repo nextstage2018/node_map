@@ -175,6 +175,34 @@ export function useMessages() {
     return fetchMessages(true);
   }, [fetchMessages]);
 
+  // Phase 25: グループ内メッセージを既読にする
+  const markGroupAsRead = useCallback((group: MessageGroup) => {
+    const unreadIds = group.messages
+      .filter((m) => !m.isRead)
+      .map((m) => m.id);
+
+    if (unreadIds.length === 0) return;
+
+    // 1. ローカル状態を即時更新（UIが即座に反映される）
+    setMessages((prev) => {
+      const idSet = new Set(unreadIds);
+      const updated = prev.map((m) =>
+        idSet.has(m.id) ? { ...m, isRead: true, status: 'read' as const } : m
+      );
+      clientMessageCache = { messages: updated, timestamp: Date.now(), page };
+      return updated;
+    });
+
+    // 2. DBに永続化（バックグラウンド・失敗しても UI には影響しない）
+    fetch('/api/messages/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messageIds: unreadIds }),
+    }).catch((err) => {
+      console.error('[useMessages] 既読API呼び出しエラー:', err);
+    });
+  }, [page]);
+
   // 送信メッセージをローカルに追加（即時表示用）
   const addSentMessage = useCallback((msg: UnifiedMessage) => {
     setMessages((prev) => {
@@ -196,5 +224,6 @@ export function useMessages() {
     messageCounts,
     unreadCounts,
     addSentMessage,
+    markGroupAsRead,
   };
 }
