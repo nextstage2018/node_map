@@ -7,7 +7,8 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
-import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { useRouter, usePathname } from 'next/navigation';
 
 interface AuthContextType {
@@ -38,7 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
-  const supabase = getSupabase();
+  const supabase = isSupabaseConfigured() ? createClientComponentClient() : null;
 
   useEffect(() => {
     // 公開ページなら認証チェック不要
@@ -48,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Supabase未設定 → ログインページへ
-    if (!supabase || !isSupabaseConfigured()) {
+    if (!supabase) {
       setLoading(false);
       router.replace('/login?error=not_configured');
       return;

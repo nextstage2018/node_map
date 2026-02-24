@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSupabase } from '@/lib/supabase';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -10,14 +10,10 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = getSupabase();
+  const supabase = createClientComponentClient();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!supabase) {
-      setError('Supabaseが未設定です。環境変数を確認してください。');
-      return;
-    }
     setLoading(true);
     setError('');
 
@@ -27,6 +23,7 @@ export default function LoginPage() {
       setLoading(false);
     } else {
       router.push('/');
+      router.refresh();
     }
   };
 

@@ -1,7 +1,7 @@
 // Phase 24: プロフィール編集API（Supabase Auth user_metadata対応）
 import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
-import { createClient } from '@supabase/supabase-js';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
@@ -34,13 +34,8 @@ export async function GET() {
     }
 
     // Supabase Auth からユーザー情報を取得
-    const client = await getAuthClient();
-    if (!client) {
-      return NextResponse.json({
-        success: true,
-        data: demoProfiles['demo-user-001'],
-      });
-    }
+    const cookieStore = await cookies();
+    const client = createRouteHandlerClient({ cookies: () => cookieStore });
 
     const { data: { user }, error } = await client.auth.getUser();
 
@@ -94,13 +89,8 @@ export async function PUT(req: Request) {
     }
 
     // Supabase Auth の user_metadata を更新
-    const client = await getAuthClient();
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: '認証クライアントの取得に失敗しました' },
-        { status: 500 }
-      );
-    }
+    const cookieStore = await cookies();
+    const client = createRouteHandlerClient({ cookies: () => cookieStore });
 
     const updateData: Record<string, any> = {};
     if (displayName !== undefined) updateData.display_name = displayName;
@@ -138,41 +128,5 @@ export async function PUT(req: Request) {
       { success: false, error: 'プロフィールの保存に失敗しました' },
       { status: 500 }
     );
-  }
-}
-
-// ヘルパー: 認証済みSupabaseクライアントを取得
-async function getAuthClient() {
-  try {
-    const cookieStore = await cookies();
-    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
-    const authCookieName = `sb-${projectRef}-auth-token`;
-
-    const authCookie = cookieStore.get(authCookieName)?.value
-      || cookieStore.get('sb-access-token')?.value;
-
-    if (!authCookie) return null;
-
-    let accessToken = authCookie;
-    try {
-      const parsed = JSON.parse(authCookie);
-      if (Array.isArray(parsed) && parsed.length >= 1) {
-        accessToken = parsed[0];
-      } else if (parsed.access_token) {
-        accessToken = parsed.access_token;
-      }
-    } catch {
-      // JSONでなければそのまま
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-    });
-  } catch {
-    return null;
   }
 }

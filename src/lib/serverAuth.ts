@@ -1,7 +1,7 @@
 // Phase 22: サーバーサイド認証ヘルパー
 // APIルートから認証ユーザーのIDを取得する
 
-import { createClient } from '@supabase/supabase-js';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
 const DEMO_USER_ID = 'demo-user-001';
@@ -23,41 +23,7 @@ export async function getServerUserId(): Promise<string> {
 
   try {
     const cookieStore = await cookies();
-
-    // Supabase Auth のアクセストークンを取得
-    // sb-<project-ref>-auth-token の形式でCookieに保存されている
-    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
-    const authCookieName = `sb-${projectRef}-auth-token`;
-
-    const authCookie = cookieStore.get(authCookieName)?.value
-      || cookieStore.get('sb-access-token')?.value;
-
-    if (!authCookie) {
-      return DEMO_USER_ID;
-    }
-
-    // トークンからユーザー情報を取得
-    let accessToken = authCookie;
-
-    // Cookie値がJSON配列の場合（Supabase v2の形式）
-    try {
-      const parsed = JSON.parse(authCookie);
-      if (Array.isArray(parsed) && parsed.length >= 1) {
-        accessToken = parsed[0];
-      } else if (parsed.access_token) {
-        accessToken = parsed.access_token;
-      }
-    } catch {
-      // JSONでなければそのまま使用
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-    });
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
 
     const { data: { user }, error } = await supabase.auth.getUser();
 

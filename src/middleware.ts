@@ -11,7 +11,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const isConfigured = !!(supabaseUrl && supabaseAnonKey && supabaseUrl.startsWith('http'));
 
 // 認証不要なパス
-const publicPaths = ['/login', '/signup', '/auth/callback'];
+const publicPaths = ['/login', '/signup', '/auth/callback', '/api/auth/'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
