@@ -136,10 +136,12 @@ async function refreshGmailToken(refreshToken: string): Promise<string | null> {
 // ========================================
 // Slack: チャンネル一覧を取得
 // ========================================
-async function fetchSlackChannels(tokenData: any): Promise<any[]> {
+async function fetchSlackChannels(tokenData: any): Promise<{ channels: any[]; debug?: string }> {
   try {
     const accessToken = tokenData?.access_token || tokenData?.bot_token;
-    if (!accessToken) return getDefaultSlackChannels();
+    if (!accessToken) {
+      return { channels: [], debug: 'トークンが見つかりません' };
+    }
 
     // Slack Web API でチャンネル一覧を取得
     const res = await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams({
@@ -151,17 +153,15 @@ async function fetchSlackChannels(tokenData: any): Promise<any[]> {
     });
 
     if (!res.ok) {
-      console.error('Slack conversations.list error:', res.status);
-      return getDefaultSlackChannels();
+      return { channels: [], debug: `Slack HTTP エラー: ${res.status}` };
     }
 
     const data = await res.json();
     if (!data.ok) {
-      console.error('Slack API error:', data.error);
-      return getDefaultSlackChannels();
+      return { channels: [], debug: `Slack API エラー: ${data.error || '不明'}` };
     }
 
-    return (data.channels || []).map((ch: any) => {
+    const channels = (data.channels || []).map((ch: any) => {
       let channelType = 'public';
       if (ch.is_im) channelType = 'dm';
       else if (ch.is_mpim) channelType = 'group';
@@ -175,23 +175,16 @@ async function fetchSlackChannels(tokenData: any): Promise<any[]> {
         purpose: ch.purpose?.value || '',
       };
     }).sort((a: any, b: any) => {
-      // チャンネルタイプ順: public → private → group → dm
       const typeOrder: Record<string, number> = { public: 0, private: 1, group: 2, dm: 3 };
       const orderDiff = (typeOrder[a.channel_type] || 99) - (typeOrder[b.channel_type] || 99);
       if (orderDiff !== 0) return orderDiff;
       return a.channel_name.localeCompare(b.channel_name, 'ja');
     });
-  } catch (error) {
-    console.error('Slack channels fetch error:', error);
-    return getDefaultSlackChannels();
-  }
-}
 
-function getDefaultSlackChannels(): any[] {
-  return [
-    { channel_id: 'demo-general', channel_name: 'general', channel_type: 'public' },
-    { channel_id: 'demo-random', channel_name: 'random', channel_type: 'public' },
-  ];
+    return { channels };
+  } catch (error) {
+    return { channels: [], debug: `例外: ${String(error)}` };
+  }
 }
 
 // ========================================
@@ -272,14 +265,18 @@ export async function GET(request: NextRequest) {
     const tokenData = await getUserToken(userId, serviceName);
 
     let channels: any[] = [];
+    let debug: string | undefined;
 
     switch (serviceName) {
       case 'gmail':
         channels = await fetchGmailLabels(tokenData);
         break;
-      case 'slack':
-        channels = await fetchSlackChannels(tokenData);
+      case 'slack': {
+        const result = await fetchSlackChannels(tokenData);
+        channels = result.channels;
+        debug = result.debug;
         break;
+      }
       case 'chatwork':
         channels = await fetchChatworkRooms(tokenData);
         break;
@@ -311,6 +308,8 @@ export async function GET(request: NextRequest) {
       success: true,
       data: channelsWithStatus,
       service: serviceName,
+      tokenFound: !!tokenData,
+      ...(debug ? { debug } : {}),
     });
   } catch (error) {
     console.error('利用可能チャネル取得エラー:', error);
