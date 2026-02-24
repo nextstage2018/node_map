@@ -213,10 +213,36 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
 
     for (const channel of channels.slice(0, 20)) {
       try {
-        const historyResult = await client.conversations.history({
-          channel: channel.id!,
-          limit: perChannelLimit,
-        });
+        // メッセージ履歴を取得（not_in_channelの場合はjoin後リトライ）
+        let historyResult;
+        try {
+          historyResult = await client.conversations.history({
+            channel: channel.id!,
+            limit: perChannelLimit,
+          });
+        } catch (histErr: any) {
+          const histErrMsg = histErr?.data?.error || histErr?.message || '';
+
+          // not_in_channel → Botを自動join → リトライ
+          if (histErrMsg === 'not_in_channel') {
+            console.log(`[Slack] ${channel.name || channel.id}: not_in_channel → join試行中...`);
+            try {
+              await client.conversations.join({ channel: channel.id! });
+              console.log(`[Slack] ${channel.name || channel.id}: join成功 → 履歴を再取得`);
+              historyResult = await client.conversations.history({
+                channel: channel.id!,
+                limit: perChannelLimit,
+              });
+            } catch (joinErr: any) {
+              const joinErrMsg = joinErr?.data?.error || joinErr?.message || '';
+              console.warn(`[Slack] ${channel.name || channel.id}: join失敗 (${joinErrMsg}) → スキップ`);
+              errorCount++;
+              continue;
+            }
+          } else {
+            throw histErr; // その他のエラーは外側catchへ
+          }
+        }
 
         // Phase 25: チャンネルの最終既読タイムスタンプを取得
         let lastRead = '0';
@@ -300,16 +326,6 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
         errorCount++;
         const errMsg = err?.data?.error || err?.message || String(err);
         console.error(`[Slack] チャンネル ${channel.name || channel.id} エラー: ${errMsg}`);
-
-        // not_in_channel の場合、Botをjoinさせる（publicチャンネルのみ）
-        if (errMsg === 'not_in_channel' && !channel.is_im && !channel.is_mpim && !channel.is_private) {
-          try {
-            await client.conversations.join({ channel: channel.id! });
-            console.log(`[Slack] チャンネル ${channel.name} にjoinしました。次回から取得可能です。`);
-          } catch (joinErr) {
-            console.warn(`[Slack] チャンネル ${channel.name} へのjoin失敗:`, joinErr);
-          }
-        }
       }
     }
 
