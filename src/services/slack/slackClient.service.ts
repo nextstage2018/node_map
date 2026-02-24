@@ -1,19 +1,41 @@
 import { UnifiedMessage, Attachment } from '@/lib/types';
+import { createServerClient } from '@/lib/supabase';
 
 /**
  * Slack連携サービス
  * Slack Web APIを使用してメッセージの取得・送信を行う
  *
  * Phase 15: 実API対応改修
- * - ユーザー情報キャッシュ（N+1問題解消）
- * - 添付ファイル・画像プレビュー対応
- * - Slack書式（<@U123>, <#C123|name>, リンク等）の整形
- * - DM・グループDM対応
- * - エラーハンドリング改善
+ * Phase 25: DBからトークン取得に変更
  */
 
 function getToken(): string {
   return process.env.SLACK_BOT_TOKEN || '';
+}
+
+/**
+ * Phase 25: DBからSlackトークンを取得（ユーザーのOAuth接続トークン）
+ */
+async function getTokenFromDB(): Promise<string> {
+  const supabase = createServerClient();
+  if (!supabase) return getToken();
+
+  try {
+    const { data } = await supabase
+      .from('user_service_tokens')
+      .select('token_data')
+      .eq('service_name', 'slack')
+      .eq('is_active', true)
+      .limit(1)
+      .single();
+
+    if (data?.token_data?.access_token) {
+      return data.token_data.access_token;
+    }
+  } catch {
+    // DB取得失敗時は環境変数にフォールバック
+  }
+  return getToken();
 }
 
 // ユーザー情報キャッシュ（サーバーサイド、プロセス内メモリ）
@@ -125,7 +147,8 @@ function convertSlackFile(file: any): Attachment {
  * Slackメッセージを取得し、UnifiedMessage形式に変換
  */
 export async function fetchSlackMessages(limit: number = 50): Promise<UnifiedMessage[]> {
-  const token = getToken();
+  // Phase 25: まずDBからトークン取得、なければ環境変数
+  const token = await getTokenFromDB();
 
   if (!token) {
     return getDemoSlackMessages();
@@ -264,7 +287,7 @@ export async function sendSlackMessage(
   text: string,
   threadTs?: string
 ): Promise<boolean> {
-  const token = getToken();
+  const token = await getTokenFromDB();
 
   if (!token) {
     console.log('[デモモード] Slack送信:', { channelId, text, threadTs });

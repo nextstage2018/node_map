@@ -24,11 +24,14 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 interface SidebarProps {
   messageCounts: Record<ChannelType, number>;
   unreadCounts: Record<ChannelType, number>;
+  activeFilter?: ChannelType | 'all';
+  onFilterChange?: (filter: ChannelType | 'all') => void;
 }
 
-export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
+export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'all', onFilterChange }: SidebarProps) {
   const channels: ChannelType[] = ['email', 'slack', 'chatwork'];
   const totalMessages = Object.values(messageCounts).reduce((a, b) => a + b, 0);
+  const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
   return (
     <aside className="w-56 border-r border-slate-200 bg-slate-50 p-4 shrink-0">
@@ -37,24 +40,47 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
                     チャンネル
         </h2>
         <ul className="space-y-1">
-          <li className="flex items-center justify-between px-3 py-2 rounded-lg bg-white text-sm font-medium text-slate-900">
+          {/* すべて */}
+          <li
+            onClick={() => onFilterChange?.('all')}
+            className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
+              activeFilter === 'all'
+                ? 'bg-white text-slate-900 shadow-sm'
+                : 'text-slate-600 hover:bg-white'
+            }`}
+          >
             <span className="inline-flex items-center gap-2">
               {iconMap['/icons/nav-inbox.svg'] ? (() => { const Icon = iconMap['/icons/nav-inbox.svg']; return <Icon className="w-4 h-4 text-slate-500" />; })() : <Image src="/icons/nav-inbox.svg" alt="すべて" width={16} height={16} />}
                             すべて
             </span>
-            {totalMessages > 0 && (
-              <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
-                {totalMessages}
-              </span>
-            )}
+            <span className="flex items-center gap-1.5">
+              {totalUnread > 0 && (
+                <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
+                  {totalUnread}
+                </span>
+              )}
+              {totalMessages > 0 && totalUnread === 0 && (
+                <span className="text-xs text-slate-400">
+                  {totalMessages}
+                </span>
+              )}
+            </span>
           </li>
+          {/* 各チャネル */}
           {channels.map((ch) => {
             const config = CHANNEL_CONFIG[ch];
             const count = messageCounts[ch];
+            const unread = unreadCounts[ch] || 0;
+            const isActive = activeFilter === ch;
             return (
               <li
                 key={ch}
-                className="flex items-center justify-between px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-white transition-colors"
+                onClick={() => onFilterChange?.(ch)}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors ${
+                  isActive
+                    ? 'bg-white text-slate-900 shadow-sm font-medium'
+                    : 'text-slate-600 hover:bg-white'
+                }`}
               >
                 <span className="inline-flex items-center gap-2">
                   <Image
@@ -66,11 +92,18 @@ export default function Sidebar({ messageCounts, unreadCounts }: SidebarProps) {
                   />
                   {config.label}
                 </span>
-                {count > 0 && (
-                  <span className="text-xs text-slate-400">
-                    {count}
-                  </span>
-                )}
+                <span className="flex items-center gap-1.5">
+                  {unread > 0 && (
+                    <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">
+                      {unread}
+                    </span>
+                  )}
+                  {count > 0 && unread === 0 && (
+                    <span className="text-xs text-slate-400">
+                      {count}
+                    </span>
+                  )}
+                </span>
               </li>
             );
           })}

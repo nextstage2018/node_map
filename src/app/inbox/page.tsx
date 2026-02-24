@@ -25,7 +25,13 @@ export default function InboxPage() {
     <div className="flex flex-col h-screen bg-white">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar messageCounts={messageCounts} unreadCounts={unreadCounts} />
+        {/* Phase 25: Sidebarにフィルタpropsを渡す */}
+        <Sidebar
+          messageCounts={messageCounts}
+          unreadCounts={unreadCounts}
+          activeFilter={filter}
+          onFilterChange={setFilter}
+        />
         <div className="flex flex-1 overflow-hidden">
           {/* メッセージ一覧 */}
           <div className="w-96 border-r border-slate-200 flex flex-col overflow-hidden">
