@@ -1,7 +1,7 @@
 // Phase 24: ユーザー別サービストークンCRUD API
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
-import { getSupabase } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,7 +12,7 @@ const demoTokens: Record<string, any[]> = {};
 export async function GET() {
   try {
     const userId = await getServerUserId();
-    const sb = getSupabase();
+    const sb = createServerClient();
 
     if (!sb) {
       // デモモード
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sb = getSupabase();
+    const sb = createServerClient();
 
     if (!sb) {
       // デモモード
@@ -147,7 +147,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const sb = getSupabase();
+    const sb = createServerClient();
 
     if (!sb) {
       // デモモード

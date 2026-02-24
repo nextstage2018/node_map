@@ -1,15 +1,22 @@
 // Phase 24: Slack OAuth 2.0 コールバック
 // GET: Slackからのリダイレクト処理 → トークン取得 → DB保存 → 設定画面へリダイレクト
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabase } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase';
 
 const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID || '';
 const SLACK_CLIENT_SECRET = process.env.SLACK_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.SLACK_REDIRECT_URI
   || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/slack/callback`;
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+// リクエストURLからアプリのベースURLを取得
+function getAppUrl(request: NextRequest): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  const url = new URL(request.url);
+  return `${url.protocol}//${url.host}`;
+}
 
 export async function GET(request: NextRequest) {
+  const appUrl = getAppUrl(request);
   try {
     const { searchParams } = new URL(request.url);
     const code = searchParams.get('code');
@@ -18,15 +25,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Slack OAuth エラー:', error);
-      return NextResponse.redirect(`${APP_URL}/settings?error=slack_denied`);
+      return NextResponse.redirect(`${appUrl}/settings?error=slack_denied`);
     }
 
     if (!code || !state) {
-      return NextResponse.redirect(`${APP_URL}/settings?error=slack_invalid`);
+      return NextResponse.redirect(`${appUrl}/settings?error=slack_invalid`);
     }
 
     if (!SLACK_CLIENT_ID || !SLACK_CLIENT_SECRET) {
-      return NextResponse.redirect(`${APP_URL}/settings?error=slack_not_configured`);
+      return NextResponse.redirect(`${appUrl}/settings?error=slack_not_configured`);
     }
 
     // 認証コードをトークンに交換
@@ -45,11 +52,11 @@ export async function GET(request: NextRequest) {
 
     if (!tokenData.ok) {
       console.error('Slack トークン取得失敗:', tokenData.error);
-      return NextResponse.redirect(`${APP_URL}/settings?error=slack_token_failed`);
+      return NextResponse.redirect(`${appUrl}/settings?error=slack_token_failed`);
     }
 
-    // トークンをDBに保存
-    const sb = getSupabase();
+    // トークンをDBに保存（Service Role Key でRLSをバイパス）
+    const sb = createServerClient();
     const userId = state;
     const now = new Date().toISOString();
 
@@ -77,13 +84,15 @@ export async function GET(request: NextRequest) {
 
       if (dbError) {
         console.error('Slack トークンDB保存エラー:', dbError);
-        return NextResponse.redirect(`${APP_URL}/settings?error=slack_save_failed`);
+        return NextResponse.redirect(`${appUrl}/settings?error=slack_save_failed`);
       }
+    } else {
+      console.error('Supabase未設定のためトークン保存をスキップ');
     }
 
-    return NextResponse.redirect(`${APP_URL}/settings?success=slack_connected`);
+    return NextResponse.redirect(`${appUrl}/settings?auth=success&service=Slack`);
   } catch (error) {
     console.error('Slack OAuthコールバックエラー:', error);
-    return NextResponse.redirect(`${APP_URL}/settings?error=slack_callback_failed`);
+    return NextResponse.redirect(`${appUrl}/settings?error=slack_callback_failed`);
   }
 }
