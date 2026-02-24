@@ -1,28 +1,231 @@
-// GET /api/contacts — コンタクト一覧（フィルター対応）
-import { NextRequest, NextResponse } from 'next/server';
-import { ContactPersonService } from '@/services/contact/contactPerson.service';
-import type { PersonRelationshipType, ChannelType } from '@/lib/types';
+// Phase 26: コンタクトAPI — inbox_messagesのfromデータからコンタクト自動生成 + CRUD
+import { NextResponse, NextRequest } from 'next/server';
+import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
-export async function GET(req: NextRequest) {
-  try {
-    // Phase 22: 認証確認
-    await getServerUserId();
-    const { searchParams } = req.nextUrl;
-    const relationshipType = searchParams.get('relationship') as PersonRelationshipType | null;
-    const channel = searchParams.get('channel') as ChannelType | null;
-    const searchQuery = searchParams.get('search') || undefined;
+export const dynamic = 'force-dynamic';
 
-    const contacts = await ContactPersonService.getContacts({
-      relationshipType: relationshipType || undefined,
-      channel: channel || undefined,
-      searchQuery,
+// ========================================
+// GET: コンタクト一覧取得（自動生成 + 既存データ統合）
+// ========================================
+export async function GET(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: true, data: [], stats: { total: 0, byRelationship: {}, byChannel: {}, unconfirmedCount: 0 } });
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const search = searchParams.get('search') || '';
+    const relationship = searchParams.get('relationship') || '';
+    const channel = searchParams.get('channel') || '';
+
+    // 1. inbox_messagesからユニークな送信者を集計
+    const { data: senderStats, error: senderError } = await supabase.rpc('get_contact_stats_from_messages');
+
+    // rpcが未登録の場合はフォールバック: 直接クエリ
+    let senders: { from_name: string; from_address: string; channel: string; count: number; last_contact: string }[] = [];
+    if (senderError || !senderStats) {
+      // 直接集計クエリ（GROUP BY）
+      const { data: rawMessages } = await supabase
+        .from('inbox_messages')
+        .select('from_name, from_address, channel, timestamp')
+        .neq('from_name', 'あなた')
+        .neq('from_name', '')
+        .order('timestamp', { ascending: false });
+
+      if (rawMessages) {
+        const senderMap = new Map<string, { from_name: string; from_address: string; channels: Set<string>; count: number; last_contact: string }>();
+        for (const msg of rawMessages) {
+          const key = msg.from_address?.toLowerCase() || msg.from_name;
+          if (!key) continue;
+          const existing = senderMap.get(key);
+          if (existing) {
+            existing.count++;
+            existing.channels.add(msg.channel);
+            if (msg.timestamp > existing.last_contact) {
+              existing.last_contact = msg.timestamp;
+              existing.from_name = msg.from_name || existing.from_name;
+            }
+          } else {
+            senderMap.set(key, {
+              from_name: msg.from_name || '',
+              from_address: msg.from_address || '',
+              channels: new Set([msg.channel]),
+              count: 1,
+              last_contact: msg.timestamp,
+            });
+          }
+        }
+        senders = Array.from(senderMap.values()).map((s) => ({
+          from_name: s.from_name,
+          from_address: s.from_address,
+          channel: Array.from(s.channels)[0], // メインチャネル
+          count: s.count,
+          last_contact: s.last_contact,
+        }));
+      }
+    } else {
+      senders = senderStats;
+    }
+
+    // 2. 既存のcontact_personsテーブルからデータ取得
+    const { data: existingContacts } = await supabase
+      .from('contact_persons')
+      .select('*, contact_channels(*)');
+
+    const existingMap = new Map<string, typeof existingContacts extends (infer T)[] ? T : never>();
+    if (existingContacts) {
+      for (const c of existingContacts) {
+        // contact_channelsのaddressでマッピング
+        if (c.contact_channels && Array.isArray(c.contact_channels)) {
+          for (const ch of c.contact_channels) {
+            existingMap.set(ch.address?.toLowerCase() || '', c);
+          }
+        }
+        // nameでもマッピング
+        existingMap.set(c.name?.toLowerCase() || '', c);
+      }
+    }
+
+    // 3. 統合コンタクトリスト生成
+    const contacts = senders.map((sender) => {
+      const key = sender.from_address?.toLowerCase() || sender.from_name?.toLowerCase();
+      const existing = existingMap.get(key);
+
+      return {
+        id: existing?.id || `auto_${Buffer.from(key).toString('base64').slice(0, 20)}`,
+        name: existing?.name || sender.from_name,
+        address: sender.from_address,
+        channels: existing?.contact_channels || [{ channel: sender.channel, address: sender.from_address, frequency: sender.count }],
+        relationshipType: existing?.relationship_type || 'unknown',
+        confidence: existing?.confidence || 0,
+        confirmed: existing?.confirmed || false,
+        mainChannel: existing?.main_channel || sender.channel,
+        messageCount: sender.count,
+        lastContactAt: sender.last_contact,
+        isAutoGenerated: !existing,
+      };
     });
-    return NextResponse.json({ success: true, data: contacts });
-  } catch (e) {
-    return NextResponse.json(
-      { success: false, error: e instanceof Error ? e.message : 'コンタクトの取得に失敗しました' },
-      { status: 500 }
-    );
+
+    // 4. フィルタリング
+    let filtered = contacts;
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter((c) =>
+        c.name?.toLowerCase().includes(q) || c.address?.toLowerCase().includes(q)
+      );
+    }
+    if (relationship && relationship !== 'all') {
+      filtered = filtered.filter((c) => c.relationshipType === relationship);
+    }
+    if (channel && channel !== 'all') {
+      filtered = filtered.filter((c) => c.mainChannel === channel);
+    }
+
+    // 5. 統計情報
+    const stats = {
+      total: contacts.length,
+      byRelationship: {
+        internal: contacts.filter((c) => c.relationshipType === 'internal').length,
+        client: contacts.filter((c) => c.relationshipType === 'client').length,
+        partner: contacts.filter((c) => c.relationshipType === 'partner').length,
+        unknown: contacts.filter((c) => c.relationshipType === 'unknown').length,
+      },
+      byChannel: {
+        email: contacts.filter((c) => c.mainChannel === 'email').length,
+        slack: contacts.filter((c) => c.mainChannel === 'slack').length,
+        chatwork: contacts.filter((c) => c.mainChannel === 'chatwork').length,
+      },
+      unconfirmedCount: contacts.filter((c) => !c.confirmed).length,
+    };
+
+    // 最終連絡日時でソート
+    filtered.sort((a, b) => new Date(b.lastContactAt).getTime() - new Date(a.lastContactAt).getTime());
+
+    return NextResponse.json({ success: true, data: filtered, stats });
+  } catch (error) {
+    console.error('[Contacts API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'コンタクトの取得に失敗しました' }, { status: 500 });
+  }
+}
+
+// ========================================
+// PUT: コンタクト情報を更新（関係タイプ確認など）
+// ========================================
+export async function PUT(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { id, name, relationshipType, confirmed, mainChannel } = body;
+
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'IDが必要です' }, { status: 400 });
+    }
+
+    // 自動生成コンタクトの場合、contact_personsに新規登録
+    if (id.startsWith('auto_')) {
+      const address = body.address || '';
+      const channel = mainChannel || 'email';
+      const newId = crypto.randomUUID();
+
+      const { error: insertError } = await supabase
+        .from('contact_persons')
+        .insert({
+          id: newId,
+          name: name || '',
+          relationship_type: relationshipType || 'unknown',
+          confidence: 1.0,
+          confirmed: confirmed ?? true,
+          main_channel: channel,
+          message_count: body.messageCount || 0,
+          last_contact_at: body.lastContactAt || new Date().toISOString(),
+        });
+
+      if (insertError) {
+        console.error('[Contacts API] 登録エラー:', insertError);
+        return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
+      }
+
+      // contact_channelsにも登録
+      if (address) {
+        await supabase.from('contact_channels').insert({
+          contact_id: newId,
+          channel,
+          address,
+          frequency: body.messageCount || 0,
+        });
+      }
+
+      return NextResponse.json({ success: true, data: { id: newId } });
+    }
+
+    // 既存コンタクトの更新
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (relationshipType !== undefined) updateData.relationship_type = relationshipType;
+    if (confirmed !== undefined) updateData.confirmed = confirmed;
+    if (mainChannel !== undefined) updateData.main_channel = mainChannel;
+
+    const { error } = await supabase
+      .from('contact_persons')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) {
+      console.error('[Contacts API] 更新エラー:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[Contacts API] エラー:', error);
+    return NextResponse.json({ success: false, error: '更新に失敗しました' }, { status: 500 });
   }
 }

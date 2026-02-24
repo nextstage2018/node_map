@@ -506,15 +506,132 @@ function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
   );
 }
 
+/**
+ * Phase 26: ブロックボタン + スパム警告バナー
+ */
+function SpamWarningBanner({ message, onBlock }: { message: UnifiedMessage; onBlock: (address: string, type: 'exact' | 'domain') => void }) {
+  const spamFlag = message.metadata?.spam_flag;
+  if (!spamFlag?.isSpam) return null;
+
+  const address = message.from.address;
+  const domain = address?.split('@')[1] || '';
+
+  return (
+    <div className="mx-6 mt-2 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg">
+        <span className="text-amber-500 text-sm font-bold">&#9888;&#65039;</span>
+        <div className="flex-1">
+          <span className="text-xs font-medium text-amber-700">
+            迷惑メール・メルマガの可能性があります
+          </span>
+          <span className="text-[10px] text-amber-500 ml-2">
+            ({spamFlag.reason})
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onBlock(address, 'exact')}
+            className="text-[11px] px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition-colors"
+          >
+            このアドレスをブロック
+          </button>
+          {domain && (
+            <button
+              onClick={() => onBlock(domain, 'domain')}
+              className="text-[11px] px-2 py-1 bg-red-50 text-red-600 border border-red-200 rounded hover:bg-red-100 transition-colors"
+            >
+              @{domain} をブロック
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BlockButton({ message, onBlock }: { message: UnifiedMessage; onBlock: (address: string, type: 'exact' | 'domain') => void }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const address = message.from.address;
+  const domain = address?.split('@')[1] || '';
+
+  // メール以外はブロック非対応
+  if (message.channel !== 'email') return null;
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    }
+    if (showMenu) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <Button
+        variant="secondary"
+        onClick={() => setShowMenu(!showMenu)}
+      >
+        &#128683; ブロック
+      </Button>
+      {showMenu && (
+        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[200px] z-50">
+          <button
+            onClick={() => { onBlock(address, 'exact'); setShowMenu(false); }}
+            className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors"
+          >
+            <div className="font-medium text-slate-700">{address} をブロック</div>
+            <div className="text-[10px] text-slate-400">このアドレスからのメールを非表示</div>
+          </button>
+          {domain && (
+            <button
+              onClick={() => { onBlock(domain, 'domain'); setShowMenu(false); }}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors border-t border-slate-100"
+            >
+              <div className="font-medium text-slate-700">@{domain} をすべてブロック</div>
+              <div className="text-[10px] text-slate-400">このドメインからのメールを非表示</div>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface MessageDetailProps {
   message: UnifiedMessage | null;
   group: MessageGroup | null;
   onSentMessage?: (msg: UnifiedMessage) => void;
+  onBlockSender?: (address: string, matchType: 'exact' | 'domain') => void;
 }
 
-export default function MessageDetail({ message, group, onSentMessage }: MessageDetailProps) {
+export default function MessageDetail({ message, group, onSentMessage, onBlockSender }: MessageDetailProps) {
   const [showReply, setShowReply] = useState(false);
   const { seedingId, seedResult, createSeed } = useSeedAction();
+  const [blockResult, setBlockResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // ブロック処理
+  const handleBlock = useCallback(async (address: string, matchType: 'exact' | 'domain') => {
+    try {
+      const res = await fetch('/api/inbox/blocklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ addresses: [{ address, matchType }] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setBlockResult({ type: 'success', text: `${address} をブロックしました` });
+        onBlockSender?.(address, matchType);
+      } else {
+        setBlockResult({ type: 'error', text: 'ブロックに失敗しました' });
+      }
+    } catch {
+      setBlockResult({ type: 'error', text: '通信エラー' });
+    }
+    setTimeout(() => setBlockResult(null), 3000);
+  }, [onBlockSender]);
 
   if (!message && !group) {
     return (
@@ -529,6 +646,15 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
 
   const seedProps = { seedingId, seedResult, onSeed: createSeed };
 
+  // ブロック結果バナー
+  const blockBanner = blockResult && (
+    <div className={`mx-6 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
+      blockResult.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+    }`}>
+      {blockResult.type === 'success' ? '✅' : '❌'} {blockResult.text}
+    </div>
+  );
+
   // グループが選択されている場合（複数メッセージのグループ）
   if (group && group.messageCount > 1) {
     return (
@@ -539,6 +665,8 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
         onCloseReply={() => setShowReply(false)}
         onSentMessage={onSentMessage}
         seedProps={seedProps}
+        onBlock={handleBlock}
+        blockBanner={blockBanner}
       />
     );
   }
@@ -556,6 +684,8 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
         onCloseReply={() => setShowReply(false)}
         onSentMessage={onSentMessage}
         seedProps={seedProps}
+        onBlock={handleBlock}
+        blockBanner={blockBanner}
       />
     );
   }
@@ -568,6 +698,8 @@ export default function MessageDetail({ message, group, onSentMessage }: Message
       onCloseReply={() => setShowReply(false)}
       onSentMessage={onSentMessage}
       seedProps={seedProps}
+      onBlock={handleBlock}
+      blockBanner={blockBanner}
     />
   );
 }
@@ -588,6 +720,8 @@ function GroupDetail({
   onCloseReply,
   onSentMessage,
   seedProps,
+  onBlock,
+  blockBanner,
 }: {
   group: MessageGroup;
   showReply: boolean;
@@ -595,6 +729,8 @@ function GroupDetail({
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
   seedProps: SeedProps;
+  onBlock?: (address: string, type: 'exact' | 'domain') => void;
+  blockBanner?: React.ReactNode;
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
@@ -634,6 +770,10 @@ function GroupDetail({
         ) : null;
       })()}
 
+      {/* Phase 26: スパム警告バナー */}
+      {onBlock && <SpamWarningBanner message={latestMessage} onBlock={onBlock} />}
+      {blockBanner}
+
       {/* AIタスク化提案 */}
       <AiTaskSuggestionBanner message={latestMessage} />
 
@@ -667,6 +807,7 @@ function GroupDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={latestMessage} onBlock={onBlock} />}
           </div>
         )}
       </div>
@@ -749,6 +890,8 @@ function EmailThreadDetail({
   onCloseReply,
   onSentMessage,
   seedProps,
+  onBlock,
+  blockBanner,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
@@ -756,6 +899,8 @@ function EmailThreadDetail({
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
   seedProps: SeedProps;
+  onBlock?: (address: string, type: 'exact' | 'domain') => void;
+  blockBanner?: React.ReactNode;
 }) {
   const threadMessages = message.threadMessages || [];
   const [summary, setSummary] = useState<string>('');
@@ -858,6 +1003,10 @@ function EmailThreadDetail({
         )}
       </div>
 
+      {/* Phase 26: スパム警告バナー */}
+      {onBlock && <SpamWarningBanner message={message} onBlock={onBlock} />}
+      {blockBanner}
+
       {/* AIタスク化提案 */}
       <AiTaskSuggestionBanner message={message} />
 
@@ -930,6 +1079,7 @@ function EmailThreadDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
       </div>
@@ -952,6 +1102,8 @@ function SingleMessageDetail({
   onCloseReply,
   onSentMessage,
   seedProps,
+  onBlock,
+  blockBanner,
 }: {
   message: UnifiedMessage;
   showReply: boolean;
@@ -959,6 +1111,8 @@ function SingleMessageDetail({
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
   seedProps: SeedProps;
+  onBlock?: (address: string, type: 'exact' | 'domain') => void;
+  blockBanner?: React.ReactNode;
 }) {
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
   const singleThreadEndRef = useRef<HTMLDivElement>(null);
@@ -1007,6 +1161,10 @@ function SingleMessageDetail({
           </span>
         </div>
       </div>
+
+      {/* Phase 26: スパム警告バナー */}
+      {onBlock && <SpamWarningBanner message={message} onBlock={onBlock} />}
+      {blockBanner}
 
       {/* AIタスク化提案 */}
       <AiTaskSuggestionBanner message={message} />
@@ -1107,6 +1265,7 @@ function SingleMessageDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
       </div>
