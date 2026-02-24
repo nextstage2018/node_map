@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Users, Search, Mail, MessageSquare, Hash, Filter, ChevronDown, Check, X, Edit2 } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Trash2 } from 'lucide-react';
 import Header from '@/components/shared/Header';
 import Image from 'next/image';
 
+// ========================================
+// 型定義
+// ========================================
 interface Contact {
   id: string;
   name: string;
@@ -26,6 +29,17 @@ interface ContactStats {
   unconfirmedCount: number;
 }
 
+interface BlocklistEntry {
+  id: string;
+  address: string;
+  match_type: 'exact' | 'domain';
+  reason: string | null;
+  created_at: string;
+}
+
+// ========================================
+// 定数
+// ========================================
 const RELATIONSHIP_LABELS: Record<string, { label: string; color: string }> = {
   internal: { label: '自社メンバー', color: 'bg-blue-100 text-blue-700' },
   client: { label: 'クライアント', color: 'bg-green-100 text-green-700' },
@@ -39,6 +53,9 @@ const CHANNEL_ICONS: Record<string, string> = {
   chatwork: '/icons/chatwork.svg',
 };
 
+// ========================================
+// ユーティリティ
+// ========================================
 function formatDate(dateStr: string): string {
   if (!dateStr) return '-';
   const d = new Date(dateStr);
@@ -72,7 +89,13 @@ function getAvatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+// ========================================
+// メインコンポーネント
+// ========================================
 export default function ContactsPage() {
+  const [activeTab, setActiveTab] = useState<'contacts' | 'blocklist'>('contacts');
+
+  // --- コンタクト関連state ---
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [stats, setStats] = useState<ContactStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,7 +106,15 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRelationship, setEditRelationship] = useState('');
+  const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // --- ブロックリスト関連state ---
+  const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
+  const [blocklistLoading, setBlocklistLoading] = useState(false);
+
+  // ========================================
+  // コンタクト取得
+  // ========================================
   const fetchContacts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
@@ -112,32 +143,48 @@ export default function ContactsPage() {
     fetchContacts();
   }, [fetchContacts]);
 
+  // ========================================
+  // ブロックリスト取得
+  // ========================================
+  const fetchBlocklist = useCallback(async () => {
+    setBlocklistLoading(true);
+    try {
+      const res = await fetch('/api/inbox/blocklist');
+      const data = await res.json();
+      if (data.success) {
+        setBlocklist(data.data || []);
+      }
+    } catch {
+      // エラーは無視
+    } finally {
+      setBlocklistLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'blocklist') {
+      fetchBlocklist();
+    }
+  }, [activeTab, fetchBlocklist]);
+
+  // ========================================
   // 関係タイプ更新
+  // ========================================
   const updateRelationship = async (contact: Contact, newType: string) => {
     try {
       const res = await fetch('/api/contacts', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: contact.id,
-          address: contact.address,
-          name: contact.name,
-          relationshipType: newType,
-          confirmed: true,
-          mainChannel: contact.mainChannel,
-          messageCount: contact.messageCount,
-          lastContactAt: contact.lastContactAt,
+          id: contact.id, address: contact.address, name: contact.name,
+          relationshipType: newType, confirmed: true,
+          mainChannel: contact.mainChannel, messageCount: contact.messageCount, lastContactAt: contact.lastContactAt,
         }),
       });
       const data = await res.json();
       if (data.success) {
-        // ローカル状態を更新
         setContacts((prev) =>
-          prev.map((c) =>
-            c.id === contact.id
-              ? { ...c, relationshipType: newType, confirmed: true, id: data.data?.id || c.id }
-              : c
-          )
+          prev.map((c) => c.id === contact.id ? { ...c, relationshipType: newType, confirmed: true, id: data.data?.id || c.id } : c)
         );
         setEditingId(null);
       }
@@ -146,207 +193,341 @@ export default function ContactsPage() {
     }
   };
 
+  // ========================================
+  // ブロック追加（コンタクトから）
+  // ========================================
+  const blockContact = async (contact: Contact, matchType: 'exact' | 'domain') => {
+    const address = matchType === 'domain'
+      ? (contact.address?.split('@')[1] || '')
+      : (contact.address || '');
+    if (!address) return;
+
+    try {
+      const res = await fetch('/api/inbox/blocklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address, matchType, reason: 'コンタクトページからブロック' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionResult({ type: 'success', text: `${address} をブロックしました` });
+        setSelectedContact(null);
+        // ブロックリストも更新
+        fetchBlocklist();
+      } else {
+        setActionResult({ type: 'error', text: 'ブロックに失敗しました' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    }
+    setTimeout(() => setActionResult(null), 3000);
+  };
+
+  // ========================================
+  // ブロック解除
+  // ========================================
+  const unblockEntry = async (entry: BlocklistEntry) => {
+    try {
+      const res = await fetch(`/api/inbox/blocklist?id=${entry.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setBlocklist((prev) => prev.filter((b) => b.id !== entry.id));
+        setActionResult({ type: 'success', text: `${entry.address} のブロックを解除しました` });
+      } else {
+        setActionResult({ type: 'error', text: '解除に失敗しました' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    }
+    setTimeout(() => setActionResult(null), 3000);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-white">
       <Header />
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* ヘッダー + 統計 */}
+        {/* ヘッダー */}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Users className="w-5 h-5 text-slate-600" />
               <h1 className="text-lg font-bold text-slate-900">コンタクト</h1>
-              {stats && (
-                <span className="text-sm text-slate-400">{stats.total}件</span>
-              )}
             </div>
           </div>
 
-          {/* 統計バッジ */}
-          {stats && (
-            <div className="flex gap-2 mb-3">
-              {Object.entries(RELATIONSHIP_LABELS).map(([key, { label, color }]) => {
-                const count = (stats.byRelationship as Record<string, number>)[key] || 0;
-                if (count === 0 && key !== 'unknown') return null;
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setFilterRelationship(filterRelationship === key ? 'all' : key)}
-                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
-                      filterRelationship === key ? 'ring-2 ring-offset-1 ring-blue-400' : ''
-                    } ${color}`}
-                  >
-                    {label} <span className="font-bold">{count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {/* 検索 + フィルター */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="名前やアドレスで検索..."
-                className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <select
-              value={filterChannel}
-              onChange={(e) => setFilterChannel(e.target.value)}
-              className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          {/* タブ切り替え */}
+          <div className="flex gap-1 mb-3">
+            <button
+              onClick={() => setActiveTab('contacts')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'contacts' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
             >
-              <option value="all">全チャネル</option>
-              <option value="email">Gmail</option>
-              <option value="slack">Slack</option>
-              <option value="chatwork">Chatwork</option>
-            </select>
+              <Users className="w-3.5 h-3.5" />
+              コンタクト一覧
+              {stats && <span className="ml-1 opacity-80">{stats.total}</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('blocklist')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                activeTab === 'blocklist' ? 'bg-red-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+              }`}
+            >
+              <Shield className="w-3.5 h-3.5" />
+              ブロックリスト
+              {blocklist.length > 0 && <span className="ml-1 opacity-80">{blocklist.length}</span>}
+            </button>
           </div>
+
+          {/* コンタクトタブ: 統計バッジ + 検索 */}
+          {activeTab === 'contacts' && (
+            <>
+              {stats && (
+                <div className="flex gap-2 mb-3">
+                  {Object.entries(RELATIONSHIP_LABELS).map(([key, { label, color }]) => {
+                    const count = (stats.byRelationship as Record<string, number>)[key] || 0;
+                    if (count === 0 && key !== 'unknown') return null;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setFilterRelationship(filterRelationship === key ? 'all' : key)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                          filterRelationship === key ? 'ring-2 ring-offset-1 ring-blue-400' : ''
+                        } ${color}`}
+                      >
+                        {label} <span className="font-bold">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="名前やアドレスで検索..."
+                    className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <select
+                  value={filterChannel}
+                  onChange={(e) => setFilterChannel(e.target.value)}
+                  className="px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">全チャネル</option>
+                  <option value="email">Gmail</option>
+                  <option value="slack">Slack</option>
+                  <option value="chatwork">Chatwork</option>
+                </select>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* コンタクト一覧テーブル */}
-        <div className="flex-1 overflow-y-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-64 text-slate-400">
-              <div className="text-center">
-                <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                <p className="text-sm">読み込み中...</p>
+        {/* アクション結果バナー */}
+        {actionResult && (
+          <div className={`mx-6 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
+            actionResult.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+            {actionResult.type === 'success' ? '✅' : '❌'} {actionResult.text}
+          </div>
+        )}
+
+        {/* ========================================
+            コンタクト一覧タブ
+            ======================================== */}
+        {activeTab === 'contacts' && (
+          <div className="flex-1 overflow-y-auto">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-64 text-slate-400">
+                <div className="text-center">
+                  <div className="animate-spin text-2xl mb-2">&#8987;</div>
+                  <p className="text-sm">読み込み中...</p>
+                </div>
               </div>
-            </div>
-          ) : error ? (
-            <div className="p-6 text-center text-red-500">{error}</div>
-          ) : contacts.length === 0 ? (
-            <div className="flex items-center justify-center h-64 text-slate-400">
-              <div className="text-center">
-                <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">コンタクトがありません</p>
-                <p className="text-xs mt-1">インボックスでメッセージを受信すると自動的に追加されます</p>
+            ) : error ? (
+              <div className="p-6 text-center text-red-500">{error}</div>
+            ) : contacts.length === 0 ? (
+              <div className="flex items-center justify-center h-64 text-slate-400">
+                <div className="text-center">
+                  <Users className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                  <p className="text-sm">コンタクトがありません</p>
+                  <p className="text-xs mt-1">インボックスでメッセージを受信すると自動的に追加されます</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-slate-50 sticky top-0 z-10">
-                <tr className="border-b border-slate-200">
-                  <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">名前</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">アドレス</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">チャネル</th>
-                  <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">関係</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">件数</th>
-                  <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">最終連絡</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((contact) => (
-                  <tr
-                    key={contact.id}
-                    onClick={() => setSelectedContact(selectedContact?.id === contact.id ? null : contact)}
-                    className={`border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors ${
-                      selectedContact?.id === contact.id ? 'bg-blue-50' : ''
-                    }`}
-                  >
-                    {/* 名前 + アバター */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${getAvatarColor(contact.name)}`}>
-                          {getInitials(contact.name)}
+            ) : (
+              <table className="w-full">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">名前</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">アドレス</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">チャネル</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">関係</th>
+                    <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">件数</th>
+                    <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">最終連絡</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contacts.map((contact) => (
+                    <tr
+                      key={contact.id}
+                      onClick={() => setSelectedContact(selectedContact?.id === contact.id ? null : contact)}
+                      className={`border-b border-slate-100 hover:bg-blue-50 cursor-pointer transition-colors ${
+                        selectedContact?.id === contact.id ? 'bg-blue-50' : ''
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold ${getAvatarColor(contact.name)}`}>
+                            {getInitials(contact.name)}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-slate-900">{contact.name}</div>
+                            {contact.isAutoGenerated && (
+                              <span className="text-[10px] text-amber-500">自動検出</span>
+                            )}
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-slate-900">{contact.name}</div>
-                          {contact.isAutoGenerated && (
-                            <span className="text-[10px] text-amber-500">自動検出</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-slate-500 truncate block max-w-[200px]">{contact.address || '-'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {CHANNEL_ICONS[contact.mainChannel] ? (
+                            <Image src={CHANNEL_ICONS[contact.mainChannel]} alt={contact.mainChannel} width={16} height={16} />
+                          ) : (
+                            <Mail className="w-4 h-4 text-slate-400" />
                           )}
                         </div>
-                      </div>
-                    </td>
-
-                    {/* アドレス */}
-                    <td className="px-4 py-3">
-                      <span className="text-xs text-slate-500 truncate block max-w-[200px]">{contact.address || '-'}</span>
-                    </td>
-
-                    {/* チャネル */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1">
-                        {CHANNEL_ICONS[contact.mainChannel] ? (
-                          <Image
-                            src={CHANNEL_ICONS[contact.mainChannel]}
-                            alt={contact.mainChannel}
-                            width={16}
-                            height={16}
-                          />
+                      </td>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        {editingId === contact.id ? (
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={editRelationship}
+                              onChange={(e) => setEditRelationship(e.target.value)}
+                              className="text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            >
+                              <option value="internal">自社メンバー</option>
+                              <option value="client">クライアント</option>
+                              <option value="partner">パートナー</option>
+                              <option value="unknown">未分類</option>
+                            </select>
+                            <button onClick={() => updateRelationship(contact, editRelationship)} className="p-0.5 text-green-600 hover:text-green-800">
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setEditingId(null)} className="p-0.5 text-slate-400 hover:text-slate-600">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         ) : (
-                          <Mail className="w-4 h-4 text-slate-400" />
+                          <button
+                            onClick={() => { setEditingId(contact.id); setEditRelationship(contact.relationshipType); }}
+                            className="inline-flex items-center gap-1 group"
+                          >
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                              RELATIONSHIP_LABELS[contact.relationshipType]?.color || RELATIONSHIP_LABELS.unknown.color
+                            }`}>
+                              {RELATIONSHIP_LABELS[contact.relationshipType]?.label || '未分類'}
+                            </span>
+                            <Edit2 className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </button>
                         )}
-                      </div>
-                    </td>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-sm text-slate-700 font-medium">{contact.messageCount}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className="text-xs text-slate-400">{formatDate(contact.lastContactAt)}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
-                    {/* 関係タイプ */}
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      {editingId === contact.id ? (
-                        <div className="flex items-center gap-1">
-                          <select
-                            value={editRelationship}
-                            onChange={(e) => setEditRelationship(e.target.value)}
-                            className="text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                          >
-                            <option value="internal">自社メンバー</option>
-                            <option value="client">クライアント</option>
-                            <option value="partner">パートナー</option>
-                            <option value="unknown">未分類</option>
-                          </select>
-                          <button
-                            onClick={() => updateRelationship(contact, editRelationship)}
-                            className="p-0.5 text-green-600 hover:text-green-800"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="p-0.5 text-slate-400 hover:text-slate-600"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingId(contact.id);
-                            setEditRelationship(contact.relationshipType);
-                          }}
-                          className="inline-flex items-center gap-1 group"
-                        >
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                            RELATIONSHIP_LABELS[contact.relationshipType]?.color || RELATIONSHIP_LABELS.unknown.color
-                          }`}>
-                            {RELATIONSHIP_LABELS[contact.relationshipType]?.label || '未分類'}
-                          </span>
-                          <Edit2 className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </button>
-                      )}
-                    </td>
-
-                    {/* メッセージ件数 */}
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-sm text-slate-700 font-medium">{contact.messageCount}</span>
-                    </td>
-
-                    {/* 最終連絡 */}
-                    <td className="px-4 py-3 text-right">
-                      <span className="text-xs text-slate-400">{formatDate(contact.lastContactAt)}</span>
-                    </td>
+        {/* ========================================
+            ブロックリストタブ
+            ======================================== */}
+        {activeTab === 'blocklist' && (
+          <div className="flex-1 overflow-y-auto">
+            {blocklistLoading ? (
+              <div className="flex items-center justify-center h-64 text-slate-400">
+                <div className="text-center">
+                  <div className="animate-spin text-2xl mb-2">&#8987;</div>
+                  <p className="text-sm">読み込み中...</p>
+                </div>
+              </div>
+            ) : blocklist.length === 0 ? (
+              <div className="flex items-center justify-center h-64 text-slate-400">
+                <div className="text-center">
+                  <Shield className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                  <p className="text-sm">ブロックリストは空です</p>
+                  <p className="text-xs mt-1">コンタクト一覧から不要な送信者をブロックできます</p>
+                </div>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-slate-50 sticky top-0 z-10">
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">アドレス / ドメイン</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">種類</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">理由</th>
+                    <th className="text-left text-xs font-semibold text-slate-500 px-4 py-3">ブロック日</th>
+                    <th className="text-right text-xs font-semibold text-slate-500 px-4 py-3">操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+                </thead>
+                <tbody>
+                  {blocklist.map((entry) => (
+                    <tr key={entry.id} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-red-400" />
+                          <span className="text-sm font-medium text-slate-900">
+                            {entry.match_type === 'domain' ? `@${entry.address}` : entry.address}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                          entry.match_type === 'domain' ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {entry.match_type === 'domain' ? 'ドメイン全体' : '個別アドレス'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-slate-500">{entry.reason || '-'}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-xs text-slate-400">{formatDate(entry.created_at)}</span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          onClick={() => unblockEntry(entry)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-colors"
+                        >
+                          <ShieldOff className="w-3.5 h-3.5" />
+                          解除
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
 
-        {/* 選択時の詳細パネル（下部） */}
-        {selectedContact && (
+        {/* ========================================
+            選択時の詳細パネル（コンタクトタブのみ）
+            ======================================== */}
+        {activeTab === 'contacts' && selectedContact && (
           <div className="border-t border-slate-200 bg-slate-50 p-4">
             <div className="flex items-start gap-4">
               <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold ${getAvatarColor(selectedContact.name)}`}>
@@ -376,6 +557,27 @@ export default function ContactsPage() {
                         {ch.address} ({ch.frequency}件)
                       </span>
                     ))}
+                  </div>
+                )}
+                {/* ブロックボタン（メールコンタクトのみ） */}
+                {selectedContact.mainChannel === 'email' && selectedContact.address && (
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      onClick={() => blockContact(selectedContact, 'exact')}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      このアドレスをブロック
+                    </button>
+                    {selectedContact.address.includes('@') && (
+                      <button
+                        onClick={() => blockContact(selectedContact, 'domain')}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                      >
+                        <Shield className="w-3.5 h-3.5" />
+                        @{selectedContact.address.split('@')[1]} をブロック
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
