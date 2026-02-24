@@ -138,11 +138,6 @@ function GroupItem({
           >
             {latestMessage.from.name}
           </span>
-          {hasMultiple && (
-            <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-slate-200 text-slate-600 text-[10px] font-bold">
-              {messageCount}
-            </span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
