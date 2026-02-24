@@ -1,97 +1,102 @@
 import { NextResponse } from 'next/server';
-import type {
-  AppSettings,
-  ServiceType,
-  ConnectionStatus,
-} from '@/lib/types';
-// force dynamic rendering to prevent static cache
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+import type { ConnectionStatus } from '@/lib/types';
+
 export const dynamic = 'force-dynamic';
 
-
-// インメモリ設定ストア（本番はSupabase or 環境変数）
-let appSettings: AppSettings = {
-  profile: {
-    displayName: 'テストユーザー',
-    email: 'test@example.com',
-    timezone: 'Asia/Tokyo',
-    language: 'ja',
-  },
-  connections: [
-    {
-      type: 'email',
-      status: ((process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID) ? 'connected' : 'disconnected') as ConnectionStatus,
-    },
-    {
-      type: 'slack',
-      status: (process.env.SLACK_BOT_TOKEN ? 'connected' : 'disconnected') as ConnectionStatus,
-    },
-    {
-      type: 'chatwork',
-      status: (process.env.CHATWORK_API_TOKEN ? 'connected' : 'disconnected') as ConnectionStatus,
-    },
-    {
-      type: 'anthropic',
-      status: (process.env.ANTHROPIC_API_KEY ? 'connected' : 'disconnected') as ConnectionStatus,
-    },
-    {
-      type: 'supabase',
-      status: (process.env.NEXT_PUBLIC_SUPABASE_URL ? 'connected' : 'disconnected') as ConnectionStatus,
-    },
-  ],
-};
-
-// サービス別の保存済み設定（メモリ内。本番は暗号化してDB保存）
-const savedServiceSettings: Record<string, Record<string, string>> = {};
-
-// GET: 設定取得
+// GET: 設定取得（接続状態をSupabaseのuser_service_tokensから読み取り）
 export async function GET() {
-  // 環境変数から接続状態を再評価
-  const envChecks: Record<ServiceType, string | undefined> = {
-    email: process.env.EMAIL_USER || process.env.GMAIL_CLIENT_ID || savedServiceSettings.email?.clientId,
-    slack: process.env.SLACK_BOT_TOKEN || savedServiceSettings.slack?.botToken,
-    chatwork: process.env.CHATWORK_API_TOKEN || savedServiceSettings.chatwork?.apiToken,
-    anthropic: process.env.ANTHROPIC_API_KEY || savedServiceSettings.anthropic?.apiKey,
-    supabase: process.env.NEXT_PUBLIC_SUPABASE_URL || savedServiceSettings.supabase?.url,
-  };
-
-  appSettings.connections = appSettings.connections.map((conn) => ({
-    ...conn,
-    status: envChecks[conn.type] ? 'connected' as ConnectionStatus : conn.status,
-  }));
-
-  return NextResponse.json({
-    success: true,
-    data: appSettings,
-  });
-}
-
-// PUT: サービス設定を保存
-export async function PUT(req: Request) {
   try {
-    const body = await req.json();
-    const { service, settings } = body as {
-      service: ServiceType;
-      settings: Record<string, string>;
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    // 未認証でもシステム接続状態は返す
+    const systemConnections = [
+      {
+        type: 'anthropic' as const,
+        status: (process.env.ANTHROPIC_API_KEY ? 'connected' : 'disconnected') as ConnectionStatus,
+      },
+      {
+        type: 'supabase' as const,
+        status: (process.env.NEXT_PUBLIC_SUPABASE_URL ? 'connected' : 'disconnected') as ConnectionStatus,
+      },
+    ];
+
+    // ユーザーサービス接続状態
+    let userConnections = [
+      { type: 'email' as const, status: 'disconnected' as ConnectionStatus },
+      { type: 'slack' as const, status: 'disconnected' as ConnectionStatus },
+      { type: 'chatwork' as const, status: 'disconnected' as ConnectionStatus },
+    ];
+
+    if (user && !authError) {
+      // user_service_tokensテーブルから接続状態を読み取り
+      const { data: tokens } = await supabase
+        .from('user_service_tokens')
+        .select('service_type, is_active')
+        .eq('user_id', user.id);
+
+      if (tokens) {
+        userConnections = userConnections.map((conn) => {
+          const token = tokens.find((t: { service_type: string; is_active: boolean }) => t.service_type === conn.type);
+          return {
+            ...conn,
+            status: (token && token.is_active ? 'connected' : 'disconnected') as ConnectionStatus,
+          };
+        });
+      }
+    }
+
+    // プロフィール情報
+    const profile = user ? {
+      displayName: user.user_metadata?.display_name || user.email?.split('@')[0] || '',
+      email: user.email || '',
+      timezone: user.user_metadata?.timezone || 'Asia/Tokyo',
+      language: user.user_metadata?.language || 'ja',
+    } : {
+      displayName: '',
+      email: '',
+      timezone: 'Asia/Tokyo',
+      language: 'ja',
     };
 
-    if (!service || !settings) {
+    return NextResponse.json({
+      success: true,
+      data: {
+        profile,
+        connections: [...userConnections, ...systemConnections],
+      },
+    });
+  } catch {
+    return NextResponse.json(
+      { success: false, error: '設定の取得に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT: 通知設定など汎用設定の保存
+export async function PUT(req: Request) {
+  try {
+    const supabase = createRouteHandlerClient({ cookies });
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       return NextResponse.json(
-        { success: false, error: 'service と settings は必須です' },
-        { status: 400 }
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
       );
     }
 
-    // 設定を保存（メモリ内。本番は暗号化してDB保存）
-    savedServiceSettings[service] = settings;
+    const body = await req.json();
+    const { notifications } = body;
 
-    // 接続ステータスを更新
-    const connIdx = appSettings.connections.findIndex((c) => c.type === service);
-    if (connIdx >= 0) {
-      appSettings.connections[connIdx] = {
-        ...appSettings.connections[connIdx],
-        status: 'connected',
-        lastTested: new Date().toISOString(),
-      };
+    if (notifications) {
+      // 通知設定をuser_metadataに保存
+      await supabase.auth.updateUser({
+        data: { notifications },
+      });
     }
 
     return NextResponse.json({ success: true });
