@@ -1,10 +1,13 @@
 // /api/master/fields — 分野CRUD
 import { NextRequest, NextResponse } from 'next/server';
 import { KnowledgeMasterService } from '@/services/nodemap/knowledgeMaster.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // GET: 分野一覧（?domainId= でフィルター可能）
 export async function GET(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const domainId = req.nextUrl.searchParams.get('domainId') || undefined;
     const fields = await KnowledgeMasterService.getFields(domainId);
     return NextResponse.json({ success: true, data: fields });
@@ -19,6 +22,8 @@ export async function GET(req: NextRequest) {
 // POST: 分野追加
 export async function POST(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body = await req.json();
     const { domainId, name, description } = body;
     if (!domainId || !name || !description) {

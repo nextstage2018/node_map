@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { CreateSeedRequest } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // 種一覧取得（pending のみ）
 export async function GET() {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const seeds = await TaskService.getSeeds();
     return NextResponse.json({ success: true, data: seeds });
   } catch (error) {
@@ -19,6 +22,8 @@ export async function GET() {
 // 種を作成
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを付与
+    const userId = await getServerUserId();
     const body: CreateSeedRequest = await request.json();
     if (!body.content || body.content.trim().length === 0) {
       return NextResponse.json(
@@ -26,7 +31,7 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const seed = await TaskService.createSeed(body);
+    const seed = await TaskService.createSeed({ ...body, userId } as any);
     return NextResponse.json({ success: true, data: seed });
   } catch (error) {
     console.error('種作成エラー:', error);

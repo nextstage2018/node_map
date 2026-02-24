@@ -5,10 +5,13 @@ import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { TaskAiChatRequest, NodeData } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // タスクAI会話
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
     const body: TaskAiChatRequest = await request.json();
 
     if (!body.taskId || !body.message || !body.phase) {
@@ -55,14 +58,14 @@ export async function POST(request: NextRequest) {
       : body.phase === 'result' ? 'task_result' as const
       : 'task_conversation' as const;
 
-    // ユーザーメッセージとAI応答の両方から抽出（非同期・エラー無視）
+    // Phase 22: 認証ユーザーIDを使用
     Promise.allSettled([
       NodeService.processText({
         text: body.message,
         sourceType,
         sourceId: body.taskId,
         direction: 'self',
-        userId: 'demo-user',
+        userId,
         phase: body.phase,
       }),
       NodeService.processText({
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
         sourceType,
         sourceId: body.taskId,
         direction: 'received',
-        userId: 'demo-user',
+        userId,
         phase: body.phase,
       }),
     ]).then(async (results) => {
@@ -82,16 +85,16 @@ export async function POST(request: NextRequest) {
       if (allNodes.length >= 2) {
         // 進行フェーズ → 順序エッジ（思考経路）
         if (body.phase === 'progress') {
-          await EdgeService.createSequenceEdges(allNodes, 'demo-user', body.taskId);
+          await EdgeService.createSequenceEdges(allNodes, userId, body.taskId);
         }
         // 構想/結果フェーズ → 共起エッジ + クラスター
         if (body.phase === 'ideation') {
-          await EdgeService.createCoOccurrenceEdges(allNodes, 'demo-user', body.taskId);
-          await ClusterService.buildIdeationCluster(body.taskId, 'demo-user', allNodes);
+          await EdgeService.createCoOccurrenceEdges(allNodes, userId, body.taskId);
+          await ClusterService.buildIdeationCluster(body.taskId, userId, allNodes);
         }
         if (body.phase === 'result') {
-          await EdgeService.createCoOccurrenceEdges(allNodes, 'demo-user', body.taskId);
-          await ClusterService.buildResultCluster(body.taskId, 'demo-user', allNodes);
+          await EdgeService.createCoOccurrenceEdges(allNodes, userId, body.taskId);
+          await ClusterService.buildResultCluster(body.taskId, userId, allNodes);
         }
       }
     }).catch(() => {
@@ -111,6 +114,8 @@ export async function POST(request: NextRequest) {
 // タスク要約生成（結果フェーズ）
 export async function PUT(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを使用
+    const userId = await getServerUserId();
     const body: { taskId: string } = await request.json();
 
     const task = await TaskService.getTask(body.taskId);
@@ -132,11 +137,11 @@ export async function PUT(request: NextRequest) {
       sourceType: 'task_result',
       sourceId: body.taskId,
       direction: 'self',
-      userId: 'demo-user',
+      userId,
       phase: 'result',
     }).then(async (nodes) => {
       if (nodes.length > 0) {
-        await ClusterService.buildResultCluster(body.taskId, 'demo-user', nodes);
+        await ClusterService.buildResultCluster(body.taskId, userId, nodes);
       }
     }).catch(() => {
       // エラーは要約レスポンスに影響させない

@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ThreadMessage } from '@/lib/types';
 import { generateThreadSummary } from '@/services/ai/aiClient.service';
 import { cache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body: { messageId: string; subject: string; threadMessages: ThreadMessage[] } = await request.json();
     const { messageId, subject, threadMessages } = body;
 

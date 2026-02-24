@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { WeeklyNodeConfirmRequest } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,10 +14,13 @@ function getSupabaseClient() {
 }
 
 export async function POST(request: NextRequest) {
+  // Phase 22: 認証ユーザーIDを使用（bodyのuserIdは無視）
+  const authUserId = await getServerUserId();
   const body: WeeklyNodeConfirmRequest = await request.json();
-  const { userId, nodeIds, weekStart } = body;
+  const { nodeIds, weekStart } = body;
+  const userId = authUserId;
 
-  if (!userId || !nodeIds || nodeIds.length === 0 || !weekStart) {
+  if (!nodeIds || nodeIds.length === 0 || !weekStart) {
     return NextResponse.json(
       { success: false, error: 'userId, nodeIds, weekStart are required' },
       { status: 400 }

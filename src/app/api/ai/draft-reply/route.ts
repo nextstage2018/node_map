@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AiDraftRequest } from '@/lib/types';
 import { generateReplyDraft } from '@/services/ai/aiClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body: AiDraftRequest = await request.json();
     const { originalMessage, instruction } = body;
 

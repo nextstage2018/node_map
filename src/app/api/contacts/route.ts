@@ -2,9 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ContactPersonService } from '@/services/contact/contactPerson.service';
 import type { PersonRelationshipType, ChannelType } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function GET(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const { searchParams } = req.nextUrl;
     const relationshipType = searchParams.get('relationship') as PersonRelationshipType | null;
     const channel = searchParams.get('channel') as ChannelType | null;

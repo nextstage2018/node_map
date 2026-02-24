@@ -1,4 +1,4 @@
-// 設定サービス（クライアント側）
+// 設定サービス（クライアント側）- Phase 24: トークンAPI・プロフィールAPI接続対応
 import {
   AppSettings,
   ServiceType,
@@ -7,6 +7,16 @@ import {
   ProfileSettings,
   ConnectionTestResponse,
 } from '@/lib/types';
+
+// トークン情報の型
+interface ServiceToken {
+  id: string;
+  service_name: string;
+  token_data: Record<string, any>;
+  is_active: boolean;
+  connected_at: string;
+  last_used_at: string | null;
+}
 
 class SettingsService {
   private settings: AppSettings;
@@ -33,7 +43,7 @@ class SettingsService {
     };
   }
 
-  // 設定を取得
+  // 設定を取得（admin設定 — 環境変数ベース）
   async getSettings(): Promise<AppSettings> {
     try {
       const res = await fetch('/api/settings');
@@ -47,7 +57,7 @@ class SettingsService {
     return this.settings;
   }
 
-  // サービス設定を保存
+  // サービス設定を保存（admin設定）
   async saveServiceSettings(
     service: ServiceType,
     settings: Record<string, string>
@@ -65,6 +75,23 @@ class SettingsService {
       return data;
     } catch {
       return { success: false, error: '設定の保存に失敗しました' };
+    }
+  }
+
+  // === Phase 24: プロフィールAPI ===
+
+  // プロフィール取得
+  async getProfile(): Promise<ProfileSettings | null> {
+    try {
+      const res = await fetch('/api/settings/profile');
+      const data = await res.json();
+      if (data.success && data.data) {
+        this.settings.profile = data.data;
+        return data.data;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 
@@ -88,7 +115,67 @@ class SettingsService {
     }
   }
 
-  // 接続テスト
+  // === Phase 24: トークン管理API ===
+
+  // ユーザーのサービストークン一覧を取得
+  async getServiceTokens(): Promise<ServiceToken[]> {
+    try {
+      const res = await fetch('/api/settings/tokens');
+      const data = await res.json();
+      if (data.success && data.data) {
+        return data.data;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  // サービストークンを保存（手動入力用 — Chatwork等）
+  async saveServiceToken(
+    serviceName: string,
+    tokenData: Record<string, string>
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch('/api/settings/tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ serviceName, tokenData }),
+      });
+      return await res.json();
+    } catch {
+      return { success: false, error: 'トークンの保存に失敗しました' };
+    }
+  }
+
+  // サービストークンを削除（接続解除）
+  async deleteServiceToken(
+    serviceName: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const res = await fetch(`/api/settings/tokens?serviceName=${serviceName}`, {
+        method: 'DELETE',
+      });
+      return await res.json();
+    } catch {
+      return { success: false, error: 'トークンの削除に失敗しました' };
+    }
+  }
+
+  // === OAuth連携 ===
+
+  // Gmail OAuth開始（リダイレクト）
+  startGmailOAuth(): void {
+    window.location.href = '/api/auth/gmail';
+  }
+
+  // Slack OAuth開始（リダイレクト）
+  startSlackOAuth(): void {
+    window.location.href = '/api/auth/slack';
+  }
+
+  // === 接続テスト ===
+
   async testConnection(service: ServiceType): Promise<ConnectionTestResponse> {
     try {
       const res = await fetch('/api/settings/test', {

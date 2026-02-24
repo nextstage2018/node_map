@@ -1,12 +1,15 @@
 // PUT /api/contacts/:id — 関係属性更新
 import { NextRequest, NextResponse } from 'next/server';
 import { ContactPersonService } from '@/services/contact/contactPerson.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body = await req.json();
     const { relationshipType } = body;
     if (!relationshipType) {

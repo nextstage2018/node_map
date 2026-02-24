@@ -6,6 +6,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    // Phase 22: 認証ユーザーIDを使用
     const userId = await getServerUserId();
     const taskId = searchParams.get('taskId') || undefined;
 
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
 // エッジ作成/更新（Phase 22: 認証ユーザーID適用）
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを使用
     const userId = await getServerUserId();
     const body = await request.json();
     const { sourceNodeId, targetNodeId, taskId, edgeType } = body;
@@ -38,7 +40,7 @@ export async function POST(request: NextRequest) {
       sourceNodeId,
       targetNodeId,
       userId,
-      taskId,
+      taskId || 'manual',
       edgeType || 'co_occurrence'
     );
     return NextResponse.json({ success: true, data: edge });

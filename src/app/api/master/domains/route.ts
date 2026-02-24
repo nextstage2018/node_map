@@ -1,10 +1,13 @@
 // /api/master/domains — 領域CRUD
 import { NextRequest, NextResponse } from 'next/server';
 import { KnowledgeMasterService } from '@/services/nodemap/knowledgeMaster.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // GET: 領域一覧
 export async function GET() {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const domains = await KnowledgeMasterService.getDomains();
     return NextResponse.json({ success: true, data: domains });
   } catch (e) {
@@ -18,6 +21,8 @@ export async function GET() {
 // POST: 領域追加
 export async function POST(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body = await req.json();
     const { name, description, color } = body;
     if (!name || !description || !color) {

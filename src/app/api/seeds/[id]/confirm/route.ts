@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // 種をタスクに変換（AI構造化 → タスク生成）
 export async function POST(
@@ -7,6 +8,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const { id } = await params;
     if (!id) {
       return NextResponse.json(

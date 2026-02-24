@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import type { NodeData, WeeklyNodesResponse } from '@/lib/types';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // デモモード用のノードデータ
 const demoNodes: NodeData[] = [
@@ -109,7 +110,8 @@ function getSupabaseClient() {
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('userId') || 'demo-user';
+  // Phase 22: 認証ユーザーIDを使用
+  const userId = await getServerUserId();
   const weekStart = searchParams.get('weekStart');
 
   if (!weekStart) {

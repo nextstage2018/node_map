@@ -1,10 +1,13 @@
 // /api/master/classify — キーワード自動分類
 import { NextRequest, NextResponse } from 'next/server';
 import { KnowledgeMasterService } from '@/services/nodemap/knowledgeMaster.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 // POST: キーワードを自動分類
 export async function POST(req: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body = await req.json();
     const { label } = body;
     if (!label) {

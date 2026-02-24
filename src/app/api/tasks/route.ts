@@ -6,6 +6,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 // タスク一覧取得（Phase 22: 認証ユーザーIDでフィルタリング）
 export async function GET() {
   try {
+    // Phase 22: 認証ユーザーIDでフィルタリング
     const userId = await getServerUserId();
     const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
@@ -21,6 +22,7 @@ export async function GET() {
 // タスク作成（Phase 22: 認証ユーザーIDを付与）
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証ユーザーIDを付与
     const userId = await getServerUserId();
     const body: CreateTaskRequest = await request.json();
 
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const task = await TaskService.createTask({ ...body, userId });
+    const task = await TaskService.createTask({ ...body, userId } as any);
     return NextResponse.json({ success: true, data: task });
   } catch (error) {
     console.error('タスク作成エラー:', error);
@@ -45,6 +47,8 @@ export async function POST(request: NextRequest) {
 // タスク更新
 export async function PUT(request: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body: UpdateTaskRequest & { id: string } = await request.json();
     const { id, ...updateData } = body;
 

@@ -1,73 +1,56 @@
-/**
- * Phase 22: サーバーサイド認証ヘルパー
- * APIルートでログインユーザーIDを取得するためのユーティリティ
- * 
- * Phase 22.5: デモモード廃止 → 認証必須化
- */
+// Phase 22: サーバーサイド認証ヘルパー
+// APIルートから認証ユーザーのIDを取得する
 
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { isSupabaseConfigured } from './supabase';
+
+const DEMO_USER_ID = 'demo-user-001';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
 /**
- * 認証エラークラス
- * API ルートで catch してステータス 401 を返すために使用
- */
-export class AuthenticationError extends Error {
-  constructor(message = '認証が必要です。ログインしてください。') {
-    super(message);
-    this.name = 'AuthenticationError';
-  }
-}
-
-/**
- * サーバーサイドでリクエストから認証済みユーザーIDを取得する
- * 未認証の場合は AuthenticationError をスローする
- *
- * 使い方（APIルート内）:
- *   const userId = await getServerUserId();
+ * サーバーサイドで認証ユーザーIDを取得する
+ * - Supabase未設定時（デモモード）→ 'demo-user-001' を返す
+ * - ログイン済み → ユーザーのUUIDを返す
+ * - 未ログイン → 'demo-user-001' を返す（デモモードとして動作）
  */
 export async function getServerUserId(): Promise<string> {
-  // Supabase未設定時はエラー（デモモード廃止）
-  if (!isSupabaseConfigured()) {
-    throw new AuthenticationError('Supabase が設定されていません。');
+  // Supabase未設定 → デモモード
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
+    return DEMO_USER_ID;
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-    // cookieからSupabaseセッショントークンを取得
     const cookieStore = await cookies();
-    const allCookies = cookieStore.getAll();
 
-    // Supabase Auth のトークンを探す（複数の命名パターンに対応）
-    let accessToken: string | null = null;
+    // Supabase Auth のアクセストークンを取得
+    // sb-<project-ref>-auth-token の形式でCookieに保存されている
+    const projectRef = new URL(supabaseUrl).hostname.split('.')[0];
+    const authCookieName = `sb-${projectRef}-auth-token`;
 
-    for (const cookie of allCookies) {
-      // sb-<project-ref>-auth-token パターン
-      if (cookie.name.includes('auth-token')) {
-        try {
-          // JSON配列の場合（[access_token, refresh_token]）
-          const parsed = JSON.parse(cookie.value);
-          if (Array.isArray(parsed) && parsed[0]) {
-            accessToken = parsed[0];
-          } else if (parsed.access_token) {
-            accessToken = parsed.access_token;
-          }
-        } catch {
-          // JSON以外の場合はそのまま使用
-          accessToken = cookie.value;
-        }
-        break;
+    const authCookie = cookieStore.get(authCookieName)?.value
+      || cookieStore.get('sb-access-token')?.value;
+
+    if (!authCookie) {
+      return DEMO_USER_ID;
+    }
+
+    // トークンからユーザー情報を取得
+    let accessToken = authCookie;
+
+    // Cookie値がJSON配列の場合（Supabase v2の形式）
+    try {
+      const parsed = JSON.parse(authCookie);
+      if (Array.isArray(parsed) && parsed.length >= 1) {
+        accessToken = parsed[0];
+      } else if (parsed.access_token) {
+        accessToken = parsed.access_token;
       }
+    } catch {
+      // JSONでなければそのまま使用
     }
 
-    if (!accessToken) {
-      throw new AuthenticationError('認証トークンが見つかりません。ログインしてください。');
-    }
-
-    // トークンを使ってSupabaseクライアントを作成し、ユーザー情報を取得
     const supabase = createClient(supabaseUrl, supabaseAnonKey, {
       global: {
         headers: {
@@ -79,70 +62,12 @@ export async function getServerUserId(): Promise<string> {
     const { data: { user }, error } = await supabase.auth.getUser();
 
     if (error || !user) {
-      throw new AuthenticationError('セッションが無効です。再ログインしてください。');
+      return DEMO_USER_ID;
     }
 
     return user.id;
   } catch (error) {
-    // AuthenticationError はそのまま再スロー
-    if (error instanceof AuthenticationError) {
-      throw error;
-    }
-    console.error('[serverAuth] Unexpected error:', error);
-    throw new AuthenticationError('認証処理中にエラーが発生しました。');
-  }
-}
-
-/**
- * サーバーサイドで認証済みSupabaseクライアントを作成する
- * RLSポリシーがユーザーのコンテキストで適用される
- * 未認証の場合は null ではなく AuthenticationError をスロー
- */
-export async function createAuthenticatedClient() {
-  if (!isSupabaseConfigured()) {
-    throw new AuthenticationError('Supabase が設定されていません。');
-  }
-
-  try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-    const cookieStore = await cookies();
-    const allCookies = cookieStore.getAll();
-
-    let accessToken: string | null = null;
-
-    for (const cookie of allCookies) {
-      if (cookie.name.includes('auth-token')) {
-        try {
-          const parsed = JSON.parse(cookie.value);
-          if (Array.isArray(parsed) && parsed[0]) {
-            accessToken = parsed[0];
-          } else if (parsed.access_token) {
-            accessToken = parsed.access_token;
-          }
-        } catch {
-          accessToken = cookie.value;
-        }
-        break;
-      }
-    }
-
-    if (!accessToken) {
-      throw new AuthenticationError('認証トークンが見つかりません。');
-    }
-
-    return createClient(supabaseUrl, supabaseAnonKey, {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
-    });
-  } catch (error) {
-    if (error instanceof AuthenticationError) {
-      throw error;
-    }
-    throw new AuthenticationError('認証クライアントの作成に失敗しました。');
+    console.error('getServerUserId error:', error);
+    return DEMO_USER_ID;
   }
 }

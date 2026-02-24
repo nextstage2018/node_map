@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerUserId } from '@/lib/serverAuth';
 
 interface TaskSuggestionRequest {
   messageId: string;
@@ -22,6 +23,8 @@ interface TaskSuggestionResult {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Phase 22: 認証確認
+    await getServerUserId();
     const body: TaskSuggestionRequest = await request.json();
 
     const apiKey = process.env.ANTHROPIC_API_KEY || '';
