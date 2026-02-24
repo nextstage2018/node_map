@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@/components/AuthProvider';
 
 // トークン入力フォームの設定
 const TOKEN_FORM_CONFIG: Record<string, { label: string; fields: { key: string; label: string; type: string; placeholder: string }[] }> = {
@@ -61,7 +60,6 @@ function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAut
 }
 
 export default function SettingsPage() {
-  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('channels');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -97,7 +95,11 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/tokens');
       const data = await res.json();
       if (data.success && data.data) {
-        const newChannels = { ...channels };
+        const newChannels: Record<string, { connected: boolean; accountName: string }> = {
+          email: { connected: false, accountName: '' },
+          slack: { connected: false, accountName: '' },
+          chatwork: { connected: false, accountName: '' },
+        };
         for (const token of data.data) {
           if (newChannels[token.service_type]) {
             newChannels[token.service_type] = {
@@ -141,6 +143,7 @@ export default function SettingsPage() {
 
     setLoading(true);
     setMessage(null);
+
     try {
       const res = await fetch('/api/settings/tokens', {
         method: 'POST',
@@ -169,6 +172,7 @@ export default function SettingsPage() {
   // チャンネル認証解除
   const handleRevoke = async (channel: string) => {
     if (!confirm(TOKEN_FORM_CONFIG[channel].label + ' の接続を解除しますか？')) return;
+
     setLoading(true);
     try {
       const res = await fetch('/api/settings/tokens?service_type=' + channel, { method: 'DELETE' });
