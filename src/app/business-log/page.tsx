@@ -1,8 +1,12 @@
-// Phase 30d: ビジネスログ — タイムラインUI
+// Phase 30d + 33: ビジネスログ — タイムラインUI（イベント強化版）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, Plus, Clock, FileText, Phone, Mail, MessageSquare, Handshake, X, ChevronRight, ClipboardList } from 'lucide-react';
+import {
+  FolderOpen, Plus, Clock, FileText, Phone, Mail, MessageSquare,
+  Handshake, X, ChevronRight, ClipboardList, Pencil, Trash2, Users,
+  AlertTriangle, Bookmark,
+} from 'lucide-react';
 import Header from '@/components/shared/Header';
 
 // ========================================
@@ -29,6 +33,11 @@ interface BusinessEvent {
   updated_at: string;
 }
 
+interface ContactOption {
+  id: string;
+  name: string;
+}
+
 // ========================================
 // 定数
 // ========================================
@@ -38,6 +47,7 @@ const EVENT_TYPE_CONFIG: Record<string, { label: string; icon: React.ComponentTy
   call: { label: '電話', icon: Phone, color: 'bg-green-100 text-green-700' },
   email: { label: 'メール', icon: Mail, color: 'bg-orange-100 text-orange-700' },
   chat: { label: 'チャット', icon: MessageSquare, color: 'bg-purple-100 text-purple-700' },
+  decision: { label: '意思決定', icon: Bookmark, color: 'bg-red-100 text-red-700' },
 };
 
 const PROJECT_STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -89,6 +99,9 @@ export default function BusinessLogPage() {
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<BusinessEvent | null>(null);
 
+  // Phase 33: コンタクト（参加者選択用）
+  const [contacts, setContacts] = useState<ContactOption[]>([]);
+
   // 新規作成フォーム
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -97,9 +110,27 @@ export default function BusinessLogPage() {
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventContent, setNewEventContent] = useState('');
   const [newEventType, setNewEventType] = useState('note');
+  // Phase 33: 新規フォーム追加フィールド
+  const [newEventMinutes, setNewEventMinutes] = useState('');
+  const [newEventDecision, setNewEventDecision] = useState('');
+  const [newEventParticipants, setNewEventParticipants] = useState<string[]>([]);
+
+  // Phase 33: 編集モード
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editEventType, setEditEventType] = useState('note');
+
+  // Phase 33: 削除確認
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const showMsg = (type: 'success' | 'error', text: string) => {
+    setMessage({ type, text });
+    setTimeout(() => setMessage(null), 3000);
+  };
 
   // ========================================
   // データ取得
@@ -109,14 +140,9 @@ export default function BusinessLogPage() {
     try {
       const res = await fetch('/api/projects');
       const data = await res.json();
-      if (data.success) {
-        setProjects(data.data || []);
-      }
-    } catch {
-      // エラーは無視
-    } finally {
-      setIsLoadingProjects(false);
-    }
+      if (data.success) setProjects(data.data || []);
+    } catch { /* エラーは無視 */ }
+    finally { setIsLoadingProjects(false); }
   }, []);
 
   const fetchEvents = useCallback(async () => {
@@ -126,23 +152,24 @@ export default function BusinessLogPage() {
       if (selectedProjectId) params.set('project_id', selectedProjectId);
       const res = await fetch(`/api/business-events?${params}`);
       const data = await res.json();
-      if (data.success) {
-        setEvents(data.data || []);
-      }
-    } catch {
-      // エラーは無視
-    } finally {
-      setIsLoadingEvents(false);
-    }
+      if (data.success) setEvents(data.data || []);
+    } catch { /* エラーは無視 */ }
+    finally { setIsLoadingEvents(false); }
   }, [selectedProjectId]);
 
-  useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
+  // Phase 33: コンタクト取得（参加者選択用）
+  const fetchContacts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/contacts');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setContacts(data.data.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
+      }
+    } catch { /* エラーは無視 */ }
+  }, []);
 
-  useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+  useEffect(() => { fetchProjects(); fetchContacts(); }, [fetchProjects, fetchContacts]);
+  useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   // ========================================
   // プロジェクト作成
@@ -161,28 +188,41 @@ export default function BusinessLogPage() {
         setNewProjectName('');
         setNewProjectDesc('');
         fetchProjects();
-        setMessage({ type: 'success', text: 'プロジェクトを作成しました' });
+        showMsg('success', 'プロジェクトを作成しました');
       } else {
-        setMessage({ type: 'error', text: data.error || '作成に失敗しました' });
+        showMsg('error', data.error || '作成に失敗しました');
       }
-    } catch {
-      setMessage({ type: 'error', text: '通信エラー' });
-    }
-    setTimeout(() => setMessage(null), 3000);
+    } catch { showMsg('error', '通信エラー'); }
   };
 
   // ========================================
-  // イベント作成
+  // イベント作成（Phase 33: 議事録・意思決定ログ対応）
   // ========================================
   const createEvent = async () => {
     if (!newEventTitle.trim()) return;
+
+    // Phase 33: 議事録・意思決定ログ・参加者をcontentに統合
+    let fullContent = newEventContent.trim();
+    if (newEventParticipants.length > 0) {
+      const names = newEventParticipants
+        .map((id) => contacts.find((c) => c.id === id)?.name || id)
+        .join(', ');
+      fullContent = `【参加者】${names}\n\n${fullContent}`;
+    }
+    if (newEventMinutes.trim()) {
+      fullContent += `\n\n【議事録】\n${newEventMinutes.trim()}`;
+    }
+    if (newEventDecision.trim()) {
+      fullContent += `\n\n【意思決定】\n${newEventDecision.trim()}`;
+    }
+
     try {
       const res = await fetch('/api/business-events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: newEventTitle.trim(),
-          content: newEventContent.trim() || null,
+          content: fullContent || null,
           eventType: newEventType,
           projectId: selectedProjectId || null,
         }),
@@ -190,18 +230,89 @@ export default function BusinessLogPage() {
       const data = await res.json();
       if (data.success) {
         setShowNewEvent(false);
-        setNewEventTitle('');
-        setNewEventContent('');
-        setNewEventType('note');
+        resetNewEventForm();
         fetchEvents();
-        setMessage({ type: 'success', text: 'イベントを記録しました' });
+        showMsg('success', 'イベントを記録しました');
       } else {
-        setMessage({ type: 'error', text: data.error || '作成に失敗しました' });
+        showMsg('error', data.error || '作成に失敗しました');
       }
-    } catch {
-      setMessage({ type: 'error', text: '通信エラー' });
-    }
-    setTimeout(() => setMessage(null), 3000);
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  const resetNewEventForm = () => {
+    setNewEventTitle('');
+    setNewEventContent('');
+    setNewEventType('note');
+    setNewEventMinutes('');
+    setNewEventDecision('');
+    setNewEventParticipants([]);
+  };
+
+  // ========================================
+  // Phase 33: イベント更新
+  // ========================================
+  const updateEvent = async () => {
+    if (!selectedEvent || !editTitle.trim()) return;
+    try {
+      const res = await fetch(`/api/business-events/${selectedEvent.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          content: editContent.trim() || null,
+          eventType: editEventType,
+          projectId: selectedEvent.project_id,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setIsEditing(false);
+        setSelectedEvent(data.data);
+        fetchEvents();
+        showMsg('success', 'イベントを更新しました');
+      } else {
+        showMsg('error', data.error || '更新に失敗しました');
+      }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // ========================================
+  // Phase 33: イベント削除
+  // ========================================
+  const deleteEvent = async () => {
+    if (!selectedEvent) return;
+    try {
+      const res = await fetch(`/api/business-events/${selectedEvent.id}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedEvent(null);
+        setShowDeleteConfirm(false);
+        fetchEvents();
+        showMsg('success', 'イベントを削除しました');
+      } else {
+        showMsg('error', data.error || '削除に失敗しました');
+      }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // Phase 33: 編集モード開始
+  const startEditing = () => {
+    if (!selectedEvent) return;
+    setEditTitle(selectedEvent.title);
+    setEditContent(selectedEvent.content || '');
+    setEditEventType(selectedEvent.event_type);
+    setIsEditing(true);
+  };
+
+  // Phase 33: 参加者トグル
+  const toggleParticipant = (contactId: string) => {
+    setNewEventParticipants((prev) =>
+      prev.includes(contactId)
+        ? prev.filter((id) => id !== contactId)
+        : [...prev, contactId]
+    );
   };
 
   const eventsByDate = groupEventsByDate(events);
@@ -211,7 +322,7 @@ export default function BusinessLogPage() {
     <div className="flex flex-col h-screen bg-white">
       <Header />
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* ページヘッダー（contactsページと同じパターン） */}
+        {/* ページヘッダー */}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
           <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-2">
@@ -221,7 +332,7 @@ export default function BusinessLogPage() {
               </h1>
             </div>
             <button
-              onClick={() => { setShowNewEvent(true); setSelectedEvent(null); }}
+              onClick={() => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); }}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -233,7 +344,7 @@ export default function BusinessLogPage() {
           )}
         </div>
 
-        {/* メッセージバナー（コンテンツ領域内に配置） */}
+        {/* メッセージバナー */}
         {message && (
           <div className={`mx-6 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
             message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
@@ -341,16 +452,17 @@ export default function BusinessLogPage() {
               中央: タイムライン
               ======================================== */}
           <div className={`flex-1 overflow-y-auto ${selectedEvent ? 'border-r border-slate-200' : ''}`}>
-            {/* 新規イベントフォーム */}
+            {/* Phase 33: 新規イベントフォーム（強化版） */}
             {showNewEvent && (
               <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-slate-700">新しいイベントを記録</h3>
-                  <button onClick={() => setShowNewEvent(false)} className="text-slate-400 hover:text-slate-600">
+                  <button onClick={() => { setShowNewEvent(false); resetNewEventForm(); }} className="text-slate-400 hover:text-slate-600">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
                 <div className="space-y-3">
+                  {/* イベント種別 */}
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(EVENT_TYPE_CONFIG).map(([key, config]) => {
                       const Icon = config.icon;
@@ -368,6 +480,8 @@ export default function BusinessLogPage() {
                       );
                     })}
                   </div>
+
+                  {/* タイトル */}
                   <input
                     type="text"
                     value={newEventTitle}
@@ -376,16 +490,77 @@ export default function BusinessLogPage() {
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     autoFocus
                   />
+
+                  {/* 詳細 */}
                   <textarea
                     value={newEventContent}
                     onChange={(e) => setNewEventContent(e.target.value)}
                     placeholder="詳細（任意）"
-                    rows={3}
+                    rows={2}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   />
+
+                  {/* Phase 33: 参加者選択 */}
+                  {(newEventType === 'meeting' || newEventType === 'call') && contacts.length > 0 && (
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                        <Users className="w-3.5 h-3.5" />
+                        参加者
+                      </label>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                        {contacts.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => toggleParticipant(c.id)}
+                            className={`px-2 py-1 rounded-full text-xs transition-colors ${
+                              newEventParticipants.includes(c.id)
+                                ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            {c.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Phase 33: 議事録入力 */}
+                  {newEventType === 'meeting' && (
+                    <div>
+                      <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                        <FileText className="w-3.5 h-3.5" />
+                        議事録
+                      </label>
+                      <textarea
+                        value={newEventMinutes}
+                        onChange={(e) => setNewEventMinutes(e.target.value)}
+                        placeholder="議事の内容を記録..."
+                        rows={4}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
+                    </div>
+                  )}
+
+                  {/* Phase 33: 意思決定ログ */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+                      <Bookmark className="w-3.5 h-3.5" />
+                      意思決定ログ（任意）
+                    </label>
+                    <textarea
+                      value={newEventDecision}
+                      onChange={(e) => setNewEventDecision(e.target.value)}
+                      placeholder="決定事項があれば記録..."
+                      rows={2}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
+
+                  {/* 送信ボタン */}
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => setShowNewEvent(false)}
+                      onClick={() => { setShowNewEvent(false); resetNewEventForm(); }}
                       className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
                     >
                       キャンセル
@@ -437,7 +612,7 @@ export default function BusinessLogPage() {
                         return (
                           <button
                             key={event.id}
-                            onClick={() => setSelectedEvent(isSelected ? null : event)}
+                            onClick={() => { setSelectedEvent(isSelected ? null : event); setIsEditing(false); setShowDeleteConfirm(false); }}
                             className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
                               isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
                             }`}
@@ -475,51 +650,155 @@ export default function BusinessLogPage() {
           </div>
 
           {/* ========================================
-              右パネル: イベント詳細（contactsの詳細パネルと同構造）
+              右パネル: イベント詳細（Phase 33: 編集・削除対応）
               ======================================== */}
           {selectedEvent && (
             <div className="w-80 overflow-y-auto bg-slate-50 shrink-0 p-5">
-              <div className="flex items-start justify-between mb-4">
-                <h3 className="text-base font-bold text-slate-900 pr-2">{selectedEvent.title}</h3>
-                <button onClick={() => setSelectedEvent(null)} className="text-slate-400 hover:text-slate-600 shrink-0">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* タイプバッジ */}
-              {(() => {
-                const typeConfig = EVENT_TYPE_CONFIG[selectedEvent.event_type] || EVENT_TYPE_CONFIG.note;
-                const Icon = typeConfig.icon;
-                return (
-                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mb-4 ${typeConfig.color}`}>
-                    <Icon className="w-3 h-3" />
-                    {typeConfig.label}
+              {/* Phase 33: 編集モード */}
+              {isEditing ? (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-slate-900">イベント編集</h3>
+                    <button onClick={() => setIsEditing(false)} className="text-slate-400 hover:text-slate-600">
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
-                );
-              })()}
 
-              {/* 日時 */}
-              <div className="mb-4">
-                <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">日時</label>
-                <p className="text-sm text-slate-700 mt-0.5">{formatDateTime(selectedEvent.created_at)}</p>
-              </div>
+                  <div className="space-y-3">
+                    {/* 種別 */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries(EVENT_TYPE_CONFIG).map(([key, config]) => {
+                        const Icon = config.icon;
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => setEditEventType(key)}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                              editEventType === key ? 'ring-2 ring-offset-1 ring-blue-400' : ''
+                            } ${config.color}`}
+                          >
+                            <Icon className="w-2.5 h-2.5" />
+                            {config.label}
+                          </button>
+                        );
+                      })}
+                    </div>
 
-              {/* 内容 */}
-              {selectedEvent.content && (
-                <div className="mb-4">
-                  <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">詳細</label>
-                  <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap leading-relaxed">{selectedEvent.content}</p>
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      rows={8}
+                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={updateEvent}
+                        disabled={!editTitle.trim()}
+                        className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      >
+                        保存
+                      </button>
+                      <button
+                        onClick={() => setIsEditing(false)}
+                        className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              )}
-
-              {/* プロジェクト */}
-              {selectedEvent.project_id && selectedProject && (
-                <div className="mb-4">
-                  <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">プロジェクト</label>
-                  <div className="flex items-center gap-2 mt-1">
-                    <FolderOpen className="w-4 h-4 text-blue-500" />
-                    <span className="text-sm text-slate-700">{selectedProject.name}</span>
+              ) : (
+                <div>
+                  {/* ヘッダー + アクションボタン */}
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="text-base font-bold text-slate-900 pr-2">{selectedEvent.title}</h3>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={startEditing}
+                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="編集"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="削除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => { setSelectedEvent(null); setShowDeleteConfirm(false); }} className="p-1.5 text-slate-400 hover:text-slate-600">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Phase 33: 削除確認 */}
+                  {showDeleteConfirm && (
+                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                        <span className="text-xs font-medium text-red-700">このイベントを削除しますか？</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={deleteEvent}
+                          className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                        >
+                          削除する
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(false)}
+                          className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-white transition-colors"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* タイプバッジ */}
+                  {(() => {
+                    const typeConfig = EVENT_TYPE_CONFIG[selectedEvent.event_type] || EVENT_TYPE_CONFIG.note;
+                    const Icon = typeConfig.icon;
+                    return (
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium mb-4 ${typeConfig.color}`}>
+                        <Icon className="w-3.5 h-3.5" />
+                        {typeConfig.label}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 日時 */}
+                  <div className="mb-4">
+                    <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">日時</label>
+                    <p className="text-sm text-slate-700 mt-0.5">{formatDateTime(selectedEvent.created_at)}</p>
+                  </div>
+
+                  {/* 内容 */}
+                  {selectedEvent.content && (
+                    <div className="mb-4">
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">詳細</label>
+                      <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap leading-relaxed">{selectedEvent.content}</p>
+                    </div>
+                  )}
+
+                  {/* プロジェクト */}
+                  {selectedEvent.project_id && selectedProject && (
+                    <div className="mb-4">
+                      <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">プロジェクト</label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <FolderOpen className="w-4 h-4 text-blue-500" />
+                        <span className="text-sm text-slate-700">{selectedProject.name}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
