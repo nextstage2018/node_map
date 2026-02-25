@@ -47,16 +47,24 @@ export async function POST(
     const channels = (contact.contact_channels || []) as { channel: string; address: string }[];
     const addresses = channels.map((ch: { address: string }) => ch.address).filter(Boolean);
 
+    console.log(`[Contacts Analyze API] contactId=${contactId}, name=${contact.name}`);
+    console.log(`[Contacts Analyze API] contact_channels(${channels.length}件):`, channels.map((ch) => `${ch.channel}:${ch.address}`));
+    console.log(`[Contacts Analyze API] フィルタ用アドレス(${addresses.length}件):`, addresses);
+
     let messages: { subject: string; body: string; from_name: string; from_address: string; channel: string; timestamp: string }[] = [];
     if (addresses.length > 0) {
-      const { data: msgs } = await supabase
+      const { data: msgs, error: msgsError } = await supabase
         .from('inbox_messages')
         .select('subject, body, from_name, from_address, channel, timestamp')
         .in('from_address', addresses)
         .order('timestamp', { ascending: false })
         .limit(50);
       messages = msgs || [];
+      if (msgsError) {
+        console.error(`[Contacts Analyze API] inbox_messagesクエリエラー:`, msgsError);
+      }
     }
+    console.log(`[Contacts Analyze API] 取得メッセージ: ${messages.length}件`);
 
     // Phase 36: ビジネスイベント履歴を取得（直近20件）
     const { data: events } = await supabase
