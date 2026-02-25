@@ -47,14 +47,14 @@ export async function POST(
     const channels = (contact.contact_channels || []) as { channel: string; address: string }[];
     const addresses = channels.map((ch: { address: string }) => ch.address).filter(Boolean);
 
-    let messages: { subject: string; body_text: string; from_name: string; from_address: string; channel: string; received_at: string }[] = [];
+    let messages: { subject: string; body: string; from_name: string; from_address: string; channel: string; timestamp: string }[] = [];
     if (addresses.length > 0) {
       const { data: msgs } = await supabase
         .from('inbox_messages')
-        .select('subject, body_text, from_name, from_address, channel, received_at')
+        .select('subject, body, from_name, from_address, channel, timestamp')
         .in('from_address', addresses)
         .eq('user_id', userId)
-        .order('received_at', { ascending: false })
+        .order('timestamp', { ascending: false })
         .limit(50);
       messages = msgs || [];
     }
@@ -81,8 +81,8 @@ export async function POST(
 
       const channelList = channels.map((ch: { channel: string; address: string }) => `${ch.channel}: ${ch.address}`).join(', ');
       const messageSummaries = messages.slice(0, 30).map((m) => {
-        const body = (m.body_text || '').slice(0, 200);
-        return `[${m.channel}] ${m.from_name} (${formatDateSimple(m.received_at)}): ${m.subject || ''} - ${body}`;
+        const body = (m.body || '').slice(0, 200);
+        return `[${m.channel}] ${m.from_name} (${formatDateSimple(m.timestamp)}): ${m.subject || ''} - ${body}`;
       }).join('\n');
       const eventSummaries = (events || []).map((e) =>
         `[${e.event_type}] ${formatDateSimple(e.happened_at)}: ${e.title}${e.memo ? ' - ' + e.memo : ''}`

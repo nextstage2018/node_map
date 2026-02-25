@@ -65,13 +65,13 @@ export async function GET(request: NextRequest) {
         const addresses = channels.map((ch: { address: string }) => ch.address).filter(Boolean);
 
         // Phase 36: メッセージ取得（全ユーザー共通のcronなのでuser_idフィルタなし）
-        let messages: { subject: string; body_text: string; from_name: string; channel: string; received_at: string }[] = [];
+        let messages: { subject: string; body: string; from_name: string; channel: string; timestamp: string }[] = [];
         if (addresses.length > 0) {
           const { data: msgs } = await supabase
             .from('inbox_messages')
-            .select('subject, body_text, from_name, channel, received_at')
+            .select('subject, body, from_name, channel, timestamp')
             .in('from_address', addresses)
-            .order('received_at', { ascending: false })
+            .order('timestamp', { ascending: false })
             .limit(30);
           messages = msgs || [];
         }
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 
         const channelList = channels.map((ch: { channel: string; address: string }) => `${ch.channel}: ${ch.address}`).join(', ');
         const messageSummaries = messages.slice(0, 20).map((m) => {
-          const body = (m.body_text || '').slice(0, 150);
+          const body = (m.body || '').slice(0, 150);
           return `[${m.channel}] ${m.from_name}: ${body}`;
         }).join('\n');
         const eventSummaries = (events || []).map((e) =>
