@@ -220,6 +220,7 @@ export async function GET(request: NextRequest) {
       companyName: string; department: string; notes: string;
       visibility: string; activeChannels: { channel: string; name: string }[];
       organization_id?: string; is_team_member?: boolean;
+      ai_context?: string; ai_analyzed_at?: string;
     }[] = [];
 
     if (existingContacts) {
@@ -309,6 +310,9 @@ export async function GET(request: NextRequest) {
           activeChannels: mergedActiveChannels,
           organization_id: c.organization_id || undefined,
           is_team_member: c.is_team_member || false,
+          // Phase 36: AIコンテキスト
+          ai_context: c.ai_context || '',
+          ai_analyzed_at: c.ai_analyzed_at || '',
         });
       }
     }
