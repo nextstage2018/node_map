@@ -964,10 +964,10 @@ export default function ContactsPage() {
                     <Clock className="w-3 h-3" />
                     活動履歴
                   </button>
-                  {/* Phase 35: 連絡先結合ボタン */}
+                  {/* Phase 35: 連絡先結合ボタン（タブと同じスタイル） */}
                   <button
                     onClick={() => { setShowLinkModal(true); setLinkSearch(''); }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors ml-auto"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors ml-auto"
                   >
                     <Link2 className="w-3 h-3" />
                     連絡先結合
@@ -992,18 +992,45 @@ export default function ContactsPage() {
                           <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      {selectedContact.activeChannels && selectedContact.activeChannels.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mb-2">
-                          {selectedContact.activeChannels.map((ac, i) => (
-                            <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
-                              {CHANNEL_ICONS[ac.channel] && (
-                                <Image src={CHANNEL_ICONS[ac.channel]} alt={ac.channel} width={14} height={14} />
-                              )}
-                              {ac.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      {/* Phase 35: activeChannels + contact_channels(DB) を統合表示 */}
+                      {(() => {
+                        // contact_channels(DB)とactiveChannels(メッセージ由来)を統合
+                        const seen = new Set<string>();
+                        const merged: { channel: string; label: string }[] = [];
+                        // DB contact_channels を優先表示
+                        if (selectedContact.channels && selectedContact.channels.length > 0) {
+                          for (const ch of selectedContact.channels) {
+                            const key = `${ch.channel}::${ch.address}`;
+                            if (!seen.has(key)) {
+                              seen.add(key);
+                              merged.push({ channel: ch.channel, label: ch.address });
+                            }
+                          }
+                        }
+                        // activeChannels で未登録のものも追加
+                        if (selectedContact.activeChannels) {
+                          for (const ac of selectedContact.activeChannels) {
+                            const key = `${ac.channel}::${ac.name}`;
+                            if (!seen.has(key)) {
+                              seen.add(key);
+                              merged.push({ channel: ac.channel, label: ac.name });
+                            }
+                          }
+                        }
+                        if (merged.length === 0) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {merged.map((item, i) => (
+                              <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+                                {CHANNEL_ICONS[item.channel] && (
+                                  <Image src={CHANNEL_ICONS[item.channel]} alt={item.channel} width={14} height={14} />
+                                )}
+                                {item.label}
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       {/* Phase 35: チャンネル追加フォーム */}
                       {showChannelAdd && (
                         <div className="flex gap-2 items-end">
