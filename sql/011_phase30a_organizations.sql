@@ -20,19 +20,19 @@ ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
 CREATE POLICY organizations_policy ON organizations
   FOR ALL USING (auth.uid()::text = user_id);
 
--- 2. contacts テーブルへのカラム追加
-ALTER TABLE contacts ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id);
-ALTER TABLE contacts ADD COLUMN IF NOT EXISTS is_team_member BOOLEAN DEFAULT false;
+-- 2. contact_persons テーブルへのカラム追加
+ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id);
+ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS is_team_member BOOLEAN DEFAULT false;
 
 -- インデックス
-CREATE INDEX IF NOT EXISTS idx_contacts_organization_id ON contacts(organization_id);
-CREATE INDEX IF NOT EXISTS idx_contacts_is_team_member ON contacts(is_team_member);
+CREATE INDEX IF NOT EXISTS idx_contact_persons_organization_id ON contact_persons(organization_id);
+CREATE INDEX IF NOT EXISTS idx_contact_persons_is_team_member ON contact_persons(is_team_member);
 
 -- 3. project_members テーブル
 CREATE TABLE IF NOT EXISTS project_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID,
-  contact_id UUID REFERENCES contacts(id),
+  contact_id TEXT REFERENCES contact_persons(id),
   role TEXT,
   user_id TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
