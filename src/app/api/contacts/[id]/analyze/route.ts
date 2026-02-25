@@ -53,7 +53,6 @@ export async function POST(
         .from('inbox_messages')
         .select('subject, body, from_name, from_address, channel, timestamp')
         .in('from_address', addresses)
-        .eq('user_id', userId)
         .order('timestamp', { ascending: false })
         .limit(50);
       messages = msgs || [];
