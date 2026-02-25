@@ -1,314 +1,174 @@
-# CLAUDE.md — NodeMap プロジェクトルール
+# NodeMap - Claude Code 作業ガイド（SSOT）
 
-> このファイルはClaude Codeが最初に読む必須ルールファイルです。
-> すべての作業はこのルールに従ってください。
-
----
-
-## 1. プロジェクト概要
-
-NodeMapは統合コミュニケーション＆ビジネスログツール。
-Gmail / Slack / Chatworkのメッセージを統合インボックスで管理し、
-ナレッジ・思考マップ・種ボックスで情報を蓄積する。
-
-### 技術スタック
-- **フレームワーク**: Next.js 14 (App Router)
-- **言語**: TypeScript
-- **スタイル**: Tailwind CSS
-- **DB/認証**: Supabase (PostgreSQL + Auth)
-- **AI**: Anthropic Claude API (@anthropic-ai/sdk)
-- **デプロイ**: Vercel
-- **パッケージマネージャー**: npm
+最終更新: 2026-02-26
 
 ---
 
-## 2. 絶対にやってはいけないこと（CRITICAL）
+## プロジェクト概要
 
-### デプロイ関連
-- ❌ `vercel` コマンドでデプロイしない（デプロイはgit pushでVercelが自動実行）
-- ❌ Vercelの設定を変更しない（vercel.json の crons 設定以外）
-- ❌ 新しいVercelプロジェクトを作成しない
-- ❌ `vercel link` や `vercel env` を実行しない
+**NodeMap** は「情報を受け取り → 整理し → 活用する」個人・チーム向けコミュニケーション＆ビジネスログツール。
 
-### DB関連
-- ❌ Supabaseのテーブルを直接DROP/TRUNCATEしない
-- ❌ 既存テーブルのカラムを削除しない（追加はOK）
-- ❌ RLSポリシーを無断で無効化しない
-- ❌ Supabaseの環境変数やプロジェクト設定を変更しない
-
-### Git関連
-- ❌ mainブランチに直接force pushしない
-- ❌ git reset --hard で履歴を消さない
-- ❌ .env.local や認証情報をコミットしない
-
-### 既存機能
-- ❌ 既存の画面・APIの動作を壊さない
-- ❌ 既存ファイルを大幅に書き換える場合は必ずブランチを切る
-- ❌ 既存のimport/exportの構造を無断で変更しない
+- **フレームワーク**: Next.js 14 / TypeScript / Tailwind CSS
+- **DB**: Supabase（PostgreSQL）
+- **AI**: Claude API（claude-sonnet-4-20250514）
+- **デプロイ**: Vercel（本番: https://node-map-eight.vercel.app）
+- **リポジトリ**: https://github.com/nextstage2018/node_map.git
+- **ローカル**: ~/Desktop/node_map_git
 
 ---
 
-## 3. 必ず守ること（REQUIRED）
+## 重要なテーブル仕様（必ず守ること）
 
-### 作業フロー
-1. **作業前**: `git checkout -b feature/phase-XX-description` でブランチを切る
-2. **作業中**: こまめにコミットする（1機能1コミット）
-3. **ビルド確認**: `npm run build` でエラーがないことを確認してからコミット
-4. **動作確認**: 既存機能（インボックス、コンタクト、タスク等）が壊れていないことを確認
-5. **マージ**: mainにマージする前にビルド成功を再確認
-
-### コーディングルール
-- 日本語コメントを使用する（ユーザーが非エンジニアのため）
-- Phase番号をコメントに含める（例: `// Phase 30: 組織マスター追加`）
-- 既存のコード規約に従う（既存ファイルのスタイルを参照）
-- console.log のプレフィックスは `[機能名]` 形式（例: `[Contacts API]`）
-
-### DB変更
-- SQLマイグレーションファイルは `sql/` ディレクトリに保存
-- ファイル名は連番: `011_phase30_organizations.sql` のように
-- 既存テーブルの変更は ALTER TABLE ... ADD COLUMN IF NOT EXISTS を使用
-- 新テーブルにはRLSポリシーを必ず設定
+| テーブル名 | 備考 |
+|---|---|
+| `contact_persons` | コンタクト本体。id は TEXT型（自動生成なし）→ 必ず `'team_${Date.now()}_${random}'` 等で生成して渡す |
+| `contact_channels` | コンタクトの連絡先。UNIQUE(contact_id, channel, address) 制約あり |
+| `inbox_messages` | 受信メッセージ本体（unified_messages ではない）。user_id カラムは存在しない |
+| `unified_messages` | 現在は空。inbox_messages を使うこと |
+| `organizations` | 自社・取引先組織。domain で重複チェックしてから登録すること |
 
 ---
 
-## 4. 環境情報
+## 画面・ルート一覧
 
-### ディレクトリ構成
-```
-node_map_git/
-├── src/
-│   ├── app/                    # Next.js App Router
-│   │   ├── api/                # APIルート（55+エンドポイント）
-│   │   ├── inbox/page.tsx      # インボックス画面
-│   │   ├── contacts/page.tsx   # コンタクト管理画面
-│   │   ├── tasks/page.tsx      # タスク管理画面
-│   │   ├── seeds/page.tsx      # 種ボックス画面
-│   │   ├── nodemap/page.tsx    # 思考マップ画面
-│   │   ├── master/page.tsx     # ナレッジマスター画面
-│   │   ├── settings/page.tsx   # 設定画面
-│   │   ├── login/page.tsx      # ログイン
-│   │   ├── signup/page.tsx     # サインアップ
-│   │   └── layout.tsx          # ルートレイアウト
-│   ├── components/             # UIコンポーネント
-│   │   ├── auth/               # 認証（AuthProvider）
-│   │   ├── inbox/              # インボックス関連
-│   │   ├── contacts/           # コンタクト関連
-│   │   ├── tasks/              # タスク関連
-│   │   ├── seeds/              # 種ボックス関連
-│   │   ├── nodemap/            # 思考マップ関連
-│   │   ├── knowledge/          # ナレッジ（KnowledgeToast等）
-│   │   ├── settings/           # 設定関連
-│   │   ├── shared/             # 共有（Header, Sidebar, DailyDigest等）
-│   │   ├── timeline/           # タイムライン関連
-│   │   ├── thinking/           # 思考ログ関連
-│   │   ├── weekly/             # 週次ノード関連
-│   │   ├── master/             # マスター関連
-│   │   └── ui/                 # 汎用UI（Button, Badge等）
-│   ├── services/               # ビジネスロジック
-│   │   ├── ai/                 # AI関連（Claude API）
-│   │   ├── email/              # Gmail連携
-│   │   ├── slack/              # Slack連携
-│   │   ├── chatwork/           # Chatwork連携
-│   │   ├── inbox/              # インボックス永続化
-│   │   ├── nodemap/            # ノードマップ関連
-│   │   ├── contact/            # コンタクト関連
-│   │   ├── task/               # タスク関連
-│   │   ├── settings/           # 設定関連
-│   │   └── thinking/           # 思考ログ関連
-│   └── lib/                    # ユーティリティ
-│       ├── supabase.ts         # Supabaseクライアント
-│       ├── serverAuth.ts       # サーバーサイド認証
-│       ├── types.ts            # 型定義
-│       ├── cache.ts            # キャッシュ
-│       ├── utils.ts            # ユーティリティ
-│       └── knowledgePipeline.ts # ナレッジパイプライン
-├── docs/                       # 設計書
-├── public/                     # 静的ファイル
-├── vercel.json                 # Vercel設定（cronジョブ）
-├── next.config.mjs             # Next.js設定
-├── package.json                # 依存関係
-└── .env.local.example          # 環境変数テンプレート
-```
-
-### 環境変数（.env.local）
-```
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=<SupabaseプロジェクトURL>
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<Supabase匿名キー>
-SUPABASE_SERVICE_ROLE_KEY=<Supabaseサービスロールキー>
-
-# Email (IMAP/SMTP) — Gmail連携
-EMAIL_HOST / EMAIL_PORT / EMAIL_USER / EMAIL_PASSWORD
-SMTP_HOST / SMTP_PORT
-
-# Slack
-SLACK_BOT_TOKEN / SLACK_SIGNING_SECRET
-
-# Chatwork
-CHATWORK_API_TOKEN
-
-# AI
-ANTHROPIC_API_KEY
-```
-※ .env.local は .gitignore に含まれており、リポジトリにはコミットされない。
-※ 本番環境の環境変数はVercelのダッシュボードで設定済み。
-
-### デプロイ
-- mainブランチにpushすると、Vercelが自動でビルド＆デプロイする
-- 開発ブランチ（feature/*）のpushでもプレビューデプロイが生成される
-- CLIでの手動デプロイは不要（やらないこと）
-
-### Supabase
-- Supabase側のDBスキーマ変更はSQLファイルとして記録する
-- テーブル作成後、Supabase Dashboard で手動実行する運用
-- ユーザーがSupabase DashboardのSQL Editorでマイグレーションを実行する
+| 画面 | URL | 主なテーブル |
+|---|---|---|
+| インボックス | /inbox | inbox_messages |
+| タスク | /tasks | tasks / task_conversations |
+| 思考マップ | /nodemap | user_nodes / node_edges |
+| コンタクト | /contacts | contact_persons / contact_channels |
+| 組織 | /organizations | organizations |
+| ナレッジ | /master | knowledge_domains / knowledge_fields / knowledge_master_entries |
+| ビジネスログ | /business-log | projects / business_events |
+| 秘書 | /agent | tasks / seeds / user_nodes（読み取り専用） |
+| 種ボックス | /seeds | seeds |
+| 設定 | /settings | organizations / contact_persons / projects |
 
 ---
 
-## 5. 既存の重要パターン
+## API パターン（既存コードに必ず合わせること）
 
-### 認証パターン（APIルート）
 ```typescript
+// 認証
 import { getServerUserId } from '@/lib/serverAuth';
+const userId = await getServerUserId();
+if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-export async function GET(request: NextRequest) {
-  const userId = await getServerUserId();
-  if (!userId) {
-    return NextResponse.json(
-      { success: false, error: '認証が必要です' },
-      { status: 401 }
-    );
-  }
-  // ... 処理
-}
-```
-※ getServerUserId() はSupabase未設定時に 'demo-user-001' を返す（デモモード）
-
-### APIレスポンスパターン
-```typescript
-// 成功
+// レスポンス
 return NextResponse.json({ success: true, data: result });
-
-// エラー
-return NextResponse.json(
-  { success: false, error: 'エラーメッセージ' },
-  { status: 400 }
-);
-```
-
-### Supabaseクライアント
-```typescript
-import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
-
-const supabase = createServerClient();
-if (!supabase) {
-  // デモモード: Supabase未設定
-  return fallbackData;
-}
-```
-
-### ナレッジパイプライン統合
-メッセージ送信やシード保存の後にナレッジパイプラインを呼ぶパターン:
-```typescript
-import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
-
-// API成功後
-handleKnowledgeResponse(data, 'message_send');
+return NextResponse.json({ error: 'message' }, { status: 400 });
 ```
 
 ---
 
-## 6. 開発時の確認手順
+## 実装済みフェーズ（コミット履歴）
 
-### 新機能追加時
-1. `git checkout -b feature/phase-XX-name`
-2. SQLマイグレーションファイルを `sql/` に作成
-3. APIルートを `src/app/api/` に追加
-4. サービスを `src/services/` に追加
-5. コンポーネントを `src/components/` に追加
-6. ページを `src/app/` に追加
-7. `npm run build` でビルド確認
-8. `npm run dev` で動作確認
-9. コミット＆プッシュ
-
-### 既存機能が壊れていないかの確認
-以下の画面が正常に動作することを確認:
-- `/inbox` — メッセージ一覧が表示される
-- `/contacts` — コンタクト一覧が表示される
-- `/tasks` — タスクボードが表示される
-- `/seeds` — 種ボックスが表示される
-- `/nodemap` — 思考マップが表示される
-
-### ビルドエラーの既知の問題
-- `/login` と `/signup` のSSGエラー（Supabase環境変数未設定時）→ 無視してOK
-- `/api/clusters/diff` のDynamic Server Usageエラー → 無視してOK
+| Phase | 内容 | コミット |
+|---|---|---|
+| 30a+30b | マスターデータ基盤・簡単登録UI | 20fec1b |
+| 30c+30d | 自動マッチング・ビジネスログ基盤 | f2d2b81 |
+| 31 | 種AI会話強化 | f8b1195 |
+| 32 | パーソナル秘書エージェント | 03ed3a7 |
+| 33 | ビジネスログ強化（議事録・参加者） | 86b5ccf |
+| 34 | コンタクト強化・組織ページ | ceb958d |
+| 35 | コンタクトマージ・重複解消・チャンネル統合 | mainにマージ済み |
+| 36 | AIコミュニケーション分析（コンタクトnotes自動生成） | mainにマージ済み |
 
 ---
 
-## 7. 設計書の場所
+## Phase 35 実装内容（コンタクトマージ）
 
-開発の参照資料:
-- `docs/DESIGN_NodeMap_v2_Architecture.md` — v2全体アーキテクチャ（種中心設計、ビジネスログ、エージェント構想、コンタクト強化、ロードマップ）
-- `docs/DESIGN_Phase29.md` — Phase 29 設計書
-- `docs/DESIGN_Phase30.md` — Phase 30 設計書（あれば）
-- `docs/handoff/` — Phase間の引き継ぎ文書
+- `/api/contacts/duplicates` GET: 同名コンタクトの重複候補を返す
+- `/api/contacts/merge` POST: primaryId にチャンネル・イベント・プロジェクトを移行し重複を削除
+- `/api/contacts/route.ts`: contact_persons 主体で取得（1人1行保証）。inbox_messages の集約キーは from_address
+- コンタクト詳細パネル: 「基本情報」「活動履歴」「コミュニケーション分析」「連絡先結合」の4タブ
+- チャンネル名表示: 数字のみ or Slack形式（UXXXXX）の場合は他コンタクトの名前に置き換え。自分自身のIDは「マイチャット」
 
 ---
 
-## 8. デザインガイドライン
+## Phase 36 実装内容（AIコミュニケーション分析）
 
-### カラーパレット（3色基調）
-日本人が好むクリーンで落ち着いたデザイン。3色を基調とし、過度な装飾を避ける。
+- `/api/contacts/[id]/analyze` POST
+  - inbox_messages から該当アドレスの直近50件を取得（user_id フィルタなし）
+  - Claude API で関係性・口調・話題・返信速度・意思決定パターンを分析
+  - 結果を `contact_persons.notes` に保存（手動実行は上書き）
+  - メッセージ0件・notes入力済みの場合はスキップ
+- `/api/cron/analyze-contacts` POST（毎日22:00 UTC = 翌7:00 JST）
+  - notes が NULL または空文字のコンタクトのみ対象（自動は上書きしない）
+  - CRON_SECRET 環境変数で認証
+- UIは「コミュニケーション分析」タブ内に「コミュニケーション分析を実行」ボタン
 
-```
-プライマリ:   #2563EB (Blue-600)  — メインアクション、選択状態、リンク
-セカンダリ:   #475569 (Slate-600) — テキスト、アイコン、ラベル
-アクセント:   #F8FAFC (Slate-50)  — 背景、カード、パネル
-
-補助色（控えめに使用）:
-  成功:       #16A34A (Green-600)  — 完了、成功
-  警告:       #EA580C (Orange-600) — 注意、期限間近
-  エラー:     #DC2626 (Red-600)    — エラー、削除
+### DBマイグレーション（Supabase実行済み）
+```sql
+ALTER TABLE contact_persons 
+ADD COLUMN IF NOT EXISTS ai_context TEXT,
+ADD COLUMN IF NOT EXISTS ai_analyzed_at TIMESTAMPTZ;
 ```
 
-### デザイン原則
-- **余白を十分に取る** — 詰め込みすぎない。padding/margin は 16px 以上を基本に
-- **フォントサイズ** — 本文 14px、見出し 18px、小テキスト 12px。極端に小さい文字は使わない
-- **角丸** — rounded-lg (8px) を標準。ボタンやカードに統一感を持たせる
-- **影** — shadow-sm 程度にとどめる。ドロップシャドウは控えめに
-- **アイコン** — lucide-react を使用（既存と統一）。テキストと併記し、アイコンだけにしない
-- **ステータスバッジ** — 既存の StatusBadge / ChannelBadge パターンに従う
-- **レスポンシブ** — モバイル対応は後回しでOK。デスクトップファーストで実装
+---
 
-### 既存UIとの統一
-- Header コンポーネント（`src/components/shared/Header.tsx`）を全ページで使用
-- Sidebar コンポーネント（`src/components/shared/Sidebar.tsx`）のナビゲーション構造を踏襲
-- Button コンポーネント（`src/components/ui/Button.tsx`）を使用（variant: primary / secondary / ghost）
-- テーブルのスタイルは contacts/page.tsx を参考にする（sticky header, hover効果）
+## 残課題（未実装）
+
+1. **送信メッセージの保存**: 現在 inbox_messages は受信のみ。Chatwork/Slack の送信メッセージも取得・保存することで双方向のコミュニケーション分析が可能になる
+2. **auto生成コンタクト同士の連絡先結合**: 現状は DBに登録済みコンタクト（confirmed: true）のみ結合可能。isAutoGenerated: true 同士の統合は未実装
+3. **ビジネスログの活動履歴連携**: business_events の contact_id が未設定のため、コンタクト詳細の活動履歴タブにビジネスイベントが表示されない。多対多（1イベント複数参加者）の設計見直しも必要
 
 ---
 
-## 9. Phase 30 の実装タスク（次のマイルストーン）
+## 既知の仕様・注意事項
 
-参照: `docs/DESIGN_NodeMap_v2_Architecture.md`（コンタクト強化 = セクション8、ロードマップ = セクション9）
+### コンタクト一覧の集約ロジック
+- `contact_persons` 主体で取得（1人1行保証）
+- inbox_messages の集約キー: `from_address`（email=メアド / chatwork=account_id数値 / slack=UXXXXX）
+- from_address が空の場合: from_name をスペース正規化してフォールバック
+- 自分自身のメールアドレスからのメッセージ（Me）は除外済み
 
-### Phase 30a: マスターデータ基盤
-- `sql/011_phase30_organizations.sql` 作成（organizations, project_members, contacts拡張）
-- `/api/organizations` CRUD API
-- `/api/project-members` API
+### 組織の重複防止
+- SetupWizard でドメイン重複チェック済み（同じ domain が存在すれば新規作成しない）
 
-### Phase 30b: 簡単登録UI
-- コンタクト追加モーダル
-- CSVインポート機能
-- 初回セットアップウィザード
-- コンタクト詳細パネルの強化（組織紐付け、プロジェクト追加）
+### Vercel Cron
+- vercel.json に crons 設定済み
+- 環境変数 `CRON_SECRET` が必要
 
-### Phase 30c: 自動マッチング
-- メールアドレス完全一致マッチング
-- ドメインマッチング
-- 新規コンタクト生成時の自動マッチ処理
+### ビルドエラー対処
+```bash
+# キャッシュエラーの場合
+rm -rf .next && npm run dev
+```
 
-### Phase 30d: ビジネスログ基盤
-- projects, groups, business_events テーブル
-- タイムラインUI（左サイドバー + 中央タイムライン + 右パネル）
-- 既存サイドバーにビジネスログへのナビゲーション追加
+---
+
+## 作業フロー（Claude Code への指示テンプレート）
+
+```
+CLAUDE.md を読んでから作業を開始してください。
+
+【タスク】Phase XX: 機能名
+
+【手順】
+1. git checkout -b feature/phase-XX-name
+2. SQLファイル作成（実行はしない）
+3. API作成
+4. UI作成
+5. npm run build でビルド確認
+6. git commit してコミットハッシュを報告
+
+【注意】
+- 既存画面を壊さないこと
+- contact_persons テーブルの id は TEXT型のため必ず生成して渡す
+- inbox_messages を使うこと（unified_messages ではない）
+- inbox_messages に user_id カラムは存在しない
+- APIは既存パターン（getServerUserId + NextResponse.json）に従うこと
+```
+
+---
+
+## 環境変数（.env.local / Vercel）
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+ANTHROPIC_API_KEY=
+CRON_SECRET=
+```
