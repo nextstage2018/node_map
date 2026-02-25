@@ -104,6 +104,7 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            id: `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: member.name.trim(),
             address: member.email.trim() || undefined,
             isTeamMember: true,
