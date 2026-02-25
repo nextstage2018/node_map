@@ -1005,6 +1005,20 @@ export default function ContactsPage() {
                       </div>
                       {/* Phase 35: activeChannels + contact_channels(DB) を統合表示 */}
                       {(() => {
+                        // Phase 35: 数字ID/Slack IDを名前に変換するヘルパー
+                        const isNumericId = (s: string) => /^\d+$/.test(s);
+                        const isSlackId = (s: string) => /^U[A-Z0-9]+$/i.test(s);
+                        const resolveLabel = (raw: string): string => {
+                          // 自分自身のaddressと一致 → 「マイチャット」
+                          if (raw === selectedContact.address) return 'マイチャット';
+                          // 数字のみ or Slack ID → 他コンタクトから名前を探す
+                          if (isNumericId(raw) || isSlackId(raw)) {
+                            const match = contacts.find((c) => c.id !== selectedContact.id && c.address === raw);
+                            if (match) return match.name;
+                          }
+                          return raw;
+                        };
+
                         // contact_channels(DB)とactiveChannels(メッセージ由来)を統合
                         const seen = new Set<string>();
                         const merged: { channel: string; label: string }[] = [];
@@ -1014,7 +1028,7 @@ export default function ContactsPage() {
                             const key = `${ch.channel}::${ch.address}`;
                             if (!seen.has(key)) {
                               seen.add(key);
-                              merged.push({ channel: ch.channel, label: ch.address });
+                              merged.push({ channel: ch.channel, label: resolveLabel(ch.address) });
                             }
                           }
                         }
@@ -1024,7 +1038,7 @@ export default function ContactsPage() {
                             const key = `${ac.channel}::${ac.name}`;
                             if (!seen.has(key)) {
                               seen.add(key);
-                              merged.push({ channel: ac.channel, label: ac.name });
+                              merged.push({ channel: ac.channel, label: resolveLabel(ac.name) });
                             }
                           }
                         }
