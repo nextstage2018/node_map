@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus } from 'lucide-react';
 import Header from '@/components/shared/Header';
+import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
 import Image from 'next/image';
 
 // ========================================
@@ -150,6 +151,9 @@ export default function ContactsPage() {
   const [editDepartment, setEditDepartment] = useState('');
   const [editNotes, setEditNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // --- Phase 30b: コンタクト追加モーダル ---
+  const [showAddModal, setShowAddModal] = useState(false);
 
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
@@ -377,6 +381,15 @@ export default function ContactsPage() {
               <Users className="w-5 h-5 text-slate-600" />
               <h1 className="text-lg font-bold text-slate-900">コンタクト</h1>
             </div>
+            {/* Phase 30b: コンタクト追加ボタン */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+                追加
+              </button>
             <button
               onClick={runEnrich}
               disabled={isEnriching}
@@ -395,6 +408,7 @@ export default function ContactsPage() {
                 </>
               )}
             </button>
+            </div>
           </div>
 
           {/* タブ切り替え */}
@@ -828,6 +842,17 @@ export default function ContactsPage() {
           </div>
         )}
       </div>
+
+      {/* Phase 30b: コンタクト追加モーダル */}
+      <QuickAddContactModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onSaved={() => {
+          fetchContacts();
+          setActionResult({ type: 'success', text: 'コンタクトを追加しました' });
+          setTimeout(() => setActionResult(null), 3000);
+        }}
+      />
     </div>
   );
 }

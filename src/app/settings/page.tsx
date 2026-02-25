@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Header from '@/components/shared/Header';
 import ChannelSubscriptionModal from '@/components/settings/ChannelSubscriptionModal';
+import SetupWizard from '@/components/setup/SetupWizard';
 
 // Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
 const CHATWORK_FORM_CONFIG = {
@@ -72,6 +73,9 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showChatworkForm, setShowChatworkForm] = useState(false);
   const [chatworkFormData, setChatworkFormData] = useState<Record<string, string>>({});
+
+  // Phase 30b: セットアップウィザード
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
 
   // Phase 25: チャネル購読モーダル
   const [channelModal, setChannelModal] = useState<{
@@ -333,6 +337,7 @@ export default function SettingsPage() {
     { id: 'channels', label: 'チャンネル接続' },
     { id: 'profile', label: 'プロフィール' },
     { id: 'notifications', label: '通知設定' },
+    { id: 'setup', label: '初回セットアップ' },
   ];
 
   return (
@@ -570,6 +575,22 @@ export default function SettingsPage() {
               </button>
             </div>
           )}
+
+          {/* Phase 30b: 初回セットアップタブ */}
+          {activeTab === 'setup' && (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 mb-4">
+                自社の情報、チームメンバー、プロジェクトを一括で登録できます。
+                初めてNodeMapを使う方はこちらからセットアップを開始してください。
+              </p>
+              <button
+                onClick={() => setShowSetupWizard(true)}
+                className="px-6 py-3 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                初回セットアップを開始
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -582,6 +603,15 @@ export default function SettingsPage() {
         onSaved={() => {
           loadSubscriptionCounts();
           setMessage({ type: 'success', text: '取得対象チャネルを更新しました' });
+        }}
+      />
+
+      {/* Phase 30b: セットアップウィザード */}
+      <SetupWizard
+        isOpen={showSetupWizard}
+        onClose={() => setShowSetupWizard(false)}
+        onCompleted={() => {
+          setMessage({ type: 'success', text: '初回セットアップが完了しました！' });
         }}
       />
     </div>

@@ -666,6 +666,28 @@ export interface CheckpointData {
 
 export type NodeFilterMode = 'keyword_only' | 'with_person' | 'with_project' | 'all';
 
+// ===== Phase 30: マスターデータ基盤 =====
+
+// 組織（会社・団体）
+export interface Organization {
+  id: string;
+  name: string;
+  domain?: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// プロジェクトメンバー
+export interface ProjectMember {
+  id: string;
+  projectId: string;
+  contactId: string;
+  role?: string;
+  userId: string;
+  createdAt: string;
+}
+
 // ===== Phase 20: 週次ノードバナー =====
 
 export interface WeeklyNodeConfirmRequest {
