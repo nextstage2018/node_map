@@ -8,26 +8,56 @@ import { cleanChatworkBody } from '@/lib/utils';
 
 const CHATWORK_API_BASE = 'https://api.chatwork.com/v2';
 
+// Phase 29: レート制限対策
+const RATE_LIMIT_DELAY_MS = 200; // リクエスト間のディレイ（ms）
+const MAX_RETRIES = 2;
+
 function getToken(): string {
   return process.env.CHATWORK_API_TOKEN || '';
 }
 
+/** リクエスト間にディレイを入れる */
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 async function chatworkFetch(endpoint: string, options?: RequestInit) {
   const token = getToken();
-  const res = await fetch(`${CHATWORK_API_BASE}${endpoint}`, {
-    ...options,
-    headers: {
-      'X-ChatWorkToken': token,
-      ...options?.headers,
-    },
-  });
 
-  if (!res.ok) {
-    const errorBody = await res.text().catch(() => 'unknown');
-    console.error(`[Chatwork API] ${res.status} ${res.statusText} - ${endpoint}: ${errorBody}`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await fetch(`${CHATWORK_API_BASE}${endpoint}`, {
+      ...options,
+      headers: {
+        'X-ChatWorkToken': token,
+        ...options?.headers,
+      },
+    });
+
+    // Phase 29: レート制限エラー(429)時のリトライ
+    if (res.status === 429) {
+      const retryAfter = Number(res.headers.get('Retry-After') || '5');
+      console.warn(`[Chatwork API] レート制限 (429) - ${endpoint}: ${retryAfter}秒後にリトライ (試行${attempt + 1}/${MAX_RETRIES + 1})`);
+      if (attempt < MAX_RETRIES) {
+        await delay(retryAfter * 1000);
+        continue;
+      }
+    }
+
+    if (!res.ok && res.status !== 429) {
+      const errorBody = await res.text().catch(() => 'unknown');
+      console.error(`[Chatwork API] ${res.status} ${res.statusText} - ${endpoint}: ${errorBody}`);
+    }
+
+    // Phase 29: リクエスト間ディレイ
+    await delay(RATE_LIMIT_DELAY_MS);
+    return res;
   }
 
-  return res;
+  // フォールバック（ここには通常到達しない）
+  return fetch(`${CHATWORK_API_BASE}${endpoint}`, {
+    ...options,
+    headers: { 'X-ChatWorkToken': token, ...options?.headers },
+  });
 }
 
 /**
@@ -37,8 +67,8 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
   const token = getToken();
 
   if (!token) {
-    console.log('[Chatwork] トークン未設定のためデモデータを返却');
-    return getDemoChatworkMessages();
+    console.log('[Chatwork] トークン未設定のためスキップ');
+    return [];
   }
 
   try {
@@ -46,7 +76,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
     const roomsRes = await chatworkFetch('/rooms');
     if (!roomsRes.ok) {
       console.error('[Chatwork] ルーム一覧取得失敗:', roomsRes.status, roomsRes.statusText);
-      return getDemoChatworkMessages();
+      return [];
     }
 
     const rooms = await roomsRes.json();
@@ -66,7 +96,8 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
         (b.last_update_time || 0) - (a.last_update_time || 0)
     );
 
-    for (const room of sortedRooms.slice(0, 30)) {
+    // Phase 29: レート制限対策 — 同時取得ルーム数を15に制限
+    for (const room of sortedRooms.slice(0, 15)) {
       try {
         // Phase 25: ルームの未読数を取得
         const unreadNum = room.unread_num || 0;
@@ -156,7 +187,7 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
     );
   } catch (error) {
     console.error('[Chatwork] 全体エラー:', error);
-    return getDemoChatworkMessages();
+    return [];
   }
 }
 
@@ -254,7 +285,11 @@ export async function sendChatworkMessage(
   }
 }
 
+/** Phase 29: デモモードが環境変数で無効化されている場合は空配列を返す */
 function getDemoChatworkMessages(): UnifiedMessage[] {
+  if (process.env.DISABLE_DEMO_DATA === 'true') {
+    return [];
+  }
   const now = new Date();
   return [
     {

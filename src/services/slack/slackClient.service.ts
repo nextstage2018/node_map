@@ -46,7 +46,7 @@ async function getTokenFromDB(userId?: string): Promise<string> {
     // access_token または bot_token を取得（available APIと同じ）
     const token = data?.token_data?.access_token || data?.token_data?.bot_token;
     if (token) {
-      console.log(`[Slack] DBからトークン取得成功 (${token.substring(0, 10)}...)`);
+      console.log(`[Slack] DBからトークン取得成功 (長さ: ${token.length}文字)`);
       return token;
     }
 
@@ -57,8 +57,36 @@ async function getTokenFromDB(userId?: string): Promise<string> {
   return getToken();
 }
 
-// ユーザー情報キャッシュ（サーバーサイド、プロセス内メモリ）
-const userCache: Map<string, { name: string; realName: string }> = new Map();
+// Phase 29: ユーザー情報キャッシュ（TTL付き、最大エントリ数制限）
+const CACHE_MAX_SIZE = 500;
+const CACHE_TTL_MS = 30 * 60 * 1000; // 30分
+
+interface CachedUserInfo {
+  name: string;
+  realName: string;
+  cachedAt: number;
+}
+
+const userCache: Map<string, CachedUserInfo> = new Map();
+
+/** キャッシュの期限切れエントリを削除し、サイズ制限を適用 */
+function cleanupCache() {
+  const now = Date.now();
+  for (const [key, entry] of userCache) {
+    if (now - entry.cachedAt > CACHE_TTL_MS) {
+      userCache.delete(key);
+    }
+  }
+  // サイズ超過時は古いエントリから削除
+  if (userCache.size > CACHE_MAX_SIZE) {
+    const entries = Array.from(userCache.entries())
+      .sort((a, b) => a[1].cachedAt - b[1].cachedAt);
+    const toDelete = entries.slice(0, userCache.size - CACHE_MAX_SIZE);
+    for (const [key] of toDelete) {
+      userCache.delete(key);
+    }
+  }
+}
 
 /**
  * Slackユーザー情報を取得（キャッシュ付き）
@@ -68,8 +96,10 @@ async function getUserInfo(
   client: any,
   userId: string
 ): Promise<{ name: string; realName: string }> {
-  if (userCache.has(userId)) {
-    return userCache.get(userId)!;
+  // Phase 29: TTLチェック付きキャッシュ
+  const cached = userCache.get(userId);
+  if (cached && (Date.now() - cached.cachedAt < CACHE_TTL_MS)) {
+    return { name: cached.name, realName: cached.realName };
   }
 
   try {
@@ -78,12 +108,13 @@ async function getUserInfo(
       name: result.user?.name || 'Unknown',
       realName: result.user?.real_name || result.user?.name || 'Unknown',
     };
-    userCache.set(userId, info);
+    userCache.set(userId, { ...info, cachedAt: Date.now() });
+    cleanupCache();
     return info;
   } catch (err) {
     console.warn(`[Slack] ユーザー情報取得失敗 (${userId}):`, err);
     const fallback = { name: userId, realName: userId };
-    userCache.set(userId, fallback);
+    userCache.set(userId, { ...fallback, cachedAt: Date.now() });
     return fallback;
   }
 }
@@ -172,8 +203,8 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
   const token = await getTokenFromDB(userId);
 
   if (!token) {
-    console.log('[Slack] トークン無し → デモデータ返却');
-    return getDemoSlackMessages();
+    console.log('[Slack] トークン無し → スキップ');
+    return [];
   }
 
   try {
@@ -337,7 +368,7 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
   } catch (error: any) {
     const errDetail = error?.data?.error || error?.message || String(error);
     console.error('[Slack] 接続エラー:', errDetail);
-    return getDemoSlackMessages();
+    return [];
   }
 }
 
@@ -374,7 +405,11 @@ export async function sendSlackMessage(
   }
 }
 
+/** Phase 29: デモモードが環境変数で無効化されている場合は空配列を返す */
 function getDemoSlackMessages(): UnifiedMessage[] {
+  if (process.env.DISABLE_DEMO_DATA === 'true') {
+    return [];
+  }
   const now = new Date();
   return [
     {

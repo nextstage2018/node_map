@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import KnowledgeToast from '@/components/knowledge/KnowledgeToast';
 
 export const metadata: Metadata = {
   title: 'NodeMap - 統合インボックス',
@@ -16,6 +17,7 @@ export default function RootLayout({
     <html lang="ja">
       <body className="antialiased">
         <AuthProvider>{children}</AuthProvider>
+        <KnowledgeToast />
       </body>
     </html>
   );

@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
 import ChatworkBody from '@/components/inbox/ChatworkBody';
+import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
 
 // リアクション用の絵文字リスト
 const REACTION_EMOJIS = [
@@ -337,6 +338,8 @@ function useSeedAction() {
       const data = await res.json();
       if (data.success) {
         setSeedResult({ id: msg.id, type: 'success', text: '種ボックスに追加しました' });
+        // Phase 28: ナレッジパイプラインのフィードバック表示
+        handleKnowledgeResponse(data, 'seed');
       } else {
         setSeedResult({ id: msg.id, type: 'error', text: data.error || '追加に失敗しました' });
       }

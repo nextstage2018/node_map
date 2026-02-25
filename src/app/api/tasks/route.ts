@@ -10,11 +10,20 @@ import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 // タスク一覧取得
 export async function GET() {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
   } catch (error) {
-    console.error('タスク取得エラー:', error);
+    // Phase 29: 統一エラーハンドリング
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Tasks API] タスク取得エラー:', message);
     return NextResponse.json(
       { success: false, error: 'タスクの取得に失敗しました' },
       { status: 500 }
@@ -25,7 +34,14 @@ export async function GET() {
 // タスク作成 + ナレッジパイプライン
 export async function POST(request: NextRequest) {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const body: CreateTaskRequest = await request.json();
 
     if (!body.title) {
@@ -63,7 +79,8 @@ export async function POST(request: NextRequest) {
       } : null,
     });
   } catch (error) {
-    console.error('タスク作成エラー:', error);
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Tasks API] タスク作成エラー:', message);
     return NextResponse.json(
       { success: false, error: 'タスクの作成に失敗しました' },
       { status: 500 }
@@ -74,7 +91,14 @@ export async function POST(request: NextRequest) {
 // タスク更新 + 完了時にナレッジパイプライン
 export async function PUT(request: NextRequest) {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const body = await request.json();
 
     if (!body.id) {
@@ -119,7 +143,8 @@ export async function PUT(request: NextRequest) {
       } : null,
     });
   } catch (error) {
-    console.error('タスク更新エラー:', error);
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Tasks API] タスク更新エラー:', message);
     return NextResponse.json(
       { success: false, error: 'タスクの更新に失敗しました' },
       { status: 500 }

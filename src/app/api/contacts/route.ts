@@ -2,6 +2,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
+import { getBlocklist } from '@/services/inbox/inboxStorage.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,7 +54,14 @@ async function getActiveChannels(
 // ========================================
 export async function GET(request: NextRequest) {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const supabase = createServerClient();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: true, data: [], stats: { total: 0, byRelationship: {}, byChannel: {}, unconfirmedCount: 0 } });
@@ -206,8 +214,27 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Phase 29: ブロックリストのサーバーサイドフィルタ
+    let filteredByBlock = contacts;
+    try {
+      const blocklist = await getBlocklist();
+      if (blocklist.length > 0) {
+        filteredByBlock = contacts.filter((c) => {
+          const addr = (c.address || '').toLowerCase();
+          const domain = addr.split('@')[1] || '';
+          for (const entry of blocklist) {
+            if (entry.match_type === 'exact' && addr === entry.address.toLowerCase()) return false;
+            if (entry.match_type === 'domain' && domain === entry.address.toLowerCase()) return false;
+          }
+          return true;
+        });
+      }
+    } catch {
+      // ブロックリスト取得失敗時はフィルタなしで続行
+    }
+
     // 4. フィルタリング
-    let filtered = contacts;
+    let filtered = filteredByBlock;
     if (search) {
       const q = search.toLowerCase();
       filtered = filtered.filter((c) =>
@@ -255,7 +282,14 @@ export async function GET(request: NextRequest) {
 // ========================================
 export async function PUT(request: NextRequest) {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const supabase = createServerClient();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save } from 'lucide-react';
 import Header from '@/components/shared/Header';
 import Image from 'next/image';
@@ -119,8 +119,23 @@ export default function ContactsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterRelationship, setFilterRelationship] = useState('all');
   const [filterChannel, setFilterChannel] = useState('all');
+
+  // Phase 29: 検索のデバウンス（300ms）
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    };
+  }, [search]);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editRelationship, setEditRelationship] = useState('');
@@ -143,12 +158,13 @@ export default function ContactsPage() {
   // ========================================
   // コンタクト取得
   // ========================================
+  // Phase 29: debouncedSearch を使用してAPIコールを抑制
   const fetchContacts = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (search) params.set('search', search);
+      if (debouncedSearch) params.set('search', debouncedSearch);
       if (filterRelationship !== 'all') params.set('relationship', filterRelationship);
       if (filterChannel !== 'all') params.set('channel', filterChannel);
 
@@ -165,7 +181,7 @@ export default function ContactsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, filterRelationship, filterChannel]);
+  }, [debouncedSearch, filterRelationship, filterChannel]);
 
   useEffect(() => {
     fetchContacts();

@@ -46,7 +46,14 @@ interface KnowledgeRegistration {
 // ========================================
 export async function POST(request: NextRequest) {
   try {
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const body: PipelineRequest = await request.json();
 
     if (!body.text || !body.trigger) {

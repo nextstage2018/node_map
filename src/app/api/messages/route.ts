@@ -175,8 +175,14 @@ async function runSpamCheck(messages: UnifiedMessage[]): Promise<void> {
 // ========================================
 export async function GET(request: NextRequest) {
   try {
-    // Phase 22: 認証ユーザーIDを取得
+    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です。ログインしてください。' },
+        { status: 401 }
+      );
+    }
 
     // ページネーションパラメータ
     const searchParams = request.nextUrl.searchParams;

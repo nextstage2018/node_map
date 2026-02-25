@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { UnifiedMessage } from '@/lib/types';
 import Button from '@/components/ui/Button';
+import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
 
 interface ReplyFormProps {
   message: UnifiedMessage;
@@ -26,12 +27,25 @@ function RecipientInput({
 }) {
   const [inputValue, setInputValue] = useState('');
 
+  // Phase 29: メールアドレスの簡易バリデーション
+  const isValidEmail = (email: string): boolean => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+  const [validationError, setValidationError] = useState('');
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if ((e.key === 'Enter' || e.key === ',' || e.key === ' ' || e.key === 'Tab') && inputValue.trim()) {
       e.preventDefault();
       const trimmed = inputValue.trim().replace(/,$/g, '');
-      if (trimmed && !values.includes(trimmed)) {
-        onChange([...values, trimmed]);
+      // Phase 29: メールアドレスのバリデーション（label が To/Cc/Bcc の場合のみ）
+      if (trimmed && (label === '宛先:' || !label.match(/^(To|Cc|Bcc):$/)) || isValidEmail(trimmed)) {
+        if (trimmed && !values.includes(trimmed)) {
+          onChange([...values, trimmed]);
+          setValidationError('');
+        }
+      } else if (trimmed && !isValidEmail(trimmed)) {
+        setValidationError(`"${trimmed}" は有効なメールアドレスではありません`);
+        return;
       }
       setInputValue('');
     }
@@ -70,8 +84,17 @@ function RecipientInput({
           onKeyDown={handleKeyDown}
           onBlur={() => {
             const trimmed = inputValue.trim().replace(/,$/g, '');
-            if (trimmed && !values.includes(trimmed)) {
-              onChange([...values, trimmed]);
+            if (trimmed) {
+              // Phase 29: onBlur時もバリデーション
+              const needsEmailCheck = label.match(/^(To|Cc|Bcc):$/);
+              if (!needsEmailCheck || isValidEmail(trimmed)) {
+                if (!values.includes(trimmed)) {
+                  onChange([...values, trimmed]);
+                }
+                setValidationError('');
+              } else {
+                setValidationError(`"${trimmed}" は有効なメールアドレスではありません`);
+              }
               setInputValue('');
             }
           }}
@@ -79,6 +102,10 @@ function RecipientInput({
           className="flex-1 min-w-[120px] text-xs py-0.5 bg-transparent focus:outline-none"
         />
       </div>
+      {/* Phase 29: バリデーションエラー表示 */}
+      {validationError && (
+        <p className="text-[10px] text-red-500 ml-10 mt-0.5">{validationError}</p>
+      )}
     </div>
   );
 }
@@ -192,6 +219,9 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
       });
       const data = await res.json();
       if (data.success) {
+        // Phase 28: ナレッジパイプラインのフィードバック表示
+        handleKnowledgeResponse(data, 'message_send');
+
         // 送信メッセージをローカルに追加（即時表示）
         const sentMsg: UnifiedMessage = {
           id: `sent-reply-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
