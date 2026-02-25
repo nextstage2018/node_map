@@ -49,13 +49,55 @@ export async function POST(request: NextRequest) {
     }
 
     // Phase 35: contact_channels を primaryId に付け替え
-    const { error: channelError } = await supabase
+    // UNIQUE (contact_id, channel, address) 制約があるため、重複を先に処理する
+    const { data: primaryChannels } = await supabase
       .from('contact_channels')
-      .update({ contact_id: primaryId })
+      .select('channel, address')
+      .eq('contact_id', primaryId);
+
+    const { data: mergeChannels } = await supabase
+      .from('contact_channels')
+      .select('id, channel, address')
       .in('contact_id', mergeIds);
 
-    if (channelError) {
-      console.error('[Contacts Merge API] チャネル更新エラー:', channelError);
+    if (mergeChannels && mergeChannels.length > 0) {
+      const primarySet = new Set(
+        (primaryChannels || []).map((c) => `${c.channel}::${c.address}`)
+      );
+      const duplicateIds: string[] = [];
+      const moveIds: string[] = [];
+
+      for (const mc of mergeChannels) {
+        const key = `${mc.channel}::${mc.address}`;
+        if (primarySet.has(key)) {
+          duplicateIds.push(mc.id);
+        } else {
+          moveIds.push(mc.id);
+          primarySet.add(key); // 同じmergeIds同士の重複も防ぐ
+        }
+      }
+
+      // 重複するチャネルは削除
+      if (duplicateIds.length > 0) {
+        const { error: delDupErr } = await supabase
+          .from('contact_channels')
+          .delete()
+          .in('id', duplicateIds);
+        if (delDupErr) {
+          console.error('[Contacts Merge API] 重複チャネル削除エラー:', delDupErr);
+        }
+      }
+
+      // 残りをprimaryIdに付け替え
+      if (moveIds.length > 0) {
+        const { error: moveErr } = await supabase
+          .from('contact_channels')
+          .update({ contact_id: primaryId })
+          .in('id', moveIds);
+        if (moveErr) {
+          console.error('[Contacts Merge API] チャネル移行エラー:', moveErr);
+        }
+      }
     }
 
     // Phase 35: business_events の contact_id を primaryId に更新

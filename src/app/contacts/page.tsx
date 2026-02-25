@@ -211,6 +211,12 @@ export default function ContactsPage() {
   const [showMergeModal, setShowMergeModal] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
 
+  // --- Phase 35: チャンネル追加 ---
+  const [showChannelAdd, setShowChannelAdd] = useState(false);
+  const [newChannelType, setNewChannelType] = useState<'email' | 'slack' | 'chatwork'>('email');
+  const [newChannelAddress, setNewChannelAddress] = useState('');
+  const [isAddingChannel, setIsAddingChannel] = useState(false);
+
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
   const [blocklistLoading, setBlocklistLoading] = useState(false);
@@ -312,6 +318,8 @@ export default function ContactsPage() {
       setEditNotes(selectedContact.notes || '');
       setDetailTab('info');
       setActivities([]);
+      setShowChannelAdd(false);
+      setNewChannelAddress('');
       // Phase 34: 組織名を取得
       const org = organizations.find((o) => o.id === selectedContact.organization_id);
       setOrgName(org?.name || '');
@@ -499,6 +507,40 @@ export default function ContactsPage() {
   }, []);
 
   useEffect(() => { fetchDuplicates(); }, [fetchDuplicates]);
+
+  // Phase 35: チャンネル追加
+  const addChannel = async () => {
+    if (!selectedContact || !newChannelAddress.trim()) return;
+    setIsAddingChannel(true);
+    try {
+      const res = await fetch(`/api/contacts/${selectedContact.id}/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: newChannelType, address: newChannelAddress.trim() }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionResult({ type: 'success', text: 'チャンネルを追加しました' });
+        setNewChannelAddress('');
+        setShowChannelAdd(false);
+        // activeChannelsをローカル更新
+        const newAc = { channel: newChannelType, name: newChannelAddress.trim() };
+        setSelectedContact((prev) => prev ? {
+          ...prev,
+          activeChannels: [...(prev.activeChannels || []), newAc],
+        } : null);
+        // コンタクト一覧も再取得
+        fetchContacts();
+      } else {
+        setActionResult({ type: 'error', text: data.error || 'チャンネル追加に失敗しました' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsAddingChannel(false);
+    }
+    setTimeout(() => setActionResult(null), 3000);
+  };
 
   // Phase 35: マージ実行
   const executeMerge = async (primaryId: string, mergeIds: string[]) => {
@@ -891,14 +933,23 @@ export default function ContactsPage() {
                 {/* ========== 基本情報タブ ========== */}
                 {detailTab === 'info' && (
                   <>
-                    {/* やり取りチャネル一覧 */}
-                    {selectedContact.activeChannels && selectedContact.activeChannels.length > 0 && (
-                      <div className="mb-4">
-                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-2">
+                    {/* やり取りチャネル一覧 + Phase 35: チャンネル追加 */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
                           <MessageSquare className="w-3.5 h-3.5" />
                           やり取りチャネル
                         </label>
-                        <div className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => { setShowChannelAdd(!showChannelAdd); setNewChannelAddress(''); }}
+                          className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                          title="チャンネル追加"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {selectedContact.activeChannels && selectedContact.activeChannels.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
                           {selectedContact.activeChannels.map((ac, i) => (
                             <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
                               {CHANNEL_ICONS[ac.channel] && (
@@ -908,8 +959,36 @@ export default function ContactsPage() {
                             </span>
                           ))}
                         </div>
-                      </div>
-                    )}
+                      )}
+                      {/* Phase 35: チャンネル追加フォーム */}
+                      {showChannelAdd && (
+                        <div className="flex gap-2 items-end">
+                          <select
+                            value={newChannelType}
+                            onChange={(e) => setNewChannelType(e.target.value as 'email' | 'slack' | 'chatwork')}
+                            className="px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="email">Email</option>
+                            <option value="slack">Slack</option>
+                            <option value="chatwork">Chatwork</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={newChannelAddress}
+                            onChange={(e) => setNewChannelAddress(e.target.value)}
+                            placeholder="アドレス / ID"
+                            className="flex-1 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={addChannel}
+                            disabled={isAddingChannel || !newChannelAddress.trim()}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                          >
+                            {isAddingChannel ? '...' : '追加'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
 
                     {/* 会社名・部署名 */}
                     <div className="space-y-3 mb-4">
