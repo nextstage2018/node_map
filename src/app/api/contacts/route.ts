@@ -311,12 +311,35 @@ export async function PUT(request: NextRequest) {
       // Slack/Chatworkはshared、Emailはprivate
       const visibility = (channel === 'slack' || channel === 'chatwork') ? 'shared' : 'private';
 
+      // Phase 30c: メールアドレスからorganization_idを自動マッチング
+      let autoOrganizationId = body.organizationId || null;
+      let autoRelationshipType = relationshipType || 'unknown';
+      if (!autoOrganizationId && address && address.includes('@')) {
+        const domain = address.toLowerCase().split('@')[1];
+        if (domain) {
+          const { data: orgMatch } = await supabase
+            .from('organizations')
+            .select('id')
+            .eq('domain', domain)
+            .eq('user_id', userId)
+            .limit(1)
+            .single();
+          if (orgMatch) {
+            autoOrganizationId = orgMatch.id;
+            // ドメインマッチした場合、未分類なら自社メンバーに設定
+            if (autoRelationshipType === 'unknown') {
+              autoRelationshipType = 'internal';
+            }
+          }
+        }
+      }
+
       const { error: insertError } = await supabase
         .from('contact_persons')
         .insert({
           id: newId,
           name: name || '',
-          relationship_type: relationshipType || 'unknown',
+          relationship_type: autoRelationshipType,
           confidence: 1.0,
           confirmed: confirmed ?? true,
           main_channel: channel,
@@ -327,6 +350,8 @@ export async function PUT(request: NextRequest) {
           notes: notes || null,
           visibility,
           owner_user_id: visibility === 'private' ? userId : null,
+          organization_id: autoOrganizationId,
+          is_team_member: body.isTeamMember || false,
         });
 
       if (insertError) {
