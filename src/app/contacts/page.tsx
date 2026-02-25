@@ -834,13 +834,24 @@ export default function ContactsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            {(contact.allChannels || [contact.mainChannel]).map((ch) => (
-                              CHANNEL_ICONS[ch] ? (
-                                <Image key={ch} src={CHANNEL_ICONS[ch]} alt={ch} width={16} height={16} title={CHANNEL_LABELS[ch]} />
-                              ) : (
-                                <Mail key={ch} className="w-4 h-4 text-slate-400" />
-                              )
-                            ))}
+                            {/* Phase 35: contact_channels(DB)からチャンネル種別ごとにアイコン表示 */}
+                            {(() => {
+                              const types = new Set<string>();
+                              if (contact.channels && contact.channels.length > 0) {
+                                for (const ch of contact.channels) types.add(ch.channel);
+                              }
+                              // channels が空の場合は allChannels にフォールバック
+                              if (types.size === 0) {
+                                for (const ch of (contact.allChannels || [contact.mainChannel])) types.add(ch);
+                              }
+                              return Array.from(types).map((ch) => (
+                                CHANNEL_ICONS[ch] ? (
+                                  <Image key={ch} src={CHANNEL_ICONS[ch]} alt={ch} width={16} height={16} title={CHANNEL_LABELS[ch]} />
+                                ) : (
+                                  <Mail key={ch} className="w-4 h-4 text-slate-400" />
+                                )
+                              ));
+                            })()}
                             {contact.visibility === 'shared' && (
                               <span className="text-[9px] bg-blue-50 text-blue-500 px-1 rounded" title="チーム共有">共有</span>
                             )}
@@ -967,7 +978,7 @@ export default function ContactsPage() {
                   {/* Phase 35: 連絡先結合ボタン（タブと同じスタイル） */}
                   <button
                     onClick={() => { setShowLinkModal(true); setLinkSearch(''); }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors ml-auto"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
                   >
                     <Link2 className="w-3 h-3" />
                     連絡先結合
