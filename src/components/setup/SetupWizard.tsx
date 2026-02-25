@@ -66,12 +66,28 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
     setError(null);
 
     try {
+      // Phase 34: ドメインが入力されている場合、既存組織を検索して重複を防ぐ
+      const domainValue = companyDomain.trim();
+      if (domainValue) {
+        const searchRes = await fetch(`/api/organizations?search=${encodeURIComponent(domainValue)}`);
+        const searchData = await searchRes.json();
+        if (searchData.success && searchData.data?.length > 0) {
+          const existing = searchData.data.find(
+            (org: { domain?: string }) => org.domain === domainValue
+          );
+          if (existing) {
+            // 同じドメインの組織が既に存在 → 新規作成せずスキップ
+            return true;
+          }
+        }
+      }
+
       const res = await fetch('/api/organizations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: companyName.trim(),
-          domain: companyDomain.trim() || undefined,
+          domain: domainValue || undefined,
         }),
       });
       const data = await res.json();
