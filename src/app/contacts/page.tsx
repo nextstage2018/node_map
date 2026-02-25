@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus, GitMerge, AlertTriangle } from 'lucide-react';
 import Header from '@/components/shared/Header';
 import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
 import Image from 'next/image';
@@ -58,6 +58,22 @@ interface OrgOption {
 interface ProjectOption {
   id: string;
   name: string;
+}
+
+// Phase 35: 重複候補グループの型
+interface DuplicateContact {
+  id: string;
+  name: string;
+  relationship_type: string;
+  main_channel: string;
+  message_count: number;
+  last_contact_at: string;
+  company_name: string | null;
+}
+
+interface DuplicateGroup {
+  name: string;
+  contacts: DuplicateContact[];
 }
 
 interface ContactStats {
@@ -189,6 +205,11 @@ export default function ContactsPage() {
   const [orgName, setOrgName] = useState('');
   const [showProjectAdd, setShowProjectAdd] = useState(false);
   const [selectedProjectToAdd, setSelectedProjectToAdd] = useState('');
+
+  // --- Phase 35: 重複検出・マージ ---
+  const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [isMerging, setIsMerging] = useState(false);
 
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
@@ -464,6 +485,46 @@ export default function ContactsPage() {
     setTimeout(() => setActionResult(null), 3000);
   };
 
+  // ========================================
+  // Phase 35: 重複候補を取得
+  // ========================================
+  const fetchDuplicates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/contacts/duplicates');
+      const data = await res.json();
+      if (data.success) {
+        setDuplicateGroups(data.data?.groups || []);
+      }
+    } catch { /* エラーは無視 */ }
+  }, []);
+
+  useEffect(() => { fetchDuplicates(); }, [fetchDuplicates]);
+
+  // Phase 35: マージ実行
+  const executeMerge = async (primaryId: string, mergeIds: string[]) => {
+    setIsMerging(true);
+    try {
+      const res = await fetch('/api/contacts/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryId, mergeIds }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionResult({ type: 'success', text: `${data.data.mergedCount}件のコンタクトを統合しました` });
+        fetchContacts();
+        fetchDuplicates();
+      } else {
+        setActionResult({ type: 'error', text: data.error || '統合に失敗しました' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsMerging(false);
+    }
+    setTimeout(() => setActionResult(null), 3000);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-white">
       <Header />
@@ -502,6 +563,17 @@ export default function ContactsPage() {
                 </>
               )}
             </button>
+            {/* Phase 35: 重複統合ボタン */}
+            {duplicateGroups.length > 0 && (
+              <button
+                onClick={() => setShowMergeModal(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                重複を統合
+                <span className="bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{duplicateGroups.length}</span>
+              </button>
+            )}
             </div>
           </div>
 
@@ -602,6 +674,24 @@ export default function ContactsPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Phase 35: 重複候補バナー */}
+        {duplicateGroups.length > 0 && !showMergeModal && (
+          <div className="mx-6 mt-2 px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <span className="text-xs font-medium text-orange-700">
+                {duplicateGroups.length}件の重複候補があります（合計{duplicateGroups.reduce((sum, g) => sum + g.contacts.length, 0)}件のコンタクト）
+              </span>
+            </div>
+            <button
+              onClick={() => setShowMergeModal(true)}
+              className="text-xs font-medium text-orange-600 hover:text-orange-800 underline"
+            >
+              確認する
+            </button>
           </div>
         )}
 
@@ -1075,6 +1165,94 @@ export default function ContactsPage() {
           setTimeout(() => setActionResult(null), 3000);
         }}
       />
+
+      {/* Phase 35: 重複統合モーダル */}
+      {showMergeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[80vh] flex flex-col">
+            {/* モーダルヘッダー */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <GitMerge className="w-5 h-5 text-orange-500" />
+                <h2 className="text-base font-bold text-slate-900">重複コンタクトの統合</h2>
+                <span className="text-xs text-slate-500">{duplicateGroups.length}グループ</span>
+              </div>
+              <button onClick={() => setShowMergeModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* モーダルコンテンツ */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+              {duplicateGroups.length === 0 ? (
+                <div className="text-center py-8 text-slate-400">
+                  <Check className="w-10 h-10 mx-auto mb-2 text-green-400" />
+                  <p className="text-sm">重複候補はありません</p>
+                </div>
+              ) : (
+                duplicateGroups.map((group, gi) => (
+                  <div key={gi} className="border border-slate-200 rounded-lg overflow-hidden">
+                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
+                      <span className="text-sm font-semibold text-slate-700">
+                        &quot;{group.name}&quot; — {group.contacts.length}件の重複
+                      </span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {group.contacts.map((dc, ci) => (
+                        <div key={dc.id} className="px-4 py-3 flex items-center justify-between">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 ${getAvatarColor(dc.name || '')}`}>
+                              {getInitials(dc.name || '')}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-slate-900 truncate">{dc.name}</div>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                                {dc.company_name && <span>{dc.company_name}</span>}
+                                {dc.main_channel && <span>{CHANNEL_LABELS[dc.main_channel] || dc.main_channel}</span>}
+                                <span>メッセージ {dc.message_count || 0}件</span>
+                                {dc.last_contact_at && <span>最終: {formatDate(dc.last_contact_at)}</span>}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const mergeIds = group.contacts.filter((c) => c.id !== dc.id).map((c) => c.id);
+                              if (confirm(`「${dc.name}」をメインとして、他の${mergeIds.length}件を統合します。よろしいですか？`)) {
+                                executeMerge(dc.id, mergeIds);
+                              }
+                            }}
+                            disabled={isMerging}
+                            className="shrink-0 ml-3 inline-flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                          >
+                            {ci === 0 ? (
+                              <>
+                                <GitMerge className="w-3.5 h-3.5" />
+                                これに統合
+                              </>
+                            ) : (
+                              <>
+                                <GitMerge className="w-3.5 h-3.5" />
+                                これに統合
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* モーダルフッター */}
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-lg">
+              <p className="text-[10px] text-slate-400">
+                「これに統合」をクリックすると、選択したコンタクトに他の重複コンタクトのチャネル・イベント・プロジェクトが移行され、重複分は削除されます。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
