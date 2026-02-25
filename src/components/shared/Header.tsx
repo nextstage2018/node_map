@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, ClipboardList, Bot } from 'lucide-react';
+import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, ClipboardList, Bot, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
   { href: '/map', label: '思考マップ', icon: Map },
   { href: '/contacts', label: 'コンタクト', icon: Users },
+  { href: '/organizations', label: '組織', icon: Building2 },
   { href: '/master', label: 'ナレッジ', icon: BookOpen },
   { href: '/business-log', label: 'ビジネスログ', icon: ClipboardList },
   { href: '/agent', label: '秘書', icon: Bot },

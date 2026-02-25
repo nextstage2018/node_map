@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus } from 'lucide-react';
 import Header from '@/components/shared/Header';
 import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
 import Image from 'next/image';
@@ -33,6 +33,31 @@ interface Contact {
   notes: string;
   visibility: string;
   activeChannels: ActiveChannel[];
+  // Phase 34: 組織・チームメンバー
+  organization_id?: string;
+  is_team_member?: boolean;
+}
+
+// Phase 34: 活動履歴の型
+interface Activity {
+  id: string;
+  type: 'event' | 'message';
+  title: string;
+  content: string | null;
+  eventType: string;
+  timestamp: string;
+}
+
+// Phase 34: 組織の型
+interface OrgOption {
+  id: string;
+  name: string;
+}
+
+// Phase 34: プロジェクトの型
+interface ProjectOption {
+  id: string;
+  name: string;
 }
 
 interface ContactStats {
@@ -155,6 +180,16 @@ export default function ContactsPage() {
   // --- Phase 30b: コンタクト追加モーダル ---
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // --- Phase 34: 詳細パネルタブ・活動履歴・組織・プロジェクト ---
+  const [detailTab, setDetailTab] = useState<'info' | 'activities'>('info');
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  const [organizations, setOrganizations] = useState<OrgOption[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [orgName, setOrgName] = useState('');
+  const [showProjectAdd, setShowProjectAdd] = useState(false);
+  const [selectedProjectToAdd, setSelectedProjectToAdd] = useState('');
+
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
   const [blocklistLoading, setBlocklistLoading] = useState(false);
@@ -216,6 +251,37 @@ export default function ContactsPage() {
   }, [activeTab, fetchBlocklist]);
 
   // ========================================
+  // Phase 34: 組織・プロジェクト一覧取得
+  // ========================================
+  const fetchOrgAndProjects = useCallback(async () => {
+    try {
+      const [orgRes, projRes] = await Promise.all([
+        fetch('/api/organizations'),
+        fetch('/api/projects'),
+      ]);
+      const orgData = await orgRes.json();
+      const projData = await projRes.json();
+      if (orgData.success) setOrganizations((orgData.data || []).map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })));
+      if (projData.success) setProjects((projData.data || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
+    } catch { /* エラーは無視 */ }
+  }, []);
+
+  useEffect(() => { fetchOrgAndProjects(); }, [fetchOrgAndProjects]);
+
+  // ========================================
+  // Phase 34: 活動履歴取得
+  // ========================================
+  const fetchActivities = useCallback(async (contactId: string) => {
+    setIsLoadingActivities(true);
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/activities`);
+      const data = await res.json();
+      if (data.success) setActivities(data.data || []);
+    } catch { setActivities([]); }
+    finally { setIsLoadingActivities(false); }
+  }, []);
+
+  // ========================================
   // コンタクト選択時に編集フィールドを初期化
   // ========================================
   useEffect(() => {
@@ -223,8 +289,13 @@ export default function ContactsPage() {
       setEditCompany(selectedContact.companyName || '');
       setEditDepartment(selectedContact.department || '');
       setEditNotes(selectedContact.notes || '');
+      setDetailTab('info');
+      setActivities([]);
+      // Phase 34: 組織名を取得
+      const org = organizations.find((o) => o.id === selectedContact.organization_id);
+      setOrgName(org?.name || '');
     }
-  }, [selectedContact]);
+  }, [selectedContact, organizations]);
 
   // ========================================
   // 関係タイプ更新
@@ -368,6 +439,29 @@ export default function ContactsPage() {
       setIsEnriching(false);
     }
     setTimeout(() => setActionResult(null), 5000);
+  };
+
+  // ========================================
+  // Phase 34: プロジェクトメンバー追加
+  // ========================================
+  const addToProject = async () => {
+    if (!selectedContact || !selectedProjectToAdd) return;
+    try {
+      const res = await fetch('/api/project-members', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: selectedProjectToAdd, contactId: selectedContact.id, role: 'member' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionResult({ type: 'success', text: 'プロジェクトに追加しました' });
+        setShowProjectAdd(false);
+        setSelectedProjectToAdd('');
+      } else {
+        setActionResult({ type: 'error', text: data.error || '追加に失敗しました' });
+      }
+    } catch { setActionResult({ type: 'error', text: '通信エラー' }); }
+    setTimeout(() => setActionResult(null), 3000);
   };
 
   return (
@@ -632,7 +726,7 @@ export default function ContactsPage() {
             </div>
 
             {/* ========================================
-                選択時の詳細パネル（右サイド）
+                選択時の詳細パネル（右サイド）Phase 34: 強化版
                 ======================================== */}
             {selectedContact && (
               <div className="w-1/2 overflow-y-auto bg-slate-50 p-5">
@@ -642,8 +736,24 @@ export default function ContactsPage() {
                       {getInitials(selectedContact.name)}
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-slate-900">{selectedContact.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-slate-900">{selectedContact.name}</h3>
+                        {/* Phase 34: チームメンバーバッジ */}
+                        {selectedContact.is_team_member && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700">
+                            <Users className="w-3 h-3" />
+                            チーム
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-slate-500">{selectedContact.address || 'アドレス未取得'}</p>
+                      {/* Phase 34: 所属組織表示 */}
+                      {orgName && (
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <Building2 className="w-3 h-3 text-slate-400" />
+                          <span className="text-xs text-slate-500">{orgName}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => setSelectedContact(null)} className="text-slate-400 hover:text-slate-600">
@@ -663,106 +773,218 @@ export default function ContactsPage() {
                   )}
                 </div>
 
-                {/* やり取りチャネル一覧 */}
-                {selectedContact.activeChannels && selectedContact.activeChannels.length > 0 && (
-                  <div className="mb-4">
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-2">
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      やり取りチャネル
-                    </label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedContact.activeChannels.map((ac, i) => (
-                        <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
-                          {CHANNEL_ICONS[ac.channel] && (
-                            <Image src={CHANNEL_ICONS[ac.channel]} alt={ac.channel} width={14} height={14} />
-                          )}
-                          {ac.name}
-                        </span>
-                      ))}
+                {/* Phase 34: タブ切り替え */}
+                <div className="flex gap-1 mb-4">
+                  <button
+                    onClick={() => setDetailTab('info')}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      detailTab === 'info' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <Edit2 className="w-3 h-3" />
+                    基本情報
+                  </button>
+                  <button
+                    onClick={() => {
+                      setDetailTab('activities');
+                      if (activities.length === 0) fetchActivities(selectedContact.id);
+                    }}
+                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      detailTab === 'activities' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3" />
+                    活動履歴
+                  </button>
+                </div>
+
+                {/* ========== 基本情報タブ ========== */}
+                {detailTab === 'info' && (
+                  <>
+                    {/* やり取りチャネル一覧 */}
+                    {selectedContact.activeChannels && selectedContact.activeChannels.length > 0 && (
+                      <div className="mb-4">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-2">
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          やり取りチャネル
+                        </label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedContact.activeChannels.map((ac, i) => (
+                            <span key={i} className="inline-flex items-center gap-1.5 text-xs bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+                              {CHANNEL_ICONS[ac.channel] && (
+                                <Image src={CHANNEL_ICONS[ac.channel]} alt={ac.channel} width={14} height={14} />
+                              )}
+                              {ac.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 会社名・部署名 */}
+                    <div className="space-y-3 mb-4">
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
+                          <Building2 className="w-3.5 h-3.5" />
+                          会社名
+                        </label>
+                        <input
+                          type="text"
+                          value={editCompany}
+                          onChange={(e) => setEditCompany(e.target.value)}
+                          placeholder="例: 株式会社ネクストステージ"
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
+                          <Users className="w-3.5 h-3.5" />
+                          部署名
+                        </label>
+                        <input
+                          type="text"
+                          value={editDepartment}
+                          onChange={(e) => setEditDepartment(e.target.value)}
+                          placeholder="例: 開発部"
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                        />
+                      </div>
                     </div>
-                  </div>
-                )}
 
-                {/* 会社名・部署名 */}
-                <div className="space-y-3 mb-4">
-                  <div>
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
-                      <Building2 className="w-3.5 h-3.5" />
-                      会社名
-                    </label>
-                    <input
-                      type="text"
-                      value={editCompany}
-                      onChange={(e) => setEditCompany(e.target.value)}
-                      placeholder="例: 株式会社ネクストステージ"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
-                      <Users className="w-3.5 h-3.5" />
-                      部署名
-                    </label>
-                    <input
-                      type="text"
-                      value={editDepartment}
-                      onChange={(e) => setEditDepartment(e.target.value)}
-                      placeholder="例: 開発部"
-                      className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                    />
-                  </div>
-                </div>
+                    {/* メモ / AIコンテキスト */}
+                    <div className="mb-4">
+                      <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
+                        <Edit2 className="w-3.5 h-3.5" />
+                        メモ / AIコンテキスト
+                      </label>
+                      <p className="text-[10px] text-slate-400 mb-1.5">
+                        ここに書いた内容は、将来のAI返信下書きのトーン・文体に反映されます
+                      </p>
+                      <textarea
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="例: 古くからの付き合い。カジュアルな口調でOK。技術的な話が多い。"
+                        rows={3}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
+                      />
+                    </div>
 
-                {/* メモ / AIコンテキスト */}
-                <div className="mb-4">
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 mb-1">
-                    <Edit2 className="w-3.5 h-3.5" />
-                    メモ / AIコンテキスト
-                  </label>
-                  <p className="text-[10px] text-slate-400 mb-1.5">
-                    ここに書いた内容は、将来のAI返信下書きのトーン・文体に反映されます
-                  </p>
-                  <textarea
-                    value={editNotes}
-                    onChange={(e) => setEditNotes(e.target.value)}
-                    placeholder="例: 古くからの付き合い。カジュアルな口調でOK。技術的な話が多い。"
-                    rows={3}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white resize-none"
-                  />
-                </div>
+                    {/* 保存ボタン */}
+                    <button
+                      onClick={saveContactDetails}
+                      disabled={isSaving}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      <Save className="w-4 h-4" />
+                      {isSaving ? '保存中...' : '保存'}
+                    </button>
 
-                {/* 保存ボタン */}
-                <button
-                  onClick={saveContactDetails}
-                  disabled={isSaving}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  <Save className="w-4 h-4" />
-                  {isSaving ? '保存中...' : '保存'}
-                </button>
-
-                {/* ブロックボタン（メールコンタクトのみ） */}
-                {selectedContact.mainChannel === 'email' && selectedContact.address && (
-                  <div className="mt-4 pt-4 border-t border-slate-200">
-                    <p className="text-xs font-semibold text-slate-500 mb-2">ブロック操作</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => blockContact(selectedContact, 'exact')}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
-                      >
-                        <Shield className="w-3.5 h-3.5" />
-                        このアドレスをブロック
-                      </button>
-                      {selectedContact.address.includes('@') && (
+                    {/* Phase 34: プロジェクト紐付け */}
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                          <FolderOpen className="w-3.5 h-3.5" />
+                          プロジェクト紐付け
+                        </label>
                         <button
-                          onClick={() => blockContact(selectedContact, 'domain')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                          onClick={() => setShowProjectAdd(!showProjectAdd)}
+                          className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
                         >
-                          <Shield className="w-3.5 h-3.5" />
-                          @{selectedContact.address.split('@')[1]} をブロック
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
+                      </div>
+                      {showProjectAdd && projects.length > 0 && (
+                        <div className="flex gap-2 mb-2">
+                          <select
+                            value={selectedProjectToAdd}
+                            onChange={(e) => setSelectedProjectToAdd(e.target.value)}
+                            className="flex-1 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">プロジェクトを選択</option>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={addToProject}
+                            disabled={!selectedProjectToAdd}
+                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                          >
+                            追加
+                          </button>
+                        </div>
+                      )}
+                      {projects.length === 0 && showProjectAdd && (
+                        <p className="text-xs text-slate-400 mb-2">プロジェクトがありません。ビジネスログから作成してください。</p>
                       )}
                     </div>
+
+                    {/* ブロックボタン（メールコンタクトのみ） */}
+                    {selectedContact.mainChannel === 'email' && selectedContact.address && (
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <p className="text-xs font-semibold text-slate-500 mb-2">ブロック操作</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => blockContact(selectedContact, 'exact')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                            このアドレスをブロック
+                          </button>
+                          {selectedContact.address.includes('@') && (
+                            <button
+                              onClick={() => blockContact(selectedContact, 'domain')}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                            >
+                              <Shield className="w-3.5 h-3.5" />
+                              @{selectedContact.address.split('@')[1]} をブロック
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* ========== Phase 34: 活動履歴タブ ========== */}
+                {detailTab === 'activities' && (
+                  <div>
+                    {isLoadingActivities ? (
+                      <div className="flex items-center justify-center h-32 text-slate-400">
+                        <div className="text-center">
+                          <div className="animate-spin text-xl mb-1">&#8987;</div>
+                          <p className="text-xs">読み込み中...</p>
+                        </div>
+                      </div>
+                    ) : activities.length === 0 ? (
+                      <div className="flex items-center justify-center h-32 text-slate-400">
+                        <div className="text-center">
+                          <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                          <p className="text-xs">活動履歴がありません</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {activities.map((activity) => (
+                          <div key={activity.id} className="p-3 bg-white border border-slate-200 rounded-lg">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                activity.type === 'event'
+                                  ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {activity.type === 'event' ? activity.eventType : activity.eventType}
+                              </span>
+                              <span className="text-[10px] text-slate-400">{formatDate(activity.timestamp)}</span>
+                            </div>
+                            <p className="text-sm font-medium text-slate-900 truncate">{activity.title}</p>
+                            {activity.content && (
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{activity.content}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
