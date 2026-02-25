@@ -109,7 +109,18 @@ export async function GET(request: NextRequest) {
         }>();
 
         for (const msg of rawMessages) {
-          const key = msg.from_address?.toLowerCase() || msg.from_name;
+          // Phase 35: チャネル別の集約キー生成
+          // email: from_address（メールアドレス）
+          // chatwork: from_address（account_id）
+          // slack: from_address（user_id: UXXXXX）
+          // from_addressが空の場合は from_name にフォールバック（全角/半角スペース正規化）
+          let key = '';
+          if (msg.from_address && msg.from_address.trim()) {
+            key = msg.from_address.toLowerCase().trim();
+          } else {
+            // from_addressが空 → 名前で集約（スペース正規化）
+            key = (msg.from_name || '').trim().replace(/[\s　]+/g, ' ').toLowerCase();
+          }
           if (!key) continue;
           // Phase 35: 自分自身のメッセージ（「Me」やログインユーザーのアドレス）を除外
           const fromNameLower = (msg.from_name || '').toLowerCase();
@@ -189,8 +200,14 @@ export async function GET(request: NextRequest) {
       const nameLower = (s.from_name || '').toLowerCase();
       if (nameLower === 'me' || nameLower === 'me（自分）') continue;
       if (userEmailLower && s.from_address?.toLowerCase() === userEmailLower) continue;
-      if (s.from_address) senderByAddress.set(s.from_address.toLowerCase(), s);
-      if (s.from_name) senderByName.set(s.from_name.toLowerCase(), s);
+      if (s.from_address && s.from_address.trim()) {
+        senderByAddress.set(s.from_address.toLowerCase().trim(), s);
+      }
+      if (s.from_name) {
+        // Phase 35: 名前のスペース正規化（全角/半角統一）
+        const normalizedName = s.from_name.trim().replace(/[\s　]+/g, ' ').toLowerCase();
+        senderByName.set(normalizedName, s);
+      }
     }
 
     // 4. Phase 35: contact_persons を主体としてコンタクトリスト生成（重複なし）
@@ -220,12 +237,13 @@ export async function GET(request: NextRequest) {
           }
         }
         if (!matchedSender && c.name) {
-          const nameLower = c.name.toLowerCase();
-          if (senderByName.has(nameLower)) {
-            matchedSender = senderByName.get(nameLower);
-            const sKey = matchedSender?.from_address?.toLowerCase();
+          // Phase 35: 名前正規化してから照合
+          const normalizedName = c.name.trim().replace(/[\s　]+/g, ' ').toLowerCase();
+          if (senderByName.has(normalizedName)) {
+            matchedSender = senderByName.get(normalizedName);
+            const sKey = matchedSender?.from_address?.toLowerCase()?.trim();
             if (sKey) matchedSenderKeys.add(sKey);
-            matchedSenderKeys.add(nameLower);
+            matchedSenderKeys.add(normalizedName);
           }
         }
 
@@ -297,8 +315,8 @@ export async function GET(request: NextRequest) {
 
     // 5. Phase 35: どのcontact_personsにもマッチしなかったsenderをauto生成エントリとして追加
     for (const sender of senders) {
-      const addrKey = sender.from_address?.toLowerCase() || '';
-      const nameKey = sender.from_name?.toLowerCase() || '';
+      const addrKey = sender.from_address?.toLowerCase()?.trim() || '';
+      const nameKey = (sender.from_name || '').trim().replace(/[\s　]+/g, ' ').toLowerCase();
       if ((addrKey && matchedSenderKeys.has(addrKey)) || (nameKey && matchedSenderKeys.has(nameKey))) continue;
 
       const key = addrKey || nameKey;
