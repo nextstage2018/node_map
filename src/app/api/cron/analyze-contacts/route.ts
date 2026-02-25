@@ -34,14 +34,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Phase 36: 分析対象を取得（ai_analyzed_at が null or 7日以上前、メッセージ数の多い順）
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-
+    // Phase 36: 分析対象を取得（notes が NULL or 空文字のコンタクトのみ）
     const { data: targets, error: fetchError } = await supabase
       .from('contact_persons')
-      .select('id, name, company_name, department, relationship_type, ai_analyzed_at, contact_channels(*)')
-      .or(`ai_analyzed_at.is.null,ai_analyzed_at.lt.${sevenDaysAgo}`)
-      .order('ai_analyzed_at', { ascending: true, nullsFirst: true })
+      .select('id, name, company_name, department, relationship_type, notes, contact_channels(*)')
+      .or('notes.is.null,notes.eq.')
+      .order('created_at', { ascending: true })
       .limit(10);
 
     if (fetchError) {
@@ -124,7 +122,7 @@ ${eventSummaries || 'なし'}
           await supabase
             .from('contact_persons')
             .update({
-              ai_context: aiContext,
+              notes: aiContext,
               ai_analyzed_at: new Date().toISOString(),
             })
             .eq('id', contact.id);

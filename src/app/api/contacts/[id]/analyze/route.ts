@@ -134,11 +134,11 @@ ${eventSummaries || 'イベントなし'}
         return NextResponse.json({ success: true, data: { ai_context: fallback } });
       }
 
-      // Phase 36: 分析結果をDBに保存
+      // Phase 36: 分析結果をnotesカラムに保存
       const { error: updateError } = await supabase
         .from('contact_persons')
         .update({
-          ai_context: aiContext,
+          notes: aiContext,
           ai_analyzed_at: new Date().toISOString(),
         })
         .eq('id', contactId);
