@@ -37,3 +37,30 @@ export async function getServerUserId(): Promise<string> {
     return DEMO_USER_ID;
   }
 }
+
+/**
+ * Phase 35: サーバーサイドでログインユーザーのメールアドレスを取得する
+ * - Supabase未設定時 → null
+ * - ログイン済み → ユーザーのメールアドレス
+ * - 未ログイン → null
+ */
+export async function getServerUserEmail(): Promise<string | null> {
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
+    return null;
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return null;
+    }
+
+    return user.email || null;
+  } catch {
+    return null;
+  }
+}

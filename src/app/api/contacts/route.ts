@@ -1,7 +1,7 @@
 // Phase 26: コンタクトAPI — 共有化 + コンテキスト強化 + active_channels自動集計
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
-import { getServerUserId } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserEmail } from '@/lib/serverAuth';
 import { getBlocklist } from '@/services/inbox/inboxStorage.service';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +72,10 @@ export async function GET(request: NextRequest) {
     const relationship = searchParams.get('relationship') || '';
     const channel = searchParams.get('channel') || '';
 
+    // Phase 35: ログインユーザーのメールアドレスを取得（「Me」除外用）
+    const userEmail = await getServerUserEmail();
+    const userEmailLower = userEmail?.toLowerCase() || '';
+
     // 1. inbox_messagesからユニークな送信者を集計（metadata含む）
     const { data: senderStats, error: senderError } = await supabase.rpc('get_contact_stats_from_messages');
 
@@ -107,6 +111,10 @@ export async function GET(request: NextRequest) {
         for (const msg of rawMessages) {
           const key = msg.from_address?.toLowerCase() || msg.from_name;
           if (!key) continue;
+          // Phase 35: 自分自身のメッセージ（「Me」やログインユーザーのアドレス）を除外
+          const fromNameLower = (msg.from_name || '').toLowerCase();
+          if (fromNameLower === 'me' || fromNameLower === 'me（自分）') continue;
+          if (userEmailLower && key === userEmailLower) continue;
           const meta = msg.metadata || {};
           const existing = senderMap.get(key);
 
@@ -172,11 +180,15 @@ export async function GET(request: NextRequest) {
       .or(`visibility.eq.shared,visibility.is.null,owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     // 3. Phase 35: senderの統計情報をアドレス/名前で引けるマップに変換
+    // 「Me」やログインユーザーのアドレスを除外
     const senderByAddress = new Map<string, typeof senders[0]>();
     const senderByName = new Map<string, typeof senders[0]>();
     const matchedSenderKeys = new Set<string>();
 
     for (const s of senders) {
+      const nameLower = (s.from_name || '').toLowerCase();
+      if (nameLower === 'me' || nameLower === 'me（自分）') continue;
+      if (userEmailLower && s.from_address?.toLowerCase() === userEmailLower) continue;
       if (s.from_address) senderByAddress.set(s.from_address.toLowerCase(), s);
       if (s.from_name) senderByName.set(s.from_name.toLowerCase(), s);
     }
