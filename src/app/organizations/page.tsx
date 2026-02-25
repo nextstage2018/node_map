@@ -2,7 +2,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Plus, Users, Globe, X, Search } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Building2, Plus, Users, Globe, X, Search, ChevronRight } from 'lucide-react';
 import Header from '@/components/shared/Header';
 
 // ========================================
@@ -24,6 +25,7 @@ interface OrgWithCount extends Organization {
 // メインコンポーネント
 // ========================================
 export default function OrganizationsPage() {
+  const router = useRouter();
   const [organizations, setOrganizations] = useState<OrgWithCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -217,7 +219,8 @@ export default function OrganizationsPage() {
               {organizations.map((org) => (
                 <div
                   key={org.id}
-                  className="p-4 bg-white border border-slate-200 rounded-lg hover:border-blue-200 hover:shadow-sm transition-all"
+                  onClick={() => router.push(`/organizations/${org.id}`)}
+                  className="p-4 bg-white border border-slate-200 rounded-lg hover:border-blue-200 hover:shadow-sm transition-all cursor-pointer group"
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
@@ -240,6 +243,7 @@ export default function OrganizationsPage() {
                         </span>
                       </div>
                     </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-400 transition-colors mt-3" />
                   </div>
                 </div>
               ))}
