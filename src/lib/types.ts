@@ -688,6 +688,45 @@ export interface ProjectMember {
   createdAt: string;
 }
 
+// ===== Phase 30d: ビジネスログ基盤 =====
+
+// プロジェクト
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  status: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// グループ
+export interface Group {
+  id: string;
+  name: string;
+  projectId?: string;
+  userId: string;
+  createdAt: string;
+}
+
+// ビジネスイベントの種別
+export type BusinessEventType = 'note' | 'meeting' | 'call' | 'email' | 'chat';
+
+// ビジネスイベント
+export interface BusinessEvent {
+  id: string;
+  title: string;
+  content?: string;
+  eventType: BusinessEventType;
+  projectId?: string;
+  groupId?: string;
+  contactId?: string;
+  userId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ===== Phase 20: 週次ノードバナー =====
 
 export interface WeeklyNodeConfirmRequest {
