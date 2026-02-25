@@ -340,18 +340,43 @@ export async function POST() {
     }
 
     // 5. エンリッチ実行
+    // Phase 35: contact_channels の (channel, address) で既存コンタクトを照合し差分のみ処理
     let enrichedCount = 0;
     const results: { name: string; updates: string[] }[] = [];
 
-    const existingMap = new Map<string, typeof existingContacts extends (infer T)[] ? T : never>();
+    // 既存contact_personsをnameでマッピング
+    const existingByName = new Map<string, typeof existingContacts extends (infer T)[] ? T : never>();
     if (existingContacts) {
       for (const c of existingContacts) {
-        existingMap.set(c.name?.toLowerCase() || '', c);
+        existingByName.set(c.name?.toLowerCase() || '', c);
+      }
+    }
+
+    // Phase 35: contact_channels の (channel, address) → contact_id マッピングを構築
+    const { data: allChannels } = await supabase
+      .from('contact_channels')
+      .select('contact_id, channel, address');
+    const channelToContactId = new Map<string, string>();
+    if (allChannels) {
+      for (const ch of allChannels) {
+        channelToContactId.set(`${ch.channel}::${ch.address?.toLowerCase()}`, ch.contact_id);
       }
     }
 
     for (const [key, group] of senderGroups) {
-      const existingContact = existingMap.get(group.name?.toLowerCase() || '') || existingMap.get(key);
+      // Phase 35: まず contact_channels で (channel, address) を照合
+      const channelKey = group.address ? `${group.channel}::${group.address.toLowerCase()}` : '';
+      const existingContactIdByChannel = channelKey ? channelToContactId.get(channelKey) : undefined;
+
+      // チャンネル照合 → name照合 の優先順位で既存コンタクトを特定
+      let existingContact: (typeof existingContacts extends (infer T)[] ? T : never) | undefined;
+      if (existingContactIdByChannel && existingContacts) {
+        existingContact = existingContacts.find((c) => c.id === existingContactIdByChannel);
+      }
+      if (!existingContact) {
+        existingContact = existingByName.get(group.name?.toLowerCase() || '') || existingByName.get(key);
+      }
+
       const updates: Record<string, unknown> = {};
       const updateLabels: string[] = [];
 
@@ -404,15 +429,18 @@ export async function POST() {
       }
 
       // --- DB更新 ---
-      if (Object.keys(updates).length > 0 && existingContact?.id) {
-        await supabase
-          .from('contact_persons')
-          .update(updates)
-          .eq('id', existingContact.id);
-        enrichedCount++;
-        results.push({ name: group.name, updates: updateLabels });
-      } else if (Object.keys(updates).length > 0 && !existingContact) {
-        // 未登録コンタクトの場合、新規作成
+      if (existingContact?.id) {
+        // Phase 35: 既存コンタクトがある場合 → 差分のみ更新（重複作成しない）
+        if (Object.keys(updates).length > 0) {
+          await supabase
+            .from('contact_persons')
+            .update(updates)
+            .eq('id', existingContact.id);
+          enrichedCount++;
+          results.push({ name: group.name, updates: updateLabels });
+        }
+      } else if (Object.keys(updates).length > 0) {
+        // Phase 35: 未登録 → contact_channels にも存在しない場合のみ新規作成
         const visibility = (group.channel === 'slack' || group.channel === 'chatwork') ? 'shared' : 'private';
         const newId = crypto.randomUUID();
         await supabase
@@ -429,14 +457,22 @@ export async function POST() {
             ...updates,
           });
 
-        // contact_channels にも登録
+        // contact_channels にも登録（upsert で重複回避）
         if (group.address) {
-          await supabase.from('contact_channels').insert({
-            contact_id: newId,
-            channel: group.channel,
-            address: group.address,
-            frequency: group.theirMessages.length,
-          });
+          await supabase.from('contact_channels').upsert(
+            {
+              contact_id: newId,
+              channel: group.channel,
+              address: group.address,
+              frequency: group.theirMessages.length,
+            },
+            { onConflict: 'contact_id,channel,address' }
+          );
+        }
+
+        // 新規追加したチャンネルをマップに記録（同一ループ内の重複防止）
+        if (channelKey) {
+          channelToContactId.set(channelKey, newId);
         }
 
         enrichedCount++;

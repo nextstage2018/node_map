@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus, GitMerge, AlertTriangle } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus, GitMerge, AlertTriangle, Link2 } from 'lucide-react';
 import Header from '@/components/shared/Header';
 import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
 import Image from 'next/image';
@@ -216,6 +216,11 @@ export default function ContactsPage() {
   const [newChannelType, setNewChannelType] = useState<'email' | 'slack' | 'chatwork'>('email');
   const [newChannelAddress, setNewChannelAddress] = useState('');
   const [isAddingChannel, setIsAddingChannel] = useState(false);
+
+  // --- Phase 35: 連絡先結合 ---
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkSearch, setLinkSearch] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
 
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
@@ -538,6 +543,37 @@ export default function ContactsPage() {
       setActionResult({ type: 'error', text: '通信エラー' });
     } finally {
       setIsAddingChannel(false);
+    }
+    setTimeout(() => setActionResult(null), 3000);
+  };
+
+  // Phase 35: 連絡先結合（詳細パネルから）
+  const executeLinkMerge = async (targetContactId: string) => {
+    if (!selectedContact) return;
+    const targetContact = contacts.find((c) => c.id === targetContactId);
+    const targetName = targetContact?.name || targetContactId;
+    if (!confirm(`「${targetName}」さんを「${selectedContact.name}」に統合します。「${targetName}」さんのレコードは削除されます。よろしいですか？`)) return;
+    setIsLinking(true);
+    try {
+      const res = await fetch('/api/contacts/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryId: selectedContact.id, mergeIds: [targetContactId] }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActionResult({ type: 'success', text: `${targetName}さんを統合しました` });
+        setShowLinkModal(false);
+        setLinkSearch('');
+        fetchContacts();
+        fetchDuplicates();
+      } else {
+        setActionResult({ type: 'error', text: data.error || '統合に失敗しました' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsLinking(false);
     }
     setTimeout(() => setActionResult(null), 3000);
   };
@@ -905,8 +941,8 @@ export default function ContactsPage() {
                   )}
                 </div>
 
-                {/* Phase 34: タブ切り替え */}
-                <div className="flex gap-1 mb-4">
+                {/* Phase 34: タブ切り替え + Phase 35: 連絡先結合 */}
+                <div className="flex items-center gap-1 mb-4">
                   <button
                     onClick={() => setDetailTab('info')}
                     className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -927,6 +963,14 @@ export default function ContactsPage() {
                   >
                     <Clock className="w-3 h-3" />
                     活動履歴
+                  </button>
+                  {/* Phase 35: 連絡先結合ボタン */}
+                  <button
+                    onClick={() => { setShowLinkModal(true); setLinkSearch(''); }}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors ml-auto"
+                  >
+                    <Link2 className="w-3 h-3" />
+                    連絡先結合
                   </button>
                 </div>
 
@@ -1244,6 +1288,86 @@ export default function ContactsPage() {
           setTimeout(() => setActionResult(null), 3000);
         }}
       />
+
+      {/* Phase 35: 連絡先結合モーダル */}
+      {showLinkModal && selectedContact && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <Link2 className="w-5 h-5 text-blue-500" />
+                <h2 className="text-base font-bold text-slate-900">連絡先結合</h2>
+              </div>
+              <button onClick={() => setShowLinkModal(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
+              <p className="text-xs text-slate-500 mb-2">
+                「{selectedContact.name}」に統合するコンタクトを検索してください
+              </p>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={linkSearch}
+                  onChange={(e) => setLinkSearch(e.target.value)}
+                  placeholder="名前で検索..."
+                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {(() => {
+                const q = linkSearch.toLowerCase().trim();
+                if (!q) return <p className="text-xs text-slate-400 text-center py-4">検索キーワードを入力してください</p>;
+                const filtered = contacts.filter(
+                  (c) => c.id !== selectedContact.id && c.name?.toLowerCase().includes(q)
+                );
+                if (filtered.length === 0) return <p className="text-xs text-slate-400 text-center py-4">該当するコンタクトがありません</p>;
+                return (
+                  <div className="space-y-1">
+                    {filtered.slice(0, 20).map((c) => (
+                      <div key={c.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${getAvatarColor(c.name)}`}>
+                            {getInitials(c.name)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-slate-900 truncate">{c.name}</div>
+                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                              {(c.allChannels || [c.mainChannel]).map((ch) => (
+                                CHANNEL_ICONS[ch] ? (
+                                  <Image key={ch} src={CHANNEL_ICONS[ch]} alt={ch} width={12} height={12} />
+                                ) : null
+                              ))}
+                              {c.companyName && <span>{c.companyName}</span>}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => executeLinkMerge(c.id)}
+                          disabled={isLinking}
+                          className="shrink-0 ml-2 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                        >
+                          <GitMerge className="w-3 h-3" />
+                          統合
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-lg">
+              <p className="text-[10px] text-slate-400">
+                選択したコンタクトのチャネル・イベント・プロジェクトが「{selectedContact.name}」に移行され、元のレコードは削除されます。
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Phase 35: 重複統合モーダル */}
       {showMergeModal && (
