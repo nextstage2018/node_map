@@ -860,28 +860,36 @@ export class TaskService {
     }
 
     try {
-      let query = sb
-        .from('seeds')
-        .select('*, projects(name)')
-        .order('created_at', { ascending: false });
+      // projects JOIN を試み、失敗したら JOIN なしでフォールバック
+      let seeds: any[] | null = null;
+      let fetchError: any = null;
 
-      // ステータスフィルタ（allの場合はフィルタなし）
-      if (status && status !== 'all') {
-        query = query.eq('status', status);
+      for (const selectStr of ['*, projects(name)', '*']) {
+        let query = sb
+          .from('seeds')
+          .select(selectStr)
+          .order('created_at', { ascending: false });
+
+        if (status && status !== 'all') {
+          query = query.eq('status', status);
+        }
+        if (userId) {
+          query = query.eq('user_id', userId);
+        }
+        if (search) {
+          query = query.ilike('content', `%${search}%`);
+        }
+
+        const { data, error } = await query;
+        if (!error) {
+          seeds = data;
+          break;
+        }
+        fetchError = error;
+        console.warn('Seeds query with JOIN failed, retrying without JOIN:', error.message);
       }
 
-      if (userId) {
-        query = query.eq('user_id', userId);
-      }
-
-      // テキスト検索
-      if (search) {
-        query = query.ilike('content', `%${search}%`);
-      }
-
-      const { data: seeds, error } = await query;
-
-      if (error) throw error;
+      if (seeds === null && fetchError) throw fetchError;
 
       return (seeds || []).map(mapSeedFromDb);
     } catch (error) {
