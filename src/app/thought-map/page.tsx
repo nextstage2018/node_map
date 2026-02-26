@@ -1,7 +1,7 @@
 'use client';
 
 // Phase 42f: 思考マップ可視化ページ
-// 他メンバーがユーザーの思考動線（種→タスク完了までのノード遷移）を閲覧するUI
+// 他メンバーがユーザーの思考マップ（種→タスク完了までのノード遷移）を閲覧するUI
 // 3ステップ: ユーザー選択 → タスク選択 → 思考フロー可視化
 
 import { useState, useEffect, useRef, useCallback } from 'react';

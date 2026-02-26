@@ -43,7 +43,7 @@
 |---|---|---|
 | インボックス | /inbox | inbox_messages |
 | タスク | /tasks | tasks / task_conversations |
-| 思考マップ | /nodemap | user_nodes / node_edges |
+| 思考マップ | /thought-map | thought_task_nodes / thought_edges / knowledge_master_entries |
 | コンタクト | /contacts | contact_persons / contact_channels |
 | 組織 | /organizations | organizations / organization_channels |
 | 組織詳細 | /organizations/[id] | organizations / organization_channels / contact_persons |
@@ -51,7 +51,6 @@
 | ビジネスログ | /business-log | projects / business_events / project_channels |
 | 秘書 | /agent | tasks / seeds / user_nodes（読み取り専用） |
 | 種ボックス | /seeds | seeds |
-| 思考動線 | /thought-map | thought_task_nodes / thought_edges / knowledge_master_entries |
 | 設定 | /settings | organizations / contact_persons / projects |
 
 ---
