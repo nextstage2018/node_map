@@ -89,6 +89,34 @@ export async function POST(
       return NextResponse.json({ success: false, error: '組織が見つかりません' }, { status: 404 });
     }
 
+    // Phase 37b: 既に別の組織に所属しているコンタクトをチェック
+    const { data: existingContacts } = await supabase
+      .from('contact_persons')
+      .select('id, name, organization_id')
+      .in('id', contact_ids);
+
+    const alreadyInOtherOrg = (existingContacts || []).filter(
+      c => c.organization_id && c.organization_id !== orgId
+    );
+
+    if (alreadyInOtherOrg.length > 0) {
+      // 別組織に所属しているコンタクトの組織名を取得
+      const otherOrgIds = [...new Set(alreadyInOtherOrg.map(c => c.organization_id))];
+      const { data: otherOrgs } = await supabase
+        .from('organizations')
+        .select('id, name')
+        .in('id', otherOrgIds);
+      const orgNameMap = new Map((otherOrgs || []).map(o => [o.id, o.name]));
+
+      const conflicts = alreadyInOtherOrg.map(c =>
+        `${c.name}（${orgNameMap.get(c.organization_id!) || '不明な組織'}に所属中）`
+      );
+      return NextResponse.json({
+        success: false,
+        error: `以下のコンタクトは既に別の組織に所属しています。先に元の組織から外してください：\n${conflicts.join('、')}`,
+      }, { status: 409 });
+    }
+
     // Phase 37b: 組織の関係性をコンタクトにも設定
     const orgToContactRel: Record<string, string> = {
       internal: 'internal', client: 'client', partner: 'partner',

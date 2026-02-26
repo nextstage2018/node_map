@@ -131,7 +131,7 @@ export async function POST(
       }
     }
 
-    // channel経由一致
+    // channel経由一致（別組織所属のコンタクトは除外するため、後でフィルタ）
     if (channelMatches) {
       for (const ch of channelMatches) {
         matchedContactIds.add(ch.contact_id);
