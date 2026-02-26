@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-02-26（Phase 39 まで反映）
+最終更新: 2026-02-26（Phase 39b まで反映）
 
 ---
 
@@ -80,6 +80,7 @@ return NextResponse.json({ error: 'message' }, { status: 400 });
 | 38 | 送信メッセージDB保存・スレッド統合表示・送信済みフィルタ | mainにマージ済み |
 | 38b | 返信修正・送信文字色改善・宛先サジェスト機能 | mainにマージ予定 |
 | 39 | AIコミュニケーション分析を双方向（受信＋送信）対応に拡張 | 6cbc3c8 |
+| 39b | 外部サービス送信検出＋AI分析ルーム/チャンネルマッチング | 82ecfdb |
 
 ---
 
@@ -281,9 +282,33 @@ sendChatworkMessage(roomId: string, body: string): Promise<boolean>
 
 ---
 
+## Phase 39b 実装内容（外部サービス送信検出＋AI分析マッチング修正）
+
+### 外部サービスの送信メッセージ検出
+- **Slack** (`slackClient.service.ts`): 既存の `auth.test()` で取得する `botUserId` と各メッセージの `msg.user` を比較。一致すれば `direction='sent'`、`from.name='あなた'` に設定
+- **Chatwork** (`chatworkClient.service.ts`): `/me` APIで自分の `account_id` を取得。各メッセージの `msg.account.account_id` と比較し、一致すれば `direction='sent'`、`from.name='あなた'` に設定
+- **Gmail** (`emailClient.service.ts`): IMAP の送信済みフォルダ（`[Gmail]/Sent Mail` 等、ロケール別にフォールバック）からメッセージを取得。`direction='sent'`、`from.name='あなた'` に設定
+
+### AI分析の送信メッセージマッチング修正
+- **問題**: Chatwork/Slackはルーム/チャンネルベースのため `to_list` が空。Phase 39 の `to_list` マッチングでは送信0件になっていた
+- **解決**: 受信メッセージの metadata から `chatworkRoomId` / `slackChannel` を抽出し、送信メッセージを3つの方法でマッチング:
+  1. `to_list` にコンタクトのアドレスが含まれる（Email向け）
+  2. 同じ `chatworkRoomId` を持つ（Chatwork向け）
+  3. 同じ `slackChannel` を持つ（Slack向け）
+- `/api/contacts/[id]/analyze` と `/api/cron/analyze-contacts` の両方に適用
+
+### 変更ファイル一覧
+- `src/services/slack/slackClient.service.ts` — 送信メッセージ検出（botUserId比較）
+- `src/services/chatwork/chatworkClient.service.ts` — 送信メッセージ検出（/me API + account_id比較）
+- `src/services/email/emailClient.service.ts` — 送信済みフォルダ取得
+- `src/app/api/contacts/[id]/analyze/route.ts` — ルーム/チャンネルメタデータマッチング
+- `src/app/api/cron/analyze-contacts/route.ts` — 同上
+
+---
+
 ## 残課題（未実装）
 
-1. ~~**送信メッセージの保存**~~: Phase 38 で対応済み。ただし外部サービス（Chatwork/Slack）の過去の送信メッセージ取得は未対応
+1. ~~**送信メッセージの保存**~~: Phase 38 で対応済み。Phase 39b で外部サービス（Chatwork/Slack/Gmail）の送信メッセージ検出にも対応
 2. ~~**返信機能の修正**~~: Phase 38b で対応済み（引数形式修正、チャネルID修正、UI表示修正）
 3. ~~**宛先サジェスト機能**~~: Phase 38b で対応済み（コンタクト・Slackチャネル・Chatworkルームのサジェスト付き選択）
 4. ~~**送信メッセージのAIコミュニケーション分析連携**~~: Phase 39 で対応済み。受信＋送信の双方向分析を実現
