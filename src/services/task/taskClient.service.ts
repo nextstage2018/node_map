@@ -358,6 +358,8 @@ function mapSeedFromDb(dbRow: any): Seed {
     sourceMessageId: dbRow.source_message_id,
     sourceFrom: dbRow.source_from,
     sourceDate: dbRow.source_date,
+    projectId: dbRow.project_id,
+    projectName: dbRow.projects?.name || dbRow.project_name,
     status: dbRow.status,
     tags: dbRow.tags,
     structured: dbRow.structured,
@@ -465,7 +467,7 @@ export class TaskService {
     const now = new Date().toISOString();
 
     const newTask: Task = {
-      id: `task-${Date.now()}`,
+      id: crypto.randomUUID(),
       title: req.title,
       description: req.description,
       status: 'todo',
@@ -849,7 +851,7 @@ export class TaskService {
     try {
       let query = sb
         .from('seeds')
-        .select('*')
+        .select('*, projects(name)')
         .order('created_at', { ascending: false });
 
       // ステータスフィルタ（allの場合はフィルタなし）
@@ -889,6 +891,7 @@ export class TaskService {
       sourceMessageId: req.sourceMessageId,
       sourceFrom: req.sourceFrom,
       sourceDate: req.sourceDate,
+      projectId: req.projectId,
       createdAt: now,
       status: 'pending',
     };
@@ -911,7 +914,8 @@ export class TaskService {
       if (newSeed.sourceMessageId) insertData.source_message_id = newSeed.sourceMessageId;
       if (req.userId) insertData.user_id = req.userId;
 
-      // source_from / source_date は新カラム — カラム未追加でもエラーにならないよう分離
+      // 新カラム — カラム未追加でもエラーにならないよう分離
+      if (newSeed.projectId) insertData.project_id = newSeed.projectId;
       if (newSeed.sourceFrom) insertData.source_from = newSeed.sourceFrom;
       if (newSeed.sourceDate) {
         // TIMESTAMPTZ に変換可能か検証
@@ -952,7 +956,7 @@ export class TaskService {
   }
 
   // 種の更新
-  static async updateSeed(seedId: string, content: string, tags?: string[]): Promise<Seed | null> {
+  static async updateSeed(seedId: string, content: string, tags?: string[], projectId?: string | null): Promise<Seed | null> {
     const sb = getSupabase();
     const now = new Date().toISOString();
 
@@ -971,6 +975,9 @@ export class TaskService {
       };
       if (tags !== undefined) {
         updateData.tags = tags;
+      }
+      if (projectId !== undefined) {
+        updateData.project_id = projectId;
       }
 
       const { data, error } = await sb
@@ -1042,7 +1049,7 @@ export class TaskService {
 
       // タスクを生成
       const newTask: Task = {
-        id: `task-${Date.now()}`,
+        id: crypto.randomUUID(),
         title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
         description: seed.content,
         status: 'todo',
@@ -1091,7 +1098,7 @@ export class TaskService {
         .eq('id', seedId);
 
       // Create new task
-      const taskId = `task-${Date.now()}`;
+      const taskId = crypto.randomUUID();
       const newTaskData = {
         id: taskId,
         title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
