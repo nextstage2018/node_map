@@ -87,13 +87,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. weekly_node_confirmations に記録
+    // Note: テーブルにconfirmed_atカラムがない場合はcreated_atに任せる
     const { error: insertError } = await supabase
       .from('weekly_node_confirmations')
       .upsert({
         user_id: userId,
         week_start: weekStart,
         confirmed_node_ids: nodeIds,
-        confirmed_at: now,
       }, {
         onConflict: 'user_id,week_start',
       });

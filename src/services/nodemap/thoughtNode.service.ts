@@ -363,11 +363,13 @@ export class ThoughtNodeService {
       }
 
       // Step 4: マッチなし → 新規エントリを作成
-      // field_id は分類結果があればそれを使い、なければ未分類
+      // knowledge_master_entries の id は TEXT型（自動生成なし）→ 手動で生成
       const fieldId = classification?.fieldId || null;
       const now = new Date().toISOString();
+      const entryId = `me_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
       const insertData: Record<string, unknown> = {
+        id: entryId,
         label: normalizedLabel,
         synonyms: [],
         source_type: sourceType === 'seed' ? 'seed' : 'task',
@@ -393,6 +395,7 @@ export class ThoughtNodeService {
         // source_type 等の新カラムがまだない場合のフォールバック
         if (insertError.message?.includes('column')) {
           const fallbackData: Record<string, unknown> = {
+            id: entryId,
             label: normalizedLabel,
             synonyms: [],
             created_at: now,

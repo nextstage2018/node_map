@@ -49,7 +49,7 @@ export async function extractKeywords(
 }`;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 800,
       system: systemPrompt,
       messages: [
