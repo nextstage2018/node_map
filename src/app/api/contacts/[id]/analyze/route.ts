@@ -1,9 +1,20 @@
-// Phase 36: コンタクトAIコンテキスト分析 API
+// Phase 36+39: コンタクトAIコンテキスト分析 API（双方向対応）
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
+
+// メッセージ型定義（Phase 39: direction追加）
+type AnalysisMessage = {
+  subject: string;
+  body: string;
+  from_name: string;
+  from_address: string;
+  channel: string;
+  timestamp: string;
+  direction?: string;
+};
 
 // POST: 指定コンタクトのやり取りをAIで分析し、コンテキストを生成
 export async function POST(
@@ -43,7 +54,7 @@ export async function POST(
       );
     }
 
-    // Phase 36: このコンタクトとのメッセージ履歴を取得（直近50件）
+    // Phase 36+39: このコンタクトとのメッセージ履歴を取得（受信＋送信）
     const channels = (contact.contact_channels || []) as { channel: string; address: string }[];
     const addresses = channels.map((ch: { address: string }) => ch.address).filter(Boolean);
 
@@ -51,20 +62,61 @@ export async function POST(
     console.log(`[Contacts Analyze API] contact_channels(${channels.length}件):`, channels.map((ch) => `${ch.channel}:${ch.address}`));
     console.log(`[Contacts Analyze API] フィルタ用アドレス(${addresses.length}件):`, addresses);
 
-    let messages: { subject: string; body: string; from_name: string; from_address: string; channel: string; timestamp: string }[] = [];
+    let receivedMessages: AnalysisMessage[] = [];
+    let sentMessages: AnalysisMessage[] = [];
+
     if (addresses.length > 0) {
-      const { data: msgs, error: msgsError } = await supabase
+      // Phase 39: 受信メッセージ（相手 → 自分）
+      const { data: recvMsgs, error: recvError } = await supabase
         .from('inbox_messages')
-        .select('subject, body, from_name, from_address, channel, timestamp')
+        .select('subject, body, from_name, from_address, channel, timestamp, direction')
         .in('from_address', addresses)
         .order('timestamp', { ascending: false })
         .limit(50);
-      messages = msgs || [];
-      if (msgsError) {
-        console.error(`[Contacts Analyze API] inbox_messagesクエリエラー:`, msgsError);
+      receivedMessages = (recvMsgs || []).map((m) => ({ ...m, direction: m.direction || 'received' }));
+      if (recvError) {
+        console.error(`[Contacts Analyze API] 受信メッセージクエリエラー:`, recvError);
       }
+
+      // Phase 39: 送信メッセージ（自分 → 相手）
+      // to_list (JSON配列) に相手のアドレスが含まれる送信メッセージを取得
+      // to_list は [{name, address}] 形式のJSONB → JSでフィルタ
+      const { data: sentCandidates, error: sentError } = await supabase
+        .from('inbox_messages')
+        .select('subject, body, from_name, from_address, channel, timestamp, direction, to_list')
+        .eq('direction', 'sent')
+        .order('timestamp', { ascending: false })
+        .limit(200);
+
+      if (sentError) {
+        console.error(`[Contacts Analyze API] 送信メッセージクエリエラー:`, sentError);
+      }
+
+      // to_list 内のアドレスが相手のアドレスに一致するものをフィルタ
+      const addressSet = new Set(addresses.map((a) => a.toLowerCase()));
+      sentMessages = (sentCandidates || []).filter((m) => {
+        const toList = (m.to_list || []) as { name?: string; address?: string }[];
+        return toList.some((t) => t.address && addressSet.has(t.address.toLowerCase()));
+      }).slice(0, 50).map((m) => ({
+        subject: m.subject,
+        body: m.body,
+        from_name: m.from_name,
+        from_address: m.from_address,
+        channel: m.channel,
+        timestamp: m.timestamp,
+        direction: 'sent' as const,
+      }));
     }
-    console.log(`[Contacts Analyze API] 取得メッセージ: ${messages.length}件`);
+
+    // Phase 39: 受信・送信を統合して時系列ソート
+    const allMessages = [...receivedMessages, ...sentMessages]
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 80); // 最大80件（十分な会話コンテキスト）
+
+    const receivedCount = allMessages.filter((m) => m.direction !== 'sent').length;
+    const sentCount = allMessages.filter((m) => m.direction === 'sent').length;
+
+    console.log(`[Contacts Analyze API] 取得メッセージ: 受信${receivedCount}件 + 送信${sentCount}件 = 合計${allMessages.length}件`);
 
     // Phase 36: ビジネスイベント履歴を取得（直近20件）
     const { data: events } = await supabase
@@ -74,11 +126,11 @@ export async function POST(
       .order('happened_at', { ascending: false })
       .limit(20);
 
-    // Phase 36: AIで分析
+    // Phase 36+39: AIで分析
     const apiKey = process.env.ANTHROPIC_API_KEY || '';
     if (!apiKey) {
       // デモモード: ルールベースのコンテキスト生成
-      const demoContext = generateDemoContext(contact, messages, events || []);
+      const demoContext = generateDemoContext(contact, allMessages, events || []);
       return NextResponse.json({ success: true, data: { ai_context: demoContext } });
     }
 
@@ -87,21 +139,32 @@ export async function POST(
       const client = new Anthropic({ apiKey });
 
       const channelList = channels.map((ch: { channel: string; address: string }) => `${ch.channel}: ${ch.address}`).join(', ');
-      const messageSummaries = messages.slice(0, 30).map((m) => {
+
+      // Phase 39: メッセージサマリーに送受信の方向を明示
+      const messageSummaries = allMessages.slice(0, 40).map((m) => {
         const body = (m.body || '').slice(0, 200);
-        return `[${m.channel}] ${m.from_name} (${formatDateSimple(m.timestamp)}): ${m.subject || ''} - ${body}`;
+        const direction = m.direction === 'sent' ? '→送信' : '←受信';
+        const sender = m.direction === 'sent' ? 'あなた（ユーザー）' : m.from_name;
+        return `[${m.channel}/${direction}] ${sender} (${formatDateSimple(m.timestamp)}): ${m.subject || ''} - ${body}`;
       }).join('\n');
+
       const eventSummaries = (events || []).map((e) =>
         `[${e.event_type}] ${formatDateSimple(e.happened_at)}: ${e.title}${e.memo ? ' - ' + e.memo : ''}`
       ).join('\n');
 
+      // Phase 39: 双方向分析に対応したプロンプト
       const systemPrompt = `あなたはビジネスコミュニケーション分析アシスタントです。
-コンタクト（取引先・同僚など）との関係性やコミュニケーション傾向を分析してください。
+コンタクト（取引先・同僚など）との双方向のコミュニケーションを分析してください。
 
-以下の形式で日本語で回答してください（200〜400文字程度）：
+メッセージ履歴には「←受信」（相手からの発言）と「→送信」（ユーザー自身の発言）が含まれます。
+「あなた（ユーザー）」はシステム利用者本人の発言です。
+
+以下の形式で日本語で回答してください（300〜500文字程度）：
 1. この人物との関係性の要約（1〜2文）
-2. 主なやり取りの傾向（トピック、頻度、トーン）
-3. 注意点やフォローアップのヒント
+2. 相手のコミュニケーション傾向（トピック、トーン、返信速度の印象）
+3. ユーザー自身の対応傾向（返信の積極性、やり取りの主導権）
+4. 双方向のやり取りの特徴（会話の流れ、頻度、バランス）
+5. 注意点やフォローアップのヒント
 
 前置きや見出しは不要です。簡潔かつ実用的に記述してください。`;
 
@@ -112,17 +175,17 @@ export async function POST(
 関係性: ${contact.relationship_type || '不明'}
 チャンネル: ${channelList || 'なし'}
 
-## メッセージ履歴（直近${messages.length}件）
+## メッセージ履歴（受信${receivedCount}件 + 送信${sentCount}件 = 合計${allMessages.length}件）
 ${messageSummaries || 'メッセージなし'}
 
 ## ビジネスイベント（直近${(events || []).length}件）
 ${eventSummaries || 'イベントなし'}
 
-この人物との関係性とコミュニケーション傾向を分析してください。`;
+この人物との双方向のコミュニケーション傾向を分析してください。受信と送信の両方を踏まえ、関係性の特徴、会話の主導権、返信パターンなどを含めてください。`;
 
       const response = await client.messages.create({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 600,
+        max_tokens: 800,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       });
@@ -130,7 +193,7 @@ ${eventSummaries || 'イベントなし'}
       const aiContext = response.content[0]?.type === 'text' ? response.content[0].text : '';
 
       if (!aiContext) {
-        const fallback = generateDemoContext(contact, messages, events || []);
+        const fallback = generateDemoContext(contact, allMessages, events || []);
         return NextResponse.json({ success: true, data: { ai_context: fallback } });
       }
 
@@ -150,7 +213,7 @@ ${eventSummaries || 'イベントなし'}
       return NextResponse.json({ success: true, data: { ai_context: aiContext } });
     } catch (aiError) {
       console.error('[Contacts Analyze API] AIエラー（フォールバック使用）:', aiError);
-      const fallback = generateDemoContext(contact, messages, events || []);
+      const fallback = generateDemoContext(contact, allMessages, events || []);
       return NextResponse.json({ success: true, data: { ai_context: fallback } });
     }
   } catch (error) {
@@ -162,15 +225,17 @@ ${eventSummaries || 'イベントなし'}
   }
 }
 
-// Phase 36: デモモード用のコンテキスト生成
+// Phase 36+39: デモモード用のコンテキスト生成（双方向対応）
 function generateDemoContext(
   contact: { name?: string; company_name?: string; relationship_type?: string },
-  messages: { channel: string }[],
+  messages: AnalysisMessage[],
   events: { event_type: string; title: string }[]
 ): string {
   const name = contact.name || '不明';
   const company = contact.company_name ? `（${contact.company_name}）` : '';
-  const msgCount = messages.length;
+  const receivedCount = messages.filter((m) => m.direction !== 'sent').length;
+  const sentCount = messages.filter((m) => m.direction === 'sent').length;
+  const totalCount = messages.length;
   const eventCount = events.length;
 
   const channelCounts: Record<string, number> = {};
@@ -179,7 +244,7 @@ function generateDemoContext(
   }
   const mainChannel = Object.entries(channelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '不明';
 
-  return `${name}${company}との主なやり取りは${mainChannel}チャンネルで行われており、直近${msgCount}件のメッセージ、${eventCount}件のビジネスイベントが記録されています。定期的なフォローアップを推奨します。`;
+  return `${name}${company}との主なやり取りは${mainChannel}チャンネルで行われています。直近の記録では受信${receivedCount}件・送信${sentCount}件（計${totalCount}件）のメッセージと${eventCount}件のビジネスイベントがあります。${sentCount > 0 ? '双方向のやり取りが確認できます。' : '送信メッセージが未記録のため、受信側のみの分析です。'}定期的なフォローアップを推奨します。`;
 }
 
 // Phase 36: 日付フォーマット

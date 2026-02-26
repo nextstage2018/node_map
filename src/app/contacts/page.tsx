@@ -1353,7 +1353,7 @@ export default function ContactsPage() {
                       <div className="flex items-center justify-center h-32 text-slate-400">
                         <div className="text-center">
                           <Sparkles className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="text-xs">コミュニケーション分析を実行すると、この人物との<br />関係性やコミュニケーション傾向が表示されます</p>
+                          <p className="text-xs">コミュニケーション分析を実行すると、この人物との<br />双方向の関係性やコミュニケーション傾向が表示されます</p>
                         </div>
                       </div>
                     )}
