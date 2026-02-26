@@ -29,9 +29,24 @@ export interface ThoughtNode {
   createdAt: string;
 }
 
+export interface ThoughtEdge {
+  id: string;
+  taskId?: string;
+  seedId?: string;
+  fromNodeId: string;
+  fromNodeLabel?: string;
+  toNodeId: string;
+  toNodeLabel?: string;
+  userId: string;
+  edgeType: 'main' | 'detour';
+  edgeOrder: number;
+  createdAt: string;
+}
+
 export interface ExtractAndLinkResult {
   extractedKeywords: ExtractedKeyword[];
   linkedNodes: ThoughtNode[];
+  edges: ThoughtEdge[];            // Phase 42d: 生成された思考動線
   newMasterEntries: string[];  // 新規作成されたマスタエントリのID
 }
 
@@ -58,6 +73,7 @@ export class ThoughtNodeService {
     const result: ExtractAndLinkResult = {
       extractedKeywords: [],
       linkedNodes: [],
+      edges: [],
       newMasterEntries: [],
     };
 
@@ -129,10 +145,176 @@ export class ThoughtNodeService {
         }
       }
 
+      // 3. Phase 42d: 思考動線（エッジ）を生成
+      // 今回抽出されたノード群の間に順序エッジを記録
+      if (result.linkedNodes.length >= 2) {
+        try {
+          const edges = await ThoughtNodeService.createThoughtEdges(sb, {
+            taskId,
+            seedId,
+            nodeIds: result.linkedNodes.map(n => n.nodeId),
+            userId,
+          });
+          result.edges = edges;
+        } catch (e) {
+          console.error('[ThoughtNode] エッジ生成エラー（ノード紐づけは正常）:', e);
+        }
+      }
+
       return result;
     } catch (error) {
       console.error('[ThoughtNode] extractAndLink エラー:', error);
       return result;
+    }
+  }
+
+  /**
+   * Phase 42d: 思考動線（エッジ）を生成
+   * 今回のターンで抽出されたノード群を順に繋ぐ + 既存の最後のノードとも接続
+   */
+  private static async createThoughtEdges(
+    sb: any,
+    params: {
+      taskId?: string;
+      seedId?: string;
+      nodeIds: string[];
+      userId: string;
+    }
+  ): Promise<ThoughtEdge[]> {
+    const { taskId, seedId, nodeIds, userId } = params;
+    const edges: ThoughtEdge[] = [];
+
+    try {
+      // 既存エッジ数を取得（edge_order の算出用）
+      let currentEdgeOrder = 0;
+      try {
+        const countQuery = sb
+          .from('thought_edges')
+          .select('id', { count: 'exact', head: true });
+        if (taskId) countQuery.eq('task_id', taskId);
+        else if (seedId) countQuery.eq('seed_id', seedId);
+        const { count } = await countQuery;
+        currentEdgeOrder = count || 0;
+      } catch { /* 初回は0 */ }
+
+      // 前回の最後のノードを取得（既存ノードと今回のノードを繋ぐため）
+      let previousLastNodeId: string | null = null;
+      try {
+        const lastNodeQuery = sb
+          .from('thought_task_nodes')
+          .select('node_id')
+          .order('appear_order', { ascending: false })
+          .limit(1);
+        if (taskId) lastNodeQuery.eq('task_id', taskId);
+        else if (seedId) lastNodeQuery.eq('seed_id', seedId);
+
+        // 今回のノード以外で最新のものを取得
+        lastNodeQuery.not('node_id', 'in', `(${nodeIds.join(',')})`);
+        const { data } = await lastNodeQuery;
+        if (data && data.length > 0) {
+          previousLastNodeId = data[0].node_id;
+        }
+      } catch { /* 初回は前回ノードなし */ }
+
+      // エッジを生成: 前回の最後 → 今回の最初、今回のノード群を順に接続
+      const orderedIds = previousLastNodeId
+        ? [previousLastNodeId, ...nodeIds]
+        : nodeIds;
+
+      for (let i = 0; i < orderedIds.length - 1; i++) {
+        const fromId = orderedIds[i];
+        const toId = orderedIds[i + 1];
+
+        // 同じノード同士のエッジは作らない
+        if (fromId === toId) continue;
+
+        currentEdgeOrder++;
+        const insertData: Record<string, unknown> = {
+          from_node_id: fromId,
+          to_node_id: toId,
+          user_id: userId,
+          edge_type: 'main',
+          edge_order: currentEdgeOrder,
+        };
+        if (taskId) insertData.task_id = taskId;
+        if (seedId) insertData.seed_id = seedId;
+
+        const { data, error } = await sb
+          .from('thought_edges')
+          .upsert(insertData, {
+            onConflict: taskId ? 'task_id,from_node_id,to_node_id' : 'seed_id,from_node_id,to_node_id',
+            ignoreDuplicates: true,
+          })
+          .select()
+          .single();
+
+        if (!error && data) {
+          edges.push({
+            id: data.id,
+            taskId: data.task_id,
+            seedId: data.seed_id,
+            fromNodeId: data.from_node_id,
+            toNodeId: data.to_node_id,
+            userId: data.user_id,
+            edgeType: data.edge_type,
+            edgeOrder: data.edge_order,
+            createdAt: data.created_at,
+          });
+        }
+        // UNIQUE制約違反は無視（既存エッジ）
+      }
+    } catch (error) {
+      // テーブル未作成の場合のフォールバック
+      if (String(error).includes('relation') || String(error).includes('42P01')) {
+        console.warn('[ThoughtNode] thought_edges テーブルが未作成です。マイグレーション 024 を実行してください。');
+      } else {
+        console.error('[ThoughtNode] createThoughtEdges エラー:', error);
+      }
+    }
+
+    return edges;
+  }
+
+  /**
+   * タスクまたは種の思考動線（エッジ）を取得
+   */
+  static async getEdges(params: {
+    taskId?: string;
+    seedId?: string;
+  }): Promise<ThoughtEdge[]> {
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return [];
+
+    try {
+      let query = sb
+        .from('thought_edges')
+        .select('*')
+        .order('edge_order', { ascending: true });
+
+      if (params.taskId) query = query.eq('task_id', params.taskId);
+      if (params.seedId) query = query.eq('seed_id', params.seedId);
+
+      const { data, error } = await query;
+
+      if (error) {
+        if (error.message?.includes('relation') || error.code === '42P01') return [];
+        console.error('[ThoughtNode] getEdges エラー:', error);
+        return [];
+      }
+
+      return (data || []).map((row: any) => ({
+        id: row.id,
+        taskId: row.task_id,
+        seedId: row.seed_id,
+        fromNodeId: row.from_node_id,
+        toNodeId: row.to_node_id,
+        userId: row.user_id,
+        edgeType: row.edge_type,
+        edgeOrder: row.edge_order,
+        createdAt: row.created_at,
+      }));
+    } catch {
+      return [];
     }
   }
 

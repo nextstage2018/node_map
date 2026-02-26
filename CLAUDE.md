@@ -32,6 +32,7 @@
 | `seeds` | 種ボックス。project_id で紐づけ可。user_id カラムあり |
 | `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id カラムあり |
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
+| `thought_edges` | 思考動線。from_node_id→to_node_idの順序付きエッジ。UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
 
 ---
@@ -50,6 +51,7 @@
 | ビジネスログ | /business-log | projects / business_events / project_channels |
 | 秘書 | /agent | tasks / seeds / user_nodes（読み取り専用） |
 | 種ボックス | /seeds | seeds |
+| 思考動線 | /thought-map | thought_task_nodes / thought_edges / knowledge_master_entries |
 | 設定 | /settings | organizations / contact_persons / projects |
 
 ---
@@ -103,7 +105,8 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 40b | 種AI会話DB保存・プロジェクト選択・インボックスAI種化 | mainにマージ済み |
 | 40c | 組織→プロジェクト→チャネル階層・種プロジェクト自動検出・バグ修正 | abbaf17 |
 | 41 | 種・タスクRLSバグ修正＋AI構造化タスク変換＋伴走支援AI会話 | 7c202f2 |
-| 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 未コミット |
+| 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 14fd589 |
+| 42d+42f | 思考動線記録（thought_edges）＋チーム向け思考マップ可視化UI | 未コミット |
 
 ---
 
@@ -159,6 +162,61 @@ CREATE TABLE IF NOT EXISTS thought_task_nodes (
     → extractKeywords()（既存のキーワード抽出エンジン）
     → ensureMasterEntry()（ナレッジマスタに存在チェック→新規作成）
     → linkToTaskOrSeed()（thought_task_nodesに紐づけ）
+```
+
+---
+
+## Phase 42d+42f 実装内容（思考動線記録 + チーム向け思考マップUI）
+
+### 概要
+Phase 42d: AI会話でノードが出現するたびに、前のノードとの間に「思考の流れ」（thought_edges）を自動記録する。
+Phase 42f: 他メンバーがユーザーの思考動線を閲覧するためのAPI＋Canvas描画UIページ。
+
+**設計意図**: 思考マップは本人向けではなく、同じ組織の他メンバーが見るためのもの。種フェーズでの曖昧なアイデアがAI会話を通じて明確化→タスク化→完了までの思考の流れを可視化する。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 024_phase42d_thought_edges.sql
+CREATE TABLE IF NOT EXISTS thought_edges (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+  seed_id UUID REFERENCES seeds(id) ON DELETE CASCADE,
+  from_node_id TEXT NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
+  to_node_id TEXT NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  edge_type TEXT NOT NULL DEFAULT 'main',
+  edge_order INT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT chk_edge_task_or_seed CHECK (task_id IS NOT NULL OR seed_id IS NOT NULL)
+);
+```
+
+### 新規ファイル
+- `supabase/migrations/024_phase42d_thought_edges.sql` — thought_edgesマイグレーション
+- `src/app/api/nodes/thought-map/route.ts` — 思考マップデータ取得API（ユーザー一覧/タスク一覧/ノード+エッジ）
+- `src/app/thought-map/page.tsx` — 思考マップ可視化UIページ（Canvas描画、3ステップUI）
+
+### 変更ファイル
+- `src/services/nodemap/thoughtNode.service.ts` — ThoughtEdge型追加、createThoughtEdges/getEdges メソッド追加、extractAndLinkにエッジ生成統合
+- `src/components/shared/Header.tsx` — ナビゲーションに「思考動線」リンク追加（/thought-map）
+- `CLAUDE.md` — Phase 42d+42f 記録
+
+### 思考動線UIの構成
+```
+/thought-map ページ（3ステップ）:
+  Step 1: ユーザー一覧（思考ノード数・タスク数付き）
+  Step 2: 選択ユーザーのタスク/種一覧（ノード数・エッジ数付き）
+  Step 3: Canvas描画の思考フロー可視化（フェーズ別行、順序番号付きノード、ベジェ曲線エッジ）
+```
+
+### APIエンドポイント
+```
+GET /api/nodes/thought-map
+  → ユーザー一覧（nodeCount, taskCount）
+GET /api/nodes/thought-map?userId=xxx
+  → ユーザーのタスク一覧（type, title, phase, status, nodeCount, edgeCount）
+GET /api/nodes/thought-map?userId=xxx&taskId=yyy
+  → タスクの思考ノード＋エッジ
 ```
 
 ---
