@@ -30,6 +30,65 @@ export async function GET() {
   }
 }
 
+// Phase 40b: AI種化 — 前後メッセージからコンテキストを読んで要約生成
+async function generateSeedContent(
+  contextMessages: { from: string; body: string; timestamp: string; isTarget?: boolean }[],
+  sourceChannel?: string,
+): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    // デモモード: ターゲットメッセージの本文をそのまま返す
+    const target = contextMessages.find(m => m.isTarget);
+    return target?.body.slice(0, 500) || contextMessages[0]?.body.slice(0, 500) || '';
+  }
+
+  // 会話コンテキストを構築
+  const conversationText = contextMessages.map((m) => {
+    const marker = m.isTarget ? ' ★種化対象' : '';
+    const time = new Date(m.timestamp).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+    return `[${time}] ${m.from}${marker}:\n${m.body.slice(0, 300)}`;
+  }).join('\n\n');
+
+  const channelLabel = sourceChannel === 'email' ? 'メール'
+    : sourceChannel === 'slack' ? 'Slack'
+    : sourceChannel === 'chatwork' ? 'Chatwork'
+    : 'メッセージ';
+
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey });
+
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 400,
+      system: `あなたはビジネスコミュニケーションの要約専門家です。${channelLabel}の会話から、★マークの付いたメッセージを中心に、前後の文脈を踏まえて「種（アクションの種）」を生成してください。
+
+出力フォーマット（必ずこの形式で）:
+【依頼・要件】1行で何を求められているか
+【背景】1-2行で会話の文脈
+【必要なアクション】箇条書きで具体的なTODO
+
+ルール:
+- 日本語で簡潔に
+- 合計150文字以内を目安
+- 推測を入れず、会話に書かれた事実のみ
+- ★メッセージが依頼でなく情報共有の場合は「要件」→「要点」に変更`,
+      messages: [
+        { role: 'user', content: `以下の${channelLabel}の会話から種を生成してください:\n\n${conversationText}` },
+      ],
+    });
+
+    const text = response.content[0]?.type === 'text' ? response.content[0].text : null;
+    if (text) return text;
+  } catch (e) {
+    console.error('[Seeds API] AI種化エラー（フォールバック）:', e);
+  }
+
+  // フォールバック: ターゲットメッセージの本文
+  const target = contextMessages.find(m => m.isTarget);
+  return target?.body.slice(0, 500) || contextMessages[0]?.body.slice(0, 500) || '';
+}
+
 // 種作成 + ナレッジパイプライン
 export async function POST(request: NextRequest) {
   try {
@@ -43,26 +102,34 @@ export async function POST(request: NextRequest) {
     }
     const body = await request.json();
 
-    if (!body.content) {
+    // Phase 40b: contextMessages がある場合はAIで種化
+    let seedContent = body.content || '';
+    if (body.contextMessages && body.contextMessages.length > 0) {
+      seedContent = await generateSeedContent(body.contextMessages, body.sourceChannel);
+    }
+
+    if (!seedContent) {
       return NextResponse.json(
         { success: false, error: '内容は必須です' },
         { status: 400 }
       );
     }
 
-    // Phase 40: オブジェクト引数で渡す（createSeedのシグネチャに合わせる）
+    // Phase 40: オブジェクト引数で渡す
     const seed = await TaskService.createSeed({
-      content: body.content,
+      content: seedContent,
       sourceChannel: body.sourceChannel,
       sourceMessageId: body.sourceMessageId,
+      sourceFrom: body.sourceFrom,
+      sourceDate: body.sourceDate,
       userId,
     });
 
-    // Phase 28: ナレッジパイプライン実行（await で確実に完了させる）
+    // Phase 28: ナレッジパイプライン実行
     let knowledgeResult = null;
     try {
       knowledgeResult = await triggerKnowledgePipeline({
-        text: body.content,
+        text: seedContent,
         trigger: 'seed',
         sourceId: seed.id,
         sourceType: 'seed',

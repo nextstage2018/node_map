@@ -356,7 +356,10 @@ function mapSeedFromDb(dbRow: any): Seed {
     content: dbRow.content,
     sourceChannel: dbRow.source_channel,
     sourceMessageId: dbRow.source_message_id,
+    sourceFrom: dbRow.source_from,
+    sourceDate: dbRow.source_date,
     status: dbRow.status,
+    tags: dbRow.tags,
     structured: dbRow.structured,
     createdAt: dbRow.created_at,
   };
@@ -870,6 +873,8 @@ export class TaskService {
       content: req.content,
       sourceChannel: req.sourceChannel,
       sourceMessageId: req.sourceMessageId,
+      sourceFrom: req.sourceFrom,
+      sourceDate: req.sourceDate,
       createdAt: now,
       status: 'pending',
     };
@@ -886,6 +891,8 @@ export class TaskService {
         content: newSeed.content,
         source_channel: newSeed.sourceChannel,
         source_message_id: newSeed.sourceMessageId,
+        source_from: newSeed.sourceFrom,
+        source_date: newSeed.sourceDate,
         status: newSeed.status,
         created_at: newSeed.createdAt,
       };

@@ -312,32 +312,55 @@ function LinkifiedText({ text, className }: { text: string; className?: string }
 }
 
 /**
+ * Phase 40b: コンテキストメッセージの型
+ */
+interface ContextMessage {
+  from: string;
+  body: string;
+  timestamp: string;
+  isTarget?: boolean;
+}
+
+/**
  * 種にする（Seed）ボタンの状態管理hook
+ * Phase 40b: コンテキストメッセージ対応 — 前後の会話をAIに送って種化
  */
 function useSeedAction() {
   const [seedingId, setSeedingId] = useState<string | null>(null);
   const [seedResult, setSeedResult] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
 
-  const createSeed = async (msg: UnifiedMessage) => {
+  const createSeed = async (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => {
     if (seedingId) return;
     setSeedingId(msg.id);
     setSeedResult(null);
     try {
-      const body = msg.subject
+      const fallbackContent = msg.subject
         ? `【${msg.subject}】\n${msg.body}`
         : msg.body;
+
+      const requestBody: any = {
+        sourceChannel: msg.channel,
+        sourceMessageId: msg.id,
+        sourceFrom: msg.from?.name || msg.from?.address || '',
+        sourceDate: msg.timestamp,
+      };
+
+      if (contextMessages && contextMessages.length > 0) {
+        // Phase 40b: AIがコンテキストから要約生成
+        requestBody.contextMessages = contextMessages;
+      } else {
+        // フォールバック: 従来どおりメッセージ本文のみ
+        requestBody.content = fallbackContent.slice(0, 500);
+      }
+
       const res = await fetch('/api/seeds', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: body.slice(0, 500),
-          sourceChannel: msg.channel,
-          sourceMessageId: msg.id,
-        }),
+        body: JSON.stringify(requestBody),
       });
       const data = await res.json();
       if (data.success) {
-        setSeedResult({ id: msg.id, type: 'success', text: '種ボックスに追加しました' });
+        setSeedResult({ id: msg.id, type: 'success', text: 'AIが文脈を読んで種を生成しました' });
         // Phase 28: ナレッジパイプラインのフィードバック表示
         handleKnowledgeResponse(data, 'seed');
       } else {
@@ -347,7 +370,7 @@ function useSeedAction() {
       setSeedResult({ id: msg.id, type: 'error', text: '通信エラーが発生しました' });
     } finally {
       setSeedingId(null);
-      setTimeout(() => setSeedResult(null), 3000);
+      setTimeout(() => setSeedResult(null), 4000);
     }
   };
 
@@ -359,14 +382,16 @@ function useSeedAction() {
  */
 function SeedButton({
   targetMessage,
+  contextMessages,
   seedingId,
   seedResult,
   onSeed,
 }: {
   targetMessage: UnifiedMessage;
+  contextMessages?: ContextMessage[];
   seedingId: string | null;
   seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
-  onSeed: (msg: UnifiedMessage) => void;
+  onSeed: (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => void;
 }) {
   const isSeeding = seedingId === targetMessage.id;
   const result = seedResult?.id === targetMessage.id ? seedResult : null;
@@ -383,7 +408,7 @@ function SeedButton({
       >
         {result.type === 'success' ? '✅' : '❌'} {result.text}
         {result.type === 'success' && (
-          <a href="/tasks" className="ml-1 underline hover:no-underline text-green-600">
+          <a href="/seeds" className="ml-1 underline hover:no-underline text-green-600">
             種ボックスを見る →
           </a>
         )}
@@ -394,12 +419,12 @@ function SeedButton({
   return (
     <Button
       variant="secondary"
-      onClick={() => onSeed(targetMessage)}
+      onClick={() => onSeed(targetMessage, contextMessages)}
       disabled={isSeeding}
     >
       {isSeeding ? (
         <span className="flex items-center gap-1">
-          <span className="animate-spin">⟳</span> 追加中...
+          <span className="animate-spin">⟳</span> AI分析中...
         </span>
       ) : (
         '🌱 種にする'
@@ -713,7 +738,45 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
 interface SeedProps {
   seedingId: string | null;
   seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
-  onSeed: (msg: UnifiedMessage) => void;
+  onSeed: (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => void;
+}
+
+// Phase 40b: グループ/スレッドから前後3件のコンテキストを抽出するヘルパー
+function extractContextFromMessages(
+  messages: UnifiedMessage[],
+  targetId: string,
+): ContextMessage[] {
+  const idx = messages.findIndex(m => m.id === targetId);
+  if (idx === -1) {
+    // ターゲットが見つからない場合は直近7件
+    return messages.slice(-7).map(m => ({
+      from: m.from?.name || m.from?.address || '不明',
+      body: m.body,
+      timestamp: m.timestamp,
+      isTarget: m.id === targetId,
+    }));
+  }
+  const start = Math.max(0, idx - 3);
+  const end = Math.min(messages.length, idx + 4); // 前3件 + 本人 + 後3件
+  return messages.slice(start, end).map(m => ({
+    from: m.from?.name || m.from?.address || '不明',
+    body: m.body,
+    timestamp: m.timestamp,
+    isTarget: m.id === targetId,
+  }));
+}
+
+function extractContextFromThread(
+  threadMessages: { id: string; from: { name: string; address: string }; body: string; timestamp: string; isOwn: boolean }[],
+  targetTimestamp: string,
+): ContextMessage[] {
+  // スレッドは全件少ないことが多いので直近7件
+  return threadMessages.slice(-7).map(m => ({
+    from: m.from?.name || m.from?.address || '不明',
+    body: m.body,
+    timestamp: m.timestamp,
+    isTarget: m.timestamp === targetTimestamp,
+  }));
 }
 
 function GroupDetail({
@@ -737,6 +800,9 @@ function GroupDetail({
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
+
+  // Phase 40b: コンテキストメッセージを準備
+  const seedContext = extractContextFromMessages(group.messages, latestMessage.id);
 
   // 最新メッセージに自動スクロール
   useEffect(() => {
@@ -806,6 +872,7 @@ function GroupDetail({
             </Button>
             <SeedButton
               targetMessage={latestMessage}
+              contextMessages={seedContext}
               seedingId={seedProps.seedingId}
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
@@ -1078,6 +1145,11 @@ function EmailThreadDetail({
             </Button>
             <SeedButton
               targetMessage={message}
+              contextMessages={
+                threadMessages.length > 0
+                  ? extractContextFromThread(threadMessages, message.timestamp)
+                  : [{ from: message.from?.name || '', body: message.body || message.subject || '', timestamp: message.timestamp, isTarget: true }]
+              }
               seedingId={seedProps.seedingId}
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
@@ -1264,6 +1336,11 @@ function SingleMessageDetail({
             </Button>
             <SeedButton
               targetMessage={message}
+              contextMessages={
+                message.threadMessages && message.threadMessages.length > 0
+                  ? extractContextFromThread(message.threadMessages, message.timestamp)
+                  : [{ from: message.from?.name || '', body: message.body || message.subject || '', timestamp: message.timestamp, isTarget: true }]
+              }
               seedingId={seedProps.seedingId}
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
