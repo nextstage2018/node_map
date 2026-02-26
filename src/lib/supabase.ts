@@ -30,3 +30,12 @@ export function createServerClient(): SupabaseClient | null {
   if (!isSupabaseConfigured() || !serviceRoleKey) return null;
   return createClient(supabaseUrl, serviceRoleKey);
 }
+
+// サーバーサイド用（キャッシュ付き）— RLSバイパスが必要なサービス層で使用
+let _serverClient: SupabaseClient | null = null;
+export function getServerSupabase(): SupabaseClient | null {
+  if (!_serverClient) {
+    _serverClient = createServerClient();
+  }
+  return _serverClient;
+}

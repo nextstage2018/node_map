@@ -18,7 +18,7 @@ import {
   CreateJobRequest,
   CreateSeedRequest,
 } from '@/lib/types';
-import { getSupabase } from '@/lib/supabase';
+import { getSupabase, getServerSupabase } from '@/lib/supabase';
 
 // === デモデータ ===
 
@@ -376,7 +376,7 @@ export class TaskService {
   // タスク一覧取得
   // Phase 22: userIdパラメータ追加（認証ユーザーでフィルタリング）
   static async getTasks(userId?: string): Promise<Task[]> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -428,7 +428,7 @@ export class TaskService {
 
   // タスク取得（単体）
   static async getTask(id: string): Promise<Task | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -466,7 +466,7 @@ export class TaskService {
 
   // タスク作成
   static async createTask(req: CreateTaskRequest): Promise<Task> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     const newTask: Task = {
@@ -534,7 +534,7 @@ export class TaskService {
 
   // タスク更新
   static async updateTask(id: string, req: UpdateTaskRequest): Promise<Task | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -641,7 +641,7 @@ export class TaskService {
     taskId: string,
     message: Omit<AiConversationMessage, 'id' | 'timestamp'>
   ): Promise<AiConversationMessage | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
     const newId = `conv-${Date.now()}`;
 
@@ -709,7 +709,7 @@ export class TaskService {
 
   // Phase 22: userIdパラメータ追加（認証ユーザーでフィルタリング）
   static async getJobs(userId?: string): Promise<Job[]> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -741,7 +741,7 @@ export class TaskService {
   }
 
   static async createJob(req: CreateJobRequest): Promise<Job> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     const newJob: Job = {
@@ -797,7 +797,7 @@ export class TaskService {
   }
 
   static async updateJobStatus(id: string, status: JobStatus): Promise<Job | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     if (!sb) {
@@ -848,7 +848,7 @@ export class TaskService {
   // ===== 種ボックス管理 =====
 
   static async getSeeds(userId?: string, status: string = 'all', search: string = ''): Promise<Seed[]> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -891,7 +891,7 @@ export class TaskService {
   }
 
   static async createSeed(req: CreateSeedRequest & { userId?: string }): Promise<Seed> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     // seeds テーブルの id は UUID型 → crypto.randomUUID() で生成
@@ -969,7 +969,7 @@ export class TaskService {
 
   // 種の更新
   static async updateSeed(seedId: string, content: string, tags?: string[], projectId?: string | null): Promise<Seed | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     if (!sb) {
@@ -1013,7 +1013,7 @@ export class TaskService {
 
   // 種の削除
   static async deleteSeed(seedId: string): Promise<boolean> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
@@ -1042,7 +1042,7 @@ export class TaskService {
   }
 
   static async confirmSeed(seedId: string): Promise<Task | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
     if (!sb) {
@@ -1146,7 +1146,7 @@ export class TaskService {
 
   // 種の詳細取得（AI構造化プレビュー用）
   static async getSeedStructured(seedId: string): Promise<Seed | null> {
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
       // Demo mode
