@@ -78,6 +78,8 @@ export class ThoughtNodeService {
     };
 
     try {
+      console.log(`[ThoughtNode] extractAndLink開始: userId=${userId}, seedId=${seedId}, taskId=${taskId}, textLength=${text.length}`);
+
       // 1. テキストからキーワードを抽出（既存のextractKeywordsを再利用）
       const extraction = await extractKeywords({
         text,
@@ -88,6 +90,9 @@ export class ThoughtNodeService {
         phase,
       });
 
+      console.log(`[ThoughtNode] extractKeywords結果: keywords=${extraction.keywords.length}, persons=${extraction.persons.length}, projects=${extraction.projects.length}`);
+      console.log(`[ThoughtNode] keywords詳細:`, extraction.keywords.map(k => `${k.label}(${k.confidence})`).join(', '));
+
       // keywords + projects を統合（personsは除外 — 人名はナレッジマスタの対象外）
       const allKeywords = [
         ...extraction.keywords.filter(k => k.confidence >= 0.6),
@@ -96,11 +101,19 @@ export class ThoughtNodeService {
 
       result.extractedKeywords = allKeywords;
 
-      if (allKeywords.length === 0) return result;
+      if (allKeywords.length === 0) {
+        console.log(`[ThoughtNode] 信頼度0.6以上のキーワードなし → スキップ`);
+        return result;
+      }
+
+      console.log(`[ThoughtNode] 対象キーワード(${allKeywords.length}件): ${allKeywords.map(k => k.label).join(', ')}`);
 
       // 2. 各キーワードについて ナレッジマスタへの登録 + thought_task_nodes への紐づけ
       const sb = getServerSupabase() || getSupabase();
-      if (!sb) return result; // DBなしの場合はスキップ
+      if (!sb) {
+        console.log(`[ThoughtNode] Supabaseクライアントなし → スキップ`);
+        return result;
+      }
 
       // 現在の紐づけ数を取得（appear_order の算出用）
       let currentOrder = 0;
@@ -335,14 +348,21 @@ export class ThoughtNodeService {
 
     try {
       // Step 1: 既存エントリの完全一致を検索
-      const { data: exactMatch } = await sb
+      const { data: exactMatch, error: exactError } = await sb
         .from('knowledge_master_entries')
         .select('id')
         .ilike('label', normalizedLabel)
         .limit(1)
         .maybeSingle();
 
-      if (exactMatch) return exactMatch.id;
+      if (exactError) {
+        console.error(`[ThoughtNode] ensureMasterEntry exactMatch検索エラー:`, exactError);
+      }
+
+      if (exactMatch) {
+        console.log(`[ThoughtNode] "${normalizedLabel}" → 既存マスタ発見: ${exactMatch.id}`);
+        return exactMatch.id;
+      }
 
       // Step 2: シノニムで検索（synonyms配列にlabelが含まれるか）
       // PostgreSQLの配列検索: any()
@@ -356,9 +376,15 @@ export class ThoughtNodeService {
       if (synonymMatch) return synonymMatch.id;
 
       // Step 3: 既存のルールベース分類を試す
-      const classification = await KnowledgeMasterService.classifyKeyword(normalizedLabel);
+      let classification = null;
+      try {
+        classification = await KnowledgeMasterService.classifyKeyword(normalizedLabel);
+      } catch (classifyErr) {
+        console.error(`[ThoughtNode] classifyKeywordエラー:`, classifyErr);
+      }
 
       if (classification?.masterEntryId) {
+        console.log(`[ThoughtNode] "${normalizedLabel}" → ルールベース分類マッチ: ${classification.masterEntryId}`);
         return classification.masterEntryId;
       }
 
@@ -367,6 +393,7 @@ export class ThoughtNodeService {
       const fieldId = classification?.fieldId || null;
       const now = new Date().toISOString();
       const entryId = `me_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      console.log(`[ThoughtNode] "${normalizedLabel}" → 新規マスタエントリ作成: id=${entryId}`);
 
       const insertData: Record<string, unknown> = {
         id: entryId,
