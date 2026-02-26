@@ -3,6 +3,7 @@
 interface ChatworkBodyProps {
   body: string;
   className?: string;
+  isOwn?: boolean; // Phase 38: 送信メッセージ（青背景）の場合はtrue → 白系テキスト
 }
 
 /**
@@ -17,7 +18,7 @@ interface ChatworkBodyProps {
  * - ──── → 水平線
  * - @メンション → ハイライト
  */
-export default function ChatworkBody({ body, className = '' }: ChatworkBodyProps) {
+export default function ChatworkBody({ body, className = '', isOwn = false }: ChatworkBodyProps) {
   if (!body) return null;
 
   const blocks = parseFormattedBlocks(body);
@@ -25,7 +26,7 @@ export default function ChatworkBody({ body, className = '' }: ChatworkBodyProps
   return (
     <div className={`space-y-2 ${className}`}>
       {blocks.map((block, index) => (
-        <BlockRenderer key={index} block={block} />
+        <BlockRenderer key={index} block={block} isOwn={isOwn} />
       ))}
     </div>
   );
@@ -136,19 +137,19 @@ function parseFormattedBlocks(text: string): FormattedBlock[] {
   return blocks;
 }
 
-function BlockRenderer({ block }: { block: FormattedBlock }) {
+function BlockRenderer({ block, isOwn = false }: { block: FormattedBlock; isOwn?: boolean }) {
   switch (block.type) {
     case 'info':
       return (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+        <div className={isOwn ? 'bg-blue-500/30 border border-blue-400/40 rounded-lg px-3 py-2' : 'bg-blue-50 border border-blue-200 rounded-lg px-3 py-2'}>
           {block.title && (
-            <div className="font-semibold text-blue-800 text-xs mb-1 pb-1 border-b border-blue-200">
+            <div className={`font-semibold text-xs mb-1 pb-1 ${isOwn ? 'text-white border-b border-blue-400/40' : 'text-blue-800 border-b border-blue-200'}`}>
               {block.title}
             </div>
           )}
           {block.content && (
-            <div className="text-slate-700 text-[13px] whitespace-pre-wrap leading-relaxed mt-1">
-              <FormattedText text={block.content} />
+            <div className={`text-[13px] whitespace-pre-wrap leading-relaxed mt-1 ${isOwn ? 'text-blue-50' : 'text-slate-700'}`}>
+              <FormattedText text={block.content} isOwn={isOwn} />
             </div>
           )}
         </div>
@@ -163,21 +164,21 @@ function BlockRenderer({ block }: { block: FormattedBlock }) {
 
     case 'quote':
       return (
-        <div className="border-l-[3px] border-slate-300 pl-3 py-1 text-slate-500 text-[13px] italic">
+        <div className={`border-l-[3px] pl-3 py-1 text-[13px] italic ${isOwn ? 'border-blue-300 text-blue-100' : 'border-slate-300 text-slate-500'}`}>
           <div className="whitespace-pre-wrap leading-relaxed">
-            <FormattedText text={block.content} />
+            <FormattedText text={block.content} isOwn={isOwn} />
           </div>
         </div>
       );
 
     case 'hr':
-      return <hr className="border-slate-200 my-2" />;
+      return <hr className={isOwn ? 'border-blue-400/40 my-2' : 'border-slate-200 my-2'} />;
 
     case 'text':
     default:
       return (
-        <div className="text-slate-700 whitespace-pre-wrap leading-relaxed text-[13px]">
-          <FormattedText text={block.content} />
+        <div className={`whitespace-pre-wrap leading-relaxed text-[13px] ${isOwn ? 'text-white' : 'text-slate-700'}`}>
+          <FormattedText text={block.content} isOwn={isOwn} />
         </div>
       );
   }
@@ -186,7 +187,7 @@ function BlockRenderer({ block }: { block: FormattedBlock }) {
 /**
  * テキスト内の@メンション・引用返信マークをハイライト表示
  */
-function FormattedText({ text }: { text: string }) {
+function FormattedText({ text, isOwn = false }: { text: string; isOwn?: boolean }) {
   // URL, @メンション、>> 引用返信マーク をハイライト
   const parts = text.split(/(https?:\/\/[^\s<>"{}|\\^`[\]]+|@[^\s@\n]+|@全員|>> )/g);
 
@@ -200,7 +201,7 @@ function FormattedText({ text }: { text: string }) {
               href={part}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-600 hover:text-blue-800 underline break-all"
+              className={isOwn ? 'text-blue-100 hover:text-white underline break-all' : 'text-blue-600 hover:text-blue-800 underline break-all'}
             >
               {part.length > 60 ? part.slice(0, 57) + '...' : part}
             </a>
@@ -208,14 +209,14 @@ function FormattedText({ text }: { text: string }) {
         }
         if (part.startsWith('@')) {
           return (
-            <span key={i} className="text-blue-600 font-medium">
+            <span key={i} className={isOwn ? 'text-blue-100 font-medium' : 'text-blue-600 font-medium'}>
               {part}
             </span>
           );
         }
         if (part === '>> ') {
           return (
-            <span key={i} className="text-slate-400 text-xs mr-1">
+            <span key={i} className={isOwn ? 'text-blue-200 text-xs mr-1' : 'text-slate-400 text-xs mr-1'}>
               ↩ 返信:
             </span>
           );

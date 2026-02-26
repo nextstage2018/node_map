@@ -867,7 +867,7 @@ function ConversationBubble({ message }: { message: UnifiedMessage }) {
         )}
         {/* 本文 */}
         {message.channel === 'chatwork' ? (
-          <ChatworkBody body={message.body} className="text-[13px]" />
+          <ChatworkBody body={message.body} className="text-[13px]" isOwn={isOwn} />
         ) : (
           <LinkifiedText text={message.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
         )}
@@ -1054,7 +1054,7 @@ function EmailThreadDetail({
                 </span>
               </div>
               {message.channel === 'chatwork' ? (
-                <ChatworkBody body={msg.body} className="text-[13px]" />
+                <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
               ) : (
                 <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
                   {msg.body}
@@ -1234,7 +1234,7 @@ function SingleMessageDetail({
                     </span>
                   </div>
                   {message.channel === 'chatwork' ? (
-                    <ChatworkBody body={msg.body} className="text-[13px]" />
+                    <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
                   ) : (
                     <LinkifiedText text={msg.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
                   )}
