@@ -450,7 +450,7 @@ export default function SeedsPage() {
                   type="text"
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend(); } }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); } }}
                   placeholder="メッセージを入力..."
                   className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={isChatLoading}
