@@ -212,12 +212,23 @@ export default function SeedsPage() {
     }
   };
 
-  // Phase 31: 種を選択してAI会話パネルを開く
-  const openChat = (seed: Seed) => {
+  // Phase 31+40b: 種を選択してAI会話パネルを開く（過去の会話を読み込み）
+  const openChat = async (seed: Seed) => {
     setSelectedSeed(seed);
     setChatMessages([]);
     setConvertResult(null);
     setChatInput('');
+
+    // Phase 40b: DB から過去の会話履歴を読み込み
+    try {
+      const res = await fetch(`/api/seeds/chat?seedId=${seed.id}`);
+      const data = await res.json();
+      if (data.success && data.data && data.data.length > 0) {
+        setChatMessages(data.data);
+      }
+    } catch {
+      // 読み込み失敗時はサイレント（空の会話パネルで開始）
+    }
   };
 
   // 全タグのユニークリスト

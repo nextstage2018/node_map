@@ -1,10 +1,64 @@
 // Phase 31: 種AI会話 API
+// Phase 40b: 会話ログのDB永続化（GET: 履歴取得、POST: 送信＋保存）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
+import { getSupabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-// POST: 種の内容をコンテキストにしたAI会話
+// GET: 種の会話履歴を取得
+export async function GET(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const seedId = searchParams.get('seedId');
+    if (!seedId) {
+      return NextResponse.json(
+        { success: false, error: 'seedIdは必須です' },
+        { status: 400 }
+      );
+    }
+
+    const sb = getSupabase();
+    if (!sb) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
+    const { data, error } = await sb
+      .from('seed_conversations')
+      .select('*')
+      .eq('seed_id', seedId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('[Seeds Chat API] 履歴取得エラー:', error);
+      return NextResponse.json({ success: true, data: [] });
+    }
+
+    const messages = (data || []).map((row: any) => ({
+      role: row.role,
+      content: row.content,
+    }));
+
+    return NextResponse.json({ success: true, data: messages });
+  } catch (error) {
+    console.error('[Seeds Chat API] GET エラー:', error);
+    return NextResponse.json(
+      { success: false, error: '会話履歴の取得に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// POST: 種の内容をコンテキストにしたAI会話 + DB保存
 export async function POST(request: NextRequest) {
   try {
     const userId = await getServerUserId();
@@ -25,15 +79,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const sb = getSupabase();
+
     // Claude APIキーの確認
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       // デモモード: APIキー未設定時はデモ応答
+      const demoReply = `【デモ応答】「${message}」について考えてみましょう。\n\nこの種のアイデアを具体化するには、まず目的を明確にし、次に必要なステップを洗い出すことが重要です。何か気になる点はありますか？`;
+
+      // デモでもDB保存を試みる
+      if (sb) {
+        await sb.from('seed_conversations').insert([
+          { seed_id: seedId, role: 'user', content: message, user_id: userId },
+          { seed_id: seedId, role: 'assistant', content: demoReply, user_id: userId },
+        ]).then(() => {});
+      }
+
       return NextResponse.json({
         success: true,
-        data: {
-          reply: `【デモ応答】「${message}」について考えてみましょう。\n\nこの種のアイデアを具体化するには、まず目的を明確にし、次に必要なステップを洗い出すことが重要です。何か気になる点はありますか？`,
-        },
+        data: { reply: demoReply },
       });
     }
 
@@ -71,6 +135,18 @@ export async function POST(request: NextRequest) {
     const reply = response.content[0]?.type === 'text'
       ? response.content[0].text
       : '応答を生成できませんでした';
+
+    // Phase 40b: 会話をDB保存（ユーザーメッセージ + AI応答）
+    if (sb) {
+      try {
+        await sb.from('seed_conversations').insert([
+          { seed_id: seedId, role: 'user', content: message, user_id: userId },
+          { seed_id: seedId, role: 'assistant', content: reply, user_id: userId },
+        ]);
+      } catch (e) {
+        console.error('[Seeds Chat API] 会話保存エラー（応答は正常）:', e);
+      }
+    }
 
     return NextResponse.json({
       success: true,
