@@ -834,23 +834,36 @@ export class TaskService {
 
   // ===== 種ボックス管理 =====
 
-  static async getSeeds(userId?: string): Promise<Seed[]> {
+  static async getSeeds(userId?: string, status: string = 'all', search: string = ''): Promise<Seed[]> {
     const sb = getSupabase();
 
     if (!sb) {
       // Demo mode
-      return demoSeeds.filter((s) => s.status === 'pending');
+      let filtered = demoSeeds;
+      if (status && status !== 'all') {
+        filtered = filtered.filter((s) => s.status === status);
+      }
+      return filtered;
     }
 
     try {
       let query = sb
         .from('seeds')
         .select('*')
-        .eq('status', 'pending')
         .order('created_at', { ascending: false });
+
+      // ステータスフィルタ（allの場合はフィルタなし）
+      if (status && status !== 'all') {
+        query = query.eq('status', status);
+      }
 
       if (userId) {
         query = query.eq('user_id', userId);
+      }
+
+      // テキスト検索
+      if (search) {
+        query = query.ilike('content', `%${search}%`);
       }
 
       const { data: seeds, error } = await query;
@@ -889,15 +902,22 @@ export class TaskService {
       const insertData: any = {
         id: newSeed.id,
         content: newSeed.content,
-        source_channel: newSeed.sourceChannel,
-        source_message_id: newSeed.sourceMessageId,
-        source_from: newSeed.sourceFrom,
-        source_date: newSeed.sourceDate,
         status: newSeed.status,
         created_at: newSeed.createdAt,
       };
-      if (req.userId) {
-        insertData.user_id = req.userId;
+      // 任意フィールド: 値がある場合のみセット
+      if (newSeed.sourceChannel) insertData.source_channel = newSeed.sourceChannel;
+      if (newSeed.sourceMessageId) insertData.source_message_id = newSeed.sourceMessageId;
+      if (req.userId) insertData.user_id = req.userId;
+
+      // source_from / source_date は新カラム — カラム未追加でもエラーにならないよう分離
+      if (newSeed.sourceFrom) insertData.source_from = newSeed.sourceFrom;
+      if (newSeed.sourceDate) {
+        // TIMESTAMPTZ に変換可能か検証
+        const parsed = new Date(newSeed.sourceDate);
+        if (!isNaN(parsed.getTime())) {
+          insertData.source_date = parsed.toISOString();
+        }
       }
 
       const { data, error } = await sb
@@ -908,13 +928,25 @@ export class TaskService {
 
       if (error) {
         console.error('Error creating seed in Supabase:', error);
-        return newSeed;
+        // 新カラムが原因の可能性 → source_from/source_date を除いてリトライ
+        delete insertData.source_from;
+        delete insertData.source_date;
+        const { data: retryData, error: retryError } = await sb
+          .from('seeds')
+          .insert(insertData)
+          .select()
+          .single();
+        if (retryError) {
+          console.error('Error creating seed (retry):', retryError);
+          throw retryError;
+        }
+        return mapSeedFromDb(retryData);
       }
 
       return mapSeedFromDb(data);
     } catch (error) {
       console.error('Error creating seed:', error);
-      return newSeed;
+      throw error;
     }
   }
 

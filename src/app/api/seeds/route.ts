@@ -8,7 +8,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 
 // 種一覧取得
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
@@ -18,7 +18,11 @@ export async function GET() {
         { status: 401 }
       );
     }
-    const seeds = await TaskService.getSeeds(userId);
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status') || 'all';
+    const search = searchParams.get('search') || '';
+
+    const seeds = await TaskService.getSeeds(userId, status, search);
     return NextResponse.json({ success: true, data: seeds });
   } catch (error) {
     const message = error instanceof Error ? error.message : '不明なエラー';
