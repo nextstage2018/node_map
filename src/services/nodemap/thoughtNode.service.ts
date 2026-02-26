@@ -393,7 +393,7 @@ export class ThoughtNodeService {
       const fieldId = classification?.fieldId || null;
       const now = new Date().toISOString();
       const entryId = `me_auto_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      console.log(`[ThoughtNode] "${normalizedLabel}" → 新規マスタエントリ作成: id=${entryId}`);
+      console.log(`[ThoughtNode] "${normalizedLabel}" → 新規マスタエントリ作成: id=${entryId}, fieldId=${fieldId || 'なし(未分類)'}`);
 
       const insertData: Record<string, unknown> = {
         id: entryId,
