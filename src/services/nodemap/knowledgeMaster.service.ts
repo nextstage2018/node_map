@@ -440,14 +440,14 @@ export class KnowledgeMasterService {
             const lowerSynonyms = (entry.synonyms || []).map((s: string) => s.toLowerCase());
 
             // ステップ1: 完全一致（最高信頼度）
-            if (lowerLabel === lowerKeyword || lowerSynonyms.includes(lowerKeyword)) {
+            if (lowerLabel === normalizedLabel || lowerSynonyms.includes(normalizedLabel)) {
               bestMatch = { entry, confidence: 0.95 };
               break;
             }
 
             // ステップ2: 前方一致（高信頼度）
-            if (lowerLabel.startsWith(lowerKeyword) ||
-                lowerSynonyms.some((s: string) => s.startsWith(lowerKeyword))) {
+            if (lowerLabel.startsWith(normalizedLabel) ||
+                lowerSynonyms.some((s: string) => s.startsWith(normalizedLabel))) {
               if (!bestMatch || bestMatch.confidence < 0.85) {
                 bestMatch = { entry, confidence: 0.85 };
               }
@@ -455,10 +455,10 @@ export class KnowledgeMasterService {
             }
 
             // ステップ3: 部分一致（閾値付き、3文字以上のみ）
-            if (lowerKeyword.length >= 3) {
-              if (lowerLabel.includes(lowerKeyword) ||
-                  lowerSynonyms.some((s: string) => s.includes(lowerKeyword))) {
-                const ratio = lowerKeyword.length / lowerLabel.length;
+            if (normalizedLabel.length >= 3) {
+              if (lowerLabel.includes(normalizedLabel) ||
+                  lowerSynonyms.some((s: string) => s.includes(normalizedLabel))) {
+                const ratio = normalizedLabel.length / lowerLabel.length;
                 const adjustedConfidence = Math.min(0.7, 0.4 + ratio * 0.4);
                 if (!bestMatch || bestMatch.confidence < adjustedConfidence) {
                   bestMatch = { entry, confidence: adjustedConfidence };
@@ -469,8 +469,8 @@ export class KnowledgeMasterService {
 
           if (!bestMatch || bestMatch.confidence < 0.5) return null;
 
-          const field = fields.find((f: any) => f.id === bestMatch!.entry.fieldId);
-          const domain = field ? domains.find((d: any) => d.id === field.domainId) : null;
+          const field = fieldsRes.data.find((f: any) => f.id === bestMatch!.entry.field_id);
+          const domain = field ? domainsRes.data.find((d: any) => d.id === field.domain_id) : null;
           if (!field || !domain) return null;
 
           return {
@@ -494,27 +494,27 @@ export class KnowledgeMasterService {
     // BugFix⑧: 3段階マッチ（完全一致→前方一致→部分一致）
     let bestMatch: { entry: any; confidence: number } | null = null;
 
-    for (const entry of entries) {
+    for (const entry of entriesStore) {
       const lowerLabel = entry.label.toLowerCase();
       const lowerSynonyms = (entry.synonyms || []).map((s: string) => s.toLowerCase());
 
-      if (lowerLabel === lowerKeyword || lowerSynonyms.includes(lowerKeyword)) {
+      if (lowerLabel === normalizedLabel || lowerSynonyms.includes(normalizedLabel)) {
         bestMatch = { entry, confidence: 0.95 };
         break;
       }
 
-      if (lowerLabel.startsWith(lowerKeyword) ||
-          lowerSynonyms.some((s: string) => s.startsWith(lowerKeyword))) {
+      if (lowerLabel.startsWith(normalizedLabel) ||
+          lowerSynonyms.some((s: string) => s.startsWith(normalizedLabel))) {
         if (!bestMatch || bestMatch.confidence < 0.85) {
           bestMatch = { entry, confidence: 0.85 };
         }
         continue;
       }
 
-      if (lowerKeyword.length >= 3) {
-        if (lowerLabel.includes(lowerKeyword) ||
-            lowerSynonyms.some((s: string) => s.includes(lowerKeyword))) {
-          const ratio = lowerKeyword.length / lowerLabel.length;
+      if (normalizedLabel.length >= 3) {
+        if (lowerLabel.includes(normalizedLabel) ||
+            lowerSynonyms.some((s: string) => s.includes(normalizedLabel))) {
+          const ratio = normalizedLabel.length / lowerLabel.length;
           const adjustedConfidence = Math.min(0.7, 0.4 + ratio * 0.4);
           if (!bestMatch || bestMatch.confidence < adjustedConfidence) {
             bestMatch = { entry, confidence: adjustedConfidence };
@@ -525,8 +525,8 @@ export class KnowledgeMasterService {
 
     if (!bestMatch || bestMatch.confidence < 0.5) return null;
 
-    const field = fields.find((f: any) => f.id === bestMatch!.entry.fieldId);
-    const domain = field ? domains.find((d: any) => d.id === field.domainId) : null;
+    const field = fieldsStore.find((f: any) => f.id === bestMatch!.entry.fieldId);
+    const domain = field ? domainsStore.find((d: any) => d.id === field.domainId) : null;
     if (!field || !domain) return null;
 
     return {

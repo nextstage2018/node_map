@@ -482,40 +482,54 @@ export class ThoughtNodeService {
       if (taskId) insertData.task_id = taskId;
       if (seedId) insertData.seed_id = seedId;
 
-      // UPSERT: 同じtask+nodeまたはseed+nodeの組み合わせは更新のみ
-      // appear_orderは最初の出現順序を保持したいのでINSERT時のみ
+      // まず既存レコードをチェック（UNIQUE制約がない場合でも重複を防ぐ）
+      let existQuery = sb
+        .from('thought_task_nodes')
+        .select('id, node_id, appear_order, appear_phase, created_at')
+        .eq('node_id', nodeId);
+      if (taskId) existQuery = existQuery.eq('task_id', taskId);
+      if (seedId) existQuery = existQuery.eq('seed_id', seedId);
+      const { data: existing } = await existQuery.maybeSingle();
+
+      if (existing) {
+        // 既に紐づけ済み → そのまま返す
+        return {
+          id: existing.id,
+          taskId,
+          seedId,
+          nodeId,
+          userId,
+          appearOrder: existing.appear_order,
+          appearPhase: existing.appear_phase,
+          createdAt: existing.created_at,
+        };
+      }
+
+      // 新規INSERT
       const { data, error } = await sb
         .from('thought_task_nodes')
-        .upsert(insertData, {
-          onConflict: taskId ? 'task_id,node_id' : 'seed_id,node_id',
-          ignoreDuplicates: true, // 既存のものは更新しない（出現順を保持）
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) {
-        // テーブルが存在しない場合のフォールバック（マイグレーション未実行）
+        // テーブルが存在しない場合
         if (error.message?.includes('relation') || error.code === '42P01') {
           console.warn('[ThoughtNode] thought_task_nodes テーブルが未作成です。マイグレーション 023 を実行してください。');
           return null;
         }
-        // UNIQUE制約違反はOK（既存ノード）
+        // UNIQUE制約違反はOK（既存ノード＝レースコンディション）
         if (error.code === '23505') {
           return {
             id: 'existing',
-            taskId,
-            seedId,
-            nodeId,
-            userId,
-            appearOrder,
-            appearPhase,
-            createdAt: now,
+            taskId, seedId, nodeId, userId, appearOrder, appearPhase, createdAt: now,
           };
         }
         console.error('[ThoughtNode] linkToTaskOrSeed エラー:', error);
         return null;
       }
 
+      console.log(`[ThoughtNode] ノード紐づけ成功: nodeId=${nodeId}, id=${data?.id}`);
       return {
         id: data?.id || '',
         taskId: data?.task_id,
