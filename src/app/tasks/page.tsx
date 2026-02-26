@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -55,9 +55,9 @@ export default function TasksPage() {
   const [seedBoxExpanded, setSeedBoxExpanded] = useState(false);
 
   // suggestionsが変わったらvisibleに反映
-  useState(() => {
+  useEffect(() => {
     setVisibleSuggestions(suggestions);
-  });
+  }, [suggestions]);
 
   // ドラッグ&ドロップ設定
   const sensors = useSensors(

@@ -1,5 +1,6 @@
 // Phase 28: 種（Seed）API — ナレッジパイプライン統合
 // POST時にパイプラインを呼び出してキーワード抽出→ナレッジ登録
+// Phase 40: PUT/DELETE追加、createSeed引数修正
 
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
@@ -49,13 +50,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 種を作成
-    const seed = await TaskService.createSeed(
-      body.content,
-      body.sourceChannel,
-      body.sourceMessageId,
-      userId
-    );
+    // Phase 40: オブジェクト引数で渡す（createSeedのシグネチャに合わせる）
+    const seed = await TaskService.createSeed({
+      content: body.content,
+      sourceChannel: body.sourceChannel,
+      sourceMessageId: body.sourceMessageId,
+      userId,
+    });
 
     // Phase 28: ナレッジパイプライン実行（await で確実に完了させる）
     let knowledgeResult = null;
@@ -86,6 +87,83 @@ export async function POST(request: NextRequest) {
     console.error('[Seeds API] 種の作成エラー:', message);
     return NextResponse.json(
       { success: false, error: '種の作成に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// Phase 40: 種の更新
+export async function PUT(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    if (!body.seedId || !body.content) {
+      return NextResponse.json(
+        { success: false, error: 'seedId と content は必須です' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await TaskService.updateSeed(body.seedId, body.content, body.tags);
+    if (!updated) {
+      return NextResponse.json(
+        { success: false, error: '種が見つかりません' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Seeds API] 種の更新エラー:', message);
+    return NextResponse.json(
+      { success: false, error: '種の更新に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// Phase 40: 種の削除
+export async function DELETE(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const seedId = searchParams.get('seedId');
+    if (!seedId) {
+      return NextResponse.json(
+        { success: false, error: 'seedId は必須です' },
+        { status: 400 }
+      );
+    }
+
+    const deleted = await TaskService.deleteSeed(seedId);
+    if (!deleted) {
+      return NextResponse.json(
+        { success: false, error: '種が見つかりません' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Seeds API] 種の削除エラー:', message);
+    return NextResponse.json(
+      { success: false, error: '種の削除に失敗しました' },
       { status: 500 }
     );
   }

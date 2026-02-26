@@ -831,7 +831,7 @@ export class TaskService {
 
   // ===== 種ボックス管理 =====
 
-  static async getSeeds(): Promise<Seed[]> {
+  static async getSeeds(userId?: string): Promise<Seed[]> {
     const sb = getSupabase();
 
     if (!sb) {
@@ -840,11 +840,17 @@ export class TaskService {
     }
 
     try {
-      const { data: seeds, error } = await sb
+      let query = sb
         .from('seeds')
         .select('*')
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { data: seeds, error } = await query;
 
       if (error) throw error;
 
@@ -855,7 +861,7 @@ export class TaskService {
     }
   }
 
-  static async createSeed(req: CreateSeedRequest): Promise<Seed> {
+  static async createSeed(req: CreateSeedRequest & { userId?: string }): Promise<Seed> {
     const sb = getSupabase();
     const now = new Date().toISOString();
 
@@ -875,16 +881,21 @@ export class TaskService {
     }
 
     try {
+      const insertData: any = {
+        id: newSeed.id,
+        content: newSeed.content,
+        source_channel: newSeed.sourceChannel,
+        source_message_id: newSeed.sourceMessageId,
+        status: newSeed.status,
+        created_at: newSeed.createdAt,
+      };
+      if (req.userId) {
+        insertData.user_id = req.userId;
+      }
+
       const { data, error } = await sb
         .from('seeds')
-        .insert({
-          id: newSeed.id,
-          content: newSeed.content,
-          source_channel: newSeed.sourceChannel,
-          source_message_id: newSeed.sourceMessageId,
-          status: newSeed.status,
-          created_at: newSeed.createdAt,
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -897,6 +908,77 @@ export class TaskService {
     } catch (error) {
       console.error('Error creating seed:', error);
       return newSeed;
+    }
+  }
+
+  // 種の更新
+  static async updateSeed(seedId: string, content: string, tags?: string[]): Promise<Seed | null> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+
+    if (!sb) {
+      // Demo mode
+      const idx = demoSeeds.findIndex((s) => s.id === seedId);
+      if (idx === -1) return null;
+      demoSeeds[idx] = { ...demoSeeds[idx], content };
+      return demoSeeds[idx];
+    }
+
+    try {
+      const updateData: any = {
+        content,
+        updated_at: now,
+      };
+      if (tags !== undefined) {
+        updateData.tags = tags;
+      }
+
+      const { data, error } = await sb
+        .from('seeds')
+        .update(updateData)
+        .eq('id', seedId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating seed in Supabase:', error);
+        return null;
+      }
+
+      return mapSeedFromDb(data);
+    } catch (error) {
+      console.error('Error updating seed:', error);
+      return null;
+    }
+  }
+
+  // 種の削除
+  static async deleteSeed(seedId: string): Promise<boolean> {
+    const sb = getSupabase();
+
+    if (!sb) {
+      // Demo mode
+      const idx = demoSeeds.findIndex((s) => s.id === seedId);
+      if (idx === -1) return false;
+      demoSeeds.splice(idx, 1);
+      return true;
+    }
+
+    try {
+      const { error } = await sb
+        .from('seeds')
+        .delete()
+        .eq('id', seedId);
+
+      if (error) {
+        console.error('Error deleting seed in Supabase:', error);
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error deleting seed:', error);
+      return false;
     }
   }
 
