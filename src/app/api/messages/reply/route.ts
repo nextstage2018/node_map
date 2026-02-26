@@ -1,4 +1,5 @@
 // Phase 28: メッセージ返信API — ナレッジパイプライン統合
+// Phase 38: 返信メッセージをDB（inbox_messages）に保存
 // 送信時にパイプラインを呼び出して自分の発信内容からキーワード抽出→ナレッジ登録
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -8,13 +9,15 @@ import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service'
 import { getServerUserId } from '@/lib/serverAuth';
 import { createServerClient } from '@/lib/supabase';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
+import { saveMessages } from '@/services/inbox/inboxStorage.service';
+import type { UnifiedMessage, ChannelType } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
     const userId = await getServerUserId();
     const body = await request.json();
 
-    const { messageId, channel, to, subject, body: replyBody, threadId } = body;
+    const { messageId, channel, to, cc, bcc, subject, body: replyBody, threadId, metadata } = body;
 
     if (!replyBody || !channel) {
       return NextResponse.json(
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DB上のステータスを更新（replied）
+    // DB上の元メッセージのステータスを更新（replied）
     const supabase = createServerClient();
     if (supabase && messageId) {
       try {
@@ -87,6 +90,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Phase 38: 返信メッセージをDBに保存（direction='sent'）
+    const now = new Date().toISOString();
+    const sentReplyId = `sent-reply-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    // 元メッセージのメタデータを引き継ぎつつ、送信メッセージとして保存
+    const toRecipients = Array.isArray(to) ? to : (to ? [to] : []);
+    const ccRecipients = Array.isArray(cc) ? cc : (cc ? [cc] : []);
+
+    const sentMessage: UnifiedMessage = {
+      id: sentReplyId,
+      channel: channel as ChannelType,
+      channelIcon: '',
+      from: { name: 'あなた', address: userId || 'me' },
+      to: toRecipients.map((addr: string) => ({ name: '', address: addr })),
+      cc: ccRecipients.length > 0 ? ccRecipients.map((addr: string) => ({ name: '', address: addr })) : undefined,
+      subject: subject || undefined,
+      body: replyBody,
+      timestamp: now,
+      isRead: true,
+      status: 'read',
+      direction: 'sent',
+      threadId: threadId || messageId || undefined,
+      metadata: {
+        // 元メッセージのメタデータを引き継ぎ（同じスレッド/ルームにグルーピングされるように）
+        slackChannel: metadata?.slackChannel || undefined,
+        slackChannelName: metadata?.slackChannelName || undefined,
+        slackTs: sendResult.messageId || undefined,
+        slackThreadTs: metadata?.slackThreadTs || metadata?.slackTs || undefined,
+        chatworkRoomId: metadata?.chatworkRoomId || undefined,
+        chatworkRoomName: metadata?.chatworkRoomName || undefined,
+        chatworkMessageId: sendResult.messageId || undefined,
+        messageId: sendResult.messageId || undefined,
+      },
+    };
+
+    try {
+      await saveMessages([sentMessage]);
+      console.log(`[Reply API] Phase 38: 返信メッセージをDBに保存 id=${sentReplyId}`);
+    } catch (saveErr) {
+      console.error('[Reply API] 返信メッセージの保存に失敗（送信は成功）:', saveErr);
+    }
+
     // Phase 28: ナレッジパイプライン実行（送信内容からキーワード抽出）
     let knowledgeResult = null;
     try {
@@ -94,7 +139,7 @@ export async function POST(request: NextRequest) {
       knowledgeResult = await triggerKnowledgePipeline({
         text,
         trigger: 'message_send',
-        sourceId: messageId || `reply-${Date.now()}`,
+        sourceId: sentReplyId,
         sourceType: 'message',
         direction: 'sent',
         userId,
@@ -107,6 +152,7 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         messageId: sendResult.messageId,
+        sentReplyId, // Phase 38: 保存されたメッセージのID
         channel,
       },
       knowledge: knowledgeResult ? {

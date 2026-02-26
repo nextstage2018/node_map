@@ -8,6 +8,7 @@ import { sendEmail } from '@/services/email/emailClient.service';
 import { sendSlackMessage } from '@/services/slack/slackClient.service';
 import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service';
 import { saveMessages } from '@/services/inbox/inboxStorage.service';
+import { getServerUserId } from '@/lib/serverAuth';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -17,6 +18,7 @@ function isValidEmail(email: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    const userId = await getServerUserId();
     const body = await request.json();
     const { channel, body: messageBody, to, cc, subject, slackChannel, chatworkRoomId } = body;
 
@@ -133,13 +135,14 @@ export async function POST(request: NextRequest) {
       id: `sent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       channel: channel as ChannelType,
       channelIcon: '',
-      from: { name: 'Me', address: '' },
+      from: { name: 'あなた', address: userId || 'me' },
       to: toAddresses.map((addr: string) => ({ name: '', address: addr })),
       subject: subject || undefined,
       body: messageBody,
       timestamp: now,
       isRead: true,
-      status: 'replied',
+      status: 'read',
+      direction: 'sent', // Phase 38: 送信メッセージとして記録
       metadata: {
         slackChannel: slackChannel || undefined,
         chatworkRoomId: chatworkRoomId || undefined,

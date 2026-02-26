@@ -10,10 +10,11 @@ import MessageDetail from '@/components/inbox/MessageDetail';
 import ComposeMessage from '@/components/inbox/ComposeMessage';
 
 export default function InboxPage() {
-  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, addSentMessage, markGroupAsRead } =
+  const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, sentCount, addSentMessage, markGroupAsRead } =
     useMessages();
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
-  const [filter, setFilter] = useState<ChannelType | 'all'>('all');
+  // Phase 38: フィルタ型に 'sent' を追加
+  const [filter, setFilter] = useState<ChannelType | 'all' | 'sent'>('all');
   const [showCompose, setShowCompose] = useState(false);
 
   // messageGroupsから最新のselectedGroupを取得（既読状態が反映される）
@@ -58,10 +59,11 @@ export default function InboxPage() {
     <div className="flex flex-col h-screen bg-white">
       <Header />
       <div className="flex flex-1 overflow-hidden">
-        {/* Phase 25: Sidebarにフィルタpropsを渡す */}
+        {/* Phase 25+38: Sidebarにフィルタpropsを渡す */}
         <Sidebar
           messageCounts={messageCounts}
           unreadCounts={unreadCounts}
+          sentCount={sentCount}
           activeFilter={filter}
           onFilterChange={setFilter}
         />
@@ -70,13 +72,13 @@ export default function InboxPage() {
           <div className="w-96 border-r border-slate-200 flex flex-col overflow-hidden">
             <div className="p-3 border-b border-slate-200 flex items-center justify-between shrink-0">
               <h2 className="text-sm font-semibold text-slate-900">
-                統合インボックス
+                {filter === 'sent' ? '送信済み' : '統合インボックス'}
               </h2>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
                     setShowCompose(true);
-                    setSelectedGroup(null);
+                    setSelectedGroupKey(null);
                   }}
                   className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-md hover:bg-blue-700 transition-colors"
                 >

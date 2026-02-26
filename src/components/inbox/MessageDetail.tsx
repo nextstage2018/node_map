@@ -822,8 +822,8 @@ function GroupDetail({
  * 会話バブル：個別メッセージをチャット風に表示
  */
 function ConversationBubble({ message }: { message: UnifiedMessage }) {
-  // 「あなた」からの送信かどうか判定
-  const isOwn = message.from.name === 'あなた';
+  // Phase 38: direction フィールドまたは名前で送受信を判定
+  const isOwn = message.direction === 'sent' || message.from.name === 'あなた' || message.from.name === 'Me';
 
   return (
     <div className={cn('flex', isOwn ? 'justify-end' : 'justify-start')}>

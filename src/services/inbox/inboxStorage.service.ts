@@ -57,6 +57,8 @@ export async function saveMessages(messages: UnifiedMessage[]): Promise<number> 
       thread_id: msg.threadId || null,
       metadata: msg.metadata,
       thread_messages: msg.threadMessages || [],
+      // Phase 38: 送信/受信の方向
+      direction: msg.direction || 'received',
     }));
 
     // バッチでupsert（50件ずつ）
@@ -94,6 +96,7 @@ export async function loadMessages(options?: {
   limit?: number;
   offset?: number;
   since?: string; // ISO日時
+  direction?: 'received' | 'sent' | 'all'; // Phase 38: 方向フィルタ
 }): Promise<{ messages: UnifiedMessage[]; total: number }> {
   const supabase = getSupabase();
   if (!supabase || !isSupabaseConfigured()) {
@@ -111,6 +114,10 @@ export async function loadMessages(options?: {
 
     if (options?.channel) {
       query = query.eq('channel', options.channel);
+    }
+    // Phase 38: 方向フィルタ（デフォルトは全て取得）
+    if (options?.direction && options.direction !== 'all') {
+      query = query.eq('direction', options.direction);
     }
     if (options?.since) {
       query = query.gte('timestamp', options.since);
@@ -150,6 +157,7 @@ export async function loadMessages(options?: {
       timestamp: row.timestamp,
       isRead: row.is_read,
       status: row.status,
+      direction: row.direction || 'received', // Phase 38
       threadId: row.thread_id || undefined,
       metadata: row.metadata || {},
       threadMessages: row.thread_messages || undefined,

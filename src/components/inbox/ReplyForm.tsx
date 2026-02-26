@@ -224,7 +224,7 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
 
         // 送信メッセージをローカルに追加（即時表示）
         const sentMsg: UnifiedMessage = {
-          id: `sent-reply-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: data.data?.sentReplyId || `sent-reply-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           channel: message.channel,
           channelIcon: message.channelIcon,
           from: { name: 'あなた', address: 'me' },
@@ -235,6 +235,7 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
           timestamp: new Date().toISOString(),
           isRead: true,
           status: 'read',
+          direction: 'sent', // Phase 38
           threadId: message.threadId,
           metadata: {
             ...message.metadata,

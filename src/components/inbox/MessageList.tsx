@@ -14,8 +14,8 @@ interface MessageListProps {
   selectedGroupKey?: string;
   selectedMessageId?: string;
   onSelectGroup: (group: MessageGroup) => void;
-  filter: ChannelType | 'all';
-  onFilterChange: (filter: ChannelType | 'all') => void;
+  filter: ChannelType | 'all' | 'sent';
+  onFilterChange: (filter: ChannelType | 'all' | 'sent') => void;
   onLoadMore?: () => void;
   isLoadingMore?: boolean;
   hasMore?: boolean;
@@ -31,10 +31,13 @@ export default function MessageList({
   isLoadingMore,
   hasMore,
 }: MessageListProps) {
+  // Phase 38: 'sent' フィルタ対応
   const filteredGroups =
     filter === 'all'
       ? messageGroups
-      : messageGroups.filter((g) => g.channel === filter);
+      : filter === 'sent'
+        ? messageGroups.filter((g) => g.messages.some((m) => m.direction === 'sent'))
+        : messageGroups.filter((g) => g.channel === filter);
 
   const filters: { value: ChannelType | 'all'; label: string; icon?: string }[] = [
     { value: 'all', label: 'すべて' },

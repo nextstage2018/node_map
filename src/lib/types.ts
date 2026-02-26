@@ -6,6 +6,9 @@ export type ChannelType = 'email' | 'slack' | 'chatwork';
 // メッセージのステータス
 export type MessageStatus = 'unread' | 'read' | 'replied';
 
+// メッセージの方向（送信/受信）
+export type MessageDirection = 'received' | 'sent';
+
 // 統合メッセージの共通型
 export interface UnifiedMessage {
   id: string;
@@ -29,6 +32,7 @@ export interface UnifiedMessage {
   timestamp: string; // ISO 8601
   isRead: boolean;
   status: MessageStatus;
+  direction?: MessageDirection; // Phase 38: 送信/受信の区別
   threadId?: string;
   threadMessages?: ThreadMessage[]; // スレッド内の前後メッセージ
   // Channel-specific metadata

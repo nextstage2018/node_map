@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { CHANNEL_CONFIG } from '@/lib/constants';
 import { ChannelType } from '@/lib/types';
-import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, Target, FileText, AlertTriangle, Calendar, Lightbulb, ArrowRight, CheckCircle } from 'lucide-react';
+import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, Target, FileText, AlertTriangle, Calendar, Lightbulb, ArrowRight, CheckCircle, Send } from 'lucide-react';
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   '/icons/nav-inbox.svg': Inbox,
@@ -24,13 +24,13 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 interface SidebarProps {
   messageCounts: Record<ChannelType, number>;
   unreadCounts: Record<ChannelType, number>;
-  activeFilter?: ChannelType | 'all';
-  onFilterChange?: (filter: ChannelType | 'all') => void;
+  sentCount?: number; // Phase 38: 送信済みメッセージ数
+  activeFilter?: ChannelType | 'all' | 'sent';
+  onFilterChange?: (filter: ChannelType | 'all' | 'sent') => void;
 }
 
-export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'all', onFilterChange }: SidebarProps) {
+export default function Sidebar({ messageCounts, unreadCounts, sentCount = 0, activeFilter = 'all', onFilterChange }: SidebarProps) {
   const channels: ChannelType[] = ['email', 'slack', 'chatwork'];
-  const totalMessages = Object.values(messageCounts).reduce((a, b) => a + b, 0);
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
   return (
@@ -64,7 +64,6 @@ export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'a
           {/* 各チャネル */}
           {channels.map((ch) => {
             const config = CHANNEL_CONFIG[ch];
-            const count = messageCounts[ch];
             const unread = unreadCounts[ch] || 0;
             const isActive = activeFilter === ch;
             return (
@@ -97,6 +96,28 @@ export default function Sidebar({ messageCounts, unreadCounts, activeFilter = 'a
               </li>
             );
           })}
+
+          {/* Phase 38: 送信済み */}
+          <li className="mt-3 pt-3 border-t border-slate-200">
+            <div
+              onClick={() => onFilterChange?.('sent')}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors ${
+                activeFilter === 'sent'
+                  ? 'bg-white text-slate-900 shadow-sm font-medium'
+                  : 'text-slate-600 hover:bg-white'
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <Send className="w-4 h-4 text-slate-500" />
+                送信済み
+              </span>
+              {sentCount > 0 && (
+                <span className="text-xs text-slate-400">
+                  {sentCount}
+                </span>
+              )}
+            </div>
+          </li>
         </ul>
       </div>
     </aside>

@@ -169,6 +169,9 @@ export function useMessages() {
     chatwork: messages.filter((m) => m.channel === 'chatwork' && !m.isRead).length,
   };
 
+  // Phase 38: 送信済みメッセージ数
+  const sentCount = messages.filter((m) => m.direction === 'sent').length;
+
   // 強制更新（更新ボタン用）
   const forceRefresh = useCallback(() => {
     clientMessageCache = null; // キャッシュ破棄
@@ -223,6 +226,7 @@ export function useMessages() {
     hasMore,
     messageCounts,
     unreadCounts,
+    sentCount, // Phase 38
     addSentMessage,
     markGroupAsRead,
   };

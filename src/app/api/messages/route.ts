@@ -189,6 +189,8 @@ export async function GET(request: NextRequest) {
     const page = Number(searchParams.get('page')) || 1;
     const limit = Number(searchParams.get('limit')) || 50;
     const forceRefresh = searchParams.get('refresh') === 'true';
+    // Phase 38: 方向フィルタ（all=全て, sent=送信のみ, received=受信のみ）
+    const directionFilter = (searchParams.get('direction') || 'all') as 'all' | 'sent' | 'received';
 
     // キャッシュチェック（強制更新でなければ）
     if (!forceRefresh) {
@@ -247,6 +249,7 @@ export async function GET(request: NextRequest) {
         const dbResult = await loadMessages({
           since: rangeStart.toISOString(),
           limit: 200,
+          direction: directionFilter, // Phase 38: 方向フィルタ対応
         });
         allMessages = dbResult.messages;
 
