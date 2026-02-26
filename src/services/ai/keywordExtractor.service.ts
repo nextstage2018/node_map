@@ -57,9 +57,15 @@ export async function extractKeywords(
       ],
     });
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : null;
+    let content = response.content[0]?.type === 'text' ? response.content[0].text : null;
     if (!content) {
       return getDemoExtraction(request.text);
+    }
+
+    // Claude APIがマークダウンコードブロックで返す場合があるので除去
+    content = content.trim();
+    if (content.startsWith('```')) {
+      content = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
     }
 
     const parsed = JSON.parse(content);
