@@ -2,7 +2,7 @@
 // Phase 40b: 会話ログのDB永続化（GET: 履歴取得、POST: 送信＋保存）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
-import { getSupabase } from '@/lib/supabase';
+import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
     if (!sb) {
       return NextResponse.json({ success: true, data: [] });
     }
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sb = getSupabase();
+    const sb = getServerSupabase() || getSupabase();
 
     // Claude APIキーの確認
     const apiKey = process.env.ANTHROPIC_API_KEY;

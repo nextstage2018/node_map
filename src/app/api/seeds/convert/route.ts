@@ -82,19 +82,24 @@ export async function POST(request: NextRequest) {
         result = { type: 'knowledge', keywords: [], newKeywords: [], nodeCount: 0 };
       }
     } else {
-      // Phase 40c: タスクに変換（TaskService経由 — RLS整合性を保証）
+      // Phase 41: タスクに変換（confirmSeed経由 — AI構造化＋会話履歴引き継ぎ）
+      // projectId が指定されている場合は先に種に紐づけ
       const taskProjectId = projectId || seed.project_id;
+      if (taskProjectId && !seed.project_id) {
+        await supabase
+          .from('seeds')
+          .update({ project_id: taskProjectId })
+          .eq('id', seedId);
+      }
 
       try {
-        const task = await TaskService.createTask({
-          title: seed.content.slice(0, 60),
-          description: seed.content,
-          priority: 'medium',
-          seedId: seed.id,
-          projectId: taskProjectId || undefined,
-          userId,  // TaskService.createTask が (req as any).userId で取得
-        } as any);
-
+        const task = await TaskService.confirmSeed(seedId, userId);
+        if (!task) {
+          return NextResponse.json(
+            { success: false, error: 'タスクの作成に失敗しました' },
+            { status: 500 }
+          );
+        }
         result = { type: 'task', task };
       } catch (taskError) {
         console.error('[Seeds Convert API] タスク作成エラー:', taskError);
@@ -105,14 +110,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 種のステータスを confirmed に更新
-    const { error: updateError } = await supabase
-      .from('seeds')
-      .update({ status: 'confirmed' })
-      .eq('id', seedId);
+    // 種のステータスを confirmed に更新（ナレッジ変換時のみ — タスク変換はconfirmSeed内で更新済み）
+    if (targetType === 'knowledge') {
+      const { error: updateError } = await supabase
+        .from('seeds')
+        .update({ status: 'confirmed' })
+        .eq('id', seedId);
 
-    if (updateError) {
-      console.error('[Seeds Convert API] 種ステータス更新エラー:', updateError);
+      if (updateError) {
+        console.error('[Seeds Convert API] 種ステータス更新エラー:', updateError);
+      }
     }
 
     return NextResponse.json({ success: true, data: result });

@@ -1049,6 +1049,76 @@ export class TaskService {
     }
   }
 
+  // AI構造化: 種の内容＋会話履歴からタスク情報を生成
+  private static async structureSeedWithAI(
+    seedContent: string,
+    conversations: { role: string; content: string }[],
+  ): Promise<{ title: string; goal: string; content: string; concerns: string; deadline: string; memo: string; priority: string }> {
+    const fallback = {
+      title: seedContent.length > 50 ? seedContent.slice(0, 50) + '...' : seedContent,
+      goal: '',
+      content: seedContent,
+      concerns: '',
+      deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      memo: '',
+      priority: 'medium',
+    };
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return fallback;
+
+    try {
+      // 会話履歴をテキスト化
+      const convText = conversations.length > 0
+        ? '\n\n--- AI会話履歴 ---\n' + conversations.map(c => `[${c.role === 'user' ? 'ユーザー' : 'AI'}] ${c.content}`).join('\n')
+        : '';
+
+      const { default: Anthropic } = await import('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey });
+
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 600,
+        system: `あなたはタスク構造化の専門家です。種（アイデアメモ）の内容とAI会話履歴から、タスクの構造化情報をJSON形式で返してください。
+
+必ず以下のJSON形式で返してください（他のテキストは不要）:
+{
+  "title": "タスクのタイトル（30文字以内、簡潔に）",
+  "goal": "このタスクのゴール（1-2文）",
+  "content": "主な内容・やるべきこと（箇条書き的に）",
+  "concerns": "気になる点・注意事項（なければ空文字）",
+  "deadline": "期限日（YYYY-MM-DD形式。明示されていなければ1週間後）",
+  "memo": "種の情報要約（元のメッセージ内容・会話で判明したことのまとめ）",
+  "priority": "high/medium/low（緊急度から判断）"
+}`,
+        messages: [
+          { role: 'user', content: `以下の種をタスクに構造化してください:\n\n${seedContent}${convText}` },
+        ],
+      });
+
+      const text = response.content[0]?.type === 'text' ? response.content[0].text : null;
+      if (!text) return fallback;
+
+      // JSON部分を抽出（```json...```やそのまま）
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return fallback;
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        title: parsed.title || fallback.title,
+        goal: parsed.goal || '',
+        content: parsed.content || seedContent,
+        concerns: parsed.concerns || '',
+        deadline: parsed.deadline || fallback.deadline,
+        memo: parsed.memo || '',
+        priority: ['high', 'medium', 'low'].includes(parsed.priority) ? parsed.priority : 'medium',
+      };
+    } catch (e) {
+      console.error('AI structuring failed, using fallback:', e);
+      return fallback;
+    }
+  }
+
   static async confirmSeed(seedId: string, userId?: string): Promise<Task | null> {
     const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
@@ -1057,17 +1127,7 @@ export class TaskService {
       // Demo mode
       const seed = demoSeeds.find((s) => s.id === seedId);
       if (!seed || seed.status === 'confirmed') return null;
-
-      // AI構造化をシミュレート
-      seed.structured = {
-        goal: `${seed.content.slice(0, 30)}... のゴール達成`,
-        content: seed.content,
-        concerns: '詳細な要件の整理が必要',
-        deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      };
       seed.status = 'confirmed';
-
-      // タスクを生成
       const newTask: Task = {
         id: crypto.randomUUID(),
         title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
@@ -1078,19 +1138,17 @@ export class TaskService {
         sourceMessageId: seed.sourceMessageId,
         sourceChannel: seed.sourceChannel,
         conversations: [],
-        ideationSummary: `【ゴール】${seed.structured.goal}\n【主な内容】${seed.structured.content}\n【気になる点】${seed.structured.concerns}\n【期限】${seed.structured.deadline}`,
         createdAt: now,
         updatedAt: now,
         tags: [],
         seedId: seed.id,
-        dueDate: seed.structured.deadline,
       };
       demoTasks.unshift(newTask);
       return newTask;
     }
 
     try {
-      // Fetch the seed
+      // 種を取得
       const { data: seed, error: seedError } = await sb
         .from('seeds')
         .select('*')
@@ -1100,41 +1158,62 @@ export class TaskService {
       if (seedError || !seed) return null;
       if (seed.status === 'confirmed') return null;
 
-      // AI構造化をシミュレート
-      const structured = {
-        goal: `${seed.content.slice(0, 30)}... のゴール達成`,
-        content: seed.content,
-        concerns: '詳細な要件の整理が必要',
-        deadline: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-      };
+      // 種のAI会話履歴を取得
+      let conversations: { role: string; content: string }[] = [];
+      try {
+        const { data: convData } = await sb
+          .from('seed_conversations')
+          .select('role, content')
+          .eq('seed_id', seedId)
+          .order('created_at', { ascending: true });
+        if (convData) conversations = convData;
+      } catch { /* 会話なしでも続行 */ }
 
-      // Update seed status
+      // AIで構造化情報を生成
+      const structured = await TaskService.structureSeedWithAI(seed.content, conversations);
+
+      // 種のステータスを confirmed に更新
       await sb
         .from('seeds')
         .update({
           status: 'confirmed',
-          structured,
+          structured: {
+            goal: structured.goal,
+            content: structured.content,
+            concerns: structured.concerns,
+            deadline: structured.deadline,
+          },
         })
         .eq('id', seedId);
 
-      // Create new task
+      // ideation_summary を構築
+      const summaryParts = [];
+      if (structured.goal) summaryParts.push(`【ゴール】${structured.goal}`);
+      if (structured.content) summaryParts.push(`【主な内容】${structured.content}`);
+      if (structured.concerns) summaryParts.push(`【気になる点】${structured.concerns}`);
+      if (structured.deadline) summaryParts.push(`【期限】${structured.deadline}`);
+      if (structured.memo) summaryParts.push(`【メモ（種情報要約）】${structured.memo}`);
+
+      // タスクを作成
       const taskId = crypto.randomUUID();
       const newTaskData: Record<string, unknown> = {
         id: taskId,
-        title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
-        description: seed.content,
+        title: structured.title,
+        description: structured.content,
         status: 'todo',
-        priority: 'medium',
+        priority: structured.priority,
         phase: 'ideation',
         source_message_id: seed.source_message_id,
         source_channel: seed.source_channel,
-        ideation_summary: `【ゴール】${structured.goal}\n【主な内容】${structured.content}\n【気になる点】${structured.concerns}\n【期限】${structured.deadline}`,
+        ideation_summary: summaryParts.join('\n'),
         tags: [],
         created_at: now,
         updated_at: now,
+        seed_id: seedId,
       };
       if (userId) newTaskData.user_id = userId;
       if (seed.project_id) newTaskData.project_id = seed.project_id;
+      if (structured.deadline) newTaskData.due_date = structured.deadline;
 
       const { data: createdTask, error: taskError } = await sb
         .from('tasks')
@@ -1144,7 +1223,35 @@ export class TaskService {
 
       if (taskError || !createdTask) {
         console.error('Error creating task from seed:', taskError);
+        // due_date カラムが無い場合のフォールバック
+        if (taskError?.message?.includes('due_date')) {
+          delete newTaskData.due_date;
+          const { data: retryTask, error: retryError } = await sb
+            .from('tasks')
+            .insert(newTaskData)
+            .select()
+            .single();
+          if (retryError || !retryTask) return null;
+          return mapTaskFromDb(retryTask);
+        }
         return null;
+      }
+
+      // 種の会話履歴をタスクの会話に引き継ぐ
+      if (conversations.length > 0) {
+        try {
+          const taskConvs = conversations.map((conv) => ({
+            id: crypto.randomUUID(),
+            task_id: taskId,
+            role: conv.role,
+            content: conv.content,
+            created_at: now,
+            conversation_tag: 'ideation',
+          }));
+          await sb.from('task_conversations').insert(taskConvs);
+        } catch (e) {
+          console.error('Error migrating seed conversations to task:', e);
+        }
       }
 
       return mapTaskFromDb(createdTask);
