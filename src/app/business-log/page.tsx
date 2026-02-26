@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   FolderOpen, Plus, Clock, FileText, Phone, Mail, MessageSquare,
   Handshake, X, ChevronRight, ClipboardList, Pencil, Trash2, Users,
-  AlertTriangle, Bookmark,
+  AlertTriangle, Bookmark, Link2, Hash,
 } from 'lucide-react';
 import Header from '@/components/shared/Header';
 
@@ -27,6 +27,28 @@ interface Project {
   organization_name?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface ProjectChannel {
+  id: string;
+  project_id: string;
+  organization_channel_id?: string;
+  service_name: string;
+  channel_identifier: string;
+  channel_label?: string;
+  created_at: string;
+}
+
+interface ChannelMessage {
+  id: string;
+  subject?: string;
+  body?: string;
+  from_name?: string;
+  from_address?: string;
+  timestamp: string;
+  channel?: string;
+  direction?: string;
+  metadata?: Record<string, any>;
 }
 
 interface BusinessEvent {
@@ -113,6 +135,14 @@ export default function BusinessLogPage() {
   // 組織
   const [organizations, setOrganizations] = useState<Organization[]>([]);
 
+  // Phase 40c: プロジェクトチャネル & メッセージ
+  const [projectChannels, setProjectChannels] = useState<ProjectChannel[]>([]);
+  const [channelMessages, setChannelMessages] = useState<ChannelMessage[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [showChannelSettings, setShowChannelSettings] = useState(false);
+  const [orgChannels, setOrgChannels] = useState<any[]>([]);
+  const [timelineTab, setTimelineTab] = useState<'events' | 'messages'>('events');
+
   // 新規作成フォーム
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -180,6 +210,81 @@ export default function BusinessLogPage() {
     } catch { /* エラーは無視 */ }
   }, []);
 
+  // Phase 40c: プロジェクトのチャネル取得
+  const fetchProjectChannels = useCallback(async (projId: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projId}/channels`);
+      const data = await res.json();
+      if (data.success) setProjectChannels(data.data || []);
+      else setProjectChannels([]);
+    } catch { setProjectChannels([]); }
+  }, []);
+
+  // Phase 40c: プロジェクトのチャネルメッセージ取得
+  const fetchChannelMessages = useCallback(async (projId: string) => {
+    setIsLoadingMessages(true);
+    try {
+      const res = await fetch(`/api/projects/${projId}/messages?limit=100`);
+      const data = await res.json();
+      if (data.success) setChannelMessages(data.data || []);
+      else setChannelMessages([]);
+    } catch { setChannelMessages([]); }
+    finally { setIsLoadingMessages(false); }
+  }, []);
+
+  // Phase 40c: 組織のチャネル取得（チャネル選択用）
+  const fetchOrgChannels = useCallback(async (orgId: string) => {
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/channels`);
+      const data = await res.json();
+      if (data.success) setOrgChannels(data.data || []);
+      else setOrgChannels([]);
+    } catch { setOrgChannels([]); }
+  }, []);
+
+  // Phase 40c: プロジェクトにチャネルを追加
+  const addProjectChannel = async (orgChannel: any) => {
+    if (!selectedProjectId) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationChannelId: orgChannel.id,
+          serviceName: orgChannel.service_name,
+          channelIdentifier: orgChannel.channel_id,
+          channelLabel: orgChannel.channel_name,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchProjectChannels(selectedProjectId);
+        fetchChannelMessages(selectedProjectId);
+        showMsg('success', 'チャネルを紐づけました');
+      } else {
+        showMsg('error', data.error || '追加に失敗しました');
+      }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // Phase 40c: プロジェクトからチャネルを削除
+  const removeProjectChannel = async (channelDbId: string) => {
+    if (!selectedProjectId) return;
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectId}/channels?channelId=${channelDbId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchProjectChannels(selectedProjectId);
+        fetchChannelMessages(selectedProjectId);
+        showMsg('success', 'チャネルの紐づけを解除しました');
+      } else {
+        showMsg('error', data.error || '削除に失敗しました');
+      }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
   // Phase 33: コンタクト取得（参加者選択用）
   const fetchContacts = useCallback(async () => {
     try {
@@ -193,6 +298,27 @@ export default function BusinessLogPage() {
 
   useEffect(() => { fetchProjects(); fetchContacts(); fetchOrganizations(); }, [fetchProjects, fetchContacts, fetchOrganizations]);
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  // Phase 40c: プロジェクト選択時にチャネル＆メッセージを取得
+  useEffect(() => {
+    if (selectedProjectId) {
+      fetchProjectChannels(selectedProjectId);
+      fetchChannelMessages(selectedProjectId);
+      // 組織のチャネルも取得（設定用）
+      const proj = projects.find(p => p.id === selectedProjectId);
+      if (proj?.organization_id) {
+        fetchOrgChannels(proj.organization_id);
+      } else {
+        setOrgChannels([]);
+      }
+    } else {
+      setProjectChannels([]);
+      setChannelMessages([]);
+      setOrgChannels([]);
+      setShowChannelSettings(false);
+      setTimelineTab('events');
+    }
+  }, [selectedProjectId, projects, fetchProjectChannels, fetchChannelMessages, fetchOrgChannels]);
 
   // ========================================
   // プロジェクト作成
@@ -359,13 +485,29 @@ export default function BusinessLogPage() {
                 {selectedProject ? selectedProject.name : 'ビジネスログ'}
               </h1>
             </div>
-            <button
-              onClick={() => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              イベント記録
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedProject && (
+                <button
+                  onClick={() => setShowChannelSettings(!showChannelSettings)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                    showChannelSettings
+                      ? 'text-blue-700 bg-blue-100 hover:bg-blue-200'
+                      : 'text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="チャネル設定"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  チャネル {projectChannels.length > 0 && `(${projectChannels.length})`}
+                </button>
+              )}
+              <button
+                onClick={() => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                イベント記録
+              </button>
+            </div>
           </div>
           {selectedProject?.description && (
             <p className="text-xs text-slate-500">{selectedProject.description}</p>
@@ -495,6 +637,106 @@ export default function BusinessLogPage() {
               中央: タイムライン
               ======================================== */}
           <div className={`flex-1 overflow-y-auto ${selectedEvent ? 'border-r border-slate-200' : ''}`}>
+            {/* Phase 40c: チャネル設定パネル */}
+            {showChannelSettings && selectedProjectId && (
+              <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-700">チャネル紐づけ設定</h3>
+                  <button onClick={() => setShowChannelSettings(false)} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* 紐づけ済みチャネル */}
+                {projectChannels.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">紐づけ済み</p>
+                    <div className="space-y-1">
+                      {projectChannels.map((ch) => (
+                        <div key={ch.id} className="flex items-center justify-between px-2.5 py-1.5 bg-blue-50 border border-blue-100 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <Hash className="w-3 h-3 text-blue-500" />
+                            <span className="text-xs text-slate-700">{ch.channel_label || ch.channel_identifier}</span>
+                            <span className="text-[10px] text-slate-400">{ch.service_name}</span>
+                          </div>
+                          <button
+                            onClick={() => removeProjectChannel(ch.id)}
+                            className="text-slate-400 hover:text-red-500 transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 組織のチャネルから追加 */}
+                {orgChannels.length > 0 ? (
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">組織のチャネルから追加</p>
+                    <div className="space-y-1">
+                      {orgChannels
+                        .filter((oc) => !projectChannels.some(
+                          (pc) => pc.service_name === oc.service_name && pc.channel_identifier === oc.channel_id
+                        ))
+                        .map((oc) => (
+                          <button
+                            key={oc.id}
+                            onClick={() => addProjectChannel(oc)}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Hash className="w-3 h-3 text-slate-400" />
+                              <span className="text-xs text-slate-600">{oc.channel_name || oc.channel_id}</span>
+                              <span className="text-[10px] text-slate-400">{oc.service_name}</span>
+                            </div>
+                            <Plus className="w-3 h-3 text-blue-500" />
+                          </button>
+                        ))}
+                      {orgChannels.filter((oc) => !projectChannels.some(
+                        (pc) => pc.service_name === oc.service_name && pc.channel_identifier === oc.channel_id
+                      )).length === 0 && (
+                        <p className="text-xs text-slate-400 px-2">すべてのチャネルが紐づけ済みです</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    {selectedProject?.organization_id
+                      ? '組織にチャネルが登録されていません。組織詳細ページでチャネルを追加してください。'
+                      : 'プロジェクトに組織を設定すると、組織のチャネルから選択できます。'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Phase 40c: タイムラインタブ（プロジェクト選択時のみ） */}
+            {selectedProjectId && projectChannels.length > 0 && (
+              <div className="mx-6 mt-3 flex gap-1 border-b border-slate-200">
+                <button
+                  onClick={() => setTimelineTab('events')}
+                  className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+                    timelineTab === 'events'
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-slate-500 border-transparent hover:text-slate-700'
+                  }`}
+                >
+                  イベント
+                </button>
+                <button
+                  onClick={() => setTimelineTab('messages')}
+                  className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+                    timelineTab === 'messages'
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-slate-500 border-transparent hover:text-slate-700'
+                  }`}
+                >
+                  チャネルメッセージ {channelMessages.length > 0 && `(${channelMessages.length})`}
+                </button>
+              </div>
+            )}
+
             {/* Phase 33: 新規イベントフォーム（強化版） */}
             {showNewEvent && (
               <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
@@ -621,75 +863,134 @@ export default function BusinessLogPage() {
             )}
 
             {/* タイムライン本体 */}
-            <div className="px-6 py-4">
-              {isLoadingEvents ? (
-                <div className="flex items-center justify-center h-48 text-slate-400">
-                  <div className="text-center">
-                    <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                    <p className="text-sm">読み込み中...</p>
-                  </div>
-                </div>
-              ) : events.length === 0 ? (
-                <div className="flex items-center justify-center h-48 text-slate-400">
-                  <div className="text-center">
-                    <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                    <p className="text-sm">イベントがありません</p>
-                    <p className="text-xs mt-1">「イベント記録」ボタンで最初のイベントを記録しましょう</p>
-                  </div>
-                </div>
-              ) : (
-                Array.from(eventsByDate.entries()).map(([date, dayEvents]) => (
-                  <div key={date} className="mb-6">
-                    {/* 日付ヘッダー */}
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="text-xs font-semibold text-slate-500">{date}</span>
-                      <div className="flex-1 h-px bg-slate-200" />
+            {timelineTab === 'events' ? (
+              <div className="px-6 py-4">
+                {isLoadingEvents ? (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <div className="animate-spin text-2xl mb-2">&#8987;</div>
+                      <p className="text-sm">読み込み中...</p>
                     </div>
+                  </div>
+                ) : events.length === 0 ? (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <Clock className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                      <p className="text-sm">イベントがありません</p>
+                      <p className="text-xs mt-1">「イベント記録」ボタンで最初のイベントを記録しましょう</p>
+                    </div>
+                  </div>
+                ) : (
+                  Array.from(eventsByDate.entries()).map(([date, dayEvents]) => (
+                    <div key={date} className="mb-6">
+                      {/* 日付ヘッダー */}
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="text-xs font-semibold text-slate-500">{date}</span>
+                        <div className="flex-1 h-px bg-slate-200" />
+                      </div>
 
-                    {/* イベント一覧 */}
-                    <div className="space-y-2 ml-2">
-                      {dayEvents.map((event) => {
-                        const typeConfig = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.note;
-                        const Icon = typeConfig.icon;
-                        const isSelected = selectedEvent?.id === event.id;
-                        return (
-                          <button
-                            key={event.id}
-                            onClick={() => { setSelectedEvent(isSelected ? null : event); setIsEditing(false); setShowDeleteConfirm(false); }}
-                            className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
-                              isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
-                            }`}
-                          >
-                            <div className="flex flex-col items-center mt-0.5">
-                              <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${typeConfig.color}`}>
-                                <Icon className="w-3.5 h-3.5" />
+                      {/* イベント一覧 */}
+                      <div className="space-y-2 ml-2">
+                        {dayEvents.map((event) => {
+                          const typeConfig = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.note;
+                          const Icon = typeConfig.icon;
+                          const isSelected = selectedEvent?.id === event.id;
+                          return (
+                            <button
+                              key={event.id}
+                              onClick={() => { setSelectedEvent(isSelected ? null : event); setIsEditing(false); setShowDeleteConfirm(false); }}
+                              className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
+                                isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
+                              }`}
+                            >
+                              <div className="flex flex-col items-center mt-0.5">
+                                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${typeConfig.color}`}>
+                                  <Icon className="w-3.5 h-3.5" />
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm font-medium text-slate-900 truncate">{event.title}</span>
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${typeConfig.color}`}>
-                                  {typeConfig.label}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-slate-900 truncate">{event.title}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${typeConfig.color}`}>
+                                    {typeConfig.label}
+                                  </span>
+                                </div>
+                                {event.content && (
+                                  <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{event.content}</p>
+                                )}
+                                <span className="text-[10px] text-slate-400 mt-1 block">
+                                  {formatDateTime(event.created_at)}
                                 </span>
                               </div>
-                              {event.content && (
-                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{event.content}</p>
-                              )}
-                              <span className="text-[10px] text-slate-400 mt-1 block">
-                                {formatDateTime(event.created_at)}
-                              </span>
-                            </div>
-                            <ChevronRight className={`w-4 h-4 shrink-0 mt-1 transition-colors ${
-                              isSelected ? 'text-blue-500' : 'text-slate-300'
-                            }`} />
-                          </button>
-                        );
-                      })}
+                              <ChevronRight className={`w-4 h-4 shrink-0 mt-1 transition-colors ${
+                                isSelected ? 'text-blue-500' : 'text-slate-300'
+                              }`} />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              /* Phase 40c: チャネルメッセージ表示 */
+              <div className="px-6 py-4">
+                {isLoadingMessages ? (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <div className="animate-spin text-2xl mb-2">&#8987;</div>
+                      <p className="text-sm">メッセージ読み込み中...</p>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                ) : channelMessages.length === 0 ? (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                      <p className="text-sm">メッセージがありません</p>
+                      <p className="text-xs mt-1">紐づけたチャネルにメッセージが届くとここに表示されます</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {channelMessages.map((msg) => {
+                      const isSent = msg.direction === 'sent';
+                      const serviceName = msg.channel || msg.metadata?.service || '';
+                      const serviceIcon = serviceName === 'slack' ? '#' : serviceName === 'chatwork' ? 'CW' : '@';
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`p-3 rounded-lg border transition-colors ${
+                            isSent ? 'bg-blue-50 border-blue-100' : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                              {serviceIcon}
+                            </span>
+                            <span className="text-xs font-medium text-slate-700">
+                              {isSent ? 'あなた' : (msg.from_name || msg.from_address || '不明')}
+                            </span>
+                            {isSent && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">送信</span>
+                            )}
+                            <span className="text-[10px] text-slate-400 ml-auto">
+                              {formatDateTime(msg.timestamp)}
+                            </span>
+                          </div>
+                          {msg.subject && (
+                            <p className="text-xs font-medium text-slate-800 mb-0.5">{msg.subject}</p>
+                          )}
+                          {msg.body && (
+                            <p className="text-xs text-slate-600 line-clamp-3 whitespace-pre-wrap">{msg.body}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ========================================
