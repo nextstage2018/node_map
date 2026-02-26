@@ -12,11 +12,19 @@ import Header from '@/components/shared/Header';
 // ========================================
 // 型定義
 // ========================================
+interface Organization {
+  id: string;
+  name: string;
+  relationship_type?: string;
+}
+
 interface Project {
   id: string;
   name: string;
   description: string | null;
   status: string;
+  organization_id?: string | null;
+  organization_name?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -102,10 +110,14 @@ export default function BusinessLogPage() {
   // Phase 33: コンタクト（参加者選択用）
   const [contacts, setContacts] = useState<ContactOption[]>([]);
 
+  // 組織
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+
   // 新規作成フォーム
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
+  const [newProjectOrgId, setNewProjectOrgId] = useState('');
   const [showNewEvent, setShowNewEvent] = useState(false);
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventContent, setNewEventContent] = useState('');
@@ -157,6 +169,17 @@ export default function BusinessLogPage() {
     finally { setIsLoadingEvents(false); }
   }, [selectedProjectId]);
 
+  // Phase 40c: 組織一覧取得
+  const fetchOrganizations = useCallback(async () => {
+    try {
+      const res = await fetch('/api/organizations');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setOrganizations(data.data.map((o: any) => ({ id: o.id, name: o.name, relationship_type: o.relationship_type })));
+      }
+    } catch { /* エラーは無視 */ }
+  }, []);
+
   // Phase 33: コンタクト取得（参加者選択用）
   const fetchContacts = useCallback(async () => {
     try {
@@ -168,7 +191,7 @@ export default function BusinessLogPage() {
     } catch { /* エラーは無視 */ }
   }, []);
 
-  useEffect(() => { fetchProjects(); fetchContacts(); }, [fetchProjects, fetchContacts]);
+  useEffect(() => { fetchProjects(); fetchContacts(); fetchOrganizations(); }, [fetchProjects, fetchContacts, fetchOrganizations]);
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
 
   // ========================================
@@ -180,13 +203,18 @@ export default function BusinessLogPage() {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName.trim(), description: newProjectDesc.trim() || null }),
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          description: newProjectDesc.trim() || null,
+          organizationId: newProjectOrgId || null,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setShowNewProject(false);
         setNewProjectName('');
         setNewProjectDesc('');
+        setNewProjectOrgId('');
         fetchProjects();
         showMsg('success', 'プロジェクトを作成しました');
       } else {
@@ -390,6 +418,16 @@ export default function BusinessLogPage() {
                   placeholder="説明（任意）"
                   className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
                 />
+                <select
+                  value={newProjectOrgId}
+                  onChange={(e) => setNewProjectOrgId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 bg-white"
+                >
+                  <option value="">組織を選択（任意）</option>
+                  {organizations.map((org) => (
+                    <option key={org.id} value={org.id}>{org.name}</option>
+                  ))}
+                </select>
                 <div className="flex gap-1.5">
                   <button
                     onClick={createProject}
@@ -398,7 +436,7 @@ export default function BusinessLogPage() {
                     作成
                   </button>
                   <button
-                    onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectDesc(''); }}
+                    onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectDesc(''); setNewProjectOrgId(''); }}
                     className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
                   >
                     取消
@@ -437,7 +475,12 @@ export default function BusinessLogPage() {
                       }`}
                     >
                       <FolderOpen className="w-4 h-4 text-blue-500 shrink-0" />
-                      <span className="truncate flex-1">{project.name}</span>
+                      <div className="truncate flex-1">
+                        <span className="block truncate">{project.name}</span>
+                        {project.organization_name && (
+                          <span className="block text-[10px] text-slate-400 truncate">{project.organization_name}</span>
+                        )}
+                      </div>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
                         {statusConfig.label}
                       </span>

@@ -257,6 +257,8 @@ export interface Seed {
   sourceMessageId?: string;
   sourceFrom?: string;         // Phase 40b: 発信者（名前 or アドレス）
   sourceDate?: string;         // Phase 40b: 元メッセージの日時
+  projectId?: string;          // Phase 40b: 紐づくプロジェクト
+  projectName?: string;        // Phase 40b: プロジェクト名（表示用）
   createdAt: string;
   status: SeedStatus;
   tags?: string[];             // Phase 40: タグ
@@ -293,6 +295,7 @@ export interface CreateSeedRequest {
   sourceMessageId?: string;
   sourceFrom?: string;         // Phase 40b: 発信者
   sourceDate?: string;         // Phase 40b: 元メッセージ日時
+  projectId?: string;          // Phase 40b: プロジェクトID
   contextMessages?: {          // Phase 40b: AI種化用の前後コンテキスト
     from: string;
     body: string;
@@ -711,6 +714,8 @@ export interface Project {
   name: string;
   description?: string;
   status: string;
+  organizationId?: string;
+  organizationName?: string;
   userId: string;
   createdAt: string;
   updatedAt: string;
