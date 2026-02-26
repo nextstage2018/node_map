@@ -73,24 +73,33 @@ export async function GET(request: NextRequest) {
         const channels = (contact.contact_channels || []) as { channel: string; address: string }[];
         const addresses = channels.map((ch: { address: string }) => ch.address).filter(Boolean);
 
-        // Phase 39: 受信＋送信メッセージを取得
+        // Phase 39+39b: 受信＋送信メッセージを取得
         let receivedMessages: CronAnalysisMessage[] = [];
         let sentMessages: CronAnalysisMessage[] = [];
 
         if (addresses.length > 0) {
-          // 受信メッセージ（相手 → 自分）
+          // 受信メッセージ（相手 → 自分）— metadataも取得
           const { data: recvMsgs } = await supabase
             .from('inbox_messages')
-            .select('subject, body, from_name, channel, timestamp, direction')
+            .select('subject, body, from_name, channel, timestamp, direction, metadata')
             .in('from_address', addresses)
             .order('timestamp', { ascending: false })
             .limit(30);
           receivedMessages = (recvMsgs || []).map((m) => ({ ...m, direction: m.direction || 'received' }));
 
-          // 送信メッセージ（自分 → 相手）: to_list (JSON) でフィルタ
+          // Phase 39b: 受信メッセージから相手がいるルーム/チャンネルIDを抽出
+          const contactRoomIds = new Set<string>();
+          const contactSlackChannels = new Set<string>();
+          for (const m of (recvMsgs || [])) {
+            const meta = m.metadata as Record<string, unknown> | null;
+            if (meta?.chatworkRoomId) contactRoomIds.add(String(meta.chatworkRoomId));
+            if (meta?.slackChannel) contactSlackChannels.add(String(meta.slackChannel));
+          }
+
+          // 送信メッセージ: to_list OR 同じルーム/チャンネル
           const { data: sentCandidates, error: sentError } = await supabase
             .from('inbox_messages')
-            .select('subject, body, from_name, channel, timestamp, direction, to_list')
+            .select('subject, body, from_name, channel, timestamp, direction, to_list, metadata')
             .eq('direction', 'sent')
             .order('timestamp', { ascending: false })
             .limit(200);
@@ -99,11 +108,14 @@ export async function GET(request: NextRequest) {
             console.log(`[Cron/Analyze] 送信メッセージ取得エラー: ${contact.name}`, sentError);
           }
 
-          // to_list 内のアドレスが相手のアドレスに一致するものをフィルタ
           const addressSet = new Set(addresses.map((a) => a.toLowerCase()));
           sentMessages = (sentCandidates || []).filter((m) => {
             const toList = (m.to_list || []) as { name?: string; address?: string }[];
-            return toList.some((t) => t.address && addressSet.has(t.address.toLowerCase()));
+            if (toList.some((t) => t.address && addressSet.has(t.address.toLowerCase()))) return true;
+            const meta = m.metadata as Record<string, unknown> | null;
+            if (meta?.chatworkRoomId && contactRoomIds.has(String(meta.chatworkRoomId))) return true;
+            if (meta?.slackChannel && contactSlackChannels.has(String(meta.slackChannel))) return true;
+            return false;
           }).slice(0, 30).map((m) => ({
             subject: m.subject,
             body: m.body,

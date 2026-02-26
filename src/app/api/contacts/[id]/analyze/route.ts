@@ -66,10 +66,10 @@ export async function POST(
     let sentMessages: AnalysisMessage[] = [];
 
     if (addresses.length > 0) {
-      // Phase 39: 受信メッセージ（相手 → 自分）
+      // Phase 39: 受信メッセージ（相手 → 自分）— metadataも取得（ルーム/チャンネル特定用）
       const { data: recvMsgs, error: recvError } = await supabase
         .from('inbox_messages')
-        .select('subject, body, from_name, from_address, channel, timestamp, direction')
+        .select('subject, body, from_name, from_address, channel, timestamp, direction, metadata')
         .in('from_address', addresses)
         .order('timestamp', { ascending: false })
         .limit(50);
@@ -78,12 +78,21 @@ export async function POST(
         console.error(`[Contacts Analyze API] 受信メッセージクエリエラー:`, recvError);
       }
 
-      // Phase 39: 送信メッセージ（自分 → 相手）
-      // to_list (JSON配列) に相手のアドレスが含まれる送信メッセージを取得
-      // to_list は [{name, address}] 形式のJSONB → JSでフィルタ
+      // Phase 39b: 受信メッセージから相手がいるルーム/チャンネルIDを抽出
+      const contactRoomIds = new Set<string>();
+      const contactSlackChannels = new Set<string>();
+      for (const m of (recvMsgs || [])) {
+        const meta = m.metadata as Record<string, unknown> | null;
+        if (meta?.chatworkRoomId) contactRoomIds.add(String(meta.chatworkRoomId));
+        if (meta?.slackChannel) contactSlackChannels.add(String(meta.slackChannel));
+      }
+      console.log(`[Contacts Analyze API] 相手のルーム/チャンネル: CW=${[...contactRoomIds].join(',')}, Slack=${[...contactSlackChannels].join(',')}`);
+
+      // Phase 39+39b: 送信メッセージ（自分 → 相手）
+      // to_list でのマッチ OR 同じルーム/チャンネルにいることでマッチ
       const { data: sentCandidates, error: sentError } = await supabase
         .from('inbox_messages')
-        .select('subject, body, from_name, from_address, channel, timestamp, direction, to_list')
+        .select('subject, body, from_name, from_address, channel, timestamp, direction, to_list, metadata')
         .eq('direction', 'sent')
         .order('timestamp', { ascending: false })
         .limit(200);
@@ -92,11 +101,23 @@ export async function POST(
         console.error(`[Contacts Analyze API] 送信メッセージクエリエラー:`, sentError);
       }
 
-      // to_list 内のアドレスが相手のアドレスに一致するものをフィルタ
       const addressSet = new Set(addresses.map((a) => a.toLowerCase()));
       sentMessages = (sentCandidates || []).filter((m) => {
+        // 方法1: to_list に相手のアドレスが含まれる（Email向け）
         const toList = (m.to_list || []) as { name?: string; address?: string }[];
-        return toList.some((t) => t.address && addressSet.has(t.address.toLowerCase()));
+        if (toList.some((t) => t.address && addressSet.has(t.address.toLowerCase()))) {
+          return true;
+        }
+        // 方法2: 同じChatworkルームに相手がいる
+        const meta = m.metadata as Record<string, unknown> | null;
+        if (meta?.chatworkRoomId && contactRoomIds.has(String(meta.chatworkRoomId))) {
+          return true;
+        }
+        // 方法3: 同じSlackチャンネルに相手がいる
+        if (meta?.slackChannel && contactSlackChannels.has(String(meta.slackChannel))) {
+          return true;
+        }
+        return false;
       }).slice(0, 50).map((m) => ({
         subject: m.subject,
         body: m.body,
