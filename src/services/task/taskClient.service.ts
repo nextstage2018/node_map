@@ -881,8 +881,9 @@ export class TaskService {
     const sb = getSupabase();
     const now = new Date().toISOString();
 
+    // seeds テーブルの id は UUID型 → crypto.randomUUID() で生成
     const newSeed: Seed = {
-      id: `seed-${Date.now()}`,
+      id: crypto.randomUUID(),
       content: req.content,
       sourceChannel: req.sourceChannel,
       sourceMessageId: req.sourceMessageId,
