@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-02-26
+最終更新: 2026-02-26（Phase 37b まで反映）
 
 ---
 
@@ -25,7 +25,8 @@
 | `contact_channels` | コンタクトの連絡先。UNIQUE(contact_id, channel, address) 制約あり |
 | `inbox_messages` | 受信メッセージ本体（unified_messages ではない）。user_id カラムは存在しない |
 | `unified_messages` | 現在は空。inbox_messages を使うこと |
-| `organizations` | 自社・取引先組織。domain で重複チェックしてから登録すること |
+| `organizations` | 自社・取引先組織。domain で重複チェック。relationship_type / address / phone / memo カラムあり |
+| `organization_channels` | 組織に紐づくチャネル（Slack/CW/Email）。UNIQUE(organization_id, service_name, channel_id) |
 
 ---
 
@@ -37,7 +38,8 @@
 | タスク | /tasks | tasks / task_conversations |
 | 思考マップ | /nodemap | user_nodes / node_edges |
 | コンタクト | /contacts | contact_persons / contact_channels |
-| 組織 | /organizations | organizations |
+| 組織 | /organizations | organizations / organization_channels |
+| 組織詳細 | /organizations/[id] | organizations / organization_channels / contact_persons |
 | ナレッジ | /master | knowledge_domains / knowledge_fields / knowledge_master_entries |
 | ビジネスログ | /business-log | projects / business_events |
 | 秘書 | /agent | tasks / seeds / user_nodes（読み取り専用） |
@@ -73,6 +75,8 @@ return NextResponse.json({ error: 'message' }, { status: 400 });
 | 34 | コンタクト強化・組織ページ | ceb958d |
 | 35 | コンタクトマージ・重複解消・チャンネル統合 | mainにマージ済み |
 | 36 | AIコミュニケーション分析（コンタクトnotes自動生成） | mainにマージ済み |
+| 37 | 組織チャネル連携・メンバー管理・自動検出 | mainにマージ済み |
+| 37b | 組織関係性・詳細情報・コンタクト連動・ラベル統一 | 39b676e |
 
 ---
 
@@ -107,6 +111,70 @@ ADD COLUMN IF NOT EXISTS ai_analyzed_at TIMESTAMPTZ;
 
 ---
 
+## Phase 37 実装内容（組織チャネル連携・メンバー管理）
+
+- `organization_channels` テーブル新設: UNIQUE(organization_id, service_name, channel_id)
+- `contact_persons` に `auto_added_to_org BOOLEAN` カラム追加
+- `/api/organizations/[id]/channels` GET/POST/DELETE: チャネルのCRUD
+- `/api/organizations/[id]/members` GET/POST/DELETE: メンバー管理
+  - POST: 組織横断ガード（1人=1組織、409で拒否）、company_name 連動
+  - GET: company_name 未設定メンバーの自動修復
+  - DELETE: company_name もクリア
+- `/api/organizations/[id]/detect-members` POST: リンク済みチャネルから inbox_messages を走査しメンバー候補を検出・追加
+- `/organizations/[id]/page.tsx`: 3タブ構成（基本情報 / チャネル / メンバー）
+- 組織一覧: クリックで詳細遷移、ChevronRight アイコン
+
+### DBマイグレーション（Supabase実行済み）
+```sql
+-- 014_phase37_organization_channels.sql
+CREATE TABLE organization_channels (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  service_name TEXT NOT NULL,
+  channel_id TEXT NOT NULL,
+  channel_name TEXT,
+  channel_type TEXT,
+  is_active BOOLEAN DEFAULT true,
+  user_id TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(organization_id, service_name, channel_id)
+);
+ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS auto_added_to_org BOOLEAN DEFAULT false;
+```
+
+---
+
+## Phase 37b 実装内容（組織関係性・コンタクト連動）
+
+- `organizations` テーブルに relationship_type / address / phone / memo カラム追加
+- 関係性タイプ統一ラベル: 自社 / 取引先 / パートナー / 仕入先 / 見込み
+- `RELATIONSHIP_TYPE_CONFIG` を全画面で統一（constants.ts / contacts/page.tsx / ContactCard.tsx / SetupWizard.tsx）
+- 組織 → コンタクト関係性カスケード: 組織の relationship_type 変更時に所属コンタクトも連動更新
+- 組織 → コンタクト company_name 連動: メンバー追加・自動検出・組織名変更時に contact_persons.company_name を設定
+- 組織詳細ページ: 基本情報タブに住所・電話番号・メモ欄追加
+- コンタクト詳細: 組織名クリックで組織詳細に遷移（リンク化）
+- 組織一覧: 関係性バッジ表示
+
+### DBマイグレーション（Supabase実行済み）
+```sql
+-- 015_phase37b_organization_detail.sql
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS relationship_type TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS memo TEXT;
+```
+
+### 組織 → コンタクトの関係性マッピング
+| 組織の関係性 | コンタクトの関係性 |
+|---|---|
+| internal（自社） | internal（自社） |
+| client（取引先） | client（取引先） |
+| partner（パートナー） | partner（パートナー） |
+| vendor（仕入先） | partner（パートナー） |
+| prospect（見込み） | client（取引先） |
+
+---
+
 ## 残課題（未実装）
 
 1. **送信メッセージの保存**: 現在 inbox_messages は受信のみ。Chatwork/Slack の送信メッセージも取得・保存することで双方向のコミュニケーション分析が可能になる
@@ -125,6 +193,13 @@ ADD COLUMN IF NOT EXISTS ai_analyzed_at TIMESTAMPTZ;
 
 ### 組織の重複防止
 - SetupWizard でドメイン重複チェック済み（同じ domain が存在すれば新規作成しない）
+
+### 組織とコンタクトの連動ルール
+- コンタクトは1つの組織にのみ所属可能（組織横断ガード: 409エラー）
+- メンバー追加時に `company_name` と `relationship_type` を自動設定
+- 組織の基本情報保存時に所属コンタクト全員の `company_name` と `relationship_type` を連動更新
+- メンバー削除時に `company_name` をクリア
+- メンバータブ表示時に `company_name` 未設定メンバーを自動修復
 
 ### Vercel Cron
 - vercel.json に crons 設定済み
