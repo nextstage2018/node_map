@@ -167,6 +167,8 @@ export interface Task {
   // Phase 7 追加フィールド
   seedId?: string;       // 種ボックス経由で作成された場合の種ID
   dueDate?: string;      // 期限日（タイムラインビュー用、ISO日付）
+  // Phase 40c: プロジェクト紐づけ
+  projectId?: string;
 }
 
 // タスク作成リクエスト
@@ -177,6 +179,8 @@ export interface CreateTaskRequest {
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
   tags?: string[];
+  seedId?: string;       // Phase 40c: 種から変換時の種ID
+  projectId?: string;    // Phase 40c: プロジェクト紐づけ
 }
 
 // タスク更新リクエスト

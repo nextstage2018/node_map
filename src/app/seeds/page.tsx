@@ -33,6 +33,7 @@ export default function SeedsPage() {
   const [newProjectId, setNewProjectId] = useState<string>('');
   const [projects, setProjects] = useState<Project[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Phase 31: AI会話パネル
   const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
@@ -93,6 +94,7 @@ export default function SeedsPage() {
   const handleCreate = async () => {
     if (!newContent.trim() || isSubmitting) return;
     setIsSubmitting(true);
+    setCreateError(null);
     try {
       const res = await fetch('/api/seeds', {
         method: 'POST',
@@ -109,9 +111,13 @@ export default function SeedsPage() {
         setNewContent('');
         setNewTags([]);
         setNewProjectId('');
+      } else {
+        console.error('[Seeds Page] 種作成エラー:', data.error);
+        setCreateError(data.error || '種の作成に失敗しました');
       }
-    } catch {
-      // サイレント
+    } catch (e) {
+      console.error('[Seeds Page] 種作成通信エラー:', e);
+      setCreateError('通信エラーが発生しました');
     } finally {
       setIsSubmitting(false);
     }
@@ -385,6 +391,9 @@ export default function SeedsPage() {
                   {isSubmitting ? '追加中...' : '種を追加'}
                 </button>
               </div>
+              {createError && (
+                <p className="text-xs text-red-500 mt-1">{createError}</p>
+              )}
             </div>
 
             {/* フィルタバー */}

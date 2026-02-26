@@ -318,6 +318,9 @@ function mapTaskFromDb(dbRow: any): Task {
     ideationAt: dbRow.ideation_at,
     progressAt: dbRow.progress_at,
     resultAt: dbRow.result_at,
+    // Phase 40c: 種・プロジェクト紐づけ
+    seedId: dbRow.seed_id,
+    projectId: dbRow.project_id,
   };
 }
 
@@ -471,7 +474,7 @@ export class TaskService {
       title: req.title,
       description: req.description,
       status: 'todo',
-      priority: req.priority,
+      priority: req.priority || 'medium',
       phase: 'ideation',
       sourceMessageId: req.sourceMessageId,
       sourceChannel: req.sourceChannel,
@@ -481,6 +484,9 @@ export class TaskService {
       tags: req.tags || [],
       // Phase 17: 作成時に ideationAt を記録
       ideationAt: now,
+      // Phase 40c: 種・プロジェクト紐づけ
+      seedId: req.seedId,
+      projectId: req.projectId,
     };
 
     if (!sb) {
@@ -490,22 +496,27 @@ export class TaskService {
     }
 
     try {
+      const insertData: Record<string, unknown> = {
+        id: newTask.id,
+        title: newTask.title,
+        description: newTask.description,
+        status: newTask.status,
+        priority: newTask.priority,
+        phase: newTask.phase,
+        source_message_id: newTask.sourceMessageId,
+        source_channel: newTask.sourceChannel,
+        tags: newTask.tags,
+        created_at: newTask.createdAt,
+        updated_at: newTask.updatedAt,
+        user_id: (req as any).userId,  // Phase 22: ユーザーID付与
+      };
+      // Phase 40c: 種・プロジェクト紐づけ（カラム未追加でもエラーにならないよう条件付き）
+      if (req.seedId) insertData.seed_id = req.seedId;
+      if (req.projectId) insertData.project_id = req.projectId;
+
       const { data, error } = await sb
         .from('tasks')
-        .insert({
-          id: newTask.id,
-          title: newTask.title,
-          description: newTask.description,
-          status: newTask.status,
-          priority: newTask.priority,
-          phase: newTask.phase,
-          source_message_id: newTask.sourceMessageId,
-          source_channel: newTask.sourceChannel,
-          tags: newTask.tags,
-          created_at: newTask.createdAt,
-          updated_at: newTask.updatedAt,
-          user_id: (req as any).userId,  // Phase 22: ユーザーID付与
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -933,9 +944,10 @@ export class TaskService {
 
       if (error) {
         console.error('Error creating seed in Supabase:', error);
-        // 新カラムが原因の可能性 → source_from/source_date を除いてリトライ
+        // 新カラムが原因の可能性 → source_from/source_date/project_id を除いてリトライ
         delete insertData.source_from;
         delete insertData.source_date;
+        delete insertData.project_id;
         const { data: retryData, error: retryError } = await sb
           .from('seeds')
           .insert(insertData)

@@ -1,6 +1,8 @@
 // Phase 31: 種の変換 API（ナレッジ or タスクに変換）
+// Phase 40c: タスク変換時にTaskServiceを使用（RLS対応）
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { TaskService } from '@/services/task/taskClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 
@@ -80,37 +82,27 @@ export async function POST(request: NextRequest) {
         result = { type: 'knowledge', keywords: [], newKeywords: [], nodeCount: 0 };
       }
     } else {
-      // Phase 31+40c: タスクに変換（プロジェクト紐づけ対応）
-      const taskInsert: Record<string, unknown> = {
-        title: seed.content.slice(0, 60),
-        description: seed.content,
-        status: 'todo',
-        priority: 'medium',
-        phase: 'ideation',
-        seed_id: seed.id,
-        user_id: userId,
-      };
-      // Phase 40c: プロジェクト紐づけ（種のproject_id or リクエストのprojectId）
+      // Phase 40c: タスクに変換（TaskService経由 — RLS整合性を保証）
       const taskProjectId = projectId || seed.project_id;
-      if (taskProjectId) {
-        taskInsert.project_id = taskProjectId;
-      }
 
-      const { data: task, error: taskError } = await supabase
-        .from('tasks')
-        .insert(taskInsert)
-        .select()
-        .single();
+      try {
+        const task = await TaskService.createTask({
+          title: seed.content.slice(0, 60),
+          description: seed.content,
+          priority: 'medium',
+          seedId: seed.id,
+          projectId: taskProjectId || undefined,
+          userId,  // TaskService.createTask が (req as any).userId で取得
+        } as any);
 
-      if (taskError) {
+        result = { type: 'task', task };
+      } catch (taskError) {
         console.error('[Seeds Convert API] タスク作成エラー:', taskError);
         return NextResponse.json(
           { success: false, error: 'タスクの作成に失敗しました' },
           { status: 500 }
         );
       }
-
-      result = { type: 'task', task };
     }
 
     // 種のステータスを confirmed に更新
