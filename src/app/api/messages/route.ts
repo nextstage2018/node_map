@@ -338,6 +338,23 @@ export async function GET(request: NextRequest) {
         if (hasSlackSubs) updateSyncTimestamp('slack').catch(() => {});
         if (hasChatworkSubs) updateSyncTimestamp('chatwork').catch(() => {});
       }
+
+      // Phase 38: DBに保存済みの送信メッセージを統合（外部APIには含まれないため）
+      if (isSupabaseConfigured() && !isDemo) {
+        try {
+          const sentResult = await loadMessages({ direction: 'sent', limit: 100 });
+          if (sentResult.messages.length > 0) {
+            const existingIds = new Set(allMessages.map((m) => m.id));
+            const newSentMessages = sentResult.messages.filter((m) => !existingIds.has(m.id));
+            if (newSentMessages.length > 0) {
+              allMessages = [...allMessages, ...newSentMessages];
+              console.log(`[Messages API] Phase 38: 送信メッセージ ${newSentMessages.length}件を統合`);
+            }
+          }
+        } catch (e) {
+          console.error('[Messages API] 送信メッセージ読み込みエラー:', e);
+        }
+      }
     }
 
     // Phase 25: DB上の既読状態を反映

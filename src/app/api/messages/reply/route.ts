@@ -26,9 +26,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let sendResult: { success: boolean; messageId?: string } = { success: false };
+    let sendSuccess = false;
 
-    // チャネル別送信
+    // チャネル別送信（位置引数で呼び出し）
     switch (channel) {
       case 'email':
         if (!to) {
@@ -37,30 +37,54 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        sendResult = await sendEmail({
-          to,
-          subject: subject || 'Re:',
-          body: replyBody,
-          inReplyTo: messageId,
-          userId,
-        });
+        {
+          const toAddresses = Array.isArray(to) ? to : [to];
+          const ccAddresses = Array.isArray(cc) ? cc.filter(Boolean) : [];
+          sendSuccess = await sendEmail(
+            toAddresses,
+            subject || 'Re:',
+            replyBody,
+            messageId,        // inReplyTo
+            ccAddresses.length > 0 ? ccAddresses : undefined
+          );
+        }
         break;
 
       case 'slack':
-        sendResult = await sendSlackMessage({
-          channelId: threadId || messageId,
-          text: replyBody,
-          threadTs: messageId,
-          userId,
-        });
+        {
+          // metadata からSlackチャネルIDとスレッドTsを取得
+          const slackChannelId = metadata?.slackChannel || '';
+          const slackThreadTs = metadata?.slackThreadTs || metadata?.slackTs || '';
+          if (!slackChannelId) {
+            return NextResponse.json(
+              { success: false, error: 'SlackチャネルIDが取得できません' },
+              { status: 400 }
+            );
+          }
+          sendSuccess = await sendSlackMessage(
+            slackChannelId,
+            replyBody,
+            slackThreadTs || undefined,  // threadTs
+            userId || undefined
+          );
+        }
         break;
 
       case 'chatwork':
-        sendResult = await sendChatworkMessage({
-          roomId: threadId || '',
-          body: replyBody,
-          userId,
-        });
+        {
+          // metadata からChatworkルームIDを取得
+          const chatworkRoomId = metadata?.chatworkRoomId || threadId || '';
+          if (!chatworkRoomId) {
+            return NextResponse.json(
+              { success: false, error: 'ChatworkルームIDが取得できません' },
+              { status: 400 }
+            );
+          }
+          sendSuccess = await sendChatworkMessage(
+            chatworkRoomId,
+            replyBody
+          );
+        }
         break;
 
       default:
@@ -70,7 +94,7 @@ export async function POST(request: NextRequest) {
         );
     }
 
-    if (!sendResult.success) {
+    if (!sendSuccess) {
       return NextResponse.json(
         { success: false, error: '送信に失敗しました' },
         { status: 500 }

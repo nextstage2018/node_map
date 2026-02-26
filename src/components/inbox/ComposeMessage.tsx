@@ -157,6 +157,7 @@ export default function ComposeMessage({ onClose, onSent, onSentMessage }: Compo
           timestamp: new Date().toISOString(),
           isRead: true,
           status: 'read',
+          direction: 'sent', // Phase 38: 送信メッセージとして記録
           metadata: {
             slackChannel: channel === 'slack' ? slackChannel.replace(/^#/, '') : undefined,
             slackChannelName: channel === 'slack' ? slackChannel.replace(/^#/, '') : undefined,
