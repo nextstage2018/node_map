@@ -37,14 +37,29 @@ export default function TaskAiChat({
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 構想メモフォーム
-  const [ideationForm, setIdeationForm] = useState<Record<string, string>>({
-    goal: '',
-    content: '',
-    concerns: '',
-    deadline: '',
+  // 構想メモフォーム — ideationSummary から初期値を復元
+  const [ideationForm, setIdeationForm] = useState<Record<string, string>>(() => {
+    const defaults: Record<string, string> = { goal: '', content: '', concerns: '', deadline: '' };
+    if (task.ideationSummary) {
+      const lines = task.ideationSummary.split('\n');
+      for (const line of lines) {
+        const match = line.match(/^【(.+?)】(.+)$/);
+        if (match) {
+          const label = match[1];
+          const value = match[2].trim();
+          if (label === 'ゴール') defaults.goal = value;
+          else if (label === '主な内容') defaults.content = value;
+          else if (label === '気になる点') defaults.concerns = value;
+          else if (label === '期限' || label === '期限日') defaults.deadline = value;
+        }
+      }
+    }
+    // due_date があればそちらを優先
+    if ((task as any).dueDate) defaults.deadline = (task as any).dueDate;
+    return defaults;
   });
   const [showIdeationForm, setShowIdeationForm] = useState(true);
+  const [isEditingIdeation, setIsEditingIdeation] = useState(false);
 
   const phase = task.phase;
   const conversations = task.conversations;
@@ -84,8 +99,8 @@ export default function TaskAiChat({
     }
   };
 
-  // === 構想メモ送信 ===
-  const handleIdeationSubmit = async () => {
+  // === 構想メモ保存（編集 or 新規） ===
+  const handleIdeationSubmit = async (sendToAi: boolean = true) => {
     const parts: string[] = [];
     if (ideationForm.goal) parts.push(`【ゴール】${ideationForm.goal}`);
     if (ideationForm.content) parts.push(`【主な内容】${ideationForm.content}`);
@@ -96,19 +111,26 @@ export default function TaskAiChat({
 
     const message = parts.join('\n');
     setShowIdeationForm(false);
+    setIsEditingIdeation(false);
 
-    // 構想メモをideationSummaryにも保存
+    // 構想メモ + 期限日をDB保存
     try {
+      const updateBody: any = { id: task.id, ideationSummary: message };
+      if (ideationForm.deadline) updateBody.dueDate = ideationForm.deadline;
       await fetch('/api/tasks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: task.id, ideationSummary: message }),
+        body: JSON.stringify(updateBody),
       });
     } catch {
       // エラー処理
     }
 
-    await sendMessage(message);
+    // AIに送信する場合のみ
+    if (sendToAi) {
+      await sendMessage(message);
+    }
+    onTaskUpdate();
   };
 
   // === フェーズ遷移 ===
@@ -160,8 +182,16 @@ export default function TaskAiChat({
     await sendMessage(prompt);
   };
 
+  // 構想メモフォームの表示条件:
+  // 1. 会話なし＆構想フェーズ → 常に表示（初回入力）
+  // 2. 編集モード → 表示（既存データの修正）
+  // 3. AI構造化で値が埋まっている＆構想フェーズ＆会話なし → 確認＆編集用に表示
+  const hasIdeationData = !!(ideationForm.goal || ideationForm.content || ideationForm.concerns || ideationForm.deadline);
   const showIdeationFormUI =
-    phase === 'ideation' && conversations.length === 0 && showIdeationForm;
+    phase === 'ideation' && (
+      isEditingIdeation ||
+      (conversations.length === 0 && showIdeationForm)
+    );
 
   const phaseMessages = (p: TaskPhase) =>
     conversations.filter((c) => c.phase === p);
@@ -215,11 +245,21 @@ export default function TaskAiChat({
         </div>
       </div>
 
-      {/* 構想メモ（進行・結果フェーズで表示） */}
-      {task.ideationSummary && phase !== 'ideation' && (
+      {/* 構想メモ（表示＋編集ボタン） */}
+      {task.ideationSummary && !isEditingIdeation && (
         <div className="mx-4 mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
-          <div className="text-[10px] font-semibold text-amber-600 mb-1">
-            💡 構想メモ
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] font-semibold text-amber-600">
+              💡 構想メモ
+            </span>
+            {phase === 'ideation' && (
+              <button
+                onClick={() => setIsEditingIdeation(true)}
+                className="text-[10px] text-amber-500 hover:text-amber-700"
+              >
+                ✏️ 編集
+              </button>
+            )}
           </div>
           <p className="text-xs text-amber-800 whitespace-pre-wrap">
             {task.ideationSummary}
@@ -288,14 +328,23 @@ export default function TaskAiChat({
             </div>
             <div className="flex gap-2 mt-4">
               <button
-                onClick={() => setShowIdeationForm(false)}
+                onClick={() => { setShowIdeationForm(false); setIsEditingIdeation(false); }}
                 className="text-xs text-slate-400 hover:text-slate-600"
               >
-                フリー入力にする
+                {isEditingIdeation ? '閉じる' : 'フリー入力にする'}
               </button>
               <div className="flex-1" />
+              {(hasIdeationData || isEditingIdeation) && (
+                <Button
+                  variant="secondary"
+                  onClick={() => handleIdeationSubmit(false)}
+                  className="text-xs"
+                >
+                  保存のみ
+                </Button>
+              )}
               <Button
-                onClick={handleIdeationSubmit}
+                onClick={() => handleIdeationSubmit(true)}
                 disabled={!ideationForm.goal.trim()}
               >
                 AIに送信

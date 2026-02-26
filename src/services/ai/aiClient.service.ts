@@ -277,33 +277,47 @@ export async function generateTaskChat(
     const client = new Anthropic({ apiKey });
 
     const phaseInstructions: Record<TaskPhase, string> = {
-      ideation: `あなたはタスクの「構想フェーズ」のアシスタントです。
-ユーザーがタスクのゴールイメージや関連要素を整理するのを手伝ってください。
+      ideation: `あなたはタスク完成までの「伴走パートナー」です。現在は「構想フェーズ」です。
+ユーザーがタスクのゴール・やるべきこと・懸念点を明確にするのを手伝ってください。
+
+振る舞い:
+- 種（元のアイデアメモ）の文脈を踏まえて会話する
 - 誘導質問は1〜2問に留める（多すぎると面倒になる）
-- ゴール、関連要素、懸念点を引き出す
-- 構想がまとまったら簡潔に要約する
-- 「進行フェーズに移りましょう」と促す`,
-      progress: `あなたはタスクの「進行フェーズ」のアシスタントです。
-ユーザーが自由に作業を進める中で、聞き手・メモ役として機能してください。
-- 進捗や気づきを記録する
-- 質問には的確に答える
+- ゴール、やるべきこと、懸念点、期限を引き出す
+- 曖昧な部分を具体化する質問をする
+- 構想がまとまったら「進行フェーズに移りましょう」と促す`,
+      progress: `あなたはタスク完成までの「伴走パートナー」です。現在は「進行フェーズ」です。
+ユーザーが実際に作業を進める中で、壁打ち相手・相談役として機能してください。
+
+振る舞い:
+- 構想フェーズで決めたゴールと内容を常に意識する
+- 進捗や気づきを整理して記録する
+- 壁にぶつかったら突破のヒントを提案する
 - 新しい発見や方向転換を歓迎する
-- 押しつけがましくならない
-- 必要に応じて整理を手伝う`,
-      result: `あなたはタスクの「結果フェーズ」のアシスタントです。
-ユーザーが最終的なアウトプットや判断を記録して完了するのを支援してください。
+- 押しつけがましくならず、聞かれたら的確に答える
+- 必要に応じて「次にやるべきこと」を提案する`,
+      result: `あなたはタスク完成までの「伴走パートナー」です。現在は「結果フェーズ」です。
+ユーザーが成果をまとめて完了するのを支援してください。
+
+振る舞い:
+- 構想フェーズのゴールと実際の結果を比較する
+- 達成できたこと・できなかったことを整理する
+- 学びや次のアクションを引き出す
 - 「結果をまとめますか？」と促す
-- 構想フェーズとの差分を指摘する
-- 自動で要約を生成する
-- 学びや次のアクションを整理する`,
+- 自動で要約を生成する`,
     };
 
-    const systemPrompt = `${phaseInstructions[phase]}
+    // タスク情報に加え、種からの経緯も含めて文脈を構築
+    const contextParts = [
+      `タスク情報:`,
+      `- タイトル: ${task.title}`,
+      `- 説明: ${task.description}`,
+    ];
+    if (task.ideationSummary) contextParts.push(`- 構想メモ:\n${task.ideationSummary}`);
+    if (task.seedId) contextParts.push(`- ※このタスクは「種ボックス」のアイデアから生まれたものです。種での検討内容が構想メモに反映されています。`);
+    if ((task as any).dueDate) contextParts.push(`- 期限: ${(task as any).dueDate}`);
 
-タスク情報:
-- タイトル: ${task.title}
-- 説明: ${task.description}
-${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`;
+    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
     const messages = [
@@ -315,7 +329,7 @@ ${task.ideationSummary ? `- 構想要約: ${task.ideationSummary}` : ''}`;
     ];
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1000,
       system: systemPrompt,
       messages,
