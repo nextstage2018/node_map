@@ -6,7 +6,7 @@ import type { Seed, SeedStatus } from '@/lib/types';
 import Header from '@/components/shared/Header';
 import SeedCard from '@/components/seeds/SeedCard';
 import SeedTagInput from '@/components/seeds/SeedTagInput';
-import { Send, X, BookOpen, CheckSquare, MessageSquare } from 'lucide-react';
+import { Send, X, BookOpen, CheckSquare, MessageSquare, FolderOpen } from 'lucide-react';
 
 type StatusFilter = SeedStatus | 'all';
 
@@ -16,6 +16,13 @@ interface ChatMessage {
   content: string;
 }
 
+// Phase 40b: プロジェクト型
+interface Project {
+  id: string;
+  name: string;
+  status: string;
+}
+
 export default function SeedsPage() {
   const [seeds, setSeeds] = useState<Seed[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +30,8 @@ export default function SeedsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newTags, setNewTags] = useState<string[]>([]);
+  const [newProjectId, setNewProjectId] = useState<string>('');
+  const [projects, setProjects] = useState<Project[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Phase 31: AI会話パネル
@@ -33,6 +42,10 @@ export default function SeedsPage() {
   const [isConverting, setIsConverting] = useState(false);
   const [convertResult, setConvertResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Phase 40c: タスク変換時のプロジェクト確認モーダル
+  const [showTaskProjectModal, setShowTaskProjectModal] = useState(false);
+  const [taskProjectId, setTaskProjectId] = useState<string>('');
 
   // 会話末尾にスクロール
   useEffect(() => {
@@ -65,6 +78,17 @@ export default function SeedsPage() {
     fetchSeeds();
   }, [fetchSeeds]);
 
+  // Phase 40b: プロジェクト一覧取得
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/projects?status=active');
+        const data = await res.json();
+        if (data.success) setProjects(data.data || []);
+      } catch { /* サイレント */ }
+    })();
+  }, []);
+
   // 種の作成
   const handleCreate = async () => {
     if (!newContent.trim() || isSubmitting) return;
@@ -76,6 +100,7 @@ export default function SeedsPage() {
         body: JSON.stringify({
           content: newContent.trim(),
           tags: newTags.length > 0 ? newTags : undefined,
+          projectId: newProjectId || undefined,
         }),
       });
       const data = await res.json();
@@ -83,6 +108,7 @@ export default function SeedsPage() {
         setSeeds((prev) => [data.data, ...prev]);
         setNewContent('');
         setNewTags([]);
+        setNewProjectId('');
       }
     } catch {
       // サイレント
@@ -182,6 +208,20 @@ export default function SeedsPage() {
   // Phase 31: 種の変換（ナレッジ or タスク）
   const handleConvert = async (targetType: 'knowledge' | 'task') => {
     if (!selectedSeed || isConverting) return;
+
+    // Phase 40c: タスク変換時はプロジェクト選択モーダルを表示
+    if (targetType === 'task') {
+      setTaskProjectId(selectedSeed.projectId || '');
+      setShowTaskProjectModal(true);
+      return;
+    }
+
+    await executeConvert(targetType);
+  };
+
+  // Phase 40c: 実際の変換実行
+  const executeConvert = async (targetType: 'knowledge' | 'task', projectId?: string) => {
+    if (!selectedSeed || isConverting) return;
     setIsConverting(true);
     setConvertResult(null);
 
@@ -189,7 +229,11 @@ export default function SeedsPage() {
       const res = await fetch('/api/seeds/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seedId: selectedSeed.id, targetType }),
+        body: JSON.stringify({
+          seedId: selectedSeed.id,
+          targetType,
+          projectId: projectId || undefined,
+        }),
       });
       const data = await res.json();
       if (data.success) {
@@ -209,6 +253,7 @@ export default function SeedsPage() {
       setConvertResult({ type: 'error', text: '通信エラーが発生しました' });
     } finally {
       setIsConverting(false);
+      setShowTaskProjectModal(false);
     }
   };
 
@@ -246,6 +291,40 @@ export default function SeedsPage() {
 
   return (
     <div className="flex flex-col h-screen bg-white">
+      {/* Phase 40c: タスク変換時のプロジェクト確認モーダル */}
+      {showTaskProjectModal && selectedSeed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-5 w-96 mx-4">
+            <h3 className="text-sm font-bold text-slate-900 mb-1">タスクに変換</h3>
+            <p className="text-xs text-slate-500 mb-3">紐づけるプロジェクトを選択してください</p>
+            <select
+              value={taskProjectId}
+              onChange={(e) => setTaskProjectId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 bg-white"
+            >
+              <option value="">プロジェクトなし</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                onClick={() => executeConvert('task', taskProjectId || undefined)}
+                disabled={isConverting}
+                className="flex-1 px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isConverting ? '変換中...' : 'タスクに変換'}
+              </button>
+              <button
+                onClick={() => setShowTaskProjectModal(false)}
+                className="px-4 py-2 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <Header />
       <div className="flex-1 overflow-hidden flex">
         {/* ========================================
@@ -280,6 +359,22 @@ export default function SeedsPage() {
                   <label className="block text-xs text-slate-500 mb-1">タグ</label>
                   <SeedTagInput tags={newTags} onChange={setNewTags} />
                 </div>
+                {projects.length > 0 && (
+                  <div className="w-48">
+                    <label className="block text-xs text-slate-500 mb-1">プロジェクト</label>
+                    <select
+                      value={newProjectId}
+                      onChange={(e) => setNewProjectId(e.target.value)}
+                      className="w-full px-2 py-1.5 border border-slate-200 rounded-lg text-xs bg-white
+                        focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">未指定</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <button
                   onClick={handleCreate}
                   disabled={!newContent.trim() || isSubmitting}
@@ -388,7 +483,7 @@ export default function SeedsPage() {
         {selectedSeed && (
           <div className="w-96 flex flex-col bg-white shrink-0">
             {/* パネルヘッダー */}
-            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 space-y-2">
               <div className="flex items-start justify-between">
                 <div className="flex-1 min-w-0 mr-2">
                   <h3 className="text-sm font-bold text-slate-900 truncate">AI会話</h3>
@@ -398,6 +493,42 @@ export default function SeedsPage() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
+              {/* Phase 40b: プロジェクト紐づけ */}
+              {projects.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  <select
+                    value={selectedSeed.projectId || ''}
+                    onChange={async (e) => {
+                      const pid = e.target.value || null;
+                      try {
+                        const res = await fetch('/api/seeds', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            seedId: selectedSeed.id,
+                            content: selectedSeed.content,
+                            projectId: pid,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          const updatedSeed = data.data;
+                          setSelectedSeed(updatedSeed);
+                          setSeeds((prev) => prev.map((s) => s.id === updatedSeed.id ? updatedSeed : s));
+                        }
+                      } catch { /* サイレント */ }
+                    }}
+                    className="flex-1 px-2 py-1 text-xs border border-slate-200 rounded bg-white
+                      focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  >
+                    <option value="">プロジェクト未指定</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             {/* 会話履歴 */}

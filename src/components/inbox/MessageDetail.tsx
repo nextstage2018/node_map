@@ -328,6 +328,9 @@ interface ContextMessage {
 function useSeedAction() {
   const [seedingId, setSeedingId] = useState<string | null>(null);
   const [seedResult, setSeedResult] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
+  // Phase 40c: 複数プロジェクト候補の選択モーダル
+  const [projectCandidates, setProjectCandidates] = useState<{ projectId: string; projectName: string }[] | null>(null);
+  const [pendingSeedId, setPendingSeedId] = useState<string | null>(null);
 
   const createSeed = async (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => {
     if (seedingId) return;
@@ -345,6 +348,15 @@ function useSeedAction() {
         sourceDate: msg.timestamp,
       };
 
+      // Phase 40c: チャネル識別子を渡す（プロジェクト自動検出用）
+      if (msg.channel === 'slack' && msg.metadata?.slackChannel) {
+        requestBody.channelIdentifier = msg.metadata.slackChannel;
+      } else if (msg.channel === 'chatwork' && msg.metadata?.chatworkRoomId) {
+        requestBody.channelIdentifier = msg.metadata.chatworkRoomId;
+      } else if (msg.channel === 'email' && msg.from?.address) {
+        requestBody.channelIdentifier = msg.from.address;
+      }
+
       if (contextMessages && contextMessages.length > 0) {
         // Phase 40b: AIがコンテキストから要約生成
         requestBody.contextMessages = contextMessages;
@@ -360,7 +372,15 @@ function useSeedAction() {
       });
       const data = await res.json();
       if (data.success) {
-        setSeedResult({ id: msg.id, type: 'success', text: 'AIが文脈を読んで種を生成しました' });
+        // Phase 40c: 複数プロジェクト候補があればモーダル表示
+        if (data.projectCandidates && data.projectCandidates.length > 0) {
+          setProjectCandidates(data.projectCandidates);
+          setPendingSeedId(data.data.id);
+          setSeedResult({ id: msg.id, type: 'success', text: 'プロジェクトを選択してください' });
+        } else {
+          const projectNote = data.data.projectName ? ` → ${data.data.projectName}` : '';
+          setSeedResult({ id: msg.id, type: 'success', text: `AIが文脈を読んで種を生成しました${projectNote}` });
+        }
         // Phase 28: ナレッジパイプラインのフィードバック表示
         handleKnowledgeResponse(data, 'seed');
       } else {
@@ -370,11 +390,34 @@ function useSeedAction() {
       setSeedResult({ id: msg.id, type: 'error', text: '通信エラーが発生しました' });
     } finally {
       setSeedingId(null);
-      setTimeout(() => setSeedResult(null), 4000);
+      setTimeout(() => {
+        if (!projectCandidates) setSeedResult(null);
+      }, 4000);
     }
   };
 
-  return { seedingId, seedResult, createSeed };
+  // Phase 40c: プロジェクト選択後の紐づけ
+  const selectProject = async (projectId: string) => {
+    if (!pendingSeedId) return;
+    try {
+      await fetch('/api/seeds', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ seedId: pendingSeedId, content: '', projectId }),
+      });
+    } catch { /* silent */ }
+    setProjectCandidates(null);
+    setPendingSeedId(null);
+    setSeedResult(null);
+  };
+
+  const dismissProjectModal = () => {
+    setProjectCandidates(null);
+    setPendingSeedId(null);
+    setSeedResult(null);
+  };
+
+  return { seedingId, seedResult, createSeed, projectCandidates, selectProject, dismissProjectModal };
 }
 
 /**
@@ -637,7 +680,7 @@ interface MessageDetailProps {
 
 export default function MessageDetail({ message, group, onSentMessage, onBlockSender }: MessageDetailProps) {
   const [showReply, setShowReply] = useState(false);
-  const { seedingId, seedResult, createSeed } = useSeedAction();
+  const { seedingId, seedResult, createSeed, projectCandidates, selectProject, dismissProjectModal } = useSeedAction();
   const [blockResult, setBlockResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // ブロック処理
@@ -683,19 +726,50 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
     </div>
   );
 
+  // Phase 40c: プロジェクト選択モーダル
+  const projectModal = projectCandidates && projectCandidates.length > 0 && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+      <div className="bg-white rounded-xl shadow-xl p-5 w-80 mx-4">
+        <h3 className="text-sm font-bold text-slate-900 mb-1">プロジェクトを選択</h3>
+        <p className="text-xs text-slate-500 mb-3">このチャネルは複数のプロジェクトに紐づいています</p>
+        <div className="space-y-2 mb-3">
+          {projectCandidates.map((c) => (
+            <button
+              key={c.projectId}
+              onClick={() => selectProject(c.projectId)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left bg-slate-50 border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
+            >
+              <span className="text-blue-500">📁</span>
+              <span className="text-slate-700">{c.projectName}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={dismissProjectModal}
+          className="w-full px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          スキップ（紐づけない）
+        </button>
+      </div>
+    </div>
+  );
+
   // グループが選択されている場合（複数メッセージのグループ）
   if (group && group.messageCount > 1) {
     return (
-      <GroupDetail
-        group={group}
-        showReply={showReply}
-        onToggleReply={() => setShowReply(!showReply)}
-        onCloseReply={() => setShowReply(false)}
-        onSentMessage={onSentMessage}
-        seedProps={seedProps}
-        onBlock={handleBlock}
-        blockBanner={blockBanner}
-      />
+      <>
+        {projectModal}
+        <GroupDetail
+          group={group}
+          showReply={showReply}
+          onToggleReply={() => setShowReply(!showReply)}
+          onCloseReply={() => setShowReply(false)}
+          onSentMessage={onSentMessage}
+          seedProps={seedProps}
+          onBlock={handleBlock}
+          blockBanner={blockBanner}
+        />
+      </>
     );
   }
 
@@ -705,7 +779,26 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
   // メールで引用チェーンが解析されている場合は会話ビューで表示
   if (displayMessage.channel === 'email' && displayMessage.threadMessages && displayMessage.threadMessages.length > 1) {
     return (
-      <EmailThreadDetail
+      <>
+        {projectModal}
+        <EmailThreadDetail
+          message={displayMessage}
+          showReply={showReply}
+          onToggleReply={() => setShowReply(!showReply)}
+          onCloseReply={() => setShowReply(false)}
+          onSentMessage={onSentMessage}
+          seedProps={seedProps}
+          onBlock={handleBlock}
+          blockBanner={blockBanner}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {projectModal}
+      <SingleMessageDetail
         message={displayMessage}
         showReply={showReply}
         onToggleReply={() => setShowReply(!showReply)}
@@ -715,20 +808,7 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
         onBlock={handleBlock}
         blockBanner={blockBanner}
       />
-    );
-  }
-
-  return (
-    <SingleMessageDetail
-      message={displayMessage}
-      showReply={showReply}
-      onToggleReply={() => setShowReply(!showReply)}
-      onCloseReply={() => setShowReply(false)}
-      onSentMessage={onSentMessage}
-      seedProps={seedProps}
-      onBlock={handleBlock}
-      blockBanner={blockBanner}
-    />
+    </>
   );
 }
 

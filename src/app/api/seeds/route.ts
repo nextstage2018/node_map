@@ -6,6 +6,33 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
+import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+
+// Phase 40c: チャネル情報からプロジェクトを自動検出
+async function detectProjectFromChannel(
+  sourceChannel: string | undefined,
+  channelIdentifier: string | undefined,
+  userId: string,
+): Promise<{ projectId: string; projectName: string }[]> {
+  if (!sourceChannel || !channelIdentifier) return [];
+
+  const supabase = createServerClient();
+  if (!supabase || !isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase
+    .from('project_channels')
+    .select('project_id, channel_label, projects(name)')
+    .eq('service_name', sourceChannel)
+    .eq('channel_identifier', channelIdentifier)
+    .eq('user_id', userId);
+
+  if (error || !data || data.length === 0) return [];
+
+  return data.map((row: any) => ({
+    projectId: row.project_id,
+    projectName: row.projects?.name || row.channel_label || '',
+  }));
+}
 
 // 種一覧取得
 export async function GET(request: NextRequest) {
@@ -119,6 +146,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Phase 40c: チャネルからプロジェクトを自動検出
+    let projectId = body.projectId || null;
+    let projectCandidates: { projectId: string; projectName: string }[] = [];
+
+    if (!projectId && body.channelIdentifier) {
+      const candidates = await detectProjectFromChannel(
+        body.sourceChannel,
+        body.channelIdentifier,
+        userId,
+      );
+      if (candidates.length === 1) {
+        // 1件のみ → 自動紐づけ
+        projectId = candidates[0].projectId;
+      } else if (candidates.length > 1) {
+        // 複数候補 → フロントエンドに返す（モーダルで選択）
+        projectCandidates = candidates;
+      }
+    }
+
     // Phase 40: オブジェクト引数で渡す
     const seed = await TaskService.createSeed({
       content: seedContent,
@@ -126,6 +172,7 @@ export async function POST(request: NextRequest) {
       sourceMessageId: body.sourceMessageId,
       sourceFrom: body.sourceFrom,
       sourceDate: body.sourceDate,
+      projectId,
       userId,
     });
 
@@ -147,6 +194,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: seed,
+      projectCandidates: projectCandidates.length > 0 ? projectCandidates : undefined,
       knowledge: knowledgeResult ? {
         keywords: knowledgeResult.keywords,
         newKeywords: knowledgeResult.newKeywords,
@@ -175,14 +223,38 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    if (!body.seedId || !body.content) {
+    if (!body.seedId) {
       return NextResponse.json(
-        { success: false, error: 'seedId と content は必須です' },
+        { success: false, error: 'seedId は必須です' },
         { status: 400 }
       );
     }
 
-    const updated = await TaskService.updateSeed(body.seedId, body.content, body.tags);
+    // Phase 40c: projectId のみの更新をサポート（content省略時はDB直接更新）
+    if (!body.content && body.projectId !== undefined) {
+      const supabase = createServerClient();
+      if (supabase && isSupabaseConfigured()) {
+        const { data, error } = await supabase
+          .from('seeds')
+          .update({ project_id: body.projectId || null, updated_at: new Date().toISOString() })
+          .eq('id', body.seedId)
+          .select()
+          .single();
+        if (error) {
+          return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        }
+        return NextResponse.json({ success: true, data });
+      }
+    }
+
+    if (!body.content) {
+      return NextResponse.json(
+        { success: false, error: 'content は必須です' },
+        { status: 400 }
+      );
+    }
+
+    const updated = await TaskService.updateSeed(body.seedId, body.content, body.tags, body.projectId);
     if (!updated) {
       return NextResponse.json(
         { success: false, error: '種が見つかりません' },

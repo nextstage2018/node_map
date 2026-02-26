@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { seedId, targetType } = body;
+    const { seedId, targetType, projectId } = body;
 
     if (!seedId || !targetType) {
       return NextResponse.json(
@@ -80,18 +80,25 @@ export async function POST(request: NextRequest) {
         result = { type: 'knowledge', keywords: [], newKeywords: [], nodeCount: 0 };
       }
     } else {
-      // Phase 31: タスクに変換
+      // Phase 31+40c: タスクに変換（プロジェクト紐づけ対応）
+      const taskInsert: Record<string, unknown> = {
+        title: seed.content.slice(0, 60),
+        description: seed.content,
+        status: 'todo',
+        priority: 'medium',
+        phase: 'ideation',
+        seed_id: seed.id,
+        user_id: userId,
+      };
+      // Phase 40c: プロジェクト紐づけ（種のproject_id or リクエストのprojectId）
+      const taskProjectId = projectId || seed.project_id;
+      if (taskProjectId) {
+        taskInsert.project_id = taskProjectId;
+      }
+
       const { data: task, error: taskError } = await supabase
         .from('tasks')
-        .insert({
-          title: seed.content.slice(0, 60),
-          description: seed.content,
-          status: 'todo',
-          priority: 'medium',
-          phase: 'ideation',
-          seed_id: seed.id,
-          user_id: userId,
-        })
+        .insert(taskInsert)
         .select()
         .single();
 
