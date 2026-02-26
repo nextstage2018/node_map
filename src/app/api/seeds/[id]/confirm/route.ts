@@ -9,7 +9,13 @@ export async function POST(
 ) {
   try {
     // Phase 22: 認証確認
-    await getServerUserId();
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
     const { id } = await params;
     if (!id) {
       return NextResponse.json(
@@ -28,7 +34,7 @@ export async function POST(
     }
 
     // 種をタスクに変換
-    const task = await TaskService.confirmSeed(id);
+    const task = await TaskService.confirmSeed(id, userId);
     if (!task) {
       return NextResponse.json(
         { success: false, error: '種のタスク化に失敗しました' },

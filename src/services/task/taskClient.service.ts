@@ -1049,7 +1049,7 @@ export class TaskService {
     }
   }
 
-  static async confirmSeed(seedId: string): Promise<Task | null> {
+  static async confirmSeed(seedId: string, userId?: string): Promise<Task | null> {
     const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
 
@@ -1119,7 +1119,7 @@ export class TaskService {
 
       // Create new task
       const taskId = crypto.randomUUID();
-      const newTaskData = {
+      const newTaskData: Record<string, unknown> = {
         id: taskId,
         title: seed.content.length > 40 ? seed.content.slice(0, 40) + '...' : seed.content,
         description: seed.content,
@@ -1133,6 +1133,8 @@ export class TaskService {
         created_at: now,
         updated_at: now,
       };
+      if (userId) newTaskData.user_id = userId;
+      if (seed.project_id) newTaskData.project_id = seed.project_id;
 
       const { data: createdTask, error: taskError } = await sb
         .from('tasks')
