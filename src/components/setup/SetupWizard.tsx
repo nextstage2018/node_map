@@ -288,7 +288,7 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="text-[10px] text-slate-400 mt-1">
-                  このドメインのメールアドレスを持つコンタクトが自動的に自社メンバーとして判定されます
+                  このドメインのメールアドレスを持つコンタクトが自動的に「自社」として判定されます
                 </p>
               </div>
             </div>

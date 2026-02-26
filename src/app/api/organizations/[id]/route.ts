@@ -72,17 +72,18 @@ export async function PUT(
       );
     }
 
-    // Phase 37b: 関係性が設定されている場合、所属コンタクトの relationship_type も連動更新
+    // Phase 37b: 所属コンタクトの company_name と relationship_type を連動更新
+    const contactUpdate: Record<string, unknown> = {
+      company_name: name.trim(),
+      updated_at: new Date().toISOString(),
+    };
     if (relationship_type && ORG_TO_CONTACT_RELATIONSHIP[relationship_type]) {
-      const contactRelType = ORG_TO_CONTACT_RELATIONSHIP[relationship_type];
-      await supabase
-        .from('contact_persons')
-        .update({
-          relationship_type: contactRelType,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('organization_id', id);
+      contactUpdate.relationship_type = ORG_TO_CONTACT_RELATIONSHIP[relationship_type];
     }
+    await supabase
+      .from('contact_persons')
+      .update(contactUpdate)
+      .eq('organization_id', id);
 
     return NextResponse.json({ success: true, data });
   } catch (error) {

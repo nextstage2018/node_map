@@ -387,7 +387,7 @@ export const KNOWLEDGE_DOMAIN_CONFIG: Record<string, {
 
 export const RELATIONSHIP_TYPE_CONFIG = {
   internal: {
-    label: '自社メンバー',
+    label: '自社',
     color: '#2563EB',     // primary blue
     bgColor: 'bg-blue-50',
     textColor: 'text-blue-700',
@@ -395,7 +395,7 @@ export const RELATIONSHIP_TYPE_CONFIG = {
     dotColor: 'bg-blue-500',
   },
   client: {
-    label: 'クライアント',
+    label: '取引先',
     color: '#D97706',     // amber
     bgColor: 'bg-amber-50',
     textColor: 'text-amber-700',

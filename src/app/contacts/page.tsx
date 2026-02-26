@@ -98,9 +98,11 @@ interface BlocklistEntry {
 // 定数
 // ========================================
 const RELATIONSHIP_LABELS: Record<string, { label: string; color: string }> = {
-  internal: { label: '自社メンバー', color: 'bg-blue-100 text-blue-700' },
-  client: { label: 'クライアント', color: 'bg-green-100 text-green-700' },
+  internal: { label: '自社', color: 'bg-blue-100 text-blue-700' },
+  client: { label: '取引先', color: 'bg-amber-100 text-amber-700' },
   partner: { label: 'パートナー', color: 'bg-purple-100 text-purple-700' },
+  vendor: { label: '仕入先', color: 'bg-emerald-100 text-emerald-700' },
+  prospect: { label: '見込み', color: 'bg-cyan-100 text-cyan-700' },
   unknown: { label: '未分類', color: 'bg-slate-100 text-slate-500' },
 };
 
@@ -902,9 +904,11 @@ export default function ContactsPage() {
                                 onChange={(e) => setEditRelationship(e.target.value)}
                                 className="text-xs border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                               >
-                                <option value="internal">自社メンバー</option>
-                                <option value="client">クライアント</option>
+                                <option value="internal">自社</option>
+                                <option value="client">取引先</option>
                                 <option value="partner">パートナー</option>
+                                <option value="vendor">仕入先</option>
+                                <option value="prospect">見込み</option>
                                 <option value="unknown">未分類</option>
                               </select>
                               <button onClick={() => updateRelationship(contact, editRelationship)} className="p-0.5 text-green-600 hover:text-green-800">

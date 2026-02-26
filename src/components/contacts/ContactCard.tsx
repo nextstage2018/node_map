@@ -77,7 +77,7 @@ export default function ContactCard({
           >
             {relationshipOptions.map((opt) => (
               <option key={opt} value={opt}>
-                {opt === 'internal' ? '自社メンバー' : opt === 'client' ? 'クライアント' : 'パートナー'}
+                {opt === 'internal' ? '自社' : opt === 'client' ? '取引先' : opt === 'partner' ? 'パートナー' : opt === 'vendor' ? '仕入先' : opt === 'prospect' ? '見込み' : opt}
               </option>
             ))}
           </select>

@@ -172,11 +172,12 @@ export async function POST(
       });
     }
 
-    // メンバーとして追加
+    // メンバーとして追加（company_name も組織名に設定）
     const { error: updateError } = await supabase
       .from('contact_persons')
       .update({
         organization_id: orgId,
+        company_name: org.name,
         auto_added_to_org: true,
         updated_at: new Date().toISOString(),
       })

@@ -77,10 +77,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'contact_ids は必須です' }, { status: 400 });
     }
 
-    // 組織の所有確認（relationship_type も取得）
+    // 組織の所有確認（relationship_type + name も取得）
     const { data: org } = await supabase
       .from('organizations')
-      .select('id, relationship_type')
+      .select('id, name, relationship_type')
       .eq('id', orgId)
       .eq('user_id', userId)
       .single();
@@ -124,9 +124,10 @@ export async function POST(
     };
     const contactRelType = org.relationship_type ? orgToContactRel[org.relationship_type] : undefined;
 
-    // 複数コンタクトを一括でorganization_idに紐づけ
+    // 複数コンタクトを一括でorganization_idに紐づけ（company_nameも設定）
     const updatePayload: Record<string, unknown> = {
       organization_id: orgId,
+      company_name: org.name,
       updated_at: new Date().toISOString(),
     };
     if (contactRelType) {
@@ -191,6 +192,7 @@ export async function DELETE(
       .from('contact_persons')
       .update({
         organization_id: null,
+        company_name: null,
         auto_added_to_org: false,
         updated_at: new Date().toISOString(),
       })
