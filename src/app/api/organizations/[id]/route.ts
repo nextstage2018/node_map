@@ -1,9 +1,18 @@
-// Phase 30a: 組織マスター API（PUT / DELETE）
+// Phase 30a + 37b: 組織マスター API（PUT / DELETE）
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
+
+// Phase 37b: 組織→コンタクト関係性マッピング
+const ORG_TO_CONTACT_RELATIONSHIP: Record<string, string> = {
+  internal: 'internal',
+  client: 'client',
+  partner: 'partner',
+  vendor: 'partner',
+  prospect: 'client',
+};
 
 // 組織更新
 export async function PUT(
@@ -29,7 +38,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, domain } = body;
+    const { name, domain, relationship_type, address, phone, memo } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -38,11 +47,16 @@ export async function PUT(
       );
     }
 
+    // 組織を更新
     const { data, error } = await supabase
       .from('organizations')
       .update({
         name: name.trim(),
         domain: domain?.trim() || null,
+        relationship_type: relationship_type || null,
+        address: address?.trim() || null,
+        phone: phone?.trim() || null,
+        memo: memo?.trim() || null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
@@ -56,6 +70,18 @@ export async function PUT(
         { success: false, error: error.message },
         { status: 500 }
       );
+    }
+
+    // Phase 37b: 関係性が設定されている場合、所属コンタクトの relationship_type も連動更新
+    if (relationship_type && ORG_TO_CONTACT_RELATIONSHIP[relationship_type]) {
+      const contactRelType = ORG_TO_CONTACT_RELATIONSHIP[relationship_type];
+      await supabase
+        .from('contact_persons')
+        .update({
+          relationship_type: contactRelType,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('organization_id', id);
     }
 
     return NextResponse.json({ success: true, data });
@@ -94,10 +120,15 @@ export async function DELETE(
 
     // 組織に紐づくコンタクトのorganization_idをnullに戻す
     await supabase
-      .from('contacts')
+      .from('contact_persons')
       .update({ organization_id: null })
-      .eq('organization_id', id)
-      .eq('user_id', userId);
+      .eq('organization_id', id);
+
+    // 組織チャネルも削除（CASCADE設定済みだが念のため）
+    await supabase
+      .from('organization_channels')
+      .delete()
+      .eq('organization_id', id);
 
     const { error } = await supabase
       .from('organizations')

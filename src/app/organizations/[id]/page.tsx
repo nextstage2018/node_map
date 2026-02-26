@@ -16,6 +16,10 @@ interface Organization {
   id: string;
   name: string;
   domain: string | null;
+  relationship_type: string | null;
+  address: string | null;
+  phone: string | null;
+  memo: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -104,6 +108,10 @@ export default function OrganizationDetailPage() {
   const [org, setOrg] = useState<Organization | null>(null);
   const [editName, setEditName] = useState('');
   const [editDomain, setEditDomain] = useState('');
+  const [editRelType, setEditRelType] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editMemo, setEditMemo] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
   // チャネル
@@ -143,6 +151,10 @@ export default function OrganizationDetailPage() {
           setOrg(found);
           setEditName(found.name);
           setEditDomain(found.domain || '');
+          setEditRelType(found.relationship_type || '');
+          setEditAddress(found.address || '');
+          setEditPhone(found.phone || '');
+          setEditMemo(found.memo || '');
         }
       }
     } catch { /* */ }
@@ -182,12 +194,21 @@ export default function OrganizationDetailPage() {
       const res = await fetch(`/api/organizations/${orgId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: editName.trim(), domain: editDomain.trim() || null }),
+        body: JSON.stringify({
+          name: editName.trim(),
+          domain: editDomain.trim() || null,
+          relationship_type: editRelType || null,
+          address: editAddress.trim() || null,
+          phone: editPhone.trim() || null,
+          memo: editMemo.trim() || null,
+        }),
       });
       const data = await res.json();
       if (data.success) {
         setOrg(data.data);
         showMsg('success', '組織情報を更新しました');
+        // 関係性が変更された場合、メンバーリストもリフレッシュ
+        if (editRelType) fetchMembers();
       } else {
         showMsg('error', data.error || '更新に失敗しました');
       }
@@ -456,6 +477,7 @@ export default function OrganizationDetailPage() {
           {/* ===== 基本情報タブ ===== */}
           {activeTab === 'info' && (
             <div className="max-w-lg space-y-4">
+              {/* 組織名 */}
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
                   <Building2 className="w-3.5 h-3.5" />
@@ -468,6 +490,33 @@ export default function OrganizationDetailPage() {
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* 関係性 */}
+              <div>
+                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                  <Users className="w-3.5 h-3.5" />
+                  関係性
+                </label>
+                <select
+                  value={editRelType}
+                  onChange={(e) => setEditRelType(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">未設定</option>
+                  <option value="internal">自社</option>
+                  <option value="client">取引先</option>
+                  <option value="partner">パートナー</option>
+                  <option value="vendor">仕入先</option>
+                  <option value="prospect">見込み</option>
+                </select>
+                {editRelType && members.length > 0 && (
+                  <p className="mt-1 text-[10px] text-slate-400">
+                    保存時に所属メンバー{members.length}人の関係性も連動更新されます
+                  </p>
+                )}
+              </div>
+
+              {/* ドメイン */}
               <div>
                 <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
                   <Globe className="w-3.5 h-3.5" />
@@ -481,6 +530,43 @@ export default function OrganizationDetailPage() {
                   className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* 住所 */}
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">住所</label>
+                <input
+                  type="text"
+                  value={editAddress}
+                  onChange={(e) => setEditAddress(e.target.value)}
+                  placeholder="例: 東京都渋谷区..."
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* 電話番号 */}
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">電話番号</label>
+                <input
+                  type="text"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="例: 03-1234-5678"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* メモ */}
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">メモ</label>
+                <textarea
+                  value={editMemo}
+                  onChange={(e) => setEditMemo(e.target.value)}
+                  placeholder="備考・メモ"
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
+              </div>
+
               <button
                 onClick={saveOrg}
                 disabled={!editName.trim()}

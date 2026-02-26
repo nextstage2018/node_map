@@ -13,9 +13,18 @@ interface Organization {
   id: string;
   name: string;
   domain: string | null;
+  relationship_type: string | null;
   created_at: string;
   updated_at: string;
 }
+
+const REL_TYPE_LABELS: Record<string, { label: string; bg: string; text: string }> = {
+  internal: { label: '自社', bg: 'bg-blue-50', text: 'text-blue-700' },
+  client: { label: '取引先', bg: 'bg-amber-50', text: 'text-amber-700' },
+  partner: { label: 'パートナー', bg: 'bg-purple-50', text: 'text-purple-700' },
+  vendor: { label: '仕入先', bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  prospect: { label: '見込み', bg: 'bg-cyan-50', text: 'text-cyan-700' },
+};
 
 interface OrgWithCount extends Organization {
   contactCount: number;
@@ -227,7 +236,14 @@ export default function OrganizationsPage() {
                       <Building2 className="w-5 h-5 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
+                        {org.relationship_type && REL_TYPE_LABELS[org.relationship_type] && (
+                          <span className={`inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full ${REL_TYPE_LABELS[org.relationship_type].bg} ${REL_TYPE_LABELS[org.relationship_type].text}`}>
+                            {REL_TYPE_LABELS[org.relationship_type].label}
+                          </span>
+                        )}
+                      </div>
                       {org.domain && (
                         <div className="flex items-center gap-1 mt-0.5">
                           <Globe className="w-3 h-3 text-slate-400" />

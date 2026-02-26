@@ -410,7 +410,32 @@ export const RELATIONSHIP_TYPE_CONFIG = {
     borderColor: 'border-purple-200',
     dotColor: 'bg-purple-500',
   },
+  vendor: {
+    label: '仕入先',
+    color: '#059669',     // emerald
+    bgColor: 'bg-emerald-50',
+    textColor: 'text-emerald-700',
+    borderColor: 'border-emerald-200',
+    dotColor: 'bg-emerald-500',
+  },
+  prospect: {
+    label: '見込み',
+    color: '#0891B2',     // cyan
+    bgColor: 'bg-cyan-50',
+    textColor: 'text-cyan-700',
+    borderColor: 'border-cyan-200',
+    dotColor: 'bg-cyan-500',
+  },
 } as const;
+
+// Phase 37b: 組織用の関係性マッピング（organizationsテーブル → contact_personsテーブル）
+export const ORG_RELATIONSHIP_MAP: Record<string, string> = {
+  internal: 'internal',
+  client: 'client',
+  partner: 'partner',
+  vendor: 'partner',
+  prospect: 'client',
+};
 
 // ===== Phase 10: 思考マップUI改修 =====
 

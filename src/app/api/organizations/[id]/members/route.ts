@@ -77,10 +77,10 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'contact_ids は必須です' }, { status: 400 });
     }
 
-    // 組織の所有確認
+    // 組織の所有確認（relationship_type も取得）
     const { data: org } = await supabase
       .from('organizations')
-      .select('id')
+      .select('id, relationship_type')
       .eq('id', orgId)
       .eq('user_id', userId)
       .single();
@@ -89,13 +89,25 @@ export async function POST(
       return NextResponse.json({ success: false, error: '組織が見つかりません' }, { status: 404 });
     }
 
+    // Phase 37b: 組織の関係性をコンタクトにも設定
+    const orgToContactRel: Record<string, string> = {
+      internal: 'internal', client: 'client', partner: 'partner',
+      vendor: 'partner', prospect: 'client',
+    };
+    const contactRelType = org.relationship_type ? orgToContactRel[org.relationship_type] : undefined;
+
     // 複数コンタクトを一括でorganization_idに紐づけ
+    const updatePayload: Record<string, unknown> = {
+      organization_id: orgId,
+      updated_at: new Date().toISOString(),
+    };
+    if (contactRelType) {
+      updatePayload.relationship_type = contactRelType;
+    }
+
     const { data, error } = await supabase
       .from('contact_persons')
-      .update({
-        organization_id: orgId,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .in('id', contact_ids)
       .select('id, name');
 
