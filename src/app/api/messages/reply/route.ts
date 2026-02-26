@@ -140,12 +140,12 @@ export async function POST(request: NextRequest) {
         // 元メッセージのメタデータを引き継ぎ（同じスレッド/ルームにグルーピングされるように）
         slackChannel: metadata?.slackChannel || undefined,
         slackChannelName: metadata?.slackChannelName || undefined,
-        slackTs: sendResult.messageId || undefined,
+        slackTs: metadata?.slackTs || undefined,
         slackThreadTs: metadata?.slackThreadTs || metadata?.slackTs || undefined,
         chatworkRoomId: metadata?.chatworkRoomId || undefined,
         chatworkRoomName: metadata?.chatworkRoomName || undefined,
-        chatworkMessageId: sendResult.messageId || undefined,
-        messageId: sendResult.messageId || undefined,
+        chatworkMessageId: metadata?.chatworkMessageId || undefined,
+        messageId: metadata?.messageId || undefined,
       },
     };
 
@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        messageId: sendResult.messageId,
+        messageId: sentReplyId,
         sentReplyId, // Phase 38: 保存されたメッセージのID
         channel,
       },

@@ -131,6 +131,20 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
 
   const { defaultTo, defaultCc } = useMemo(() => {
     if (!isEmail) return { defaultTo: [], defaultCc: [] };
+
+    const isSentMessage = message.direction === 'sent' || message.from.name === 'あなた' || message.from.name === 'Me';
+
+    if (isSentMessage) {
+      // 送信済みメッセージへの返信: 元の宛先にTo、CCはそのまま
+      const originalTo = message.to?.map((t) => t.address).filter(Boolean) || [];
+      const originalCc = message.cc?.map((c) => c.address).filter(Boolean) || [];
+      return {
+        defaultTo: originalTo,
+        defaultCc: Array.from(new Set(originalCc)),
+      };
+    }
+
+    // 受信メッセージへの返信: 送信者にTo、他の受信者をCCに
     const senderAddress = message.from.address;
     const toAddresses = message.to?.map((t) => t.address).filter(Boolean) || [];
     const ccAddresses = message.cc?.map((c) => c.address).filter(Boolean) || [];
@@ -150,11 +164,20 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
   const [bccRecipients, setBccRecipients] = useState<string[]>([]);
   const [showBcc, setShowBcc] = useState(false);
 
-  // Chatwork宛先（@付きユーザー名）
+  // Chatwork宛先（account_id形式: [To:12345]のようにAPI宛先指定される）
   const [chatworkTo, setChatworkTo] = useState<string[]>(() => {
     if (!isChatwork) return [];
-    return message.from.name !== 'あなた' ? [message.from.name] : [];
+    // from.address にaccount_idが入っている（数値文字列）
+    return message.from.address && message.from.name !== 'あなた' ? [message.from.address] : [];
   });
+  // 表示用の名前マッピング（account_id → 名前）
+  const chatworkToNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (isChatwork && message.from.address && message.from.name !== 'あなた') {
+      map[message.from.address] = message.from.name;
+    }
+    return map;
+  }, [isChatwork, message.from]);
 
   // 件名（Re: を付与）
   const replySubject = useMemo(() => {
@@ -292,15 +315,32 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
         </div>
       )}
 
-      {/* Chatwork宛先 */}
+      {/* Chatwork宛先（account_idベース） */}
       {isChatwork && (
         <div className="text-xs bg-white border border-slate-200 rounded-lg p-3">
-          <RecipientInput
-            label="宛先:"
-            values={chatworkTo}
-            onChange={setChatworkTo}
-            placeholder="宛先名を入力"
-          />
+          <div className="flex gap-2 items-start">
+            <span className="text-slate-400 w-8 shrink-0 pt-1 text-xs">宛先:</span>
+            <div className="flex-1 flex flex-wrap gap-1 min-h-[28px] items-center">
+              {chatworkTo.map((accountId, i) => (
+                <span
+                  key={`${accountId}-${i}`}
+                  className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs"
+                >
+                  {chatworkToNames[accountId] || accountId}
+                  <button
+                    onClick={() => setChatworkTo(chatworkTo.filter((_, idx) => idx !== i))}
+                    className="text-slate-400 hover:text-red-500 ml-0.5"
+                    type="button"
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1">
+            送信元への宛先指定が自動設定されています
+          </p>
         </div>
       )}
 
