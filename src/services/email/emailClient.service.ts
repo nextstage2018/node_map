@@ -652,10 +652,11 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
     });
 
     await client.connect();
-    const lock = await client.getMailboxLock('INBOX');
-
+    const emailUser = config.user.toLowerCase();
     const messages: UnifiedMessage[] = [];
 
+    // === 受信メッセージ取得（INBOX） ===
+    const inboxLock = await client.getMailboxLock('INBOX');
     try {
       const mailbox = client.mailbox;
       const exists = mailbox ? (mailbox as { exists: number }).exists : 0;
@@ -664,88 +665,184 @@ export async function fetchEmails(limit: number = 50, page: number = 1): Promise
       const endSeq = Math.max(1, exists - (page - 1) * limit);
       const startSeq = Math.max(1, endSeq - limit + 1);
 
-      if (endSeq < 1) {
-        // これ以上古いメールがない
-        return [];
-      }
+      if (endSeq >= 1) {
+        const fetchRange = `${startSeq}:${endSeq}`;
 
-      const fetchRange = `${startSeq}:${endSeq}`;
+        for await (const message of client.fetch(fetchRange, {
+          envelope: true,
+          source: true,
+          flags: true,
+        })) {
+          const envelope = message.envelope!;
+          const rawSource = message.source?.toString() || '';
+          const parsed = parseEmailFull(rawSource);
+          const parsedBody = parsed.body;
+          const emailAttachments = parsed.attachments;
 
-      for await (const message of client.fetch(fetchRange, {
-        envelope: true,
-        source: true,
-        flags: true,
-      })) {
-        const envelope = message.envelope!;
+          const parsedThread = parseEmailThread(parsedBody);
+          let displayBody = parsedBody;
+          let threadMessages: ThreadMessage[] | undefined;
+          let hasQuote = false;
 
-        // 生ソースから本文と添付ファイルを抽出・パース
-        const rawSource = message.source?.toString() || '';
-        const parsed = parseEmailFull(rawSource);
-        const parsedBody = parsed.body;
-        const emailAttachments = parsed.attachments;
+          if (parsedThread.length > 1) {
+            hasQuote = true;
+            displayBody = parsedThread[parsedThread.length - 1].body;
+            threadMessages = parsedThread.map((pm, idx) => ({
+              id: `email-quote-${envelope.messageId || message.uid}-${idx}`,
+              from: {
+                name: pm.sender || envelope.from?.[0]?.name || '不明',
+                address: pm.email || envelope.from?.[0]?.address || '',
+              },
+              body: pm.body,
+              timestamp: parseDateStrToISO(pm.dateStr) || envelope.date?.toISOString() || new Date().toISOString(),
+              isOwn: pm.email ? pm.email.toLowerCase() === emailUser : false,
+            }));
+          }
 
-        // 引用チェーンをパースしてスレッドメッセージに変換
-        const parsedThread = parseEmailThread(parsedBody);
-        const emailUser = config.user.toLowerCase();
-        let displayBody = parsedBody;
-        let threadMessages: ThreadMessage[] | undefined;
-        let hasQuote = false;
-
-        if (parsedThread.length > 1) {
-          // 引用チェーンがある場合
-          hasQuote = true;
-          // 最新メッセージ（配列の最後）を本文に
-          displayBody = parsedThread[parsedThread.length - 1].body;
-          // 全メッセージをスレッドとして表示
-          threadMessages = parsedThread.map((pm, idx) => ({
-            id: `email-quote-${envelope.messageId || message.uid}-${idx}`,
+          messages.push({
+            id: `email-${envelope.messageId || message.uid}`,
+            channel: 'email',
+            channelIcon: '📧',
             from: {
-              name: pm.sender || envelope.from?.[0]?.name || '不明',
-              address: pm.email || envelope.from?.[0]?.address || '',
+              name: envelope.from?.[0]?.name || envelope.from?.[0]?.address || '不明',
+              address: envelope.from?.[0]?.address || '',
             },
-            body: pm.body,
-            timestamp: parseDateStrToISO(pm.dateStr) || envelope.date?.toISOString() || new Date().toISOString(),
-            isOwn: pm.email ? pm.email.toLowerCase() === emailUser : false,
-          }));
+            to: envelope.to?.map((t: { name?: string; address?: string }) => ({
+              name: t.name || t.address || '',
+              address: t.address || '',
+            })),
+            cc: envelope.cc?.map((c: { name?: string; address?: string }) => ({
+              name: c.name || c.address || '',
+              address: c.address || '',
+            })),
+            subject: envelope.subject || '(件名なし)',
+            body: displayBody,
+            bodyFull: hasQuote ? parsedBody : undefined,
+            hasQuote,
+            attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
+            timestamp: envelope.date?.toISOString() || new Date().toISOString(),
+            isRead: message.flags?.has('\\Seen') ?? false,
+            status: (message.flags?.has('\\Seen') ? 'read' : 'unread') as const,
+            // Phase 39b: 受信メッセージとして明示
+            direction: 'received' as const,
+            threadId: envelope.inReplyTo || undefined,
+            threadMessages,
+            metadata: {
+              messageId: envelope.messageId || undefined,
+            },
+          });
         }
-
-        messages.push({
-          id: `email-${envelope.messageId || message.uid}`,
-          channel: 'email',
-          channelIcon: '📧',
-          from: {
-            name: envelope.from?.[0]?.name || envelope.from?.[0]?.address || '不明',
-            address: envelope.from?.[0]?.address || '',
-          },
-          to: envelope.to?.map((t: { name?: string; address?: string }) => ({
-            name: t.name || t.address || '',
-            address: t.address || '',
-          })),
-          cc: envelope.cc?.map((c: { name?: string; address?: string }) => ({
-            name: c.name || c.address || '',
-            address: c.address || '',
-          })),
-          subject: envelope.subject || '(件名なし)',
-          body: displayBody,
-          bodyFull: hasQuote ? parsedBody : undefined,
-          hasQuote,
-          attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
-          timestamp: envelope.date?.toISOString() || new Date().toISOString(),
-          isRead: message.flags?.has('\\Seen') ?? false,
-          status: (message.flags?.has('\\Seen') ? 'read' : 'unread') as const,
-          threadId: envelope.inReplyTo || undefined,
-          threadMessages,
-          metadata: {
-            messageId: envelope.messageId || undefined,
-          },
-        });
       }
     } finally {
-      lock.release();
+      inboxLock.release();
+    }
+
+    // === Phase 39b: 送信メッセージ取得（Sent Mail） ===
+    const sentLimit = Math.min(limit, 30); // 送信は最大30件
+    try {
+      // Gmail の送信済みフォルダ名（ロケール依存）
+      const sentFolderCandidates = ['[Gmail]/Sent Mail', '[Gmail]/送信済みメール', 'Sent', 'INBOX.Sent'];
+      let sentLock = null;
+
+      for (const folderName of sentFolderCandidates) {
+        try {
+          sentLock = await client.getMailboxLock(folderName);
+          console.log(`[Email] 送信済みフォルダ "${folderName}" を開きました`);
+          break;
+        } catch {
+          // このフォルダ名は存在しない → 次を試す
+          continue;
+        }
+      }
+
+      if (sentLock) {
+        try {
+          const sentMailbox = client.mailbox;
+          const sentExists = sentMailbox ? (sentMailbox as { exists: number }).exists : 0;
+
+          if (sentExists > 0) {
+            const sentEnd = sentExists;
+            const sentStart = Math.max(1, sentEnd - sentLimit + 1);
+            const sentRange = `${sentStart}:${sentEnd}`;
+
+            for await (const message of client.fetch(sentRange, {
+              envelope: true,
+              source: true,
+              flags: true,
+            })) {
+              const envelope = message.envelope!;
+              const rawSource = message.source?.toString() || '';
+              const parsed = parseEmailFull(rawSource);
+              const parsedBody = parsed.body;
+              const emailAttachments = parsed.attachments;
+
+              // 引用チェーン処理
+              const parsedThread = parseEmailThread(parsedBody);
+              let displayBody = parsedBody;
+              let threadMessages: ThreadMessage[] | undefined;
+              let hasQuote = false;
+
+              if (parsedThread.length > 1) {
+                hasQuote = true;
+                displayBody = parsedThread[parsedThread.length - 1].body;
+                threadMessages = parsedThread.map((pm, idx) => ({
+                  id: `email-sent-quote-${envelope.messageId || message.uid}-${idx}`,
+                  from: {
+                    name: pm.sender || 'あなた',
+                    address: pm.email || emailUser,
+                  },
+                  body: pm.body,
+                  timestamp: parseDateStrToISO(pm.dateStr) || envelope.date?.toISOString() || new Date().toISOString(),
+                  isOwn: pm.email ? pm.email.toLowerCase() === emailUser : true,
+                }));
+              }
+
+              messages.push({
+                id: `email-sent-${envelope.messageId || message.uid}`,
+                channel: 'email',
+                channelIcon: '📧',
+                from: { name: 'あなた', address: emailUser },
+                to: envelope.to?.map((t: { name?: string; address?: string }) => ({
+                  name: t.name || t.address || '',
+                  address: t.address || '',
+                })),
+                cc: envelope.cc?.map((c: { name?: string; address?: string }) => ({
+                  name: c.name || c.address || '',
+                  address: c.address || '',
+                })),
+                subject: envelope.subject || '(件名なし)',
+                body: displayBody,
+                bodyFull: hasQuote ? parsedBody : undefined,
+                hasQuote,
+                attachments: emailAttachments.length > 0 ? emailAttachments : undefined,
+                timestamp: envelope.date?.toISOString() || new Date().toISOString(),
+                isRead: true,
+                status: 'read' as const,
+                // Phase 39b: 送信メッセージとして設定
+                direction: 'sent' as const,
+                threadId: envelope.inReplyTo || undefined,
+                threadMessages,
+                metadata: {
+                  messageId: envelope.messageId || undefined,
+                },
+              });
+            }
+            console.log(`[Email] 送信済みメッセージ ${messages.filter(m => m.direction === 'sent').length}件取得`);
+          }
+        } finally {
+          sentLock.release();
+        }
+      } else {
+        console.log('[Email] 送信済みフォルダが見つかりませんでした');
+      }
+    } catch (sentErr) {
+      console.warn('[Email] 送信済みメッセージ取得エラー（受信は正常取得済み）:', sentErr);
     }
 
     await client.logout();
-    return messages.reverse(); // 新しい順
+    return messages.sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ); // 新しい順
   } catch (error) {
     console.error('メール取得エラー:', error);
     return getDemoEmails();

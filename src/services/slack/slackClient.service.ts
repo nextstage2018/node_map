@@ -328,19 +328,23 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
             }
           }
 
+          // Phase 39b: 自分のメッセージかどうかを判定
+          const isSentByMe = botUserId !== '' && msgUserId === botUserId;
+
           messages.push({
             id: `slack-${channel.id}-${msg.ts}`,
             channel: 'slack',
             channelIcon: '💬',
-            from: {
-              name: userInfo.realName,
-              address: msgUserId,
-            },
+            from: isSentByMe
+              ? { name: 'あなた', address: msgUserId }
+              : { name: userInfo.realName, address: msgUserId },
             body,
             attachments: attachments.length > 0 ? attachments : undefined,
             timestamp: new Date(Number(msg.ts) * 1000).toISOString(),
-            isRead: msgUserId === botUserId || (msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false),
-            status: msgUserId === botUserId ? ('replied' as const) : ((msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false) ? ('read' as const) : ('unread' as const)),
+            isRead: isSentByMe || (msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false),
+            status: isSentByMe ? ('read' as const) : ((msg.ts ? parseFloat(msg.ts) <= parseFloat(lastRead) : false) ? ('read' as const) : ('unread' as const)),
+            // Phase 39b: 送受信方向を設定
+            direction: isSentByMe ? ('sent' as const) : ('received' as const),
             threadId: msg.thread_ts || undefined,
             metadata: {
               slackChannel: channel.id,

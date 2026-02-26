@@ -87,6 +87,19 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
       return [];
     }
 
+    // Phase 39b: 自分のaccount_idを取得（送信メッセージ判定用）
+    let myAccountId = '';
+    try {
+      const meRes = await chatworkFetch('/me');
+      if (meRes.ok) {
+        const meData = await meRes.json();
+        myAccountId = String(meData.account_id || '');
+        console.log(`[Chatwork] 自分のaccount_id: ${myAccountId}`);
+      }
+    } catch (meErr) {
+      console.warn('[Chatwork] /me API失敗:', meErr);
+    }
+
     const messages: UnifiedMessage[] = [];
     const perRoom = Math.max(5, Math.ceil(limit / Math.min(rooms.length, 15)));
 
@@ -155,19 +168,24 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
             }
           }
 
+          // Phase 39b: 自分のメッセージかどうかを判定
+          const msgAccountId = String(msg.account?.account_id || '');
+          const isSentByMe = myAccountId !== '' && msgAccountId === myAccountId;
+
           messages.push({
             id: `chatwork-${room.room_id}-${msg.message_id}`,
             channel: 'chatwork',
             channelIcon: '🔵',
-            from: {
-              name: msg.account?.name || '不明',
-              address: String(msg.account?.account_id || ''),
-            },
+            from: isSentByMe
+              ? { name: 'あなた', address: msgAccountId }
+              : { name: msg.account?.name || '不明', address: msgAccountId },
             body: cleanChatworkBody(msgBody),
             attachments: msgAttachments.length > 0 ? msgAttachments : undefined,
             timestamp: new Date(msg.send_time * 1000).toISOString(),
-            isRead: msgIsRead,
-            status: msgIsRead ? ('read' as const) : ('unread' as const),
+            isRead: isSentByMe || msgIsRead,
+            status: isSentByMe ? ('read' as const) : (msgIsRead ? ('read' as const) : ('unread' as const)),
+            // Phase 39b: 送受信方向を設定
+            direction: isSentByMe ? ('sent' as const) : ('received' as const),
             metadata: {
               chatworkRoomId: String(room.room_id),
               chatworkRoomName: room.name || '',
