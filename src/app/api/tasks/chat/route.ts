@@ -55,19 +55,20 @@ export async function POST(request: NextRequest) {
     });
 
     // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
-    // 非同期で実行（チャット応答に影響させない）
-    ThoughtNodeService.extractAndLink({
-      text: `${body.message}\n\n${response.reply}`,
-      userId,
-      taskId: body.taskId,
-      phase: body.phase,
-    }).then((result) => {
-      if (result.linkedNodes.length > 0) {
-        console.log(`[Tasks Chat] ${result.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ (task=${body.taskId})`);
+    // ※ Vercelではレスポンス後の非同期処理が打ち切られるためawaitで実行
+    try {
+      const thoughtResult = await ThoughtNodeService.extractAndLink({
+        text: `${body.message}\n\n${response.reply}`,
+        userId,
+        taskId: body.taskId,
+        phase: body.phase,
+      });
+      if (thoughtResult.linkedNodes.length > 0) {
+        console.log(`[Tasks Chat] ${thoughtResult.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ (task=${body.taskId})`);
       }
-    }).catch((e) => {
+    } catch (e) {
       console.error('[Tasks Chat] ThoughtNode抽出エラー（応答は正常）:', e);
-    });
+    }
 
     // 【Phase 4】会話内容からキーワードを抽出してノードに蓄積（既存の user_nodes への蓄積は維持）
     const sourceType = body.phase === 'ideation' ? 'task_ideation' as const

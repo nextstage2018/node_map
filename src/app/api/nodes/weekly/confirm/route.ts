@@ -15,14 +15,20 @@ function getSupabaseClient() {
 
 export async function POST(request: NextRequest) {
   // Phase 22: 認証ユーザーIDを使用（bodyのuserIdは無視）
-  const authUserId = await getServerUserId();
+  const userId = await getServerUserId();
+  if (!userId) {
+    return NextResponse.json(
+      { success: false, error: '認証が必要です' },
+      { status: 401 }
+    );
+  }
+
   const body: WeeklyNodeConfirmRequest = await request.json();
   const { nodeIds, weekStart } = body;
-  const userId = authUserId;
 
   if (!nodeIds || nodeIds.length === 0 || !weekStart) {
     return NextResponse.json(
-      { success: false, error: 'userId, nodeIds, weekStart are required' },
+      { success: false, error: 'nodeIds, weekStart are required' },
       { status: 400 }
     );
   }

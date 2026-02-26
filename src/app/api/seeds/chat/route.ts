@@ -151,19 +151,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
-    // 非同期で実行（チャット応答に影響させない）
-    ThoughtNodeService.extractAndLink({
-      text: `${message}\n\n${reply}`,
-      userId,
-      seedId,
-      phase: 'seed',
-    }).then((result) => {
-      if (result.linkedNodes.length > 0) {
-        console.log(`[Seeds Chat] ${result.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ`);
+    // ※ Vercelではレスポンス後の非同期処理が打ち切られるためawaitで実行
+    try {
+      const thoughtResult = await ThoughtNodeService.extractAndLink({
+        text: `${message}\n\n${reply}`,
+        userId,
+        seedId,
+        phase: 'seed',
+      });
+      if (thoughtResult.linkedNodes.length > 0) {
+        console.log(`[Seeds Chat] ${thoughtResult.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ`);
       }
-    }).catch((e) => {
+    } catch (e) {
       console.error('[Seeds Chat] キーワード抽出エラー（応答は正常）:', e);
-    });
+    }
 
     return NextResponse.json({
       success: true,
