@@ -31,6 +31,8 @@
 | `project_channels` | プロジェクトとチャネルの紐づけ。UNIQUE(project_id, service_name, channel_identifier) |
 | `seeds` | 種ボックス。project_id で紐づけ可。user_id カラムあり |
 | `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id カラムあり |
+| `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
+| `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
 
 ---
 
@@ -101,6 +103,63 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 40b | 種AI会話DB保存・プロジェクト選択・インボックスAI種化 | mainにマージ済み |
 | 40c | 組織→プロジェクト→チャネル階層・種プロジェクト自動検出・バグ修正 | abbaf17 |
 | 41 | 種・タスクRLSバグ修正＋AI構造化タスク変換＋伴走支援AI会話 | 7c202f2 |
+| 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 未コミット |
+
+---
+
+## Phase 42a 実装内容（思考マップ基盤: ノード自動抽出）
+
+### 概要
+DESIGN_THOUGHT_MAP.md のPhase 42aに対応。種・タスクのAI会話で使われたキーワードを自動抽出し、ナレッジマスタ（knowledge_master_entries）に登録、thought_task_nodes でタスク/種との紐づけを記録する。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 023_phase42a_thought_nodes.sql
+-- knowledge_master_entries にカラム追加
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS source_type TEXT;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS source_id TEXT;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS source_conversation_id UUID;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMPTZ;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS is_confirmed BOOLEAN DEFAULT false;
+ALTER TABLE knowledge_master_entries ADD COLUMN IF NOT EXISTS confirmed_at TIMESTAMPTZ;
+
+-- thought_task_nodes テーブル新設
+CREATE TABLE IF NOT EXISTS thought_task_nodes (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+  seed_id UUID REFERENCES seeds(id) ON DELETE CASCADE,
+  node_id UUID NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  appear_order INT,
+  is_main_route BOOLEAN,
+  appear_phase TEXT,
+  source_conversation_id UUID,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT chk_task_or_seed CHECK (task_id IS NOT NULL OR seed_id IS NOT NULL)
+);
+```
+
+### 新規ファイル
+- `src/services/nodemap/thoughtNode.service.ts` — ThoughtNodeService（コア: 抽出→マスタ登録→紐づけ）
+- `src/app/api/nodes/thought/route.ts` — 思考ノード取得API（GET ?taskId= or ?seedId=）
+- `src/app/api/nodes/unconfirmed/route.ts` — 未確認ノード一覧・承認API
+- `supabase/migrations/023_phase42a_thought_nodes.sql` — マイグレーションSQL
+
+### 変更ファイル
+- `src/app/api/seeds/chat/route.ts` — ThoughtNodeService.extractAndLink() を非同期呼び出し追加
+- `src/app/api/tasks/chat/route.ts` — 同上（既存のNodeService.processTextとは並行実行）
+- `CLAUDE.md` — Phase 42a 記録
+
+### 処理フロー
+```
+ユーザーがAI会話 → seeds/chat or tasks/chat API
+  → AI応答生成＋DB保存（既存）
+  → ThoughtNodeService.extractAndLink()（非同期）
+    → extractKeywords()（既存のキーワード抽出エンジン）
+    → ensureMasterEntry()（ナレッジマスタに存在チェック→新規作成）
+    → linkToTaskOrSeed()（thought_task_nodesに紐づけ）
+```
 
 ---
 

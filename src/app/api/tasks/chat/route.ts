@@ -4,6 +4,7 @@ import { generateTaskChat, generateTaskSummary } from '@/services/ai/aiClient.se
 import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
+import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { TaskAiChatRequest, NodeData } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 
@@ -53,7 +54,22 @@ export async function POST(request: NextRequest) {
       phase: body.phase,
     });
 
-    // 【Phase 4】会話内容からキーワードを抽出してノードに蓄積
+    // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
+    // 非同期で実行（チャット応答に影響させない）
+    ThoughtNodeService.extractAndLink({
+      text: `${body.message}\n\n${response.reply}`,
+      userId,
+      taskId: body.taskId,
+      phase: body.phase,
+    }).then((result) => {
+      if (result.linkedNodes.length > 0) {
+        console.log(`[Tasks Chat] ${result.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ (task=${body.taskId})`);
+      }
+    }).catch((e) => {
+      console.error('[Tasks Chat] ThoughtNode抽出エラー（応答は正常）:', e);
+    });
+
+    // 【Phase 4】会話内容からキーワードを抽出してノードに蓄積（既存の user_nodes への蓄積は維持）
     const sourceType = body.phase === 'ideation' ? 'task_ideation' as const
       : body.phase === 'result' ? 'task_result' as const
       : 'task_conversation' as const;

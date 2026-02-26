@@ -1,8 +1,10 @@
 // Phase 31: 種AI会話 API
 // Phase 40b: 会話ログのDB永続化（GET: 履歴取得、POST: 送信＋保存）
+// Phase 42a: AI会話からのキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -147,6 +149,21 @@ export async function POST(request: NextRequest) {
         console.error('[Seeds Chat API] 会話保存エラー（応答は正常）:', e);
       }
     }
+
+    // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
+    // 非同期で実行（チャット応答に影響させない）
+    ThoughtNodeService.extractAndLink({
+      text: `${message}\n\n${reply}`,
+      userId,
+      seedId,
+      phase: 'seed',
+    }).then((result) => {
+      if (result.linkedNodes.length > 0) {
+        console.log(`[Seeds Chat] ${result.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ`);
+      }
+    }).catch((e) => {
+      console.error('[Seeds Chat] キーワード抽出エラー（応答は正常）:', e);
+    });
 
     return NextResponse.json({
       success: true,
