@@ -23,10 +23,10 @@ export async function GET(
 
     const { id: orgId } = await params;
 
-    // 組織の所有確認
+    // 組織の所有確認（name も取得: company_name 自動修復用）
     const { data: org } = await supabase
       .from('organizations')
-      .select('id')
+      .select('id, name')
       .eq('id', orgId)
       .eq('user_id', userId)
       .single();
@@ -37,13 +37,27 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('contact_persons')
-      .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, auto_added_to_org, confirmed')
+      .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, auto_added_to_org, confirmed, company_name')
       .eq('organization_id', orgId)
       .order('name', { ascending: true });
 
     if (error) {
       console.error('[Org Members API] 取得エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    // company_name が未設定のメンバーを自動修復（バックグラウンド）
+    const needsFix = (data || []).filter(m => !m.company_name);
+    if (needsFix.length > 0) {
+      const fixIds = needsFix.map(m => m.id);
+      supabase
+        .from('contact_persons')
+        .update({ company_name: org.name, updated_at: new Date().toISOString() })
+        .in('id', fixIds)
+        .then(({ error: fixErr }) => {
+          if (fixErr) console.error('[Org Members API] company_name修復エラー:', fixErr);
+          else console.log(`[Org Members API] company_name修復: ${fixIds.length}件`);
+        });
     }
 
     return NextResponse.json({ success: true, data: data || [] });
