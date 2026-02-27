@@ -593,23 +593,65 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
       }
     }
 
-    // フェーズラベル（アンカー位置に薄く表示）
-    for (const [phase, anchor] of Object.entries(PHASE_ANCHORS)) {
-      const pos = worldToScreen(anchor.x, anchor.y, cw, ch, panX, panY, zoom);
+    // フェーズゾーン（4分割の背景色分け）
+    // 画面を4エリアに分割: 左上=種, 右上=構想, 右下=進行, 左下=成果
+    const zoneColors: Record<string, string> = {
+      seed: 'rgba(34,197,94,0.04)',
+      ideation: 'rgba(59,130,246,0.04)',
+      progress: 'rgba(168,85,247,0.04)',
+      result: 'rgba(99,102,241,0.04)',
+    };
+    const zoneLabelPositions: Record<string, { x: number; y: number; anchorX: 'left' | 'right'; anchorY: 'top' | 'bottom' }> = {
+      seed: { x: 0.03, y: 0.05, anchorX: 'left', anchorY: 'top' },
+      ideation: { x: 0.97, y: 0.05, anchorX: 'right', anchorY: 'top' },
+      progress: { x: 0.97, y: 0.95, anchorX: 'right', anchorY: 'bottom' },
+      result: { x: 0.03, y: 0.95, anchorX: 'left', anchorY: 'bottom' },
+    };
+
+    // 中心線を計算
+    const centerScreen = worldToScreen(0.5, 0.5, cw, ch, panX, panY, zoom);
+    const topLeft = worldToScreen(0, 0, cw, ch, panX, panY, zoom);
+    const bottomRight = worldToScreen(1, 1, cw, ch, panX, panY, zoom);
+
+    // 各ゾーンの背景を描画
+    const zoneRects: Record<string, { x: number; y: number; w: number; h: number }> = {
+      seed: { x: topLeft.x, y: topLeft.y, w: centerScreen.x - topLeft.x, h: centerScreen.y - topLeft.y },
+      ideation: { x: centerScreen.x, y: topLeft.y, w: bottomRight.x - centerScreen.x, h: centerScreen.y - topLeft.y },
+      progress: { x: centerScreen.x, y: centerScreen.y, w: bottomRight.x - centerScreen.x, h: bottomRight.y - centerScreen.y },
+      result: { x: topLeft.x, y: centerScreen.y, w: centerScreen.x - topLeft.x, h: bottomRight.y - centerScreen.y },
+    };
+
+    for (const [phase, rect] of Object.entries(zoneRects)) {
+      ctx.fillStyle = zoneColors[phase] || 'rgba(99,102,241,0.03)';
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+
+    // ゾーン境界線（中心の十字線）
+    ctx.strokeStyle = 'rgba(148,163,184,0.08)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 6]);
+    // 横線
+    ctx.beginPath();
+    ctx.moveTo(topLeft.x, centerScreen.y);
+    ctx.lineTo(bottomRight.x, centerScreen.y);
+    ctx.stroke();
+    // 縦線
+    ctx.beginPath();
+    ctx.moveTo(centerScreen.x, topLeft.y);
+    ctx.lineTo(centerScreen.x, bottomRight.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ゾーンラベル（各隅に小さく表示）
+    for (const [phase, lpos] of Object.entries(zoneLabelPositions)) {
+      const pos = worldToScreen(lpos.x, lpos.y, cw, ch, panX, panY, zoom);
       const label = PHASE_LABELS[phase] || phase;
+      const phaseColor = PHASE_NODE_COLORS[phase] || 'rgba(99,102,241,0.3)';
 
-      // 薄い円形エリア
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 60 * zoom, 0, Math.PI * 2);
-      const phaseColor = PHASE_NODE_COLORS[phase] || 'rgba(99,102,241,0.1)';
-      ctx.fillStyle = phaseColor.replace(/[\d.]+\)$/, '0.06)');
-      ctx.fill();
-
-      // ラベル
-      ctx.fillStyle = 'rgba(148,163,184,0.3)';
-      ctx.font = `${Math.max(10, 13 * zoom)}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      ctx.fillStyle = phaseColor.replace(/[\d.]+\)$/, '0.25)');
+      ctx.font = `${Math.max(10, 12 * zoom)}px sans-serif`;
+      ctx.textAlign = lpos.anchorX === 'left' ? 'left' : 'right';
+      ctx.textBaseline = lpos.anchorY === 'top' ? 'top' : 'bottom';
       ctx.fillText(label, pos.x, pos.y);
     }
 
