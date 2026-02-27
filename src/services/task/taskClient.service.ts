@@ -303,6 +303,7 @@ function mapTaskFromDb(dbRow: any): Task {
     status: dbRow.status,
     priority: dbRow.priority,
     phase: dbRow.phase,
+    taskType: dbRow.task_type || 'personal', // Phase Restructure
     sourceMessageId: dbRow.source_message_id,
     sourceChannel: dbRow.source_channel,
     ideationSummary: dbRow.ideation_summary,
@@ -476,6 +477,7 @@ export class TaskService {
       status: 'todo',
       priority: req.priority || 'medium',
       phase: 'ideation',
+      taskType: req.taskType || 'personal', // Phase Restructure: 個人/グループ
       sourceMessageId: req.sourceMessageId,
       sourceChannel: req.sourceChannel,
       conversations: [],
@@ -510,6 +512,8 @@ export class TaskService {
         updated_at: newTask.updatedAt,
         user_id: (req as any).userId,  // Phase 22: ユーザーID付与
       };
+      // Phase Restructure: タスク種類
+      insertData.task_type = newTask.taskType || 'personal';
       // Phase 40c: 種・プロジェクト紐づけ（カラム未追加でもエラーにならないよう条件付き）
       if (req.seedId) insertData.seed_id = req.seedId;
       if (req.projectId) insertData.project_id = req.projectId;

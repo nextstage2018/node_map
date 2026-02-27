@@ -65,10 +65,11 @@ export class ThoughtNodeService {
     userId: string;
     taskId?: string;        // タスクID（タスク会話の場合）
     seedId?: string;        // 種ID（種会話の場合）
+    memoId?: string;        // Phase Restructure: メモID（メモ会話の場合）
     phase: string;          // seed / ideation / progress / result
     conversationId?: string; // 会話ターンのID
   }): Promise<ExtractAndLinkResult> {
-    const { text, userId, taskId, seedId, phase, conversationId } = params;
+    const { text, userId, taskId, seedId, memoId, phase, conversationId } = params;
 
     const result: ExtractAndLinkResult = {
       extractedKeywords: [],
@@ -94,15 +95,16 @@ export class ThoughtNodeService {
       console.log(`[ThoughtNode] keywords詳細:`, extraction.keywords.map(k => `${k.label}(${k.confidence})`).join(', '));
 
       // keywords + projects を統合（personsは除外 — 人名はナレッジマスタの対象外）
+      // Phase D: 信頼度閾値を0.7に引き上げ（名詞特化の品質改善）
       const allKeywords = [
-        ...extraction.keywords.filter(k => k.confidence >= 0.6),
-        ...extraction.projects.filter(p => p.confidence >= 0.6),
+        ...extraction.keywords.filter(k => k.confidence >= 0.7),
+        ...extraction.projects.filter(p => p.confidence >= 0.7),
       ];
 
       result.extractedKeywords = allKeywords;
 
       if (allKeywords.length === 0) {
-        console.log(`[ThoughtNode] 信頼度0.6以上のキーワードなし → スキップ`);
+        console.log(`[ThoughtNode] 信頼度0.7以上のキーワードなし → スキップ`);
         return result;
       }
 
@@ -140,6 +142,7 @@ export class ThoughtNodeService {
           const linkedNode = await ThoughtNodeService.linkToTaskOrSeed(sb, {
             taskId,
             seedId,
+            memoId,
             nodeId: masterEntryId,
             userId,
             appearOrder: currentOrder,
@@ -460,6 +463,7 @@ export class ThoughtNodeService {
     params: {
       taskId?: string;
       seedId?: string;
+      memoId?: string;       // Phase Restructure: メモID
       nodeId: string;
       userId: string;
       appearOrder: number;
@@ -467,7 +471,7 @@ export class ThoughtNodeService {
       conversationId?: string;
     }
   ): Promise<Omit<ThoughtNode, 'nodeLabel'> | null> {
-    const { taskId, seedId, nodeId, userId, appearOrder, appearPhase, conversationId } = params;
+    const { taskId, seedId, memoId, nodeId, userId, appearOrder, appearPhase, conversationId } = params;
     const now = new Date().toISOString();
 
     try {
@@ -481,6 +485,7 @@ export class ThoughtNodeService {
       };
       if (taskId) insertData.task_id = taskId;
       if (seedId) insertData.seed_id = seedId;
+      if (memoId) insertData.memo_id = memoId;
 
       // まず既存レコードをチェック（UNIQUE制約がない場合でも重複を防ぐ）
       let existQuery = sb
@@ -489,6 +494,7 @@ export class ThoughtNodeService {
         .eq('node_id', nodeId);
       if (taskId) existQuery = existQuery.eq('task_id', taskId);
       if (seedId) existQuery = existQuery.eq('seed_id', seedId);
+      if (memoId) existQuery = existQuery.eq('memo_id', memoId);
       const { data: existing } = await existQuery.maybeSingle();
 
       if (existing) {
@@ -667,9 +673,10 @@ export class ThoughtNodeService {
         phase: 'progress',
       });
 
+      // Phase D: 信頼度閾値を0.7に引き上げ（名詞特化の品質改善）
       const allKeywords = [
-        ...extraction.keywords.filter(k => k.confidence >= 0.6),
-        ...extraction.projects.filter(p => p.confidence >= 0.6),
+        ...extraction.keywords.filter(k => k.confidence >= 0.7),
+        ...extraction.projects.filter(p => p.confidence >= 0.7),
       ];
 
       result.extractedCount = allKeywords.length;

@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Inbox, CheckSquare, Users, BookOpen, Settings, ClipboardList, Bot, Building2, Sprout, GitBranch } from 'lucide-react';
+import { Inbox, CheckSquare, Users, BookOpen, Settings, ClipboardList, Bot, Building2, Lightbulb, GitBranch, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/inbox', label: 'インボックス', icon: Inbox },
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
-  { href: '/seeds', label: '種ボックス', icon: Sprout },
+  { href: '/jobs', label: 'ジョブ', icon: Zap },
+  { href: '/memos', label: 'メモ', icon: Lightbulb },
   { href: '/thought-map', label: '思考マップ', icon: GitBranch },
   { href: '/contacts', label: 'コンタクト', icon: Users },
   { href: '/organizations', label: '組織', icon: Building2 },

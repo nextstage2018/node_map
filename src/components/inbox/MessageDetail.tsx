@@ -477,6 +477,122 @@ function SeedButton({
 }
 
 /**
+ * Phase Restructure: インボックスからの振り分けボタン群
+ * タスク作成・メモ作成・ジョブ作成
+ */
+function QuickActionButtons({ message }: { message: UnifiedMessage }) {
+  const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isCreating, setIsCreating] = useState<string | null>(null);
+
+  const createTask = async () => {
+    setIsCreating('task');
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: message.subject || message.body.slice(0, 50),
+          description: message.body.slice(0, 500),
+          priority: 'medium',
+          sourceMessageId: message.id,
+          sourceChannel: message.channel,
+          sourceContent: message.body,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActionResult({ type: 'success', text: 'タスクを作成しました' });
+      } else {
+        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(null);
+      setTimeout(() => setActionResult(null), 3000);
+    }
+  };
+
+  const createMemo = async () => {
+    setIsCreating('memo');
+    try {
+      const res = await fetch('/api/memos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `[${message.channel}] ${message.subject || ''}\n${message.from?.name || ''}: ${message.body.slice(0, 500)}`,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActionResult({ type: 'success', text: 'メモに追加しました' });
+      } else {
+        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(null);
+      setTimeout(() => setActionResult(null), 3000);
+    }
+  };
+
+  const createJob = async () => {
+    setIsCreating('job');
+    try {
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: `${message.from?.name || ''}に返信: ${(message.subject || message.body.slice(0, 30))}`,
+          description: message.body.slice(0, 200),
+          sourceMessageId: message.id,
+          sourceChannel: message.channel,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActionResult({ type: 'success', text: 'ジョブを作成しました' });
+      } else {
+        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
+      }
+    } catch {
+      setActionResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(null);
+      setTimeout(() => setActionResult(null), 3000);
+    }
+  };
+
+  if (actionResult) {
+    return (
+      <span className={cn(
+        'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
+        actionResult.type === 'success'
+          ? 'bg-green-50 text-green-700 border border-green-200'
+          : 'bg-red-50 text-red-700 border border-red-200'
+      )}>
+        {actionResult.type === 'success' ? '✅' : '❌'} {actionResult.text}
+      </span>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button variant="secondary" onClick={createTask} disabled={!!isCreating} size="sm">
+        {isCreating === 'task' ? '作成中...' : '📋 タスク'}
+      </Button>
+      <Button variant="secondary" onClick={createMemo} disabled={!!isCreating} size="sm">
+        {isCreating === 'memo' ? '作成中...' : '💡 メモ'}
+      </Button>
+      <Button variant="secondary" onClick={createJob} disabled={!!isCreating} size="sm">
+        {isCreating === 'job' ? '作成中...' : '⚡ ジョブ'}
+      </Button>
+    </div>
+  );
+}
+
+/**
  * AIタスク化提案バナー（コンパクト折りたたみ式）
  */
 function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
@@ -957,6 +1073,7 @@ function GroupDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            <QuickActionButtons message={latestMessage} />
             {onBlock && <BlockButton message={latestMessage} onBlock={onBlock} />}
           </div>
         )}
@@ -1234,6 +1351,7 @@ function EmailThreadDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            <QuickActionButtons message={message} />
             {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
@@ -1425,6 +1543,7 @@ function SingleMessageDetail({
               seedResult={seedProps.seedResult}
               onSeed={seedProps.onSeed}
             />
+            <QuickActionButtons message={message} />
             {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}

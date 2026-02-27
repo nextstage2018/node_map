@@ -141,6 +141,9 @@ export interface AiConversationMessage {
   turnId?: string; // Phase 42f残り: 会話ターンID（会話ジャンプ用）
 }
 
+// タスクの種類
+export type TaskType = 'personal' | 'group';
+
 // タスク
 export interface Task {
   id: string;
@@ -149,6 +152,7 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   phase: TaskPhase;
+  taskType: TaskType;          // Phase Restructure: 個人/グループ
   // メッセージ起点の場合
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
@@ -181,10 +185,12 @@ export interface CreateTaskRequest {
   title: string;
   description: string;
   priority: TaskPriority;
+  taskType?: TaskType;         // Phase Restructure: 個人/グループ（デフォルト: personal）
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
+  sourceContent?: string;      // Phase Restructure: インボックスからの初期コンテキスト
   tags?: string[];
-  seedId?: string;       // Phase 40c: 種から変換時の種ID
+  seedId?: string;       // Phase 40c: 種から変換時の種ID（段階的廃止）
   projectId?: string;    // Phase 40c: プロジェクト紐づけ
 }
 
@@ -230,29 +236,23 @@ export interface TaskSuggestion {
   sourceExcerpt: string; // 元メッセージの抜粋
 }
 
-// ===== Phase 7: ジョブ/タスク分離・種ボックス・表示切り替え =====
+// ===== Phase Restructure: ジョブ・アイデアメモ・タスク種類 =====
 
-// ジョブステータス（AI定型作業の流れ：下書き→提案→実行 or 却下）
-export type JobStatus = 'draft' | 'proposed' | 'executed' | 'dismissed';
+// ジョブステータス（シンプル: 未完了 or 完了）
+export type JobStatus = 'pending' | 'done';
 
-// ジョブの種別
-export type JobType = 'email_reply' | 'document_update' | 'data_entry' | 'routine_admin';
-
-// ジョブ（AI起点の定型作業。思考マップ対象外）
+// ジョブ（AIに委ねる日常の簡易作業。思考マップ対象外）
 export interface Job {
   id: string;
-  type: JobType;
   title: string;
-  description: string;
+  description?: string;
   status: JobStatus;
-  priority: TaskPriority;
-  draftContent?: string;       // AI生成の下書き内容
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
+  aiDraft?: string;            // AIが生成した下書き/提案
+  dueDate?: string;
   createdAt: string;
-  updatedAt: string;
-  executedAt?: string;
-  dismissedAt?: string;
+  completedAt?: string;
 }
 
 // 種の状態
@@ -288,13 +288,26 @@ export type TaskBoardTab = 'tasks' | 'jobs';
 
 // ジョブ作成リクエスト
 export interface CreateJobRequest {
-  type: JobType;
   title: string;
-  description: string;
-  priority: TaskPriority;
-  draftContent?: string;
+  description?: string;
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
+  dueDate?: string;
+}
+
+// アイデアメモ
+export interface IdeaMemo {
+  id: string;
+  content: string;
+  tags?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// アイデアメモ作成リクエスト
+export interface CreateMemoRequest {
+  content: string;
+  tags?: string[];
 }
 
 // 種作成リクエスト
