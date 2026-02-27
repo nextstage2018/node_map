@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 import DomainTree from '@/components/master/DomainTree';
 import MasterStats from '@/components/master/MasterStats';
+import { LoadingState } from '@/components/ui/EmptyState';
 import type { KnowledgeHierarchy } from '@/lib/types';
 
 interface DomainStat {
@@ -61,25 +63,38 @@ export default function MasterPage() {
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
+    <AppLayout>
+      <ContextBar
+        title="ナレッジ"
+        subtitle="組織共通の知識分類体系（領域 → 分野 → キーワード）"
+      >
+        {/* 検索入力を ContextBar に統合 */}
+        {!isLoading && (
+          <div className="relative w-64">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="キーワード・分野・領域を検索..."
+              className="w-full px-3 py-1.5 pl-8 border border-slate-200 rounded-lg text-xs
+                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                placeholder:text-slate-400 bg-white"
+            />
+            <svg
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"
+              fill="none" viewBox="0 0 24 24" stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+        )}
+      </ContextBar>
 
       <main className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
-          {/* ページタイトル */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">ナレッジマスタ</h2>
-              <p className="text-sm text-slate-500 mt-0.5">
-                組織共通の知識分類体系（領域 → 分野 → キーワード）
-              </p>
-            </div>
-          </div>
-
           {isLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-            </div>
+            <LoadingState />
           ) : (
             <>
               {/* 統計カード */}
@@ -91,26 +106,6 @@ export default function MasterPage() {
                 />
               )}
 
-              {/* 検索 */}
-              <div className="relative">
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="キーワード・分野・領域を検索..."
-                  className="w-full px-4 py-2.5 pl-10 border border-slate-200 rounded-xl text-sm
-                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                    placeholder:text-slate-400 bg-white"
-                />
-                <svg
-                  className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"
-                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </div>
-
               {/* ツリー表示 */}
               {hierarchy && (
                 <DomainTree hierarchy={hierarchy} searchQuery={searchQuery} />
@@ -119,6 +114,6 @@ export default function MasterPage() {
           )}
         </div>
       </main>
-    </div>
+    </AppLayout>
   );
 }

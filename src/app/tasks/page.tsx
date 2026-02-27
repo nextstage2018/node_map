@@ -13,7 +13,8 @@ import {
 } from '@dnd-kit/core';
 import type { Task, TaskStatus, CreateTaskRequest, TaskSuggestion, TaskBoardTab, TaskBoardViewMode } from '@/lib/types';
 import { useTasks } from '@/hooks/useTasks';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 import TaskColumn from '@/components/tasks/TaskColumn';
 import TaskDetail from '@/components/tasks/TaskDetail';
 import CreateTaskModal from '@/components/tasks/CreateTaskModal';
@@ -163,8 +164,8 @@ export default function TasksPage() {
     visibleSuggestions.length > 0 ? visibleSuggestions : suggestions;
 
   return (
-    <div className="flex flex-col h-screen bg-slate-100">
-      <Header />
+    <AppLayout>
+      <ContextBar title="タスク" />
 
       <div className="flex flex-1 overflow-hidden">
         {/* 左：メインコンテンツ */}
@@ -339,7 +340,7 @@ export default function TasksPage() {
           onCreate={handleCreateTask}
         />
       )}
-    </div>
+    </AppLayout>
   );
 }
 

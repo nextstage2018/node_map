@@ -3,7 +3,10 @@
 import { useState, useCallback, useMemo } from 'react';
 import { MessageGroup, ChannelType, UnifiedMessage } from '@/lib/types';
 import { useMessages } from '@/hooks/useMessages';
-import Header from '@/components/shared/Header';
+import { RotateCw, Plus } from 'lucide-react';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
+import Button from '@/components/ui/Button';
 import Sidebar from '@/components/shared/Sidebar';
 import MessageList from '@/components/inbox/MessageList';
 import MessageDetail from '@/components/inbox/MessageDetail';
@@ -56,8 +59,35 @@ export default function InboxPage() {
   }, [addSentMessage]);
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
+    <AppLayout>
+      <ContextBar
+        title={filter === 'sent' ? '送信済み' : 'インボックス'}
+        subtitle="メール・Slack・Chatworkの統合受信箱"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus className="w-4 h-4" />}
+              onClick={() => {
+                setShowCompose(true);
+                setSelectedGroupKey(null);
+              }}
+            >
+              新規
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<RotateCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />}
+              onClick={refresh}
+              disabled={isLoading}
+            >
+              {isLoading ? '更新中' : '更新'}
+            </Button>
+          </div>
+        }
+      />
       <div className="flex flex-1 overflow-hidden">
         {/* Phase 25+38: Sidebarにフィルタpropsを渡す */}
         <Sidebar
@@ -70,32 +100,8 @@ export default function InboxPage() {
         <div className="flex flex-1 overflow-hidden">
           {/* メッセージ一覧 */}
           <div className="w-96 border-r border-slate-200 flex flex-col overflow-hidden">
-            <div className="p-3 border-b border-slate-200 flex items-center justify-between shrink-0">
-              <h2 className="text-sm font-semibold text-slate-900">
-                {filter === 'sent' ? '送信済み' : '統合インボックス'}
-              </h2>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setShowCompose(true);
-                    setSelectedGroupKey(null);
-                  }}
-                  className="text-xs bg-blue-600 text-white px-2.5 py-1 rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  ✏️ 新規
-                </button>
-                <button
-                  onClick={refresh}
-                  className="text-xs text-blue-600 hover:underline"
-                  disabled={isLoading}
-                >
-                  {isLoading ? '更新中...' : '更新'}
-                </button>
-              </div>
-            </div>
-
             {error && (
-              <div className="p-3 bg-red-50 text-red-700 text-sm shrink-0">
+              <div className="p-3 bg-red-50 text-red-700 text-sm shrink-0 border-b border-red-200">
                 {error}
               </div>
             )}
@@ -144,6 +150,6 @@ export default function InboxPage() {
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

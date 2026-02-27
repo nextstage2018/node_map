@@ -3,9 +3,11 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Seed, SeedStatus } from '@/lib/types';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 import SeedCard from '@/components/seeds/SeedCard';
 import SeedTagInput from '@/components/seeds/SeedTagInput';
+import Button from '@/components/ui/Button';
 import { Send, X, BookOpen, CheckSquare, MessageSquare, FolderOpen } from 'lucide-react';
 
 type StatusFilter = SeedStatus | 'all';
@@ -296,7 +298,9 @@ export default function SeedsPage() {
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-white">
+    <AppLayout>
+      <ContextBar title="種ボックス" />
+
       {/* Phase 40c: タスク変換時のプロジェクト確認モーダル */}
       {showTaskProjectModal && selectedSeed && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
@@ -314,41 +318,32 @@ export default function SeedsPage() {
               ))}
             </select>
             <div className="flex gap-2">
-              <button
+              <Button
                 onClick={() => executeConvert('task', taskProjectId || undefined)}
                 disabled={isConverting}
-                className="flex-1 px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                variant="primary"
+                size="sm"
+                className="flex-1"
               >
                 {isConverting ? '変換中...' : 'タスクに変換'}
-              </button>
-              <button
+              </Button>
+              <Button
                 onClick={() => setShowTaskProjectModal(false)}
-                className="px-4 py-2 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                variant="outline"
+                size="sm"
               >
                 キャンセル
-              </button>
+              </Button>
             </div>
           </div>
         </div>
       )}
-      <Header />
       <div className="flex-1 overflow-hidden flex">
         {/* ========================================
             左: 種一覧
             ======================================== */}
         <div className={`flex-1 overflow-y-auto bg-slate-50 ${selectedSeed ? 'border-r border-slate-200' : ''}`}>
           <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-            {/* ページヘッダー */}
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                <span>{'\uD83C\uDF31'}</span>
-                種ボックス
-              </h1>
-              <p className="text-sm text-slate-500 mt-1">
-                アイデアやメモを種として記録し、タスクに育てましょう。
-              </p>
-            </div>
-
             {/* 新規入力フォーム */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
               <textarea
@@ -381,15 +376,14 @@ export default function SeedsPage() {
                     </select>
                   </div>
                 )}
-                <button
+                <Button
                   onClick={handleCreate}
                   disabled={!newContent.trim() || isSubmitting}
-                  className="px-6 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg
-                    hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed
-                    transition-colors whitespace-nowrap"
+                  size="sm"
+                  variant="primary"
                 >
                   {isSubmitting ? '追加中...' : '種を追加'}
-                </button>
+                </Button>
               </div>
               {createError && (
                 <p className="text-xs text-red-500 mt-1">{createError}</p>
@@ -398,19 +392,16 @@ export default function SeedsPage() {
 
             {/* フィルタバー */}
             <div className="flex items-center gap-4">
-              <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
+              <div className="flex gap-1">
                 {STATUS_OPTIONS.map((opt) => (
-                  <button
+                  <Button
                     key={opt.key}
                     onClick={() => setStatusFilter(opt.key)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      statusFilter === opt.key
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-500 hover:text-slate-700'
-                    }`}
+                    size="xs"
+                    variant={statusFilter === opt.key ? 'primary' : 'ghost'}
                   >
                     {opt.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="flex-1">
@@ -424,7 +415,7 @@ export default function SeedsPage() {
                     placeholder:text-slate-400"
                 />
               </div>
-              <span className="text-xs text-slate-400">{seeds.length}件</span>
+              <span className="text-xs text-slate-400 whitespace-nowrap">{seeds.length}件</span>
             </div>
 
             {/* タグフィルタ */}
@@ -447,7 +438,6 @@ export default function SeedsPage() {
             {isLoading ? (
               <div className="flex items-center justify-center py-12">
                 <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full" />
-                <span className="ml-2 text-sm text-slate-500">読み込み中...</span>
               </div>
             ) : seeds.length > 0 ? (
               <div className="grid gap-3 md:grid-cols-2">
@@ -463,14 +453,14 @@ export default function SeedsPage() {
                     <button
                       onClick={() => openChat(seed)}
                       className={`absolute top-2 right-2 p-1.5 rounded-lg transition-colors ${
-                        selectedSeed?.id === seed.id
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white/80 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200'
-                      }`}
-                      title="AIと会話"
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                    </button>
+                      selectedSeed?.id === seed.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white/80 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-200'
+                    }`}
+                    title="AIと会話"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                  </button>
                   </div>
                 ))}
               </div>
@@ -606,27 +596,31 @@ export default function SeedsPage() {
 
               {/* Phase 31: 変換ボタン */}
               <div className="flex gap-2 mt-3">
-                <button
+                <Button
                   onClick={() => handleConvert('knowledge')}
                   disabled={isConverting}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 disabled:opacity-50 transition-colors"
+                  variant="secondary"
+                  size="sm"
+                  icon={<BookOpen className="w-3.5 h-3.5" />}
+                  className="flex-1"
                 >
-                  <BookOpen className="w-3.5 h-3.5" />
                   ナレッジに変換
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => handleConvert('task')}
                   disabled={isConverting}
-                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  variant="primary"
+                  size="sm"
+                  icon={<CheckSquare className="w-3.5 h-3.5" />}
+                  className="flex-1"
                 >
-                  <CheckSquare className="w-3.5 h-3.5" />
                   タスクに変換
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         )}
       </div>
-    </div>
+    </AppLayout>
   );
 }

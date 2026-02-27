@@ -2,9 +2,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 import ChannelSubscriptionModal from '@/components/settings/ChannelSubscriptionModal';
 import SetupWizard from '@/components/setup/SetupWizard';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import { LoadingState } from '@/components/ui/EmptyState';
 
 // Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
 const CHATWORK_FORM_CONFIG = {
@@ -21,49 +25,49 @@ function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAut
   onConfigureChannels?: () => void; subscriptionCount?: number;
 }) {
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <div className="flex items-center justify-between p-4">
+    <Card variant="outlined" padding="md">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <span className="text-2xl">{icon}</span>
           <div>
-            <h3 className="font-medium">{label}</h3>
-            {isConnected && <p className="text-sm text-gray-500">{accountName}</p>}
+            <h3 className="font-medium text-slate-900">{label}</h3>
+            {isConnected && <p className="text-sm text-slate-500">{accountName}</p>}
           </div>
         </div>
         <div className="flex items-center gap-2">
           {isConnected ? (
             <>
               <span className="text-sm text-green-600 font-medium">接続済み</span>
-              <button onClick={onRevoke} className="px-3 py-1 text-sm text-red-600 border border-red-300 rounded hover:bg-red-50">
+              <Button onClick={onRevoke} variant="danger" size="sm">
                 解除
-              </button>
+              </Button>
             </>
           ) : (
-            <button onClick={onAuth} className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700">
+            <Button onClick={onAuth} variant="primary" size="sm">
               {authLabel || '接続する'}
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {/* Phase 25: 接続済みサービスにチャネル設定ボタンを表示 */}
       {isConnected && onConfigureChannels && (
-        <div className="px-4 pb-3 pt-0">
-          <button
-            onClick={onConfigureChannels}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-blue-600 border border-blue-200 rounded hover:bg-blue-50 transition-colors"
-          >
-            <span>📋</span>
-            <span>取得対象チャネル設定</span>
-            {subscriptionCount !== undefined && subscriptionCount > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
-                {subscriptionCount}件
-              </span>
-            )}
-          </button>
-        </div>
+        <Button
+          onClick={onConfigureChannels}
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          icon="📋"
+        >
+          <span>取得対象チャネル設定</span>
+          {subscriptionCount !== undefined && subscriptionCount > 0 && (
+            <span className="ml-auto px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
+              {subscriptionCount}件
+            </span>
+          )}
+        </Button>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -341,25 +345,27 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
+    <AppLayout>
+      <ContextBar title="設定" />
       <div className="flex-1 overflow-auto">
         <div className="max-w-4xl mx-auto p-6">
           <h1 className="text-2xl font-bold mb-6">個人設定</h1>
 
           {message && (
-            <div className={`mb-4 p-3 rounded ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
-              {message.text}
-            </div>
+            <Card variant="flat" padding="md" className={`mb-6 ${message.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+              <p className={message.type === 'success' ? 'text-green-700' : 'text-red-700'}>
+                {message.text}
+              </p>
+            </Card>
           )}
 
           {/* タブ */}
-          <div className="flex border-b mb-6">
+          <div className="flex border-b border-slate-200 mb-6">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 text-sm font-medium ${activeTab === tab.id ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
+                className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-600 hover:text-slate-700'}`}
               >
                 {tab.label}
               </button>
@@ -368,11 +374,13 @@ export default function SettingsPage() {
 
           {/* チャンネル接続タブ */}
           {activeTab === 'channels' && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 mb-4">
-                Gmail・Slackはボタンを押すだけで連携できます。ChatworkはAPIトークンを入力してください。
-                接続後、「取得対象チャネル設定」で取得するチャネルを選択できます。
-              </p>
+            <div className="space-y-6">
+              <Card variant="flat" padding="md" className="bg-blue-50 border border-blue-200">
+                <p className="text-sm text-slate-700">
+                  Gmail・Slackはボタンを押すだけで連携できます。ChatworkはAPIトークンを入力してください。
+                  接続後、「取得対象チャネル設定」で取得するチャネルを選択できます。
+                </p>
+              </Card>
 
               {/* Gmail（OAuth） */}
               <ChannelAuthCard
@@ -417,179 +425,221 @@ export default function SettingsPage() {
                   subscriptionCount={subscriptionCounts.chatwork}
                 />
                 {showChatworkForm && !channels.chatwork.connected && (
-                  <div className="mt-2 ml-12 p-4 bg-gray-50 rounded-lg border">
-                    <h4 className="text-sm font-medium mb-3">Chatwork の認証情報</h4>
-                    {CHATWORK_FORM_CONFIG.fields.map((field) => (
-                      <div key={field.key} className="mb-3">
-                        <label className="block text-xs text-gray-600 mb-1">{field.label}</label>
-                        <input
-                          type={field.type}
-                          placeholder={field.placeholder}
-                          value={chatworkFormData[field.key] || ''}
-                          onChange={(e) => setChatworkFormData({ ...chatworkFormData, [field.key]: e.target.value })}
-                          className="w-full px-3 py-2 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                    ))}
-                    <p className="text-xs text-gray-400 mb-3">
+                  <Card variant="flat" padding="md" className="mt-4 bg-slate-50 border border-slate-200">
+                    <h4 className="text-sm font-medium text-slate-900 mb-4">Chatwork の認証情報</h4>
+                    <div className="space-y-3 mb-4">
+                      {CHATWORK_FORM_CONFIG.fields.map((field) => (
+                        <div key={field.key}>
+                          <label className="block text-xs font-medium text-slate-700 mb-1.5">{field.label}</label>
+                          <input
+                            type={field.type}
+                            placeholder={field.placeholder}
+                            value={chatworkFormData[field.key] || ''}
+                            onChange={(e) => setChatworkFormData({ ...chatworkFormData, [field.key]: e.target.value })}
+                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-500 mb-4">
                       APIトークンは Chatwork &gt; 動作設定 &gt; API設定 から取得できます
                     </p>
-                    <div className="flex gap-2 mt-3">
-                      <button
+                    <div className="flex gap-2">
+                      <Button
                         onClick={handleChatworkAuth}
                         disabled={loading}
-                        className="px-4 py-2 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                        variant="primary"
+                        size="sm"
                       >
                         {loading ? '接続中...' : '保存して接続'}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={() => { setShowChatworkForm(false); setChatworkFormData({}); }}
-                        className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50"
+                        variant="outline"
+                        size="sm"
                       >
                         キャンセル
-                      </button>
+                      </Button>
                     </div>
-                  </div>
+                  </Card>
                 )}
               </div>
 
               {/* Phase 25: データ取得ルール説明 */}
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                <h3 className="text-sm font-medium text-gray-700 mb-2">データ取得ルール</h3>
-                <ul className="text-xs text-gray-500 space-y-1">
-                  <li>・初回接続時は過去30日分のメッセージを取得します</li>
-                  <li>・2回目以降は前回取得以降の新着メッセージのみ取得します</li>
-                  <li>・チャネルが未選択の場合、そのサービスのメッセージは取得されません</li>
+              <Card variant="flat" padding="md" className="bg-slate-50 border border-slate-200 mt-2">
+                <h3 className="text-sm font-medium text-slate-900 mb-3">データ取得ルール</h3>
+                <ul className="text-xs text-slate-600 space-y-2">
+                  <li className="flex gap-2">
+                    <span className="shrink-0">•</span>
+                    <span>初回接続時は過去30日分のメッセージを取得します</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="shrink-0">•</span>
+                    <span>2回目以降は前回取得以降の新着メッセージのみ取得します</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="shrink-0">•</span>
+                    <span>チャネルが未選択の場合、そのサービスのメッセージは取得されません</span>
+                  </li>
                 </ul>
-              </div>
+              </Card>
             </div>
           )}
 
           {/* プロフィールタブ */}
           {activeTab === 'profile' && (
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">表示名</label>
-                <input
-                  type="text"
-                  value={profile.displayName}
-                  onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+            <Card variant="outlined" padding="lg" className="max-w-2xl">
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">表示名</label>
+                  <input
+                    type="text"
+                    value={profile.displayName}
+                    onChange={(e) => setProfile({ ...profile, displayName: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">メールアドレス</label>
+                  <input
+                    type="email"
+                    value={profile.email}
+                    disabled
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-500"
+                  />
+                  <p className="text-xs text-slate-500 mt-1.5">メールアドレスはログイン情報から取得されます</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">タイムゾーン</label>
+                  <select
+                    value={profile.timezone}
+                    onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
+                    <option value="UTC">UTC</option>
+                    <option value="America/New_York">America/New_York (EST)</option>
+                    <option value="Europe/London">Europe/London (GMT)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">言語</label>
+                  <select
+                    value={profile.language}
+                    onChange={(e) => setProfile({ ...profile, language: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="ja">日本語</option>
+                    <option value="en">English</option>
+                  </select>
+                </div>
+                <div className="pt-2">
+                  <Button
+                    onClick={handleSaveProfile}
+                    disabled={loading}
+                    variant="primary"
+                    size="md"
+                  >
+                    {loading ? '保存中...' : 'プロフィールを保存'}
+                  </Button>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">メールアドレス</label>
-                <input
-                  type="email"
-                  value={profile.email}
-                  disabled
-                  className="w-full px-3 py-2 border rounded bg-gray-100 text-gray-500"
-                />
-                <p className="text-xs text-gray-400 mt-1">メールアドレスはログイン情報から取得されます</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">タイムゾーン</label>
-                <select
-                  value={profile.timezone}
-                  onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="Asia/Tokyo">Asia/Tokyo (JST)</option>
-                  <option value="UTC">UTC</option>
-                  <option value="America/New_York">America/New_York (EST)</option>
-                  <option value="Europe/London">Europe/London (GMT)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">言語</label>
-                <select
-                  value={profile.language}
-                  onChange={(e) => setProfile({ ...profile, language: e.target.value })}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="ja">日本語</option>
-                  <option value="en">English</option>
-                </select>
-              </div>
-              <button
-                onClick={handleSaveProfile}
-                disabled={loading}
-                className="px-6 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? '保存中...' : 'プロフィールを保存'}
-              </button>
-            </div>
+            </Card>
           )}
 
           {/* 通知設定タブ */}
           {activeTab === 'notifications' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between p-3 border rounded">
+            <Card variant="outlined" padding="lg" className="max-w-2xl">
+              <div className="space-y-4">
+                {/* メール通知 */}
+                <Card variant="flat" padding="md" className="bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium text-slate-900">メール通知</h3>
+                      <p className="text-sm text-slate-500 mt-0.5">新着メッセージをメールで通知</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={notifications.emailNotification} onChange={(e) => setNotifications({ ...notifications, emailNotification: e.target.checked })} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                    </label>
+                  </div>
+                </Card>
+
+                {/* デスクトップ通知 */}
+                <Card variant="flat" padding="md" className="bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium text-slate-900">デスクトップ通知</h3>
+                      <p className="text-sm text-slate-500 mt-0.5">ブラウザのプッシュ通知</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={notifications.desktopNotification} onChange={(e) => setNotifications({ ...notifications, desktopNotification: e.target.checked })} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                    </label>
+                  </div>
+                </Card>
+
+                {/* メンションのみ */}
+                <Card variant="flat" padding="md" className="bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-medium text-slate-900">メンションのみ</h3>
+                      <p className="text-sm text-slate-500 mt-0.5">自分宛てのメンションのみ通知</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" checked={notifications.mentionOnly} onChange={(e) => setNotifications({ ...notifications, mentionOnly: e.target.checked })} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
+                    </label>
+                  </div>
+                </Card>
+
+                {/* 通知頻度 */}
                 <div>
-                  <h3 className="font-medium">メール通知</h3>
-                  <p className="text-sm text-gray-500">新着メッセージをメールで通知</p>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">通知頻度</label>
+                  <select
+                    value={notifications.digestFrequency}
+                    onChange={(e) => setNotifications({ ...notifications, digestFrequency: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="realtime">リアルタイム</option>
+                    <option value="hourly">1時間ごと</option>
+                    <option value="daily">1日1回</option>
+                  </select>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={notifications.emailNotification} onChange={(e) => setNotifications({ ...notifications, emailNotification: e.target.checked })} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                </label>
-              </div>
-              <div className="flex items-center justify-between p-3 border rounded">
-                <div>
-                  <h3 className="font-medium">デスクトップ通知</h3>
-                  <p className="text-sm text-gray-500">ブラウザのプッシュ通知</p>
+
+                {/* 保存ボタン */}
+                <div className="pt-2">
+                  <Button
+                    onClick={handleSaveNotifications}
+                    disabled={loading}
+                    variant="primary"
+                    size="md"
+                  >
+                    {loading ? '保存中...' : '通知設定を保存'}
+                  </Button>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={notifications.desktopNotification} onChange={(e) => setNotifications({ ...notifications, desktopNotification: e.target.checked })} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                </label>
               </div>
-              <div className="flex items-center justify-between p-3 border rounded">
-                <div>
-                  <h3 className="font-medium">メンションのみ</h3>
-                  <p className="text-sm text-gray-500">自分宛てのメンションのみ通知</p>
-                </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={notifications.mentionOnly} onChange={(e) => setNotifications({ ...notifications, mentionOnly: e.target.checked })} className="sr-only peer" />
-                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                </label>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">通知頻度</label>
-                <select
-                  value={notifications.digestFrequency}
-                  onChange={(e) => setNotifications({ ...notifications, digestFrequency: e.target.value })}
-                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="realtime">リアルタイム</option>
-                  <option value="hourly">1時間ごと</option>
-                  <option value="daily">1日1回</option>
-                </select>
-              </div>
-              <button
-                onClick={handleSaveNotifications}
-                disabled={loading}
-                className="px-6 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {loading ? '保存中...' : '通知設定を保存'}
-              </button>
-            </div>
+            </Card>
           )}
 
           {/* Phase 30b: 初回セットアップタブ */}
           {activeTab === 'setup' && (
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 mb-4">
-                自社の情報、チームメンバー、プロジェクトを一括で登録できます。
-                初めてNodeMapを使う方はこちらからセットアップを開始してください。
-              </p>
-              <button
-                onClick={() => setShowSetupWizard(true)}
-                className="px-6 py-3 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                初回セットアップを開始
-              </button>
-            </div>
+            <Card variant="outlined" padding="lg" className="max-w-2xl">
+              <div className="space-y-5">
+                <p className="text-sm text-slate-700">
+                  自社の情報、チームメンバー、プロジェクトを一括で登録できます。
+                  初めてNodeMapを使う方はこちらからセットアップを開始してください。
+                </p>
+                <Button
+                  onClick={() => setShowSetupWizard(true)}
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                >
+                  初回セットアップを開始
+                </Button>
+              </div>
+            </Card>
           )}
         </div>
       </div>
@@ -614,6 +664,6 @@ export default function SettingsPage() {
           setMessage({ type: 'success', text: '初回セットアップが完了しました！' });
         }}
       />
-    </div>
+    </AppLayout>
   );
 }

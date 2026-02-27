@@ -4,7 +4,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Building2, Plus, Users, Globe, X, Search, ChevronRight } from 'lucide-react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import Button from '@/components/ui/Button';
+import EmptyState, { LoadingState } from '@/components/ui/EmptyState';
 
 // ========================================
 // 型定義
@@ -110,40 +115,37 @@ export default function OrganizationsPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* ページヘッダー */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-slate-600" />
-              <h1 className="text-lg font-bold text-slate-900">組織</h1>
-              <span className="text-xs text-slate-400">{organizations.length}件</span>
+    <AppLayout>
+      <ContextBar
+        title="組織"
+        actions={
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="組織名・ドメインで検索..."
+                className="pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
             </div>
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Plus className="w-3.5 h-3.5" />}
               onClick={() => setShowForm(!showForm)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <Plus className="w-3.5 h-3.5" />
-              組織追加
-            </button>
+              新規作成
+            </Button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="組織名・ドメインで検索..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
+        }
+      />
+      <div className="flex-1 overflow-hidden flex flex-col">
 
         {/* メッセージバナー */}
         {message && (
-          <div className={`mx-6 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
+          <div className={`mx-6 mt-4 px-3 py-2 rounded-lg text-xs font-medium ${
             message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
           }`}>
             {message.text}
@@ -152,96 +154,97 @@ export default function OrganizationsPage() {
 
         {/* 新規作成フォーム */}
         {showForm && (
-          <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-slate-700">新しい組織を追加</h3>
-              <button onClick={() => { setShowForm(false); setNewName(''); setNewDomain(''); }} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
-                  <Building2 className="w-3.5 h-3.5" />
-                  組織名
-                </label>
-                <input
-                  type="text"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="例: 株式会社ネクストステージ"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
-                  <Globe className="w-3.5 h-3.5" />
-                  ドメイン（任意）
-                </label>
-                <input
-                  type="text"
-                  value={newDomain}
-                  onChange={(e) => setNewDomain(e.target.value)}
-                  placeholder="例: nextstage.co.jp"
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => { setShowForm(false); setNewName(''); setNewDomain(''); }}
-                  className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
-                >
-                  キャンセル
-                </button>
-                <button
-                  onClick={createOrganization}
-                  disabled={!newName.trim()}
-                  className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  作成
+          <div className="mx-6 mt-4">
+            <Card variant="outlined" padding="md">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold text-slate-700">新しい組織を追加</h3>
+                <button onClick={() => { setShowForm(false); setNewName(''); setNewDomain(''); }} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-            </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                    <Building2 className="w-3.5 h-3.5" />
+                    組織名
+                  </label>
+                  <input
+                    type="text"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="例: 株式会社ネクストステージ"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1">
+                    <Globe className="w-3.5 h-3.5" />
+                    ドメイン（任意）
+                  </label>
+                  <input
+                    type="text"
+                    value={newDomain}
+                    onChange={(e) => setNewDomain(e.target.value)}
+                    placeholder="例: nextstage.co.jp"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => { setShowForm(false); setNewName(''); setNewDomain(''); }}
+                  >
+                    キャンセル
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={createOrganization}
+                    disabled={!newName.trim()}
+                  >
+                    作成
+                  </Button>
+                </div>
+              </div>
+            </Card>
           </div>
         )}
 
         {/* 組織カード一覧 */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
           {isLoading ? (
-            <div className="flex items-center justify-center h-48 text-slate-400">
-              <div className="text-center">
-                <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                <p className="text-sm">読み込み中...</p>
-              </div>
-            </div>
+            <LoadingState />
           ) : organizations.length === 0 ? (
-            <div className="flex items-center justify-center h-48 text-slate-400">
-              <div className="text-center">
-                <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
-                <p className="text-sm">組織がありません</p>
-                <p className="text-xs mt-1">「組織追加」ボタンで最初の組織を登録しましょう</p>
-              </div>
-            </div>
+            <EmptyState
+              icon={<Building2 className="w-12 h-12" />}
+              title="組織がありません"
+              description="「新規作成」ボタンで最初の組織を登録しましょう"
+            />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {organizations.map((org) => (
-                <div
+                <Card
                   key={org.id}
+                  variant="outlined"
+                  padding="md"
+                  hoverable
                   onClick={() => router.push(`/organizations/${org.id}`)}
-                  className="p-4 bg-white border border-slate-200 rounded-lg hover:border-blue-200 hover:shadow-sm transition-all cursor-pointer group"
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                       <Building2 className="w-5 h-5 text-blue-600" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
                         {org.relationship_type && REL_TYPE_LABELS[org.relationship_type] && (
-                          <span className={`inline-flex px-1.5 py-0.5 text-[10px] font-medium rounded-full ${REL_TYPE_LABELS[org.relationship_type].bg} ${REL_TYPE_LABELS[org.relationship_type].text}`}>
-                            {REL_TYPE_LABELS[org.relationship_type].label}
-                          </span>
+                          <Badge
+                            label={REL_TYPE_LABELS[org.relationship_type].label}
+                            color={REL_TYPE_LABELS[org.relationship_type].bg}
+                            size="xs"
+                          />
                         )}
                       </div>
                       {org.domain && (
@@ -261,12 +264,12 @@ export default function OrganizationsPage() {
                     </div>
                     <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-400 transition-colors mt-3" />
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           )}
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

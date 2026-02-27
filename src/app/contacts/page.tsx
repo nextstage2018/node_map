@@ -2,8 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus, GitMerge, AlertTriangle, Link2, Sparkles } from 'lucide-react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
+import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import { LoadingState } from '@/components/ui/EmptyState';
 import Image from 'next/image';
 
 // ========================================
@@ -643,56 +648,44 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {/* ヘッダー */}
-        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-slate-600" />
-              <h1 className="text-lg font-bold text-slate-900">コンタクト</h1>
-            </div>
-            {/* Phase 30b: コンタクト追加ボタン */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                追加
-              </button>
-            <button
+    <AppLayout>
+      <ContextBar
+        title="コンタクト"
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={() => setShowAddModal(true)}
+              variant="primary"
+              size="xs"
+              icon={<UserPlus className="w-3.5 h-3.5" />}
+            >
+              新規追加
+            </Button>
+            <Button
               onClick={runEnrich}
               disabled={isEnriching}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
+              variant="secondary"
+              size="xs"
+              icon={isEnriching ? <span className="animate-spin">&#8987;</span> : <Search className="w-3.5 h-3.5" />}
               title="Slack/Chatworkのプロフィール、メール署名、会話パターンから自動取得"
             >
-              {isEnriching ? (
-                <>
-                  <span className="animate-spin">&#8987;</span>
-                  取得中...
-                </>
-              ) : (
-                <>
-                  <Search className="w-3.5 h-3.5" />
-                  プロフィール自動取得
-                </>
-              )}
-            </button>
-            {/* Phase 35: 重複統合ボタン */}
+              {isEnriching ? '取得中...' : 'プロフィール自動取得'}
+            </Button>
             {duplicateGroups.length > 0 && (
-              <button
+              <Button
                 onClick={() => setShowMergeModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                variant="outline"
+                size="xs"
+                icon={<GitMerge className="w-3.5 h-3.5" />}
               >
-                <GitMerge className="w-3.5 h-3.5" />
-                重複を統合
-                <span className="bg-orange-200 text-orange-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">{duplicateGroups.length}</span>
-              </button>
+                重複を統合 ({duplicateGroups.length})
+              </Button>
             )}
-            </div>
           </div>
+        }
+      />
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
 
           {/* タブ切り替え */}
           <div className="flex gap-1 mb-3">
@@ -818,11 +811,8 @@ export default function ContactsPage() {
             {/* テーブル部分 */}
             <div className={`overflow-y-auto ${selectedContact ? 'w-1/2 border-r border-slate-200' : 'w-full'} transition-all`}>
               {isLoading ? (
-                <div className="flex items-center justify-center h-64 text-slate-400">
-                  <div className="text-center">
-                    <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                    <p className="text-sm">読み込み中...</p>
-                  </div>
+                <div className="flex items-center justify-center h-64">
+                  <LoadingState />
                 </div>
               ) : error ? (
                 <div className="p-6 text-center text-red-500">{error}</div>
@@ -923,11 +913,11 @@ export default function ContactsPage() {
                               onClick={() => { setEditingId(contact.id); setEditRelationship(contact.relationshipType); }}
                               className="inline-flex items-center gap-1 group"
                             >
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                                RELATIONSHIP_LABELS[contact.relationshipType]?.color || RELATIONSHIP_LABELS.unknown.color
-                              }`}>
-                                {RELATIONSHIP_LABELS[contact.relationshipType]?.label || '未分類'}
-                              </span>
+                              <Badge
+                                label={RELATIONSHIP_LABELS[contact.relationshipType]?.label || '未分類'}
+                                color={contact.relationshipType}
+                                size="sm"
+                              />
                               <Edit2 className="w-3 h-3 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                             </button>
                           )}
@@ -950,6 +940,7 @@ export default function ContactsPage() {
                 ======================================== */}
             {selectedContact && (
               <div className="w-1/2 overflow-y-auto bg-slate-50 p-5">
+                <Card variant="default" padding="lg" hoverable={false}>
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white text-lg font-bold shrink-0 ${getAvatarColor(selectedContact.name)}`}>
@@ -1140,13 +1131,14 @@ export default function ContactsPage() {
                             placeholder="アドレス / ID"
                             className="flex-1 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                           />
-                          <button
+                          <Button
                             onClick={addChannel}
                             disabled={isAddingChannel || !newChannelAddress.trim()}
-                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            variant="primary"
+                            size="xs"
                           >
                             {isAddingChannel ? '...' : '追加'}
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -1200,14 +1192,15 @@ export default function ContactsPage() {
                     </div>
 
                     {/* 保存ボタン */}
-                    <button
+                    <Button
                       onClick={saveContactDetails}
                       disabled={isSaving}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      variant="primary"
+                      size="md"
+                      icon={<Save className="w-4 h-4" />}
                     >
-                      <Save className="w-4 h-4" />
                       {isSaving ? '保存中...' : '保存'}
-                    </button>
+                    </Button>
 
                     {/* Phase 34: プロジェクト紐付け */}
                     <div className="mt-4 pt-4 border-t border-slate-200">
@@ -1235,13 +1228,14 @@ export default function ContactsPage() {
                               <option key={p.id} value={p.id}>{p.name}</option>
                             ))}
                           </select>
-                          <button
+                          <Button
                             onClick={addToProject}
                             disabled={!selectedProjectToAdd}
-                            className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            variant="primary"
+                            size="xs"
                           >
                             追加
-                          </button>
+                          </Button>
                         </div>
                       )}
                       {projects.length === 0 && showProjectAdd && (
@@ -1254,21 +1248,23 @@ export default function ContactsPage() {
                       <div className="mt-4 pt-4 border-t border-slate-200">
                         <p className="text-xs font-semibold text-slate-500 mb-2">ブロック操作</p>
                         <div className="flex gap-2">
-                          <button
+                          <Button
                             onClick={() => blockContact(selectedContact, 'exact')}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-lg hover:bg-red-100 transition-colors"
+                            variant="danger"
+                            size="xs"
+                            icon={<Shield className="w-3.5 h-3.5" />}
                           >
-                            <Shield className="w-3.5 h-3.5" />
                             このアドレスをブロック
-                          </button>
+                          </Button>
                           {selectedContact.address.includes('@') && (
-                            <button
+                            <Button
                               onClick={() => blockContact(selectedContact, 'domain')}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-lg hover:bg-orange-100 transition-colors"
+                              variant="outline"
+                              size="xs"
+                              icon={<Shield className="w-3.5 h-3.5" />}
                             >
-                              <Shield className="w-3.5 h-3.5" />
                               @{selectedContact.address.split('@')[1]} をブロック
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -1280,11 +1276,8 @@ export default function ContactsPage() {
                 {detailTab === 'activities' && (
                   <div>
                     {isLoadingActivities ? (
-                      <div className="flex items-center justify-center h-32 text-slate-400">
-                        <div className="text-center">
-                          <div className="animate-spin text-xl mb-1">&#8987;</div>
-                          <p className="text-xs">読み込み中...</p>
-                        </div>
+                      <div className="flex items-center justify-center h-32">
+                        <LoadingState />
                       </div>
                     ) : activities.length === 0 ? (
                       <div className="flex items-center justify-center h-32 text-slate-400">
@@ -1327,23 +1320,15 @@ export default function ContactsPage() {
                           ? `最終分析: ${formatDate(selectedContact.ai_analyzed_at)}`
                           : '未分析'}
                       </p>
-                      <button
+                      <Button
                         onClick={analyzeContact}
                         disabled={isAnalyzing || selectedContact?.isAutoGenerated}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        variant="primary"
+                        size="xs"
+                        icon={isAnalyzing ? <div className="animate-spin text-xs">&#8987;</div> : <Sparkles className="w-3.5 h-3.5" />}
                       >
-                        {isAnalyzing ? (
-                          <>
-                            <div className="animate-spin text-xs">&#8987;</div>
-                            分析中...
-                          </>
-                        ) : (
-                          <>
-                            <Sparkles className="w-3.5 h-3.5" />
-                            コミュニケーション分析を実行
-                          </>
-                        )}
-                      </button>
+                        {isAnalyzing ? '分析中...' : 'コミュニケーション分析を実行'}
+                      </Button>
                     </div>
                     {aiContext ? (
                       <div className="p-4 bg-white border border-slate-200 rounded-lg">
@@ -1359,6 +1344,7 @@ export default function ContactsPage() {
                     )}
                   </div>
                 )}
+                </Card>
               </div>
             )}
           </div>
@@ -1370,11 +1356,8 @@ export default function ContactsPage() {
         {activeTab === 'blocklist' && (
           <div className="flex-1 overflow-y-auto">
             {blocklistLoading ? (
-              <div className="flex items-center justify-center h-64 text-slate-400">
-                <div className="text-center">
-                  <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                  <p className="text-sm">読み込み中...</p>
-                </div>
+              <div className="flex items-center justify-center h-64">
+                <LoadingState />
               </div>
             ) : blocklist.length === 0 ? (
               <div className="flex items-center justify-center h-64 text-slate-400">
@@ -1615,6 +1598,6 @@ export default function ContactsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppLayout>
   );
 }

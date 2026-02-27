@@ -5,7 +5,7 @@
 // モード: 全体マップ / 個別トレース / 比較（2人の動線重ね） / リプレイ（AI対話）
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
 import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, MapIcon, GitBranch, MessageCircle, Loader2, Search, Users, Play, Send } from 'lucide-react';
 import ConversationModal from '@/components/thought-map/ConversationModal';
 
@@ -475,8 +475,7 @@ export default function ThoughtMapPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50">
-      <Header />
+    <AppLayout>
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* パンくず / ヘッダー */}
         <div className={`px-6 py-3 border-b flex items-center gap-3 ${isCanvasStep ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
@@ -653,7 +652,7 @@ export default function ThoughtMapPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppLayout>
   );
 }
 

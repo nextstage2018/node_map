@@ -7,7 +7,11 @@ import {
   Handshake, X, ChevronRight, ClipboardList, Pencil, Trash2, Users,
   AlertTriangle, Bookmark, Link2, Hash,
 } from 'lucide-react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
+import Button from '@/components/ui/Button';
+import Card from '@/components/ui/Card';
+import { LoadingState } from '@/components/ui/EmptyState';
 
 // ========================================
 // 型定義
@@ -473,8 +477,26 @@ export default function BusinessLogPage() {
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
+    <AppLayout>
+      <ContextBar
+        title="ビジネスログ"
+        actions={[
+          {
+            label: 'プロジェクト追加',
+            icon: Plus,
+            onClick: () => setShowNewProject(!showNewProject),
+            variant: 'ghost',
+            size: 'sm',
+          },
+          {
+            label: 'イベント記録',
+            icon: Plus,
+            onClick: () => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); },
+            variant: 'primary',
+            size: 'sm',
+          },
+        ]}
+      />
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* ページヘッダー */}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
@@ -487,26 +509,16 @@ export default function BusinessLogPage() {
             </div>
             <div className="flex items-center gap-2">
               {selectedProject && (
-                <button
+                <Button
                   onClick={() => setShowChannelSettings(!showChannelSettings)}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                    showChannelSettings
-                      ? 'text-blue-700 bg-blue-100 hover:bg-blue-200'
-                      : 'text-slate-600 border border-slate-200 hover:bg-slate-50'
-                  }`}
+                  icon={Link2}
+                  size="sm"
+                  variant={showChannelSettings ? 'primary' : 'outline'}
                   title="チャネル設定"
                 >
-                  <Link2 className="w-3.5 h-3.5" />
                   チャネル {projectChannels.length > 0 && `(${projectChannels.length})`}
-                </button>
+                </Button>
               )}
-              <button
-                onClick={() => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                イベント記録
-              </button>
             </div>
           </div>
           {selectedProject?.description && (
@@ -532,19 +544,19 @@ export default function BusinessLogPage() {
             <div className="px-4 py-3 border-b border-slate-200">
               <div className="flex items-center justify-between">
                 <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">プロジェクト</h2>
-                <button
+                <Button
                   onClick={() => setShowNewProject(!showNewProject)}
-                  className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                  icon={Plus}
+                  variant="ghost"
+                  size="sm"
                   title="プロジェクト追加"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                />
               </div>
             </div>
 
             {/* 新規プロジェクトフォーム */}
             {showNewProject && (
-              <div className="px-3 py-3 border-b border-slate-200 bg-white">
+              <Card variant="outlined" padding="sm" className="mx-3 my-3 border-b">
                 <input
                   type="text"
                   value={newProjectName}
@@ -571,20 +583,23 @@ export default function BusinessLogPage() {
                   ))}
                 </select>
                 <div className="flex gap-1.5">
-                  <button
+                  <Button
                     onClick={createProject}
-                    className="flex-1 px-2.5 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                    variant="primary"
+                    size="sm"
+                    className="flex-1"
                   >
                     作成
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     onClick={() => { setShowNewProject(false); setNewProjectName(''); setNewProjectDesc(''); setNewProjectOrgId(''); }}
-                    className="px-2.5 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                    variant="outline"
+                    size="sm"
                   >
                     取消
-                  </button>
+                  </Button>
                 </div>
-              </div>
+              </Card>
             )}
 
             {/* プロジェクト一覧 */}
@@ -592,7 +607,7 @@ export default function BusinessLogPage() {
               <button
                 onClick={() => setSelectedProjectId(null)}
                 className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm text-left transition-colors ${
-                  !selectedProjectId ? 'bg-white text-slate-900 font-medium shadow-sm' : 'text-slate-600 hover:bg-white'
+                  !selectedProjectId ? 'bg-white text-slate-900 font-medium shadow-sm border-l-2 border-blue-600' : 'text-slate-600 hover:bg-white'
                 }`}
               >
                 <Clock className="w-4 h-4 text-slate-400 shrink-0" />
@@ -639,12 +654,15 @@ export default function BusinessLogPage() {
           <div className={`flex-1 overflow-y-auto ${selectedEvent ? 'border-r border-slate-200' : ''}`}>
             {/* Phase 40c: チャネル設定パネル */}
             {showChannelSettings && selectedProjectId && (
-              <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
+              <Card variant="default" padding="md" className="mx-6 mt-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-slate-700">チャネル紐づけ設定</h3>
-                  <button onClick={() => setShowChannelSettings(false)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <Button
+                    onClick={() => setShowChannelSettings(false)}
+                    icon={X}
+                    variant="ghost"
+                    size="sm"
+                  />
                 </div>
 
                 {/* 紐づけ済みチャネル */}
@@ -659,12 +677,12 @@ export default function BusinessLogPage() {
                             <span className="text-xs text-slate-700">{ch.channel_label || ch.channel_identifier}</span>
                             <span className="text-[10px] text-slate-400">{ch.service_name}</span>
                           </div>
-                          <button
+                          <Button
                             onClick={() => removeProjectChannel(ch.id)}
-                            className="text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
+                            icon={X}
+                            variant="ghost"
+                            size="xs"
+                          />
                         </div>
                       ))}
                     </div>
@@ -681,10 +699,12 @@ export default function BusinessLogPage() {
                           (pc) => pc.service_name === oc.service_name && pc.channel_identifier === oc.channel_id
                         ))
                         .map((oc) => (
-                          <button
+                          <Button
                             key={oc.id}
                             onClick={() => addProjectChannel(oc)}
-                            className="w-full flex items-center justify-between px-2.5 py-1.5 bg-slate-50 border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors"
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-between px-2.5 py-1.5"
                           >
                             <div className="flex items-center gap-2">
                               <Hash className="w-3 h-3 text-slate-400" />
@@ -692,7 +712,7 @@ export default function BusinessLogPage() {
                               <span className="text-[10px] text-slate-400">{oc.service_name}</span>
                             </div>
                             <Plus className="w-3 h-3 text-blue-500" />
-                          </button>
+                          </Button>
                         ))}
                       {orgChannels.filter((oc) => !projectChannels.some(
                         (pc) => pc.service_name === oc.service_name && pc.channel_identifier === oc.channel_id
@@ -708,7 +728,7 @@ export default function BusinessLogPage() {
                       : 'プロジェクトに組織を設定すると、組織のチャネルから選択できます。'}
                   </p>
                 )}
-              </div>
+              </Card>
             )}
 
             {/* Phase 40c: タイムラインタブ（プロジェクト選択時のみ） */}
@@ -739,12 +759,15 @@ export default function BusinessLogPage() {
 
             {/* Phase 33: 新規イベントフォーム（強化版） */}
             {showNewEvent && (
-              <div className="mx-6 mt-4 p-4 bg-white border border-slate-200 rounded-lg shadow-sm">
+              <Card variant="default" padding="md" className="mx-6 mt-4 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-semibold text-slate-700">新しいイベントを記録</h3>
-                  <button onClick={() => { setShowNewEvent(false); resetNewEventForm(); }} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-4 h-4" />
-                  </button>
+                  <Button
+                    onClick={() => { setShowNewEvent(false); resetNewEventForm(); }}
+                    icon={X}
+                    variant="ghost"
+                    size="sm"
+                  />
                 </div>
                 <div className="space-y-3">
                   {/* イベント種別 */}
@@ -844,34 +867,31 @@ export default function BusinessLogPage() {
 
                   {/* 送信ボタン */}
                   <div className="flex justify-end gap-2">
-                    <button
+                    <Button
                       onClick={() => { setShowNewEvent(false); resetNewEventForm(); }}
-                      className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                      variant="outline"
+                      size="sm"
                     >
                       キャンセル
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={createEvent}
                       disabled={!newEventTitle.trim()}
-                      className="px-4 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      variant="primary"
+                      size="sm"
                     >
                       記録する
-                    </button>
+                    </Button>
                   </div>
                 </div>
-              </div>
+              </Card>
             )}
 
             {/* タイムライン本体 */}
             {timelineTab === 'events' ? (
               <div className="px-6 py-4">
                 {isLoadingEvents ? (
-                  <div className="flex items-center justify-center h-48 text-slate-400">
-                    <div className="text-center">
-                      <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                      <p className="text-sm">読み込み中...</p>
-                    </div>
-                  </div>
+                  <LoadingState message="読み込み中..." />
                 ) : events.length === 0 ? (
                   <div className="flex items-center justify-center h-48 text-slate-400">
                     <div className="text-center">
@@ -896,11 +916,14 @@ export default function BusinessLogPage() {
                           const Icon = typeConfig.icon;
                           const isSelected = selectedEvent?.id === event.id;
                           return (
-                            <button
+                            <Card
                               key={event.id}
+                              variant={isSelected ? 'default' : 'outlined'}
+                              padding="md"
+                              hoverable
                               onClick={() => { setSelectedEvent(isSelected ? null : event); setIsEditing(false); setShowDeleteConfirm(false); }}
-                              className={`w-full flex items-start gap-3 p-3 rounded-lg text-left transition-colors ${
-                                isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'
+                              className={`w-full flex items-start gap-3 text-left cursor-pointer transition-colors ${
+                                isSelected ? 'bg-blue-50 border border-blue-200' : ''
                               }`}
                             >
                               <div className="flex flex-col items-center mt-0.5">
@@ -925,7 +948,7 @@ export default function BusinessLogPage() {
                               <ChevronRight className={`w-4 h-4 shrink-0 mt-1 transition-colors ${
                                 isSelected ? 'text-blue-500' : 'text-slate-300'
                               }`} />
-                            </button>
+                            </Card>
                           );
                         })}
                       </div>
@@ -937,12 +960,7 @@ export default function BusinessLogPage() {
               /* Phase 40c: チャネルメッセージ表示 */
               <div className="px-6 py-4">
                 {isLoadingMessages ? (
-                  <div className="flex items-center justify-center h-48 text-slate-400">
-                    <div className="text-center">
-                      <div className="animate-spin text-2xl mb-2">&#8987;</div>
-                      <p className="text-sm">メッセージ読み込み中...</p>
-                    </div>
-                  </div>
+                  <LoadingState message="メッセージ読み込み中..." />
                 ) : channelMessages.length === 0 ? (
                   <div className="flex items-center justify-center h-48 text-slate-400">
                     <div className="text-center">
@@ -997,15 +1015,18 @@ export default function BusinessLogPage() {
               右パネル: イベント詳細（Phase 33: 編集・削除対応）
               ======================================== */}
           {selectedEvent && (
-            <div className="w-80 overflow-y-auto bg-slate-50 shrink-0 p-5">
+            <Card variant="flat" className="w-80 overflow-y-auto bg-slate-50 shrink-0">
               {/* Phase 33: 編集モード */}
               {isEditing ? (
-                <div>
+                <div className="p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-bold text-slate-900">イベント編集</h3>
-                    <button onClick={() => setIsEditing(false)} className="text-slate-400 hover:text-slate-600">
-                      <X className="w-4 h-4" />
-                    </button>
+                    <Button
+                      onClick={() => setIsEditing(false)}
+                      icon={X}
+                      variant="ghost"
+                      size="sm"
+                    />
                   </div>
 
                   <div className="space-y-3">
@@ -1041,70 +1062,79 @@ export default function BusinessLogPage() {
                       className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                     />
                     <div className="flex gap-2">
-                      <button
+                      <Button
                         onClick={updateEvent}
                         disabled={!editTitle.trim()}
-                        className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        variant="primary"
+                        size="sm"
+                        className="flex-1"
                       >
                         保存
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         onClick={() => setIsEditing(false)}
-                        className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
+                        variant="outline"
+                        size="sm"
                       >
                         取消
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
               ) : (
-                <div>
+                <div className="p-5">
                   {/* ヘッダー + アクションボタン */}
-                  <div className="flex items-start justify-between mb-4">
+                  <div className="border-b border-slate-200 flex items-start justify-between pb-4 mb-4">
                     <h3 className="text-base font-bold text-slate-900 pr-2">{selectedEvent.title}</h3>
                     <div className="flex items-center gap-1 shrink-0">
-                      <button
+                      <Button
                         onClick={startEditing}
-                        className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        icon={Pencil}
+                        variant="ghost"
+                        size="sm"
                         title="編集"
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button
+                      />
+                      <Button
                         onClick={() => setShowDeleteConfirm(true)}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        icon={Trash2}
+                        variant="ghost"
+                        size="sm"
                         title="削除"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => { setSelectedEvent(null); setShowDeleteConfirm(false); }} className="p-1.5 text-slate-400 hover:text-slate-600">
-                        <X className="w-4 h-4" />
-                      </button>
+                      />
+                      <Button
+                        onClick={() => { setSelectedEvent(null); setShowDeleteConfirm(false); }}
+                        icon={X}
+                        variant="ghost"
+                        size="sm"
+                      />
                     </div>
                   </div>
 
                   {/* Phase 33: 削除確認 */}
                   {showDeleteConfirm && (
-                    <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <Card variant="outlined" padding="md" className="mb-4 bg-red-50 border-red-200">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertTriangle className="w-4 h-4 text-red-600" />
                         <span className="text-xs font-medium text-red-700">このイベントを削除しますか？</span>
                       </div>
                       <div className="flex gap-2">
-                        <button
+                        <Button
                           onClick={deleteEvent}
-                          className="flex-1 px-3 py-1.5 text-xs font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors"
+                          variant="danger"
+                          size="sm"
+                          className="flex-1"
                         >
                           削除する
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           onClick={() => setShowDeleteConfirm(false)}
-                          className="px-3 py-1.5 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-white transition-colors"
+                          variant="outline"
+                          size="sm"
                         >
                           取消
-                        </button>
+                        </Button>
                       </div>
-                    </div>
+                    </Card>
                   )}
 
                   {/* タイプバッジ */}
@@ -1145,10 +1175,10 @@ export default function BusinessLogPage() {
                   )}
                 </div>
               )}
-            </div>
+            </Card>
           )}
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

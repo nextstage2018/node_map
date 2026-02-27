@@ -7,7 +7,8 @@ import {
   Building2, ArrowLeft, Globe, Save, Hash, Mail, MessageSquare,
   Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2
 } from 'lucide-react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
 
 // ========================================
 // 型定義
@@ -368,22 +369,22 @@ export default function OrganizationDetailPage() {
   // ========================================
   if (isLoading) {
     return (
-      <div className="flex flex-col h-screen bg-white">
-        <Header />
+      <AppLayout>
+        <ContextBar title="組織詳細" />
         <div className="flex-1 flex items-center justify-center text-slate-400">
           <div className="text-center">
             <div className="animate-spin text-2xl mb-2">&#8987;</div>
             <p className="text-sm">読み込み中...</p>
           </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   if (!org) {
     return (
-      <div className="flex flex-col h-screen bg-white">
-        <Header />
+      <AppLayout>
+        <ContextBar title="組織詳細" />
         <div className="flex-1 flex items-center justify-center text-slate-400">
           <div className="text-center">
             <Building2 className="w-12 h-12 mx-auto mb-3 text-slate-300" />
@@ -393,13 +394,13 @@ export default function OrganizationDetailPage() {
             </button>
           </div>
         </div>
-      </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
+    <AppLayout>
+      <ContextBar title="組織詳細" />
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* ページヘッダー */}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
@@ -857,6 +858,6 @@ export default function OrganizationDetailPage() {
           )}
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }

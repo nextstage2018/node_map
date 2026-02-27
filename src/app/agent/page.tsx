@@ -2,7 +2,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import Header from '@/components/shared/Header';
+import AppLayout from '@/components/shared/AppLayout';
+import ContextBar from '@/components/shared/ContextBar';
+import Button from '@/components/ui/Button';
+import EmptyState from '@/components/ui/EmptyState';
 import { Bot, Send, Loader2, Trash2 } from 'lucide-react';
 
 // Phase 32: チャットメッセージの型
@@ -79,82 +82,75 @@ export default function AgentPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white">
-      <Header />
+    <AppLayout>
+      <ContextBar
+        title="秘書"
+        actions={
+          messages.length > 0 && (
+            <Button
+              variant="danger"
+              size="sm"
+              icon={<Trash2 className="w-3.5 h-3.5" />}
+              onClick={handleClear}
+            >
+              クリア
+            </Button>
+          )
+        }
+      />
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        {/* ページヘッダー */}
-        <div className="h-12 border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
-          <div className="flex items-center gap-2">
-            <Bot className="w-5 h-5 text-blue-600" />
-            <h1 className="text-sm font-bold text-slate-900">パーソナル秘書</h1>
-            <span className="text-xs text-slate-400">
-              タスク・種・ナレッジを踏まえてサポートします
-            </span>
-          </div>
-          {messages.length > 0 && (
-            <button
-              onClick={handleClear}
-              className="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              クリア
-            </button>
-          )}
-        </div>
 
         {/* チャットエリア */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-6 bg-gradient-to-b from-slate-50 to-white">
           {messages.length === 0 ? (
             // Phase 32: ウェルカム画面
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center mb-4">
-                <Bot className="w-8 h-8 text-blue-600" />
-              </div>
-              <h2 className="text-lg font-bold text-slate-900 mb-2">
-                パーソナル秘書
-              </h2>
-              <p className="text-sm text-slate-500 max-w-md mb-6">
-                あなたのタスク・種・ナレッジを把握した上で、
-                質問応答・タスク提案・情報整理をサポートします。
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg">
-                {[
-                  '今日やるべきことは？',
-                  '優先度の高いタスクを教えて',
-                  '最近の種を整理して',
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => {
-                      setInput(suggestion);
-                      inputRef.current?.focus();
-                    }}
-                    className="px-3 py-2 text-xs text-slate-600 bg-slate-50 hover:bg-blue-50 hover:text-blue-600 rounded-lg border border-slate-200 transition-colors"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <EmptyState
+              icon={<Bot className="w-12 h-12" />}
+              title="パーソナル秘書"
+              description="あなたのタスク・種・ナレッジを把握した上で、質問応答・タスク提案・情報整理をサポートします。"
+              action={
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-w-lg">
+                  {[
+                    '今日やるべきことは？',
+                    '優先度の高いタスクを教えて',
+                    '最近の種を整理して',
+                  ].map((suggestion) => (
+                    <Button
+                      key={suggestion}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setInput(suggestion);
+                        inputRef.current?.focus();
+                      }}
+                      className="text-xs"
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
+                </div>
+              }
+              className="h-full"
+            />
           ) : (
             // Phase 32: メッセージ一覧
-            <div className="max-w-2xl mx-auto space-y-4">
+            <div className="max-w-3xl mx-auto space-y-4">
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0 shadow-sm">
                       <Bot className="w-4 h-4 text-white" />
                     </div>
                   )}
                   <div
-                    className={`max-w-[75%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                    className={`max-w-[70%] px-4 py-3 rounded-lg text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${
                       msg.role === 'user'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-800'
+                        ? 'bg-blue-600 text-white rounded-br-none'
+                        : 'bg-white text-slate-800 border border-slate-200 rounded-bl-none'
                     }`}
                   >
                     {msg.content}
@@ -162,13 +158,13 @@ export default function AgentPage() {
                 </div>
               ))}
               {isLoading && (
-                <div className="flex justify-start">
-                  <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0 mr-2 mt-0.5">
+                <div className="flex justify-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shrink-0 shadow-sm">
                     <Bot className="w-4 h-4 text-white" />
                   </div>
-                  <div className="px-4 py-2.5 rounded-2xl bg-slate-100 text-slate-400 text-sm">
-                    <Loader2 className="w-4 h-4 animate-spin inline-block" />
-                    <span className="ml-2">考え中...</span>
+                  <div className="px-4 py-3 rounded-lg bg-white border border-slate-200 text-slate-500 text-sm flex items-center gap-2 rounded-bl-none shadow-sm">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>考え中...</span>
                   </div>
                 </div>
               )}
@@ -178,8 +174,8 @@ export default function AgentPage() {
         </div>
 
         {/* 入力エリア */}
-        <div className="border-t border-slate-200 px-6 py-3 shrink-0">
-          <div className="max-w-2xl mx-auto flex items-end gap-2">
+        <div className="border-t border-slate-200 bg-white px-4 py-4 shrink-0">
+          <div className="max-w-3xl mx-auto flex items-end gap-3">
             <textarea
               ref={inputRef}
               value={input}
@@ -187,7 +183,7 @@ export default function AgentPage() {
               onKeyDown={handleKeyDown}
               placeholder="秘書に質問する...（Shift+Enterで改行）"
               rows={1}
-              className="flex-1 resize-none rounded-xl border border-slate-200 px-4 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="flex-1 resize-none rounded-lg border border-slate-300 px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               style={{ maxHeight: '120px' }}
               onInput={(e) => {
                 const target = e.target as HTMLTextAreaElement;
@@ -195,16 +191,17 @@ export default function AgentPage() {
                 target.style.height = Math.min(target.scrollHeight, 120) + 'px';
               }}
             />
-            <button
+            <Button
+              variant="primary"
+              size="md"
+              icon={<Send className="w-4 h-4" />}
               onClick={handleSend}
               disabled={!input.trim() || isLoading}
-              className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
-            >
-              <Send className="w-4 h-4" />
-            </button>
+              className="shrink-0 rounded-lg px-4"
+            />
           </div>
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 }
