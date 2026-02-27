@@ -34,6 +34,7 @@
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
 | `thought_edges` | 思考動線。from_node_id→to_node_idの順序付きエッジ。UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
+| `thought_snapshots` | Phase 42e: タスクのスナップショット。snapshot_type = 'initial_goal' / 'final_landing'。node_ids TEXT[] |
 
 ---
 
@@ -107,6 +108,167 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 14fd589 |
 | 42d+42f | 思考動線記録（thought_edges）＋チーム向け思考マップ可視化UI | 81abb4b |
 | 42-fix | classifyKeywordバグ修正＋linkToTaskOrSeed SELECT-INSERT化＋パイプライン安定化 | eee93d5 |
+| 42f強化 | 思考マップ「地形ビュー」化: 力学シミュレーション空間配置・全体マップ/個別トレース2モード・フェーズゾーン背景・種→タスクノード統合・パン＆ズーム＋タイムスライダー | TBD |
+| 42f残り | 会話ジャンプ（ノードクリック→元の会話表示）＋飛地→種化ボタン＋turn_idによる会話追跡基盤 | TBD |
+| 42b | 送受信メッセージからのノード抽出（Cronバッチ）＋thought_task_nodesにmessage_id追加 | TBD |
+| 42e | スナップショット（出口想定・着地点）＋思考マップUIにスナップショット比較パネル | TBD |
+| 42g | ノード重なり検索API＋思考マップUI検索パネル＋関連タスク表示＋詳細タブ→変遷タブ転換 | TBD |
+| 42h | 比較モード（2人の思考動線重ね・共有ノード・分岐点可視化）＋リプレイモード（完了タスクAI対話） | TBD |
+
+---
+
+## Phase 42h 実装内容（比較モード + リプレイモード）
+
+### 概要
+思考マップに2つの新モードを追加:
+1. **比較モード**: 2人のユーザーのタスクの思考動線を重ねて表示。共有ノード（両者が通った知識）と分岐点（認識のズレ）を可視化。
+2. **リプレイモード**: 完了済みタスクの思考を再現し、過去の意思決定についてAIに質問できるチャットUI。
+
+### 新規ファイル
+- `src/app/api/nodes/thought-map/compare/route.ts` — 比較データ取得API
+- `src/app/api/thought-map/replay/route.ts` — リプレイAI会話API
+
+### 変更ファイル
+- `src/app/thought-map/page.tsx` — モード選択UI拡張 + CompareSelect + CompareCanvas + リプレイUI（Canvas + AIチャットパネル）
+- `CLAUDE.md` — Phase 42h 記録
+
+### APIエンドポイント
+```
+GET /api/nodes/thought-map/compare?userAId=xxx&taskAId=yyy&userBId=xxx&taskBId=zzz
+→ { success: true, data: { userA: { nodes, edges, taskTitle }, userB: { nodes, edges, taskTitle }, sharedNodeIds, divergencePoints } }
+
+POST /api/thought-map/replay
+body: { taskId, message, conversationHistory }
+→ { success: true, data: { reply: string } }
+```
+
+### 比較モードの処理フロー
+```
+ユーザー選択 → モード「比較」選択
+  → compare-select: ユーザーA（既選択）のタスク一覧 + ユーザーBを選択 → Bのタスク一覧
+  → 両タスク選択後「比較する」ボタン
+  → compare: CompareCanvas で2人のノード+エッジを力学シミュレーション描画
+    - 共有ノード: 紫・二重リング
+    - ユーザーAのみ: アンバー
+    - ユーザーBのみ: 青
+    - 分岐点: 赤パルスグロー
+    - 右上パネル: 分岐点一覧
+```
+
+### リプレイモードの処理フロー
+```
+ユーザー選択 → モード「リプレイ」選択
+  → replay-select: 完了済み(status='done')タスクの一覧
+  → replay: 左側Canvas（タスクの思考フロー）+ 右側AIチャットパネル
+    - AIにはタスク情報・会話履歴・ノード・スナップショットをコンテキストとして渡す
+    - ユーザーが過去の意思決定について質問
+    - サジェスト質問: 「思考の流れを要約」「なぜこの方向に？」「初期ゴールと着地点の変化」
+```
+
+### 重要な実装ノート
+- **比較APIの分岐点検出**: 共有ノードの各々について、次のエッジ先が異なるかを検査。片方にのみ存在するエッジ先がある場合を分岐点と判定。
+- **リプレイAPIのコンテキスト構築**: タスク基本情報 + 構想メモ + 結果サマリー + スナップショット + ノード一覧 + 会話履歴（最大30件・各200文字以内に切り詰め）をシステムプロンプトに含める。
+- **モデル**: リプレイAIは `claude-sonnet-4-5-20250929` を使用（コスト最適化）
+- **CompareCanvasの分岐点パルス**: `requestAnimationFrame` で継続的にアニメーション（赤グローが脈動）
+- **種のノード統合**: 比較APIでもタスクに `seed_id` がある場合は種のノード+エッジを統合
+
+---
+
+## Phase 42e 実装内容（スナップショット: 出口想定・着地点）
+
+### 概要
+タスク作成時（initial_goal）とタスク完了時（final_landing）にスナップショットを自動記録し、「最初に何を目指していたか」と「最終的にどこに着地したか」の比較を可能にする。思考マップUIにスナップショット比較パネルを追加。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 029_phase42e_snapshots.sql
+CREATE TABLE IF NOT EXISTS thought_snapshots (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  snapshot_type TEXT NOT NULL,  -- 'initial_goal' | 'final_landing'
+  node_ids TEXT[],              -- knowledge_master_entries.id の配列
+  summary TEXT,                 -- AI要約テキスト
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 新規ファイル
+- `supabase/migrations/029_phase42e_snapshots.sql` — thought_snapshots テーブル
+- `src/app/api/nodes/snapshots/route.ts` — スナップショット取得API（GET ?taskId=xxx）
+
+### 変更ファイル
+- `src/services/nodemap/thoughtNode.service.ts` — captureSnapshot() / getSnapshots() メソッド追加
+- `src/services/task/taskClient.service.ts` — confirmSeed() に initial_goal 記録、updateTask() に final_landing 記録（動的import使用）
+- `src/app/thought-map/page.tsx` — snapshots state追加、selectTask でスナップショット取得、比較パネルUI追加
+- `CLAUDE.md` — Phase 42e 記録
+
+### 処理フロー
+```
+【initial_goal 記録】
+confirmSeed() → タスク作成完了
+  → ThoughtNodeService.getLinkedNodes({ seedId }) で種のノード取得
+  → captureSnapshot({ taskId, snapshotType: 'initial_goal', summary: goal+content, seedId })
+
+【final_landing 記録】
+updateTask(status='done') → DB更新完了
+  → ThoughtNodeService.getLinkedNodes({ taskId }) で現在のノード取得
+  → getSnapshots() で初期ゴールを取得
+  → captureSnapshot({ taskId, snapshotType: 'final_landing', summary: 比較サマリー })
+```
+
+### 重要な実装ノート
+- **node_ids は TEXT[]**: DESIGN_THOUGHT_MAP.md では UUID[] だが、knowledge_master_entries.id が TEXT型のため TEXT[] に変更
+- **動的import**: taskClient.service.ts から ThoughtNodeService を動的importして循環参照を回避
+- **エラー許容**: スナップショット記録の失敗はログのみで、タスク作成/完了処理には影響しない
+
+---
+
+## Phase 42f残り 実装内容（会話ジャンプ + 飛地→種化ボタン）
+
+### 概要
+思考マップのノードをクリックした際に「元の会話を見る」「このキーワードを種にする」の2つのアクションを追加。
+また、会話ターンIDの追跡基盤（turn_id）を整備し、ノード→会話の紐づけを可能にした。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 027_phase42f_conversation_link.sql
+ALTER TABLE seed_conversations ADD COLUMN IF NOT EXISTS turn_id UUID DEFAULT gen_random_uuid();
+ALTER TABLE task_conversations ADD COLUMN IF NOT EXISTS turn_id UUID DEFAULT gen_random_uuid();
+CREATE INDEX IF NOT EXISTS idx_seed_conv_turn_id ON seed_conversations(turn_id);
+CREATE INDEX IF NOT EXISTS idx_task_conv_turn_id ON task_conversations(turn_id);
+```
+
+### 新規ファイル
+- `supabase/migrations/027_phase42f_conversation_link.sql` — turn_id カラム追加マイグレーション
+- `src/app/api/conversations/route.ts` — 会話取得API（turnId / seedId+around / taskId+around）
+- `src/components/thought-map/ConversationModal.tsx` — 会話ジャンプモーダル（キーワードハイライト付き）
+
+### 変更ファイル
+- `src/lib/types.ts` — AiConversationMessage に turnId を追加
+- `src/app/api/seeds/chat/route.ts` — turn_id 生成→DB保存→extractAndLink に conversationId として渡す
+- `src/app/api/tasks/chat/route.ts` — 同上
+- `src/services/task/taskClient.service.ts` — addConversation で turnId を task_conversations に保存
+- `src/app/thought-map/page.tsx` — ThoughtNode型に sourceConversationId 追加、サイドパネルにアクションボタン（会話を見る・種にする）、会話モーダル・種化モーダル追加
+
+### 処理フロー
+```
+【会話ジャンプ】
+ノードクリック → サイドパネル「会話を見る」ボタン
+  → ConversationModal が /api/conversations?turnId=xxx で取得
+  → 該当ターンの前後の会話を表示、キーワードをハイライト
+  → turnId がない場合は createdAt で時刻フォールバック検索
+
+【飛地→種化】
+ノードクリック → サイドパネル「種にする」ボタン
+  → 種作成確認モーダル表示
+  → POST /api/seeds でノードラベル+元フェーズ情報を含む種を作成
+```
+
+### 重要な実装ノート
+- **turn_id の導入**: seed_conversations / task_conversations に UUID の turn_id を追加。同じターン（ユーザー発言+AI応答）は同じ turn_id を共有する
+- **後方互換性**: 既存の会話レコードは turn_id = NULL。会話モーダルでは createdAt による時刻フォールバック検索をサポート
+- **conversationId の伝播**: seeds/chat と tasks/chat の両方で turn_id を生成し、ThoughtNodeService.extractAndLink() に渡すことで thought_task_nodes.source_conversation_id が正しくセットされる
 
 ---
 
@@ -175,15 +337,38 @@ CREATE TABLE IF NOT EXISTS thought_task_nodes (
 
 ---
 
-## Phase 42d+42f 実装内容（思考動線記録 + チーム向け思考マップUI）
+## Phase 42d+42f 実装内容（思考動線記録 + 思考マップUI「地形ビュー」）
 
 ### 概要
 Phase 42d: AI会話でノードが出現するたびに、前のノードとの間に「思考の流れ」（thought_edges）を自動記録する。
-Phase 42f: 他メンバーがユーザーの思考動線を閲覧するためのAPI＋Canvas描画UIページ。
+Phase 42f: 思考マップの可視化UIページ。力学シミュレーションによる空間配置＋パン＆ズーム＋タイムスライダー。
 
 **設計意図**: 思考マップは本人向けではなく、同じ組織の他メンバーが見るためのもの。種フェーズでの曖昧なアイデアがAI会話を通じて明確化→タスク化→完了までの思考の流れを可視化する。
 
-### DBマイグレーション（要Supabase実行）
+### 思考マップの核心概念
+
+**「個人の知識の全体地図」が基本**: 思考マップが表示するのは、1つのタスクの思考だけでなく、そのユーザーの全タスク・全種にわたるナレッジノードの全体像。同じキーワード（ノード）が複数のタスクで使われていればそれは1つのノードとして統合される。これがその人の「知識の地形」を形作る。
+
+**2つの閲覧モード**:
+- **全体マップ（Overview）**: ユーザーの全ノードが1つのマップに表示される。ノードが大きいほど多くのタスク/種で使われている（＝その人の中心的な知識）。右側パネルでタスクを選択すると、そのタスクに関連するノードがハイライトされる。
+- **個別トレース（Trace）**: 特定のタスク/種を選んで、その中での思考の流れ（エッジの順序）を追う。種からタスクへの一連の流れを統合表示する。
+
+**フェーズのライフサイクル**: ノードの出現フェーズは以下の4段階で管理する。
+- **種（seed）**: 種のAI会話で生まれたノード。曖昧なアイデアの段階。
+- **構想（ideation）**: タスク化後、まだ実行に入っていない段階。
+- **進行（progress）**: タスクが進行中の段階。
+- **結果（result）**: タスクが完了した段階。
+※旧名称「成果」は「結果」に変更（より具体的な表現）。
+
+**ゾーン表示**: フェーズはノードの属性として記録されるが、画面上では大きな円やラベルではなく、Canvas背景の4分割カラーゾーンとして表現する。これにより実際のデータノードとフェーズ指標が混同されない。
+- 左上（緑系）: 種ゾーン
+- 右上（青系）: 構想ゾーン
+- 右下（紫系）: 進行ゾーン
+- 左下（藍色系）: 結果ゾーン
+
+**種→タスクのノード統合**: タスクに `seed_id` がある場合、APIは種のノード+エッジも合わせて返す。重複ノード（同じnode_id）は除外し、`appearOrder` を全体で時系列に振り直す。これにより「種の段階で浮かんだアイデア→タスク化後に具体化」という一連の思考の旅が1つのマップに描画される。
+
+### DBマイグレーション（実行済み）
 ```sql
 -- 024_phase42d_thought_edges.sql
 CREATE TABLE IF NOT EXISTS thought_edges (
@@ -198,17 +383,11 @@ CREATE TABLE IF NOT EXISTS thought_edges (
   created_at TIMESTAMPTZ DEFAULT now(),
   CONSTRAINT chk_edge_task_or_seed CHECK (task_id IS NOT NULL OR seed_id IS NOT NULL)
 );
-```
 
-### DBマイグレーション（実行済み）
-```sql
--- 024_phase42d_thought_edges.sql（実行済み）
--- thought_edges テーブル作成
-
--- 025_fix_field_id_nullable.sql（実行済み）
+-- 025_fix_field_id_nullable.sql
 ALTER TABLE knowledge_master_entries ALTER COLUMN field_id DROP NOT NULL;
 
--- 026_fix_thought_task_nodes_unique.sql（実行済み）
+-- 026_fix_thought_task_nodes_unique.sql
 ALTER TABLE thought_task_nodes ADD CONSTRAINT uq_thought_task_node UNIQUE (task_id, node_id);
 ALTER TABLE thought_task_nodes ADD CONSTRAINT uq_thought_seed_node UNIQUE (seed_id, node_id);
 ALTER TABLE thought_edges ADD CONSTRAINT uq_thought_edge_task UNIQUE (task_id, from_node_id, to_node_id);
@@ -219,8 +398,8 @@ ALTER TABLE thought_edges ADD CONSTRAINT uq_thought_edge_seed UNIQUE (seed_id, f
 - `supabase/migrations/024_phase42d_thought_edges.sql` — thought_edgesマイグレーション
 - `supabase/migrations/025_fix_field_id_nullable.sql` — field_id NOT NULL解除
 - `supabase/migrations/026_fix_thought_task_nodes_unique.sql` — UNIQUE制約追加
-- `src/app/api/nodes/thought-map/route.ts` — 思考マップデータ取得API（ユーザー一覧/タスク一覧/ノード+エッジ）
-- `src/app/thought-map/page.tsx` — 思考マップ可視化UIページ（Canvas描画、3ステップUI）
+- `src/app/api/nodes/thought-map/route.ts` — 思考マップデータ取得API（ユーザー一覧/タスク一覧/ノード+エッジ/全体マップ）
+- `src/app/thought-map/page.tsx` — 思考マップ可視化UIページ（Canvas 2D力学シミュレーション、5ステップUI）
 
 ### 変更ファイル
 - `src/services/nodemap/thoughtNode.service.ts` — ThoughtEdge型追加、createThoughtEdges/getEdges メソッド追加、extractAndLinkにエッジ生成統合
@@ -229,11 +408,23 @@ ALTER TABLE thought_edges ADD CONSTRAINT uq_thought_edge_seed UNIQUE (seed_id, f
 
 ### 思考動線UIの構成
 ```
-/thought-map ページ（3ステップ）:
-  Step 1: ユーザー一覧（思考ノード数・タスク数付き）
-  Step 2: 選択ユーザーのタスク/種一覧（ノード数・エッジ数付き）
-  Step 3: Canvas描画の思考フロー可視化（フェーズ別行、順序番号付きノード、ベジェ曲線エッジ）
+/thought-map ページ（5ステップ）:
+  Step 1 (users):    ユーザー一覧（思考ノード数・タスク数付き）
+  Step 2 (mode):     モード選択（全体マップ / 個別トレース）
+  Step 3a (overview): 全体マップ — 全ノード表示 + 右側タスクフィルターパネル
+  Step 3b (tasks):   個別トレース — タスク/種一覧（ノード数・エッジ数付き）
+  Step 4 (flow):     個別トレース — Canvas描画の思考フロー可視化
 ```
+
+### Canvas描画の主要機能
+- **力学シミュレーション**: ノード反発力 + エッジ引力 + フェーズ別アンカー（外部ライブラリなし）
+- **パン＆ズーム**: マウスドラッグでパン、ホイールでズーム（0.3〜3.0倍）
+- **タイムスライダー**: ノードが出現順に徐々に現れる（フェーズラベル連動: 種→構想→進行→結果→全体）
+- **ノードスタイル**: メインルート=アンバーグロー、飛地=ピンク破線、通常=フェーズ別カラー
+- **エッジ描画**: ベジェ曲線 + 方向矢印ヘッド、メインルート=太い線、飛地=破線
+- **インタラクション**: ホバーでツールチップ、クリックでサイドパネル詳細
+- **DPR対応**: devicePixelRatio でCanvas解像度を調整、リサイズ対応
+- **全体マップモード**: ノードサイズが relatedTaskCount に比例（多くのタスクで使われる知識ほど大きい）
 
 ### APIエンドポイント
 ```
@@ -241,9 +432,24 @@ GET /api/nodes/thought-map
   → ユーザー一覧（nodeCount, taskCount）
 GET /api/nodes/thought-map?userId=xxx
   → ユーザーのタスク一覧（type, title, phase, status, nodeCount, edgeCount）
+GET /api/nodes/thought-map?userId=xxx&mode=overview
+  → 全体マップ: ユーザーの全ノード（重複排除）＋全エッジ＋タスク一覧
 GET /api/nodes/thought-map?userId=xxx&taskId=yyy
-  → タスクの思考ノード＋エッジ
+  → 個別トレース: タスクの思考ノード＋エッジ（元の種のデータも統合）
+GET /api/nodes/thought-map?userId=xxx&seedId=zzz
+  → 個別トレース: 種の思考ノード＋エッジ
 ```
+
+### 全体マップAPI（getUserOverviewMap）の処理
+1. `thought_task_nodes` からユーザーの全ノードを取得
+2. `node_id`（ナレッジマスタID）で重複排除 → 同じキーワードが複数タスクで使われていても1ノード
+3. 各ノードの `relatedTaskCount`（何個のタスク/種で使われているか）を計算
+4. `thought_edges` からユーザーの全エッジを取得、from-toペアで重複排除
+5. タスク/種の簡易一覧を添付（フィルターパネル用）
+
+### 重要な実装ノート
+- **MapIcon**: lucide-react の `Map` アイコンは JavaScript 組込みの `Map` クラスを隠蔽するため、`MapIcon` としてインポートすること（クライアントサイドクラッシュの原因になった）
+- **ノード位置は力学シミュレーションで毎回変わる**: 同じノードでもタスクごとに使われ方が異なるため、固定位置にすることは本来不可能。力学シミュレーションによるランダム配置が正しい設計判断。
 
 ---
 
@@ -369,13 +575,25 @@ CREATE INDEX IF NOT EXISTS idx_tasks_seed_id ON tasks(seed_id);
 - ~~🟡 「人の思考の流れ」を思考マップでどう表現するかの UX 設計~~ → /thought-map のCanvas描画UIで実装完了
 - ~~🔴 思考ノードが生成されない~~ → Vercel await対応・id手動生成・field_id nullable化・JSON解析修正・classifyKeywordバグ修正で解決
 
+### ✅ Phase 42f 強化で解決済み
+- ~~🟡 思考マップUIの改善（ノード数が増えた場合のレイアウト最適化、時間スライダー等）~~ → 力学シミュレーション＋タイムスライダー＋パン＆ズーム実装完了
+- ~~🟡 「個人の知識の全体地図」の実現~~ → 全体マップモード（Overview）で全ノード統合表示を実装
+- ~~🟡 種→タスクの思考の一貫性~~ → seed_id 経由で種のノード+エッジをタスクに統合表示
+
+### ✅ Phase 42f残りで解決済み
+- ~~🟡 思考マップUI追加改善: 会話ジャンプ（ノードクリック→元の会話へ）、飛地→種化ボタン~~ → 会話モーダル＋種化ボタン実装完了
+- ~~🟡 source_conversation_id が常にNULL~~ → turn_id 基盤整備＋chat API から conversationId 伝播で解決
+
+### ✅ Phase 42b で解決済み
+- ~~🟡 Phase 42b: 送受信メッセージからのノード抽出~~ → Cronバッチ（/api/cron/extract-message-nodes）で日次自動抽出を実装
+
+### ✅ Phase 42e で解決済み
+- ~~🟡 Phase 42e: スナップショット（出口想定・着地点）~~ → thought_snapshots テーブル＋confirmSeed/updateTask統合＋思考マップUI比較パネル
+
 ### 🟡 次の設計課題
-- タスク詳細の「詳細」タブの役割を再定義（構想メモとの重複解消 → 伴走ログ・変遷履歴に転換？）
-- 思考マップUIの改善（ノード数が増えた場合のレイアウト最適化、時間スライダー等）
-- Phase 42b: 送受信メッセージからのノード抽出（inbox_messages → キーワード抽出）
-- Phase 42e: スナップショット（出口想定・着地点）
-- Phase 42g: 検索・サジェスト機能
-- Phase 42h: 比較モード・AI対話モード
+- ~~タスク詳細の「詳細」タブの役割を再定義~~ → ✅「📊 変遷」タブに転換済み（フェーズタイムライン＋スナップショット比較＋会話ハイライト）
+- ~~Phase 42g: 検索・サジェスト機能~~ → ✅ ノード重なり検索API + 思考マップUI検索パネル + 関連タスク表示
+- ~~Phase 42h: 比較モード・AI対話モード~~ → ✅ 比較Canvas（共有ノード・分岐点） + リプレイAIチャットUI 実装完了
 
 ### その他の未実装課題
 1. **auto生成コンタクト同士の連絡先結合**: isAutoGenerated: true 同士の統合は未実装
