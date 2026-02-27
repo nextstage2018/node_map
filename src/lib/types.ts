@@ -138,6 +138,7 @@ export interface AiConversationMessage {
   timestamp: string;
   phase: TaskPhase;
   conversationTag?: ConversationTag; // Phase 17: 会話タグ
+  turnId?: string; // Phase 42f残り: 会話ターンID（会話ジャンプ用）
 }
 
 // タスク
@@ -161,6 +162,10 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  // フェーズ遷移タイムスタンプ
+  ideationAt?: string;
+  progressAt?: string;
+  resultAt?: string;
   // メタ情報
   tags: string[];
   assignee?: string;

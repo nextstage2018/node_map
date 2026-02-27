@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Task, TaskPhase, UpdateTaskRequest } from '@/lib/types';
 import {
   TASK_STATUS_CONFIG,
@@ -18,8 +18,46 @@ interface TaskDetailProps {
   onRefresh: () => void;
 }
 
+// スナップショット型
+interface Snapshot {
+  id: string;
+  nodeIds: string[];
+  summary: string;
+  createdAt: string;
+}
+
+// フェーズタイムラインの定義
+const PHASE_TIMELINE = [
+  { key: 'created', label: '作成', icon: '🌱', color: 'bg-slate-400' },
+  { key: 'ideation', label: '構想', icon: '💡', color: 'bg-amber-400' },
+  { key: 'progress', label: '進行', icon: '🔧', color: 'bg-blue-400' },
+  { key: 'result', label: '結果', icon: '📊', color: 'bg-purple-400' },
+  { key: 'completed', label: '完了', icon: '✅', color: 'bg-green-500' },
+] as const;
+
 export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProps) {
   const [activeTab, setActiveTab] = useState<'chat' | 'info'>('chat');
+  const [snapshots, setSnapshots] = useState<{
+    initialGoal: Snapshot | null;
+    finalLanding: Snapshot | null;
+  }>({ initialGoal: null, finalLanding: null });
+
+  // スナップショット取得
+  useEffect(() => {
+    if (!task?.id) return;
+    setSnapshots({ initialGoal: null, finalLanding: null });
+
+    const fetchSnapshots = async () => {
+      try {
+        const res = await fetch(`/api/nodes/snapshots?taskId=${task.id}`);
+        const json = await res.json();
+        if (json.success && json.data) {
+          setSnapshots(json.data);
+        }
+      } catch { /* スナップショット取得失敗は無視 */ }
+    };
+    fetchSnapshots();
+  }, [task?.id]);
 
   if (!task) {
     return (
@@ -34,7 +72,6 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
 
   const statusConfig = TASK_STATUS_CONFIG[task.status];
   const priorityConfig = TASK_PRIORITY_CONFIG[task.priority];
-  const phaseConfig = TASK_PHASE_CONFIG[task.phase];
 
   const handleStatusChange = async () => {
     const nextStatus =
@@ -51,6 +88,32 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
     onUpdate(task.id, { phase });
     onRefresh();
   };
+
+  // フェーズタイムラインデータを構築
+  const timelineEvents = PHASE_TIMELINE.map((phase) => {
+    let timestamp: string | undefined;
+    switch (phase.key) {
+      case 'created': timestamp = task.createdAt; break;
+      case 'ideation': timestamp = task.ideationAt; break;
+      case 'progress': timestamp = task.progressAt; break;
+      case 'result': timestamp = task.resultAt; break;
+      case 'completed': timestamp = task.completedAt; break;
+    }
+    return { ...phase, timestamp };
+  }).filter(e => e.key === 'created' || e.timestamp); // 作成は常に表示、他は記録ありのみ
+
+  // 会話ハイライト（各フェーズの最初のユーザー発言を抽出）
+  const conversationHighlights = (['ideation', 'progress', 'result'] as const)
+    .map(phase => {
+      const phaseConvs = (task.conversations ?? []).filter(c => c.phase === phase && c.role === 'user');
+      if (phaseConvs.length === 0) return null;
+      return {
+        phase,
+        first: phaseConvs[0],
+        count: (task.conversations ?? []).filter(c => c.phase === phase).length,
+      };
+    })
+    .filter(Boolean);
 
   return (
     <div className="flex flex-col h-full">
@@ -83,7 +146,11 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
           </Button>
         </div>
         <h2 className="text-base font-bold text-slate-900">{task.title}</h2>
-        <p className="text-xs text-slate-400 mt-0.5">
+        {/* description をヘッダーに移動（常時表示） */}
+        {task.description && (
+          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{task.description}</p>
+        )}
+        <p className="text-[10px] text-slate-400 mt-0.5">
           作成: {formatRelativeTime(task.createdAt)} ・ 更新: {formatRelativeTime(task.updatedAt)}
         </p>
       </div>
@@ -110,7 +177,7 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
               : 'border-transparent text-slate-400 hover:text-slate-600'
           )}
         >
-          📋 詳細
+          📊 変遷
         </button>
       </div>
 
@@ -123,98 +190,159 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
         />
       ) : (
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* 進捗サマリー */}
-          <div className="p-3 rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
-            <div className="flex items-center justify-between mb-2">
-              <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', phaseConfig.color)}>
-                {phaseConfig.icon} {phaseConfig.label}
-              </span>
-              <span className="text-[10px] text-slate-400">
-                作成 {formatRelativeTime(task.createdAt)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 mb-1.5">
-              {(['ideation', 'progress', 'result'] as const).map((p, idx) => {
-                const isPast =
-                  (task.phase === 'progress' && p === 'ideation') ||
-                  (task.phase === 'result' && p !== 'result');
-                const isCurrent = task.phase === p;
-                return (
-                  <div
-                    key={p}
-                    className={cn(
-                      'flex-1 h-1.5 rounded-full',
-                      isCurrent ? 'bg-blue-500' : isPast ? 'bg-blue-400' : 'bg-slate-200'
-                    )}
-                  />
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {phaseConfig.description}
-            </p>
-          </div>
 
-          {/* 説明 */}
+          {/* フェーズタイムライン */}
           <div>
-            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              📝 概要
+            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+              フェーズ変遷
             </h3>
-            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-              {task.description || '説明なし'}
-            </p>
+            <div className="relative pl-6">
+              {/* 縦線 */}
+              <div className="absolute left-[9px] top-2 bottom-2 w-0.5 bg-slate-200" />
+
+              {timelineEvents.map((event, idx) => (
+                <div key={event.key} className="relative flex items-start gap-3 pb-4 last:pb-0">
+                  {/* ドット */}
+                  <div className={cn(
+                    'absolute left-[-15px] w-[18px] h-[18px] rounded-full flex items-center justify-center text-[10px] border-2 border-white shadow-sm z-10',
+                    event.timestamp ? event.color : 'bg-slate-200'
+                  )}>
+                    <span className="text-[9px]">{event.icon}</span>
+                  </div>
+                  {/* 内容 */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-slate-700">{event.label}</span>
+                      {event.timestamp && (
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(event.timestamp).toLocaleDateString('ja-JP', {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    {/* フェーズの会話数 */}
+                    {event.key !== 'created' && event.key !== 'completed' && (
+                      <span className="text-[10px] text-slate-400">
+                        会話 {(task.conversations ?? []).filter(c => c.phase === event.key).length}件
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* 構想メモ（構造化表示） */}
-          {task.ideationSummary && (
+          {/* スナップショット比較 */}
+          {(snapshots.initialGoal || snapshots.finalLanding) && (
             <div>
-              <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                💡 構想メモ
+              <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                出口想定 vs 着地点
               </h3>
               <div className="space-y-2">
-                {(task.ideationSummary ?? '').split('\n').map((line, idx) => {
-                  const match = line.match(/^【(.+?)】(.+)$/);
-                  if (match) {
-                    const label = match[1];
-                    const value = match[2];
-                    const iconMap: Record<string, string> = {
-                      'ゴール': '🎯',
-                      '主な内容': '📋',
-                      '気になる点': '⚠️',
-                      '期限日': '📅',
-                    };
-                    return (
-                      <div key={idx} className="p-2.5 bg-amber-50 rounded-lg border border-amber-100">
-                        <div className="text-[10px] font-semibold text-amber-600 mb-0.5">
-                          {iconMap[label] || '📌'} {label}
-                        </div>
-                        <p className="text-sm text-amber-900">{value}</p>
-                      </div>
-                    );
-                  }
-                  return line.trim() ? (
-                    <div key={idx} className="p-2.5 bg-amber-50 rounded-lg text-sm text-amber-800">
-                      {line}
+                {/* 初期ゴール */}
+                {snapshots.initialGoal && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-blue-400" />
+                      <span className="text-[10px] font-semibold text-blue-600">出口想定（タスク作成時）</span>
+                      <span className="text-[9px] text-slate-400 ml-auto">
+                        {new Date(snapshots.initialGoal.createdAt).toLocaleDateString('ja-JP')}
+                      </span>
                     </div>
-                  ) : null;
+                    <p className="text-xs text-blue-800 whitespace-pre-wrap leading-relaxed">
+                      {snapshots.initialGoal.summary}
+                    </p>
+                    <p className="text-[9px] text-blue-500 mt-1">
+                      関連ノード {snapshots.initialGoal.nodeIds.length}件
+                    </p>
+                  </div>
+                )}
+
+                {/* 着地点 */}
+                {snapshots.finalLanding ? (
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-purple-400" />
+                      <span className="text-[10px] font-semibold text-purple-600">着地点（タスク完了時）</span>
+                      <span className="text-[9px] text-slate-400 ml-auto">
+                        {new Date(snapshots.finalLanding.createdAt).toLocaleDateString('ja-JP')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-purple-800 whitespace-pre-wrap leading-relaxed">
+                      {snapshots.finalLanding.summary}
+                    </p>
+                    <p className="text-[9px] text-purple-500 mt-1">
+                      関連ノード {snapshots.finalLanding.nodeIds.length}件
+                    </p>
+                  </div>
+                ) : task.status !== 'done' ? (
+                  <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 border-dashed">
+                    <p className="text-[10px] text-slate-400 text-center">タスク完了時に着地点が記録されます</p>
+                  </div>
+                ) : null}
+
+                {/* ノード差分 */}
+                {snapshots.initialGoal && snapshots.finalLanding && (
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="text-[10px] text-slate-500">
+                      {(() => {
+                        const initial = new Set(snapshots.initialGoal!.nodeIds);
+                        const final_ = new Set(snapshots.finalLanding!.nodeIds);
+                        const added = [...final_].filter(id => !initial.has(id)).length;
+                        const removed = [...initial].filter(id => !final_.has(id)).length;
+                        const kept = [...initial].filter(id => final_.has(id)).length;
+                        return (
+                          <span className="flex items-center gap-3 justify-center">
+                            <span>継続 {kept}件</span>
+                            <span className="text-green-600">+{added}件</span>
+                            <span className="text-slate-400">-{removed}件</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 会話ハイライト */}
+          {conversationHighlights.length > 0 && (
+            <div>
+              <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                会話ハイライト
+              </h3>
+              <div className="space-y-2">
+                {conversationHighlights.map((hl) => {
+                  if (!hl) return null;
+                  const phaseLabels: Record<string, string> = {
+                    ideation: '💡 構想', progress: '🔧 進行', result: '📊 結果',
+                  };
+                  const phaseColors: Record<string, string> = {
+                    ideation: 'border-amber-200 bg-amber-50',
+                    progress: 'border-blue-200 bg-blue-50',
+                    result: 'border-purple-200 bg-purple-50',
+                  };
+                  return (
+                    <div key={hl.phase} className={cn('p-2.5 rounded-lg border', phaseColors[hl.phase] || 'border-slate-200 bg-slate-50')}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-semibold text-slate-600">
+                          {phaseLabels[hl.phase]}
+                        </span>
+                        <span className="text-[9px] text-slate-400">{hl.count}件</span>
+                      </div>
+                      <p className="text-xs text-slate-600 line-clamp-2">
+                        {hl.first.content}
+                      </p>
+                    </div>
+                  );
                 })}
               </div>
             </div>
           )}
 
-          {/* 結果要約 */}
-          {task.resultSummary && (
-            <div>
-              <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                ✅ 結果要約
-              </h3>
-              <div className="p-3 bg-green-50 rounded-lg border border-green-100 text-sm text-green-800 whitespace-pre-wrap leading-relaxed">
-                {task.resultSummary}
-              </div>
-            </div>
-          )}
-
-          {/* ソース情報 */}
+          {/* 起点メッセージ */}
           {task.sourceChannel && (
             <div>
               <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
@@ -253,56 +381,6 @@ export default function TaskDetail({ task, onUpdate, onRefresh }: TaskDetailProp
                 <span className="text-xs text-slate-400">タグなし</span>
               )}
             </div>
-          </div>
-
-          {/* タイムライン & 会話統計 */}
-          <div>
-            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              📊 アクティビティ
-            </h3>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span className="text-xs text-slate-600">構想</span>
-                </div>
-                <span className="text-xs font-medium text-slate-700">
-                  {(task.conversations ?? []).filter((c) => c.phase === 'ideation').length}件
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                  <span className="text-xs text-slate-600">進行</span>
-                </div>
-                <span className="text-xs font-medium text-slate-700">
-                  {(task.conversations ?? []).filter((c) => c.phase === 'progress').length}件
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-2 rounded-lg bg-slate-50">
-                <div className="flex items-center gap-2">
-                  <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                  <span className="text-xs text-slate-600">結果</span>
-                </div>
-                <span className="text-xs font-medium text-slate-700">
-                  {(task.conversations ?? []).filter((c) => c.phase === 'result').length}件
-                </span>
-              </div>
-            </div>
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-[10px] text-slate-400">最終更新</span>
-              <span className="text-[10px] text-slate-500 font-medium">
-                {formatRelativeTime(task.updatedAt)}
-              </span>
-            </div>
-            {task.completedAt && (
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[10px] text-slate-400">完了日</span>
-                <span className="text-[10px] text-green-600 font-medium">
-                  {formatRelativeTime(task.completedAt)}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       )}

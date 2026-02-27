@@ -640,6 +640,244 @@ export class ThoughtNodeService {
   }
 
   /**
+   * Phase 42b: メッセージからキーワードを抽出してナレッジマスタに登録・紐づけ
+   * Cronバッチから呼ばれる。エッジは作成しない（メッセージは「思考の流れ」ではないため）
+   */
+  static async extractAndLinkFromMessage(params: {
+    messageId: string;
+    subject: string;
+    body: string;
+    userId: string;
+    channel: string;
+  }): Promise<{ extractedCount: number; linkedCount: number }> {
+    const { messageId, subject, body, userId, channel } = params;
+    const result = { extractedCount: 0, linkedCount: 0 };
+
+    try {
+      const text = [subject, body].filter(Boolean).join('\n\n');
+      if (!text || text.trim().length < 10) return result;
+
+      // キーワード抽出
+      const extraction = await extractKeywords({
+        text,
+        sourceType: 'message' as any,
+        sourceId: messageId,
+        direction: 'received',
+        userId,
+        phase: 'progress',
+      });
+
+      const allKeywords = [
+        ...extraction.keywords.filter(k => k.confidence >= 0.6),
+        ...extraction.projects.filter(p => p.confidence >= 0.6),
+      ];
+
+      result.extractedCount = allKeywords.length;
+      if (allKeywords.length === 0) return result;
+
+      const sb = getServerSupabase() || getSupabase();
+      if (!sb) return result;
+
+      let order = 0;
+      for (const kw of allKeywords) {
+        try {
+          // ナレッジマスタに登録
+          const masterEntryId = await ThoughtNodeService.ensureMasterEntry(
+            sb, kw.label, userId, 'progress', messageId, undefined
+          );
+          if (!masterEntryId) continue;
+
+          // thought_task_nodes に message_id で紐づけ
+          order++;
+          const linked = await ThoughtNodeService.linkToMessage(sb, {
+            messageId,
+            nodeId: masterEntryId,
+            userId,
+            appearOrder: order,
+          });
+          if (linked) result.linkedCount++;
+        } catch (e) {
+          console.error(`[ThoughtNode] メッセージキーワード "${kw.label}" 処理失敗:`, e);
+        }
+      }
+
+      return result;
+    } catch (error) {
+      console.error('[ThoughtNode] extractAndLinkFromMessage エラー:', error);
+      return result;
+    }
+  }
+
+  /**
+   * Phase 42b: メッセージとノードの紐づけ（thought_task_nodes に message_id で登録）
+   */
+  private static async linkToMessage(
+    sb: any,
+    params: {
+      messageId: string;
+      nodeId: string;
+      userId: string;
+      appearOrder: number;
+    }
+  ): Promise<boolean> {
+    const { messageId, nodeId, userId, appearOrder } = params;
+
+    try {
+      // 重複チェック
+      const { data: existing } = await sb
+        .from('thought_task_nodes')
+        .select('id')
+        .eq('message_id', messageId)
+        .eq('node_id', nodeId)
+        .maybeSingle();
+
+      if (existing) return true; // 既に紐づけ済み
+
+      const { error } = await sb
+        .from('thought_task_nodes')
+        .insert({
+          message_id: messageId,
+          node_id: nodeId,
+          user_id: userId,
+          appear_order: appearOrder,
+          appear_phase: 'progress', // メッセージは進行フェーズ扱い
+          created_at: new Date().toISOString(),
+        });
+
+      if (error) {
+        // UNIQUE制約違反は無視
+        if (error.code === '23505') return true;
+        console.error('[ThoughtNode] linkToMessage エラー:', error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('[ThoughtNode] linkToMessage 例外:', error);
+      return false;
+    }
+  }
+
+  // ========================================
+  // Phase 42e: スナップショット（出口想定・着地点）
+  // ========================================
+
+  /**
+   * Phase 42e: スナップショットを記録する
+   * タスク作成時（initial_goal）またはタスク完了時（final_landing）に呼ばれる
+   */
+  static async captureSnapshot(params: {
+    taskId: string;
+    userId: string;
+    snapshotType: 'initial_goal' | 'final_landing';
+    summary: string;
+    seedId?: string; // initial_goal 時に種のノードも含める場合
+  }): Promise<{ id: string; nodeIds: string[] } | null> {
+    const { taskId, userId, snapshotType, summary, seedId } = params;
+
+    try {
+      const sb = getServerSupabase() || getSupabase();
+      if (!sb) return null;
+
+      // 現在のノード群を取得
+      let nodeIds: string[] = [];
+
+      // タスクに紐づくノード
+      const taskNodes = await ThoughtNodeService.getLinkedNodes({ taskId });
+      nodeIds = taskNodes.map(n => n.nodeId);
+
+      // initial_goal の場合、種のノードも含める
+      if (seedId && snapshotType === 'initial_goal') {
+        const seedNodes = await ThoughtNodeService.getLinkedNodes({ seedId });
+        const seedNodeIds = seedNodes.map(n => n.nodeId);
+        // 重複排除して統合
+        nodeIds = [...new Set([...seedNodeIds, ...nodeIds])];
+      }
+
+      // スナップショットを記録
+      const { data, error } = await sb
+        .from('thought_snapshots')
+        .insert({
+          task_id: taskId,
+          user_id: userId,
+          snapshot_type: snapshotType,
+          node_ids: nodeIds,
+          summary: summary || '',
+          created_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        // テーブル未作成の場合のフォールバック
+        if (error.message?.includes('relation') || error.code === '42P01') {
+          console.warn('[ThoughtNode] thought_snapshots テーブルが未作成です。マイグレーション 029 を実行してください。');
+          return null;
+        }
+        console.error('[ThoughtNode] captureSnapshot エラー:', error);
+        return null;
+      }
+
+      console.log(`[ThoughtNode] スナップショット記録: type=${snapshotType}, taskId=${taskId}, nodes=${nodeIds.length}`);
+      return { id: data?.id, nodeIds };
+    } catch (error) {
+      console.error('[ThoughtNode] captureSnapshot 例外:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Phase 42e: タスクのスナップショットを取得
+   */
+  static async getSnapshots(params: {
+    taskId: string;
+  }): Promise<{
+    initialGoal: { id: string; nodeIds: string[]; summary: string; createdAt: string } | null;
+    finalLanding: { id: string; nodeIds: string[]; summary: string; createdAt: string } | null;
+  }> {
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return { initialGoal: null, finalLanding: null };
+
+    try {
+      const { data, error } = await sb
+        .from('thought_snapshots')
+        .select('*')
+        .eq('task_id', params.taskId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        if (error.message?.includes('relation') || error.code === '42P01') {
+          return { initialGoal: null, finalLanding: null };
+        }
+        console.error('[ThoughtNode] getSnapshots エラー:', error);
+        return { initialGoal: null, finalLanding: null };
+      }
+
+      const result: {
+        initialGoal: { id: string; nodeIds: string[]; summary: string; createdAt: string } | null;
+        finalLanding: { id: string; nodeIds: string[]; summary: string; createdAt: string } | null;
+      } = { initialGoal: null, finalLanding: null };
+
+      for (const row of (data || [])) {
+        const snapshot = {
+          id: row.id,
+          nodeIds: row.node_ids || [],
+          summary: row.summary || '',
+          createdAt: row.created_at,
+        };
+        if (row.snapshot_type === 'initial_goal') {
+          result.initialGoal = snapshot;
+        } else if (row.snapshot_type === 'final_landing') {
+          result.finalLanding = snapshot;
+        }
+      }
+
+      return result;
+    } catch {
+      return { initialGoal: null, finalLanding: null };
+    }
+  }
+
+  /**
    * ノードを承認する（is_confirmed = true）
    */
   static async confirmNode(entryId: string): Promise<boolean> {
@@ -663,6 +901,210 @@ export class ThoughtNodeService {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  // ========================================
+  // Phase 42g: 関連タスク検索
+  // ========================================
+
+  /**
+   * Phase 42g: ノード重なりで関連タスク/種を検索する
+   * 指定されたノードIDと共通ノードを持つ他のタスク/種をスコア順に返す
+   */
+  static async searchRelatedTasks(params: {
+    nodeIds: string[];
+    userId?: string;
+    excludeTaskId?: string;
+    excludeSeedId?: string;
+    limit?: number;
+  }): Promise<{
+    taskId?: string;
+    seedId?: string;
+    type: 'task' | 'seed';
+    title: string;
+    phase: string;
+    status: string;
+    overlapScore: number;
+    matchedNodeLabels: string[];
+    totalNodeCount: number;
+    createdAt: string;
+  }[]> {
+    const { nodeIds, userId, excludeTaskId, excludeSeedId, limit = 10 } = params;
+    if (nodeIds.length === 0) return [];
+
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return [];
+
+    try {
+      // 1. 指定ノードIDに一致する thought_task_nodes を取得
+      const { data: matchedRows, error: matchErr } = await sb
+        .from('thought_task_nodes')
+        .select('task_id, seed_id, node_id, knowledge_master_entries(label)')
+        .in('node_id', nodeIds);
+
+      if (matchErr || !matchedRows) {
+        console.error('[ThoughtNode] searchRelatedTasks マッチ取得エラー:', matchErr);
+        return [];
+      }
+
+      // 2. task_id / seed_id でグループ化
+      const taskMap = new Map<string, { type: 'task' | 'seed'; id: string; matchedNodes: Set<string>; matchedLabels: Set<string> }>();
+
+      for (const row of matchedRows) {
+        const key = row.task_id ? `task:${row.task_id}` : row.seed_id ? `seed:${row.seed_id}` : null;
+        if (!key) continue;
+
+        // 除外チェック
+        if (row.task_id && row.task_id === excludeTaskId) continue;
+        if (row.seed_id && row.seed_id === excludeSeedId) continue;
+
+        if (!taskMap.has(key)) {
+          taskMap.set(key, {
+            type: row.task_id ? 'task' : 'seed',
+            id: row.task_id || row.seed_id,
+            matchedNodes: new Set(),
+            matchedLabels: new Set(),
+          });
+        }
+        const entry = taskMap.get(key)!;
+        entry.matchedNodes.add(row.node_id);
+        const label = (row as any).knowledge_master_entries?.label;
+        if (label) entry.matchedLabels.add(label);
+      }
+
+      if (taskMap.size === 0) return [];
+
+      // 3. 各タスク/種の総ノード数を取得
+      const taskIds = [...taskMap.values()].filter(e => e.type === 'task').map(e => e.id);
+      const seedIds = [...taskMap.values()].filter(e => e.type === 'seed').map(e => e.id);
+
+      // タスクの総ノード数
+      const taskNodeCounts = new Map<string, number>();
+      if (taskIds.length > 0) {
+        const { data: counts } = await sb
+          .from('thought_task_nodes')
+          .select('task_id')
+          .in('task_id', taskIds);
+        if (counts) {
+          for (const row of counts) {
+            taskNodeCounts.set(row.task_id, (taskNodeCounts.get(row.task_id) || 0) + 1);
+          }
+        }
+      }
+
+      // 種の総ノード数
+      const seedNodeCounts = new Map<string, number>();
+      if (seedIds.length > 0) {
+        const { data: counts } = await sb
+          .from('thought_task_nodes')
+          .select('seed_id')
+          .in('seed_id', seedIds);
+        if (counts) {
+          for (const row of counts) {
+            seedNodeCounts.set(row.seed_id, (seedNodeCounts.get(row.seed_id) || 0) + 1);
+          }
+        }
+      }
+
+      // 4. タスク/種の詳細を取得
+      const taskDetails = new Map<string, { title: string; phase: string; status: string; createdAt: string }>();
+      if (taskIds.length > 0) {
+        const { data: tasks } = await sb
+          .from('tasks')
+          .select('id, title, phase, status, created_at')
+          .in('id', taskIds);
+        if (tasks) {
+          for (const t of tasks) {
+            taskDetails.set(t.id, { title: t.title, phase: t.phase, status: t.status, createdAt: t.created_at });
+          }
+        }
+      }
+
+      const seedDetails = new Map<string, { title: string; status: string; createdAt: string }>();
+      if (seedIds.length > 0) {
+        const { data: seeds } = await sb
+          .from('seeds')
+          .select('id, content, status, created_at')
+          .in('id', seedIds);
+        if (seeds) {
+          for (const s of seeds) {
+            seedDetails.set(s.id, {
+              title: (s.content || '').slice(0, 50) + (s.content?.length > 50 ? '...' : ''),
+              status: s.status,
+              createdAt: s.created_at,
+            });
+          }
+        }
+      }
+
+      // 5. スコア計算＋結果構築
+      const results: {
+        taskId?: string;
+        seedId?: string;
+        type: 'task' | 'seed';
+        title: string;
+        phase: string;
+        status: string;
+        overlapScore: number;
+        matchedNodeLabels: string[];
+        totalNodeCount: number;
+        createdAt: string;
+      }[] = [];
+
+      for (const entry of taskMap.values()) {
+        const matchedCount = entry.matchedNodes.size;
+        const totalCount = entry.type === 'task'
+          ? (taskNodeCounts.get(entry.id) || matchedCount)
+          : (seedNodeCounts.get(entry.id) || matchedCount);
+
+        const overlapScore = matchedCount / Math.max(nodeIds.length, totalCount);
+
+        // 詳細を取得
+        let title = '不明';
+        let phase = 'seed';
+        let status = 'unknown';
+        let createdAt = '';
+
+        if (entry.type === 'task') {
+          const detail = taskDetails.get(entry.id);
+          if (detail) {
+            title = detail.title;
+            phase = detail.phase;
+            status = detail.status;
+            createdAt = detail.createdAt;
+          }
+        } else {
+          const detail = seedDetails.get(entry.id);
+          if (detail) {
+            title = detail.title;
+            phase = 'seed';
+            status = detail.status;
+            createdAt = detail.createdAt;
+          }
+        }
+
+        results.push({
+          taskId: entry.type === 'task' ? entry.id : undefined,
+          seedId: entry.type === 'seed' ? entry.id : undefined,
+          type: entry.type,
+          title,
+          phase,
+          status,
+          overlapScore: Math.round(overlapScore * 100) / 100,
+          matchedNodeLabels: [...entry.matchedLabels],
+          totalNodeCount: totalCount,
+          createdAt,
+        });
+      }
+
+      // スコア降順ソート
+      results.sort((a, b) => b.overlapScore - a.overlapScore);
+
+      return results.slice(0, limit);
+    } catch (error) {
+      console.error('[ThoughtNode] searchRelatedTasks エラー:', error);
+      return [];
     }
   }
 }

@@ -629,6 +629,39 @@ export class TaskService {
         updatedTask.conversations = conversations.map(mapConversationFromDb);
       }
 
+      // Phase 42e: タスク完了時に final_landing スナップショット記録
+      if (req.status === 'done') {
+        try {
+          const { ThoughtNodeService } = await import('@/services/nodemap/thoughtNode.service');
+          // 初期ゴールスナップショットを取得して比較サマリーを生成
+          const snapshots = await ThoughtNodeService.getSnapshots({ taskId: id });
+          const currentNodes = await ThoughtNodeService.getLinkedNodes({ taskId: id });
+          const nodeLabels = currentNodes.map(n => n.nodeLabel).filter(Boolean);
+
+          let landingSummary = '';
+          if (snapshots.initialGoal) {
+            landingSummary = `【初期ゴール】${snapshots.initialGoal.summary}\n\n【着地点】関連キーワード: ${nodeLabels.join('、') || 'なし'}`;
+            if (updatedTask.resultSummary) {
+              landingSummary += `\n結果サマリー: ${updatedTask.resultSummary}`;
+            }
+          } else {
+            landingSummary = `関連キーワード: ${nodeLabels.join('、') || 'なし'}`;
+            if (updatedTask.resultSummary) {
+              landingSummary += `\n結果サマリー: ${updatedTask.resultSummary}`;
+            }
+          }
+
+          await ThoughtNodeService.captureSnapshot({
+            taskId: id,
+            userId: data.user_id || 'unknown',
+            snapshotType: 'final_landing',
+            summary: landingSummary,
+          });
+        } catch (e) {
+          console.error('[Phase42e] final_landing スナップショット記録エラー:', e);
+        }
+      }
+
       return updatedTask;
     } catch (error) {
       console.error('Error updating task:', error);
@@ -662,7 +695,7 @@ export class TaskService {
     }
 
     try {
-      // Insert conversation (Phase 17: conversationTag 追加)
+      // Insert conversation (Phase 17: conversationTag 追加, Phase 42f残り: turnId追加)
       const insertData: any = {
         id: newId,
         task_id: taskId,
@@ -673,6 +706,9 @@ export class TaskService {
       };
       if (message.conversationTag) {
         insertData.conversation_tag = message.conversationTag;
+      }
+      if (message.turnId) {
+        insertData.turn_id = message.turnId;
       }
 
       const { data, error } = await sb
@@ -1252,6 +1288,21 @@ export class TaskService {
         } catch (e) {
           console.error('Error migrating seed conversations to task:', e);
         }
+      }
+
+      // Phase 42e: initial_goal スナップショット記録
+      try {
+        const { ThoughtNodeService } = await import('@/services/nodemap/thoughtNode.service');
+        const snapshotSummary = [structured.goal, structured.content].filter(Boolean).join('\n');
+        await ThoughtNodeService.captureSnapshot({
+          taskId,
+          userId: userId || seed.user_id || 'unknown',
+          snapshotType: 'initial_goal',
+          summary: snapshotSummary,
+          seedId,
+        });
+      } catch (e) {
+        console.error('[Phase42e] initial_goal スナップショット記録エラー:', e);
       }
 
       return mapTaskFromDb(createdTask);

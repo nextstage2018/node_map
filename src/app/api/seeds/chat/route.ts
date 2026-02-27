@@ -139,11 +139,13 @@ export async function POST(request: NextRequest) {
       : '応答を生成できませんでした';
 
     // Phase 40b: 会話をDB保存（ユーザーメッセージ + AI応答）
+    // Phase 42f残り: turn_id を生成して会話ジャンプに使えるようにする
+    const turnId = crypto.randomUUID();
     if (sb) {
       try {
         await sb.from('seed_conversations').insert([
-          { seed_id: seedId, role: 'user', content: message, user_id: userId },
-          { seed_id: seedId, role: 'assistant', content: reply, user_id: userId },
+          { seed_id: seedId, role: 'user', content: message, user_id: userId, turn_id: turnId },
+          { seed_id: seedId, role: 'assistant', content: reply, user_id: userId, turn_id: turnId },
         ]);
       } catch (e) {
         console.error('[Seeds Chat API] 会話保存エラー（応答は正常）:', e);
@@ -152,6 +154,7 @@ export async function POST(request: NextRequest) {
 
     // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
     // ※ Vercelではレスポンス後の非同期処理が打ち切られるためawaitで実行
+    // Phase 42f残り: conversationId を渡して会話ジャンプを可能にする
     try {
       console.log(`[Seeds Chat] ThoughtNode抽出開始: seedId=${seedId}, userId=${userId}`);
       const thoughtResult = await ThoughtNodeService.extractAndLink({
@@ -159,6 +162,7 @@ export async function POST(request: NextRequest) {
         userId,
         seedId,
         phase: 'seed',
+        conversationId: turnId,
       });
       console.log(`[Seeds Chat] ThoughtNode抽出完了: keywords=${thoughtResult.extractedKeywords.length}, nodes=${thoughtResult.linkedNodes.length}, edges=${thoughtResult.edges.length}, newEntries=${thoughtResult.newMasterEntries.length}`);
     } catch (e) {

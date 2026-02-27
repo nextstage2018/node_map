@@ -90,7 +90,12 @@ export default function SeedCard({ seed, onConfirm, onUpdate, onDelete }: SeedCa
         ) : (
           <>
             <p className="text-sm text-slate-700 line-clamp-2">{seed.content}</p>
-            <div className="mt-1 flex items-center gap-2">
+            <div className="mt-1 flex items-center gap-2 flex-wrap">
+              {seed.projectName && (
+                <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-full border border-blue-100">
+                  📁 {seed.projectName}
+                </span>
+              )}
               {channelConfig && (
                 <span className="flex items-center gap-1 text-xs text-slate-400">
                   <Image
@@ -101,6 +106,9 @@ export default function SeedCard({ seed, onConfirm, onUpdate, onDelete }: SeedCa
                   />
                   {channelConfig.label}
                 </span>
+              )}
+              {seed.sourceFrom && (
+                <span className="text-xs text-slate-400">from: {seed.sourceFrom}</span>
               )}
               <span className="text-xs text-slate-400">{timeAgo}</span>
             </div>

@@ -39,12 +39,16 @@ export async function POST(request: NextRequest) {
       task.conversations
     );
 
-    // ユーザーメッセージを保存（Phase 17: conversationTag付与）
+    // Phase 42f残り: 会話ターンIDを生成（会話ジャンプ用）
+    const turnId = crypto.randomUUID();
+
+    // ユーザーメッセージを保存（Phase 17: conversationTag付与, Phase 42f残り: turnId付与）
     await TaskService.addConversation(body.taskId, {
       role: 'user',
       content: body.message,
       phase: body.phase,
       conversationTag: response.conversationTag,
+      turnId,
     });
 
     // AI応答を保存
@@ -52,16 +56,19 @@ export async function POST(request: NextRequest) {
       role: 'assistant',
       content: response.reply,
       phase: body.phase,
+      turnId,
     });
 
     // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
     // ※ Vercelではレスポンス後の非同期処理が打ち切られるためawaitで実行
+    // Phase 42f残り: conversationId を渡して会話ジャンプを可能にする
     try {
       const thoughtResult = await ThoughtNodeService.extractAndLink({
         text: `${body.message}\n\n${response.reply}`,
         userId,
         taskId: body.taskId,
         phase: body.phase,
+        conversationId: turnId,
       });
       if (thoughtResult.linkedNodes.length > 0) {
         console.log(`[Tasks Chat] ${thoughtResult.linkedNodes.length}個のキーワードをナレッジマスタに紐づけ (task=${body.taskId})`);
