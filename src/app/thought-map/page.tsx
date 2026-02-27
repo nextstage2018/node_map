@@ -6,7 +6,15 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Header from '@/components/shared/Header';
-import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X } from 'lucide-react';
+import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, Map, GitBranch } from 'lucide-react';
+
+// 全体マップ用のタスク簡易型
+interface OverviewTask {
+  id: string;
+  type: 'task' | 'seed';
+  title: string;
+  phase: string;
+}
 
 // ========================================
 // 型定義
@@ -118,13 +126,15 @@ function getTimeLabel(time: number): string {
 // ========================================
 
 export default function ThoughtMapPage() {
-  const [step, setStep] = useState<'users' | 'tasks' | 'flow'>('users');
+  const [step, setStep] = useState<'users' | 'mode' | 'overview' | 'tasks' | 'flow'>('users');
   const [users, setUsers] = useState<ThoughtMapUser[]>([]);
   const [tasks, setTasks] = useState<ThoughtMapTask[]>([]);
+  const [overviewTasks, setOverviewTasks] = useState<OverviewTask[]>([]);
   const [nodes, setNodes] = useState<ThoughtNode[]>([]);
   const [edges, setEdges] = useState<ThoughtEdge[]>([]);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<ThoughtMapTask | null>(null);
+  const [highlightTaskId, setHighlightTaskId] = useState<string | null>(null); // 全体マップのフィルター
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,14 +159,41 @@ export default function ThoughtMapPage() {
     }
   };
 
-  // ユーザー選択 → タスク一覧取得
-  const selectUser = async (userId: string) => {
+  // ユーザー選択 → モード選択画面へ
+  const selectUser = (userId: string) => {
     setSelectedUser(userId);
+    setStep('mode');
+  };
+
+  // 全体マップモード
+  const enterOverview = async () => {
+    if (!selectedUser) return;
+    setStep('overview');
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/nodes/thought-map?userId=${selectedUser}&mode=overview`);
+      const json = await res.json();
+      if (json.success && json.data) {
+        setNodes(json.data.nodes || []);
+        setEdges(json.data.edges || []);
+        setOverviewTasks(json.data.tasks || []);
+      }
+    } catch (e) {
+      setError('全体マップの取得に失敗しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 個別トレースモード → タスク一覧取得
+  const enterTrace = async () => {
+    if (!selectedUser) return;
     setStep('tasks');
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/nodes/thought-map?userId=${userId}`);
+      const res = await fetch(`/api/nodes/thought-map?userId=${selectedUser}`);
       const json = await res.json();
       if (json.success && json.data?.tasks) {
         setTasks(json.data.tasks);
@@ -196,48 +233,76 @@ export default function ThoughtMapPage() {
       setSelectedTask(null);
       setNodes([]);
       setEdges([]);
-    } else if (step === 'tasks') {
+    } else if (step === 'tasks' || step === 'overview') {
+      setStep('mode');
+      setNodes([]);
+      setEdges([]);
+      setOverviewTasks([]);
+      setHighlightTaskId(null);
+    } else if (step === 'mode') {
       setStep('users');
       setSelectedUser(null);
       setTasks([]);
     }
   };
 
-  const isFlowStep = step === 'flow' && !loading && !error;
+  const isCanvasStep = (step === 'flow' || step === 'overview') && !loading && !error;
+
+  // ヘッダーテキスト
+  const getHeaderTitle = () => {
+    switch (step) {
+      case 'users': return 'メンバーの思考マップ';
+      case 'mode': return `${selectedUser ? selectedUser.slice(0, 8) + '...' : ''} の思考マップ`;
+      case 'overview': return '全体マップ — 知識の地図';
+      case 'tasks': return '個別トレース — タスクを選択';
+      case 'flow': return selectedTask?.title || '思考フロー';
+    }
+  };
+  const getHeaderSub = () => {
+    switch (step) {
+      case 'users': return 'メンバーを選んで、その人の思考の流れを見てみましょう';
+      case 'mode': return '表示モードを選んでください';
+      case 'overview': return `${nodes.length} ノード · ${edges.length} エッジ`;
+      case 'tasks': return '思考ノードが記録されているタスク・種の一覧です';
+      case 'flow': return `${nodes.length} ノード · ${edges.length} エッジ`;
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       <Header />
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* パンくず / ヘッダー */}
-        <div className={`px-6 py-3 border-b flex items-center gap-3 ${isFlowStep ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+        <div className={`px-6 py-3 border-b flex items-center gap-3 ${isCanvasStep ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           {step !== 'users' && (
             <button
               onClick={goBack}
-              className={`p-1.5 rounded-lg ${isFlowStep ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
+              className={`p-1.5 rounded-lg ${isCanvasStep ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-500'}`}
             >
               <ArrowLeft className="w-4 h-4" />
             </button>
           )}
           <div>
-            <h1 className={`text-sm font-bold ${isFlowStep ? 'text-slate-100' : 'text-slate-800'}`}>
-              {step === 'users' && 'メンバーの思考マップ'}
-              {step === 'tasks' && `${selectedUser ? selectedUser.slice(0, 8) + '...' : ''} のタスク一覧`}
-              {step === 'flow' && (selectedTask?.title || '思考フロー')}
+            <h1 className={`text-sm font-bold ${isCanvasStep ? 'text-slate-100' : 'text-slate-800'}`}>
+              {getHeaderTitle()}
             </h1>
-            <p className={`text-xs ${isFlowStep ? 'text-slate-400' : 'text-slate-500'}`}>
-              {step === 'users' && 'メンバーを選んで、その人の思考の流れを見てみましょう'}
-              {step === 'tasks' && '思考ノードが記録されているタスク・種の一覧です'}
-              {step === 'flow' && `${nodes.length} ノード · ${edges.length} エッジ`}
+            <p className={`text-xs ${isCanvasStep ? 'text-slate-400' : 'text-slate-500'}`}>
+              {getHeaderSub()}
             </p>
           </div>
         </div>
 
         {/* メインコンテンツ */}
-        {isFlowStep ? (
-          // フローステップ: Canvas が画面全体を占める
+        {isCanvasStep ? (
           <div className="flex-1 overflow-hidden">
-            <ThoughtFlowCanvas nodes={nodes} edges={edges} />
+            <ThoughtFlowCanvas
+              nodes={nodes}
+              edges={edges}
+              mode={step === 'overview' ? 'overview' : 'trace'}
+              overviewTasks={overviewTasks}
+              highlightTaskId={highlightTaskId}
+              onHighlightTask={setHighlightTaskId}
+            />
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-6">
@@ -257,12 +322,56 @@ export default function ThoughtMapPage() {
               <UserList users={users} onSelect={selectUser} />
             )}
 
+            {!loading && !error && step === 'mode' && (
+              <ModeSelect onOverview={enterOverview} onTrace={enterTrace} />
+            )}
+
             {!loading && !error && step === 'tasks' && (
               <TaskList tasks={tasks} onSelect={selectTask} />
             )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ========================================
+// モード選択
+// ========================================
+
+function ModeSelect({ onOverview, onTrace }: { onOverview: () => void; onTrace: () => void }) {
+  return (
+    <div className="max-w-xl mx-auto space-y-4 mt-8">
+      <button
+        onClick={onOverview}
+        className="w-full bg-white rounded-xl border border-slate-200 p-6 text-left hover:border-blue-300 hover:shadow-md transition-all group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
+            <Map className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-800 group-hover:text-blue-700">全体マップ</h3>
+            <p className="text-sm text-slate-500 mt-1">この人の全ての知識ノードを1つの地図に表示。どんな領域に知識が広がっているかが一目でわかります。</p>
+          </div>
+        </div>
+      </button>
+
+      <button
+        onClick={onTrace}
+        className="w-full bg-white rounded-xl border border-slate-200 p-6 text-left hover:border-amber-300 hover:shadow-md transition-all group"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shrink-0">
+            <GitBranch className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-800 group-hover:text-amber-700">個別トレース</h3>
+            <p className="text-sm text-slate-500 mt-1">特定のタスクや種を選んで、その中でどう思考が発展していったかを時系列で追います。</p>
+          </div>
+        </div>
+      </button>
     </div>
   );
 }
@@ -479,7 +588,14 @@ function screenToWorld(
 // 思考フロー可視化（地形ビュー）
 // ========================================
 
-function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: ThoughtEdge[] }) {
+function ThoughtFlowCanvas({ nodes, edges, mode = 'trace', overviewTasks = [], highlightTaskId = null, onHighlightTask }: {
+  nodes: ThoughtNode[];
+  edges: ThoughtEdge[];
+  mode?: 'overview' | 'trace';
+  overviewTasks?: OverviewTask[];
+  highlightTaskId?: string | null;
+  onHighlightTask?: (taskId: string | null) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const simNodesRef = useRef<SimNode[]>([]);
@@ -518,7 +634,15 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
       let radius = 16;
       let alpha = 0.8;
 
-      if (isOnMainRoute) {
+      if (mode === 'overview') {
+        // 全体マップ: relatedTaskCount でサイズを変える
+        const taskCount = (n as any).relatedTaskCount || 1;
+        radius = Math.min(30, 12 + taskCount * 4);
+        alpha = 0.85;
+        if (taskCount >= 3) {
+          glowColor = 'rgba(99,102,241,0.15)';
+        }
+      } else if (isOnMainRoute) {
         color = AMBER;
         glowColor = AMBER_GLOW;
         radius = 20;
@@ -914,21 +1038,27 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
 
       {/* 凡例（左下） */}
       <div className="absolute bottom-3 left-3 z-10 bg-slate-800/80 backdrop-blur-sm rounded-lg px-3 py-2.5 text-[10px] space-y-1.5">
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
-          <span className="text-slate-300">メインルート</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: PINK_ALPHA }} />
-          <span className="text-slate-300">寄り道</span>
-        </div>
+        {mode === 'trace' && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full bg-amber-500 inline-block" />
+              <span className="text-slate-300">メインルート</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: PINK_ALPHA }} />
+              <span className="text-slate-300">寄り道</span>
+            </div>
+          </>
+        )}
+        {mode === 'overview' && (
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full bg-indigo-500/40 inline-block" />
+            <span className="text-slate-300">大 = 多くのタスクで使用</span>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <span className="w-8 h-0.5 bg-amber-500/60 inline-block rounded" />
           <span className="text-slate-300">思考の流れ</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-8 h-0.5 inline-block rounded border-t border-dashed border-pink-500/50" />
-          <span className="text-slate-300">飛地</span>
         </div>
         <hr className="border-slate-700" />
         {Object.entries(PHASE_LABELS).map(([key, label]) => (
@@ -957,6 +1087,37 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
         />
       </div>
 
+      {/* 全体マップ: タスクフィルターパネル（右上） */}
+      {mode === 'overview' && overviewTasks.length > 0 && (
+        <div className="absolute top-14 right-3 z-10 bg-slate-800/90 backdrop-blur-sm rounded-lg px-3 py-2.5 max-w-[220px] max-h-[300px] overflow-y-auto">
+          <p className="text-[10px] text-slate-500 mb-1.5 font-medium">タスクで絞り込み</p>
+          <button
+            onClick={() => onHighlightTask?.(null)}
+            className={`w-full text-left px-2 py-1 rounded text-xs mb-1 ${
+              !highlightTaskId ? 'bg-blue-600/30 text-blue-300' : 'text-slate-400 hover:bg-slate-700'
+            }`}
+          >
+            すべて表示
+          </button>
+          {overviewTasks.map(t => (
+            <button
+              key={t.id}
+              onClick={() => onHighlightTask?.(highlightTaskId === t.id ? null : t.id)}
+              className={`w-full text-left px-2 py-1 rounded text-xs truncate ${
+                highlightTaskId === t.id ? 'bg-amber-600/30 text-amber-300' : 'text-slate-400 hover:bg-slate-700'
+              }`}
+            >
+              <span className="inline-block w-1.5 h-1.5 rounded-full mr-1.5" style={{
+                backgroundColor: t.type === 'seed'
+                  ? (PHASE_NODE_COLORS.seed || '#22c55e')
+                  : (PHASE_NODE_COLORS[t.phase] || '#6366f1'),
+              }} />
+              {t.title}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ホバーツールチップ */}
       {hoveredNodeId && !isDragging && (() => {
         const node = simNodesRef.current.find(n => n.nodeId === hoveredNodeId);
@@ -969,6 +1130,9 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
             <p className="font-medium text-sm">{node.nodeLabel}</p>
             <p className="text-slate-400 mt-0.5">
               {PHASE_LABELS[node.appearPhase] || node.appearPhase} · 順序 {node.appearOrder}
+              {mode === 'overview' && (node as any).relatedTaskCount > 1 && (
+                <span className="ml-1 text-blue-400">· {(node as any).relatedTaskCount}件で使用</span>
+              )}
             </p>
           </div>
         );

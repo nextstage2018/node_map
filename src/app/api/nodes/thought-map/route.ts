@@ -1,7 +1,9 @@
 // Phase 42f: 思考マップデータ取得API
 // 他メンバーが特定ユーザーのタスク/種の思考動線を閲覧するためのAPI
-// GET ?userId=xxx — そのユーザーのタスク一覧（思考ノード付き）
-// GET ?userId=xxx&taskId=yyy — 特定タスクの思考ノード＋エッジ
+// GET — 全ユーザー一覧（思考ノード数付き）
+// GET ?userId=xxx&mode=overview — そのユーザーの全ノード＋全エッジ（全体マップ）
+// GET ?userId=xxx — そのユーザーのタスク一覧（個別トレースのステップ2）
+// GET ?userId=xxx&taskId=yyy — 特定タスクの思考ノード＋エッジ（個別トレース）
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
@@ -25,11 +27,18 @@ export async function GET(request: NextRequest) {
     const targetUserId = searchParams.get('userId');
     const taskId = searchParams.get('taskId') || undefined;
     const seedId = searchParams.get('seedId') || undefined;
+    const mode = searchParams.get('mode'); // 'overview' = 全体マップ
 
     // ユーザー指定なし → 組織内の全ユーザー一覧（思考ノード数付き）を返す
     if (!targetUserId) {
       const users = await getThoughtMapUsers();
       return NextResponse.json({ success: true, data: { users } });
+    }
+
+    // 全体マップモード: そのユーザーの全ノード＋全エッジを返す
+    if (mode === 'overview') {
+      const overviewData = await getUserOverviewMap(targetUserId);
+      return NextResponse.json({ success: true, data: overviewData });
     }
 
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す
@@ -113,6 +122,122 @@ export async function GET(request: NextRequest) {
       { success: false, error: '思考マップデータの取得に失敗しました' },
       { status: 500 }
     );
+  }
+}
+
+/**
+ * 全体マップ: ユーザーの全ノード＋全エッジ＋タスク一覧を返す
+ * ノードは重複を排除してユニークなナレッジノードに集約
+ */
+async function getUserOverviewMap(userId: string): Promise<{
+  nodes: any[];
+  edges: any[];
+  tasks: { id: string; type: 'task' | 'seed'; title: string; phase: string; }[];
+}> {
+  const sb = getServerSupabase() || getSupabase();
+  if (!sb) return { nodes: [], edges: [], tasks: [] };
+
+  try {
+    // 全ノードを取得（タスク+種の両方）
+    const { data: allNodeRows, error: nodeError } = await sb
+      .from('thought_task_nodes')
+      .select('*, knowledge_master_entries(label)')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: true });
+
+    if (nodeError || !allNodeRows) return { nodes: [], edges: [], tasks: [] };
+
+    // 全エッジを取得
+    const { data: allEdgeRows, error: edgeError } = await sb
+      .from('thought_edges')
+      .select('*')
+      .eq('user_id', userId)
+      .order('edge_order', { ascending: true });
+
+    // ノードをナレッジマスタID(node_id)で重複排除
+    // 同じキーワードが複数のタスク/種で使われている場合、1つのノードにまとめる
+    const nodeMap = new Map<string, any>();
+    const nodeTaskMap = new Map<string, Set<string>>(); // nodeId → 関連タスク/種IDのセット
+
+    for (const row of allNodeRows) {
+      const nodeId = row.node_id;
+
+      // このノードに関連するタスク/種を記録
+      if (!nodeTaskMap.has(nodeId)) nodeTaskMap.set(nodeId, new Set());
+      if (row.task_id) nodeTaskMap.get(nodeId)!.add(row.task_id);
+      if (row.seed_id) nodeTaskMap.get(nodeId)!.add(`seed:${row.seed_id}`);
+
+      // まだ登録されていないか、より早い出現の場合は更新
+      if (!nodeMap.has(nodeId)) {
+        nodeMap.set(nodeId, {
+          id: row.id,
+          nodeId: row.node_id,
+          nodeLabel: row.knowledge_master_entries?.label || '',
+          userId: row.user_id,
+          appearOrder: 0, // 後で振り直し
+          isMainRoute: row.is_main_route,
+          appearPhase: row.seed_id ? 'seed' : (row.appear_phase || 'ideation'),
+          createdAt: row.created_at,
+          // 全体マップ用: 関連タスク数（後で設定）
+          relatedTaskCount: 0,
+        });
+      }
+    }
+
+    // appearOrder を全体での時系列順で振り直し
+    const nodes = Array.from(nodeMap.values());
+    nodes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    nodes.forEach((n, i) => {
+      n.appearOrder = i + 1;
+      n.relatedTaskCount = nodeTaskMap.get(n.nodeId)?.size || 0;
+    });
+
+    // エッジも重複排除（from-to のペアで）
+    const edgeKeySet = new Set<string>();
+    const edges: any[] = [];
+    for (const row of (allEdgeRows || [])) {
+      const key = `${row.from_node_id}-${row.to_node_id}`;
+      if (edgeKeySet.has(key)) continue;
+      edgeKeySet.add(key);
+
+      edges.push({
+        id: row.id,
+        fromNodeId: row.from_node_id,
+        toNodeId: row.to_node_id,
+        edgeType: row.edge_type,
+        edgeOrder: row.edge_order,
+        taskId: row.task_id,
+        seedId: row.seed_id,
+      });
+    }
+
+    // タスク/種の簡易一覧（フィルター用）
+    const { data: taskRows } = await sb
+      .from('tasks')
+      .select('id, title, phase, status')
+      .eq('user_id', userId);
+    const { data: seedRows } = await sb
+      .from('seeds')
+      .select('id, content, status')
+      .eq('user_id', userId);
+
+    const tasks: any[] = [];
+    for (const t of (taskRows || [])) {
+      tasks.push({ id: t.id, type: 'task', title: t.title, phase: t.phase || 'ideation' });
+    }
+    for (const s of (seedRows || [])) {
+      tasks.push({
+        id: s.id,
+        type: 'seed',
+        title: s.content?.slice(0, 40) + (s.content?.length > 40 ? '...' : ''),
+        phase: 'seed',
+      });
+    }
+
+    return { nodes, edges, tasks };
+  } catch (error) {
+    console.error('[Thought Map] getUserOverviewMap エラー:', error);
+    return { nodes: [], edges: [], tasks: [] };
   }
 }
 
