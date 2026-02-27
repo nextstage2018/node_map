@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Header from '@/components/shared/Header';
-import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, Map, GitBranch } from 'lucide-react';
+import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, MapIcon, GitBranch } from 'lucide-react';
 
 // 全体マップ用のタスク簡易型
 interface OverviewTask {
@@ -349,7 +349,7 @@ function ModeSelect({ onOverview, onTrace }: { onOverview: () => void; onTrace: 
       >
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0">
-            <Map className="w-6 h-6 text-white" />
+            <MapIcon className="w-6 h-6 text-white" />
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-800 group-hover:text-blue-700">全体マップ</h3>
