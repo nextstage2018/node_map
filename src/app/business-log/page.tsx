@@ -480,22 +480,16 @@ export default function BusinessLogPage() {
     <AppLayout>
       <ContextBar
         title="ビジネスログ"
-        actions={[
-          {
-            label: 'プロジェクト追加',
-            icon: Plus,
-            onClick: () => setShowNewProject(!showNewProject),
-            variant: 'ghost',
-            size: 'sm',
-          },
-          {
-            label: 'イベント記録',
-            icon: Plus,
-            onClick: () => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); },
-            variant: 'primary',
-            size: 'sm',
-          },
-        ]}
+        actions={
+          <>
+            <Button variant="ghost" size="sm" icon={<Plus className="w-4 h-4" />} onClick={() => setShowNewProject(!showNewProject)}>
+              プロジェクト追加
+            </Button>
+            <Button variant="primary" size="sm" icon={<Plus className="w-4 h-4" />} onClick={() => { setShowNewEvent(true); setSelectedEvent(null); setIsEditing(false); }}>
+              イベント記録
+            </Button>
+          </>
+        }
       />
       <div className="flex-1 overflow-hidden flex flex-col">
         {/* ページヘッダー */}
@@ -546,7 +540,7 @@ export default function BusinessLogPage() {
                 <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">プロジェクト</h2>
                 <Button
                   onClick={() => setShowNewProject(!showNewProject)}
-                  icon={Plus}
+                  icon={<Plus className="w-4 h-4" />}
                   variant="ghost"
                   size="sm"
                   title="プロジェクト追加"
@@ -1089,7 +1083,7 @@ export default function BusinessLogPage() {
                     <div className="flex items-center gap-1 shrink-0">
                       <Button
                         onClick={startEditing}
-                        icon={Pencil}
+                        icon={<Pencil className="w-4 h-4" />}
                         variant="ghost"
                         size="sm"
                         title="編集"
