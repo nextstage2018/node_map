@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-02-26（Phase 41 まで反映）
+最終更新: 2026-02-27（Phase 42 まで反映）
 
 ---
 
@@ -105,7 +105,8 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 40c | 組織→プロジェクト→チャネル階層・種プロジェクト自動検出・バグ修正 | abbaf17 |
 | 41 | 種・タスクRLSバグ修正＋AI構造化タスク変換＋伴走支援AI会話 | 7c202f2 |
 | 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 14fd589 |
-| 42d+42f | 思考動線記録（thought_edges）＋チーム向け思考マップ可視化UI | 未コミット |
+| 42d+42f | 思考動線記録（thought_edges）＋チーム向け思考マップ可視化UI | 81abb4b |
+| 42-fix | classifyKeywordバグ修正＋linkToTaskOrSeed SELECT-INSERT化＋パイプライン安定化 | eee93d5 |
 
 ---
 
@@ -157,11 +158,20 @@ CREATE TABLE IF NOT EXISTS thought_task_nodes (
 ```
 ユーザーがAI会話 → seeds/chat or tasks/chat API
   → AI応答生成＋DB保存（既存）
-  → ThoughtNodeService.extractAndLink()（非同期）
-    → extractKeywords()（既存のキーワード抽出エンジン）
-    → ensureMasterEntry()（ナレッジマスタに存在チェック→新規作成）
-    → linkToTaskOrSeed()（thought_task_nodesに紐づけ）
+  → await ThoughtNodeService.extractAndLink()（同期実行 ※Vercel対応）
+    → extractKeywords()（Claude sonnetによるキーワード抽出）
+    → ensureMasterEntry()（ナレッジマスタに存在チェック→新規作成、id手動生成）
+    → linkToTaskOrSeed()（SELECT→INSERT方式で重複防止）
+    → createThoughtEdges()（Phase 42d: ノード間の思考動線を記録）
 ```
+
+### 重要な実装ノート（Phase 42-fix で判明）
+- **Vercel対応**: fire-and-forget（`.then()`）ではVercelが関数を先に終了する → `await` 必須
+- **knowledge_master_entries.id**: TEXT型で自動生成なし → `me_auto_${Date.now()}_${random}` で手動生成
+- **field_id**: NOT NULL制約を解除済み（マイグレーション025）。AI自動抽出ではfield未分類が普通
+- **JSON解析**: Claude APIが```jsonコードブロックで返す場合あり → コードブロック除去してからJSON.parse
+- **classifyKeyword**: Supabaseブランチでは `fieldsRes.data` / `domainsRes.data`（snake_case）を使用
+- **linkToTaskOrSeed**: UPSERT不可（UNIQUE制約追加前）→ SELECT-then-INSERT方式で重複防止
 
 ---
 
@@ -190,14 +200,31 @@ CREATE TABLE IF NOT EXISTS thought_edges (
 );
 ```
 
+### DBマイグレーション（実行済み）
+```sql
+-- 024_phase42d_thought_edges.sql（実行済み）
+-- thought_edges テーブル作成
+
+-- 025_fix_field_id_nullable.sql（実行済み）
+ALTER TABLE knowledge_master_entries ALTER COLUMN field_id DROP NOT NULL;
+
+-- 026_fix_thought_task_nodes_unique.sql（実行済み）
+ALTER TABLE thought_task_nodes ADD CONSTRAINT uq_thought_task_node UNIQUE (task_id, node_id);
+ALTER TABLE thought_task_nodes ADD CONSTRAINT uq_thought_seed_node UNIQUE (seed_id, node_id);
+ALTER TABLE thought_edges ADD CONSTRAINT uq_thought_edge_task UNIQUE (task_id, from_node_id, to_node_id);
+ALTER TABLE thought_edges ADD CONSTRAINT uq_thought_edge_seed UNIQUE (seed_id, from_node_id, to_node_id);
+```
+
 ### 新規ファイル
 - `supabase/migrations/024_phase42d_thought_edges.sql` — thought_edgesマイグレーション
+- `supabase/migrations/025_fix_field_id_nullable.sql` — field_id NOT NULL解除
+- `supabase/migrations/026_fix_thought_task_nodes_unique.sql` — UNIQUE制約追加
 - `src/app/api/nodes/thought-map/route.ts` — 思考マップデータ取得API（ユーザー一覧/タスク一覧/ノード+エッジ）
 - `src/app/thought-map/page.tsx` — 思考マップ可視化UIページ（Canvas描画、3ステップUI）
 
 ### 変更ファイル
 - `src/services/nodemap/thoughtNode.service.ts` — ThoughtEdge型追加、createThoughtEdges/getEdges メソッド追加、extractAndLinkにエッジ生成統合
-- `src/components/shared/Header.tsx` — ナビゲーションに「思考動線」リンク追加（/thought-map）
+- `src/components/shared/Header.tsx` — ナビゲーションに「思考マップ」リンク追加（/thought-map）、旧/nodemapリンクは削除
 - `CLAUDE.md` — Phase 42d+42f 記録
 
 ### 思考動線UIの構成
@@ -337,10 +364,18 @@ CREATE INDEX IF NOT EXISTS idx_tasks_seed_id ON tasks(seed_id);
 - ~~🟡 種→タスク変換後にタスクが表示されない~~ → confirmSeed に userId 追加で解決
 - ~~🟡 プロジェクト紐づけで種が登録できない~~ → seeds テーブルに project_id カラム追加で解決
 
-### 🟡 次の設計課題: 思考マップの体験価値設計
+### ✅ Phase 42 で解決済み
+- ~~🟡 種→タスクの AI 会話が生む思考ノードの可視化設計~~ → Phase 42a+42d+42f で実装完了
+- ~~🟡 「人の思考の流れ」を思考マップでどう表現するかの UX 設計~~ → /thought-map のCanvas描画UIで実装完了
+- ~~🔴 思考ノードが生成されない~~ → Vercel await対応・id手動生成・field_id nullable化・JSON解析修正・classifyKeywordバグ修正で解決
+
+### 🟡 次の設計課題
 - タスク詳細の「詳細」タブの役割を再定義（構想メモとの重複解消 → 伴走ログ・変遷履歴に転換？）
-- 種→タスクの AI 会話が生む思考ノードの可視化設計
-- 「人の思考の流れ」を思考マップでどう表現するかの UX 設計
+- 思考マップUIの改善（ノード数が増えた場合のレイアウト最適化、時間スライダー等）
+- Phase 42b: 送受信メッセージからのノード抽出（inbox_messages → キーワード抽出）
+- Phase 42e: スナップショット（出口想定・着地点）
+- Phase 42g: 検索・サジェスト機能
+- Phase 42h: 比較モード・AI対話モード
 
 ### その他の未実装課題
 1. **auto生成コンタクト同士の連絡先結合**: isAutoGenerated: true 同士の統合は未実装
