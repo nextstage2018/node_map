@@ -33,15 +33,71 @@ export async function GET(request: NextRequest) {
     }
 
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す
+    // タスクの場合は元の種のノード+エッジも統合して返す（一連の思考の流れ）
     if (taskId || seedId) {
-      const [nodes, edges] = await Promise.all([
-        ThoughtNodeService.getLinkedNodes({ taskId, seedId }),
-        ThoughtNodeService.getEdges({ taskId, seedId }),
-      ]);
+      let allNodes: any[] = [];
+      let allEdges: any[] = [];
+
+      if (taskId) {
+        // タスクのノード+エッジ
+        const [taskNodes, taskEdges] = await Promise.all([
+          ThoughtNodeService.getLinkedNodes({ taskId }),
+          ThoughtNodeService.getEdges({ taskId }),
+        ]);
+        allNodes.push(...taskNodes);
+        allEdges.push(...taskEdges);
+
+        // 元の種があれば、種のノード+エッジも統合
+        const sb = getServerSupabase() || getSupabase();
+        if (sb) {
+          const { data: taskData } = await sb
+            .from('tasks')
+            .select('seed_id')
+            .eq('id', taskId)
+            .maybeSingle();
+
+          if (taskData?.seed_id) {
+            const [seedNodes, seedEdges] = await Promise.all([
+              ThoughtNodeService.getLinkedNodes({ seedId: taskData.seed_id }),
+              ThoughtNodeService.getEdges({ seedId: taskData.seed_id }),
+            ]);
+
+            // 種のノードは必ず seed フェーズ（重複ノードは除外）
+            const existingNodeIds = new Set(allNodes.map(n => n.nodeId));
+            for (const sn of seedNodes) {
+              if (!existingNodeIds.has(sn.nodeId)) {
+                sn.appearPhase = 'seed'; // 種由来は常に seed ゾーン
+                allNodes.push(sn);
+              }
+            }
+
+            // 種のエッジも統合（重複除外）
+            const existingEdgeKeys = new Set(allEdges.map(e => `${e.fromNodeId}-${e.toNodeId}`));
+            for (const se of seedEdges) {
+              const key = `${se.fromNodeId}-${se.toNodeId}`;
+              if (!existingEdgeKeys.has(key)) {
+                allEdges.push(se);
+              }
+            }
+          }
+        }
+      } else {
+        // 種を直接指定した場合
+        const [nodes, edges] = await Promise.all([
+          ThoughtNodeService.getLinkedNodes({ seedId }),
+          ThoughtNodeService.getEdges({ seedId }),
+        ]);
+        allNodes = nodes;
+        allEdges = edges;
+      }
+
+      // appearOrder を通し番号に振り直し（種→タスクの時系列順）
+      allNodes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      allNodes.forEach((n, i) => { n.appearOrder = i + 1; });
 
       return NextResponse.json({
         success: true,
-        data: { nodes, edges },
+        data: { nodes: allNodes, edges: allEdges },
       });
     }
 
@@ -136,7 +192,7 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
     // ユーザーのタスク一覧
     const { data: tasks } = await sb
       .from('tasks')
-      .select('id, title, phase, status, created_at, updated_at')
+      .select('id, title, phase, status, seed_id, created_at, updated_at')
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
@@ -151,15 +207,23 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
     // 各タスク/種のノード数とエッジ数を取得
     const result: typeof getUserTasksWithNodeCount extends (...args: any) => Promise<infer R> ? R : never = [];
 
-    // タスク
+    // タスク（元の種のノード数も加算）
     for (const task of (tasks || [])) {
-      const [nodeRes, edgeRes] = await Promise.all([
+      const countPromises: Promise<any>[] = [
         sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
         sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
-      ]);
+      ];
+      // 元の種のノード数も加算
+      if (task.seed_id) {
+        countPromises.push(
+          sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('seed_id', task.seed_id),
+          sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('seed_id', task.seed_id),
+        );
+      }
 
-      const nodeCount = nodeRes.count || 0;
-      const edgeCount = edgeRes.count || 0;
+      const counts = await Promise.all(countPromises);
+      const nodeCount = (counts[0].count || 0) + (counts[2]?.count || 0);
+      const edgeCount = (counts[1].count || 0) + (counts[3]?.count || 0);
 
       // ノードが1つ以上あるタスクのみ表示
       if (nodeCount > 0) {
@@ -177,8 +241,16 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
       }
     }
 
-    // 種
+    // タスク化済みの種IDを収集（タスク側で統合表示するため）
+    const taskifiedSeedIds = new Set(
+      (tasks || []).filter(t => t.seed_id).map(t => t.seed_id)
+    );
+
+    // 種（タスク化されていないもののみ表示）
     for (const seed of (seeds || [])) {
+      // この種が既にタスク化されていれば、タスク側で統合表示するのでスキップ
+      if (taskifiedSeedIds.has(seed.id)) continue;
+
       const [nodeRes, edgeRes] = await Promise.all([
         sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('seed_id', seed.id),
         sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('seed_id', seed.id),

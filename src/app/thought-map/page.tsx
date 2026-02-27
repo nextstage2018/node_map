@@ -78,7 +78,7 @@ const PHASE_LABELS: Record<string, string> = {
   seed: '種',
   ideation: '構想',
   progress: '進行',
-  result: '成果',
+  result: '結果',
 };
 
 // フェーズ別のクラスタアンカー（正規化座標 0-1）
@@ -106,11 +106,11 @@ const PINK_ALPHA = 'rgba(236,72,153,0.5)';
 
 // タイムスライダーのフェーズラベル
 function getTimeLabel(time: number): string {
-  if (time <= 15) return '種の段階';
-  if (time <= 40) return '構想中';
-  if (time <= 70) return '実行中';
-  if (time <= 95) return '仕上げ';
-  return '完了時';
+  if (time <= 20) return '種';
+  if (time <= 45) return '構想';
+  if (time <= 75) return '進行';
+  if (time <= 95) return '結果';
+  return '全体';
 }
 
 // ========================================
@@ -594,12 +594,12 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
     }
 
     // フェーズゾーン（4分割の背景色分け）
-    // 画面を4エリアに分割: 左上=種, 右上=構想, 右下=進行, 左下=成果
+    // 画面を4エリアに分割: 左上=種, 右上=構想, 右下=進行, 左下=結果
     const zoneColors: Record<string, string> = {
-      seed: 'rgba(34,197,94,0.04)',
-      ideation: 'rgba(59,130,246,0.04)',
-      progress: 'rgba(168,85,247,0.04)',
-      result: 'rgba(99,102,241,0.04)',
+      seed: 'rgba(34,197,94,0.05)',
+      ideation: 'rgba(59,130,246,0.05)',
+      progress: 'rgba(168,85,247,0.05)',
+      result: 'rgba(99,102,241,0.05)',
     };
     const zoneLabelPositions: Record<string, { x: number; y: number; anchorX: 'left' | 'right'; anchorY: 'top' | 'bottom' }> = {
       seed: { x: 0.03, y: 0.05, anchorX: 'left', anchorY: 'top' },
@@ -642,14 +642,14 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // ゾーンラベル（各隅に小さく表示）
+    // ゾーンラベル（各隅に表示）
     for (const [phase, lpos] of Object.entries(zoneLabelPositions)) {
       const pos = worldToScreen(lpos.x, lpos.y, cw, ch, panX, panY, zoom);
       const label = PHASE_LABELS[phase] || phase;
       const phaseColor = PHASE_NODE_COLORS[phase] || 'rgba(99,102,241,0.3)';
 
-      ctx.fillStyle = phaseColor.replace(/[\d.]+\)$/, '0.25)');
-      ctx.font = `${Math.max(10, 12 * zoom)}px sans-serif`;
+      ctx.fillStyle = phaseColor.replace(/[\d.]+\)$/, '0.18)');
+      ctx.font = `bold ${Math.max(13, 18 * zoom)}px sans-serif`;
       ctx.textAlign = lpos.anchorX === 'left' ? 'left' : 'right';
       ctx.textBaseline = lpos.anchorY === 'top' ? 'top' : 'bottom';
       ctx.fillText(label, pos.x, pos.y);
@@ -699,6 +699,21 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
         ctx.quadraticCurveTo(mx, my, p2.x, p2.y);
         ctx.stroke();
       }
+
+      // 矢印（到着先ノード方向）
+      const arrowSize = 6 * zoom;
+      // ベジェ曲線上の終点付近の角度を計算
+      const t = 0.85; // 曲線の85%地点
+      const ax = (1-t)*(1-t)*p1.x + 2*(1-t)*t*mx + t*t*p2.x;
+      const ay = (1-t)*(1-t)*p1.y + 2*(1-t)*t*my + t*t*p2.y;
+      const angle = Math.atan2(p2.y - ay, p2.x - ax);
+      ctx.beginPath();
+      ctx.moveTo(p2.x, p2.y);
+      ctx.lineTo(p2.x - arrowSize * Math.cos(angle - 0.4), p2.y - arrowSize * Math.sin(angle - 0.4));
+      ctx.lineTo(p2.x - arrowSize * Math.cos(angle + 0.4), p2.y - arrowSize * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fillStyle = edge.edgeType === 'detour' ? 'rgba(236,72,153,0.35)' : 'rgba(245,158,11,0.6)';
+      ctx.fill();
     }
 
     // ===== ノード描画 =====
@@ -730,19 +745,30 @@ function ThoughtFlowCanvas({ nodes, edges }: { nodes: ThoughtNode[]; edges: Thou
         ctx.fill();
       }
 
-      // ノード本体
+      // ノード本体（グラデーション塗り）
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.fillStyle = node.color;
+      const nodeGrad = ctx.createRadialGradient(pos.x - r * 0.3, pos.y - r * 0.3, 0, pos.x, pos.y, r);
+      nodeGrad.addColorStop(0, 'rgba(255,255,255,0.15)');
+      nodeGrad.addColorStop(0.5, node.color);
+      nodeGrad.addColorStop(1, node.color);
+      ctx.fillStyle = nodeGrad;
       ctx.globalAlpha = node.alpha;
       ctx.fill();
       ctx.globalAlpha = 1;
+
+      // 薄い輪郭線（常時）
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
 
       // ホバー/選択時のハイライト
       if (isHovered || isSelected) {
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, r + 3 * zoom, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.strokeStyle = isSelected ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.6)';
         ctx.lineWidth = 2 * zoom;
         ctx.stroke();
       }
