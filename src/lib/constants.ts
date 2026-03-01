@@ -321,17 +321,6 @@ export const JOB_TYPE_CONFIG = {
   },
 } as const;
 
-export const BOARD_TAB_CONFIG = {
-  tasks: {
-    label: 'タスク',
-    description: '思考型の作業（思考マップ対象）',
-  },
-  jobs: {
-    label: 'ジョブ',
-    description: 'AI定型作業（思考マップ対象外）',
-  },
-} as const;
-
 export const VIEW_MODE_CONFIG = {
   status: {
     label: 'ステータス',

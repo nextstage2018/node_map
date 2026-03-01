@@ -11,7 +11,7 @@ import {
   useSensors,
   closestCorners,
 } from '@dnd-kit/core';
-import type { Task, TaskStatus, CreateTaskRequest, TaskSuggestion, TaskBoardTab, TaskBoardViewMode } from '@/lib/types';
+import type { Task, TaskStatus, CreateTaskRequest, TaskSuggestion, TaskBoardViewMode } from '@/lib/types';
 import { useTasks } from '@/hooks/useTasks';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
@@ -20,11 +20,10 @@ import TaskDetail from '@/components/tasks/TaskDetail';
 import CreateTaskModal from '@/components/tasks/CreateTaskModal';
 import TaskSuggestions from '@/components/tasks/TaskSuggestions';
 import SeedBox from '@/components/seeds/SeedBox';
-import JobList from '@/components/jobs/JobList';
 import TimelineView from '@/components/timeline/TimelineView';
 import WeeklyNodeBanner from '@/components/weekly/WeeklyNodeBanner';
 import Button from '@/components/ui/Button';
-import { TASK_PRIORITY_CONFIG, TASK_PHASE_CONFIG, BOARD_TAB_CONFIG, VIEW_MODE_CONFIG } from '@/lib/constants';
+import { TASK_PRIORITY_CONFIG, TASK_PHASE_CONFIG, VIEW_MODE_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, cn } from '@/lib/utils';
 
 export default function TasksPage() {
@@ -37,11 +36,7 @@ export default function TasksPage() {
     refresh,
     createTask,
     updateTask,
-    // Phase 7
-    jobs,
     seeds,
-    activeJobCount,
-    updateJobStatus,
     createSeed,
     confirmSeed,
   } = useTasks();
@@ -50,8 +45,6 @@ export default function TasksPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [visibleSuggestions, setVisibleSuggestions] = useState<TaskSuggestion[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
-  // Phase 7: タブとビューの状態
-  const [boardTab, setBoardTab] = useState<TaskBoardTab>('tasks');
   const [viewMode, setViewMode] = useState<TaskBoardViewMode>('status');
   const [seedBoxExpanded, setSeedBoxExpanded] = useState(false);
 
@@ -150,15 +143,6 @@ export default function TasksPage() {
     }
   }, [tasks, refresh]);
 
-  // ジョブアクション
-  const handleExecuteJob = useCallback(async (jobId: string) => {
-    await updateJobStatus(jobId, 'executed');
-  }, [updateJobStatus]);
-
-  const handleDismissJob = useCallback(async (jobId: string) => {
-    await updateJobStatus(jobId, 'dismissed');
-  }, [updateJobStatus]);
-
   const statusColumns: TaskStatus[] = ['todo', 'in_progress', 'done'];
   const activeSuggestions =
     visibleSuggestions.length > 0 ? visibleSuggestions : suggestions;
@@ -187,59 +171,32 @@ export default function TasksPage() {
           {/* ツールバー */}
           <div className="px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              {/* タブ切り替え：タスク / ジョブ */}
+              {/* ビュー切り替え */}
               <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
-                {(Object.keys(BOARD_TAB_CONFIG) as TaskBoardTab[]).map((tab) => (
+                {(Object.keys(VIEW_MODE_CONFIG) as TaskBoardViewMode[]).map((mode) => (
                   <button
-                    key={tab}
-                    onClick={() => setBoardTab(tab)}
+                    key={mode}
+                    onClick={() => setViewMode(mode)}
                     className={cn(
                       'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                      boardTab === tab
-                        ? 'bg-blue-600 text-white'
+                      viewMode === mode
+                        ? 'bg-slate-700 text-white'
                         : 'text-slate-500 hover:text-slate-700'
                     )}
                   >
-                    {BOARD_TAB_CONFIG[tab].label}
-                    {tab === 'jobs' && activeJobCount > 0 && (
-                      <span className="ml-1.5 text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
-                        {activeJobCount}
-                      </span>
-                    )}
+                    {VIEW_MODE_CONFIG[mode].label}
                   </button>
                 ))}
               </div>
 
-              {/* ビュー切り替え（タスクタブのみ） */}
-              {boardTab === 'tasks' && (
-                <div className="flex bg-white rounded-lg border border-slate-200 p-0.5">
-                  {(Object.keys(VIEW_MODE_CONFIG) as TaskBoardViewMode[]).map((mode) => (
-                    <button
-                      key={mode}
-                      onClick={() => setViewMode(mode)}
-                      className={cn(
-                        'px-3 py-1.5 text-sm font-medium rounded-md transition-colors',
-                        viewMode === mode
-                          ? 'bg-slate-700 text-white'
-                          : 'text-slate-500 hover:text-slate-700'
-                      )}
-                    >
-                      {VIEW_MODE_CONFIG[mode].label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
               {/* カウンター */}
-              {boardTab === 'tasks' && (
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>未着手 {statusCounts.todo}</span>
-                  <span>・</span>
-                  <span>進行中 {statusCounts.in_progress}</span>
-                  <span>・</span>
-                  <span>完了 {statusCounts.done}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <span>未着手 {statusCounts.todo}</span>
+                <span>・</span>
+                <span>進行中 {statusCounts.in_progress}</span>
+                <span>・</span>
+                <span>完了 {statusCounts.done}</span>
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
@@ -250,11 +207,9 @@ export default function TasksPage() {
               >
                 {isLoading ? '更新中...' : '更新'}
               </button>
-              {boardTab === 'tasks' && (
-                <Button onClick={() => setShowCreateModal(true)}>
-                  ＋ 新規タスク
-                </Button>
-              )}
+              <Button onClick={() => setShowCreateModal(true)}>
+                ＋ 新規タスク
+              </Button>
             </div>
           </div>
 
@@ -263,74 +218,63 @@ export default function TasksPage() {
           )}
 
           {/* メインコンテンツ */}
-          {boardTab === 'tasks' ? (
-            viewMode === 'status' ? (
-              /* ステータスビュー（カンバン） */
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCorners}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-              >
-                <div className="flex-1 overflow-x-auto p-4">
-                  <div className="flex gap-4 h-full min-w-0">
-                    {activeSuggestions.length > 0 && (
-                      <TaskSuggestions
-                        suggestions={activeSuggestions}
-                        onAccept={handleCreateTask}
-                        onDismiss={handleDismissSuggestion}
-                      />
-                    )}
-                    {statusColumns.map((status) => (
-                      <TaskColumn
-                        key={status}
-                        status={status}
-                        tasks={tasks.filter((t) => t.status === status)}
-                        selectedTaskId={selectedTask?.id || null}
-                        onSelectTask={(task) => setSelectedTask(task)}
-                        onQuickChat={handleQuickChat}
-                      />
-                    ))}
-                  </div>
+          {viewMode === 'status' ? (
+            /* ステータスビュー（カンバン） */
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="flex-1 overflow-x-auto p-4">
+                <div className="flex gap-4 h-full min-w-0">
+                  {activeSuggestions.length > 0 && (
+                    <TaskSuggestions
+                      suggestions={activeSuggestions}
+                      onAccept={handleCreateTask}
+                      onDismiss={handleDismissSuggestion}
+                    />
+                  )}
+                  {statusColumns.map((status) => (
+                    <TaskColumn
+                      key={status}
+                      status={status}
+                      tasks={tasks.filter((t) => t.status === status)}
+                      selectedTaskId={selectedTask?.id || null}
+                      onSelectTask={(task) => setSelectedTask(task)}
+                      onQuickChat={handleQuickChat}
+                    />
+                  ))}
                 </div>
+              </div>
 
-                <DragOverlay>
-                  {activeTask ? (
-                    <DragOverlayCard task={activeTask} />
-                  ) : null}
-                </DragOverlay>
-              </DndContext>
-            ) : (
-              /* タイムラインビュー */
-              <TimelineView
-                tasks={tasks}
-                selectedTaskId={selectedTask?.id || null}
-                onSelectTask={(taskId) => {
-                  const task = tasks.find((t) => t.id === taskId);
-                  if (task) setSelectedTask(task);
-                }}
-              />
-            )
+              <DragOverlay>
+                {activeTask ? (
+                  <DragOverlayCard task={activeTask} />
+                ) : null}
+              </DragOverlay>
+            </DndContext>
           ) : (
-            /* ジョブタブ */
-            <JobList
-              jobs={jobs}
-              onExecute={handleExecuteJob}
-              onDismiss={handleDismissJob}
+            /* タイムラインビュー */
+            <TimelineView
+              tasks={tasks}
+              selectedTaskId={selectedTask?.id || null}
+              onSelectTask={(taskId) => {
+                const task = tasks.find((t) => t.id === taskId);
+                if (task) setSelectedTask(task);
+              }}
             />
           )}
         </div>
 
         {/* 右：タスク詳細 + AI会話 */}
-        {boardTab === 'tasks' && (
-          <div className="w-[480px] border-l border-slate-200 bg-white shrink-0">
-            <TaskDetail
-              task={selectedTask}
-              onUpdate={updateTask}
-              onRefresh={handleRefresh}
-            />
-          </div>
-        )}
+        <div className="w-[480px] border-l border-slate-200 bg-white shrink-0">
+          <TaskDetail
+            task={selectedTask}
+            onUpdate={updateTask}
+            onRefresh={handleRefresh}
+          />
+        </div>
       </div>
 
       {/* タスク作成モーダル */}

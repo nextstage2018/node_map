@@ -283,9 +283,6 @@ export interface Seed {
 // タスクボードの表示モード
 export type TaskBoardViewMode = 'status' | 'timeline';
 
-// タスクボードのタブ
-export type TaskBoardTab = 'tasks' | 'jobs';
-
 // ジョブ作成リクエスト
 export interface CreateJobRequest {
   title: string;
