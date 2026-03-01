@@ -241,11 +241,15 @@ export interface TaskSuggestion {
 // ジョブステータス（シンプル: 未完了 or 完了）
 export type JobStatus = 'pending' | 'done';
 
+// ジョブ種別
+export type JobType = 'schedule' | 'reply_later' | 'check' | 'other';
+
 // ジョブ（AIに委ねる日常の簡易作業。思考マップ対象外）
 export interface Job {
   id: string;
   title: string;
   description?: string;
+  type?: JobType;              // 種別（日程調整/あとで返信/要確認/その他）
   status: JobStatus;
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
@@ -287,6 +291,7 @@ export type TaskBoardViewMode = 'status' | 'timeline';
 export interface CreateJobRequest {
   title: string;
   description?: string;
+  type?: JobType;
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
   dueDate?: string;

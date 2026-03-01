@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-02-27（Phase 42 まで反映）
+最終更新: 2026-03-01（Phase 42 + Restructure まで反映）
 
 ---
 
@@ -29,8 +29,11 @@
 | `organization_channels` | 組織に紐づくチャネル（Slack/CW/Email）。UNIQUE(organization_id, service_name, channel_id) |
 | `projects` | プロジェクト。organization_id で組織に紐づく |
 | `project_channels` | プロジェクトとチャネルの紐づけ。UNIQUE(project_id, service_name, channel_identifier) |
-| `seeds` | 種ボックス。project_id で紐づけ可。user_id カラムあり |
-| `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id カラムあり |
+| `seeds` | 種ボックス（段階的廃止予定）。project_id で紐づけ可。user_id カラムあり |
+| `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id / task_type('personal'\|'group') カラムあり |
+| `jobs` | ジョブ（AIに委ねる日常の簡易作業）。type='schedule'\|'reply_later'\|'check'\|'other'。status='pending'\|'done'。思考マップ対象外 |
+| `idea_memos` | アイデアメモ。断片的な思いつきを記録。tags TEXT[]。タスク変換機能なし |
+| `memo_conversations` | メモのAI会話。turn_id で会話ターン管理 |
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
 | `thought_edges` | 思考動線。from_node_id→to_node_idの順序付きエッジ。UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
@@ -44,6 +47,8 @@
 |---|---|---|
 | インボックス | /inbox | inbox_messages |
 | タスク | /tasks | tasks / task_conversations |
+| ジョブ | /jobs | jobs |
+| アイデアメモ | /memos | idea_memos / memo_conversations |
 | 思考マップ | /thought-map | thought_task_nodes / thought_edges / knowledge_master_entries |
 | コンタクト | /contacts | contact_persons / contact_channels |
 | 組織 | /organizations | organizations / organization_channels |
@@ -51,7 +56,7 @@
 | ナレッジ | /master | knowledge_domains / knowledge_fields / knowledge_master_entries |
 | ビジネスログ | /business-log | projects / business_events / project_channels |
 | 秘書 | /agent | tasks / seeds / user_nodes（読み取り専用） |
-| 種ボックス | /seeds | seeds |
+| 種ボックス（廃止予定） | /seeds | seeds |
 | 設定 | /settings | organizations / contact_persons / projects |
 
 ---
@@ -114,6 +119,8 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 42e | スナップショット（出口想定・着地点）＋思考マップUIにスナップショット比較パネル | TBD |
 | 42g | ノード重なり検索API＋思考マップUI検索パネル＋関連タスク表示＋詳細タブ→変遷タブ転換 | TBD |
 | 42h | 比較モード（2人の思考動線重ね・共有ノード・分岐点可視化）＋リプレイモード（完了タスクAI対話） | TBD |
+| Restructure | ジョブ・アイデアメモ・タスク種別の再設計。jobs/idea_memos/memo_conversationsテーブル新設。タスクページからジョブ分離 | 0058180 |
+| Inbox改善 | インボックスアクションボタン再定義（返信AI下書き自動・ジョブ種別選択・タスクAIフォーム）。返信プロンプトにコンタクト情報/過去やり取り/スレッド文脈を反映 | df71c96 |
 
 ---
 
@@ -590,8 +597,17 @@ CREATE INDEX IF NOT EXISTS idx_tasks_seed_id ON tasks(seed_id);
 ### ✅ Phase 42e で解決済み
 - ~~🟡 Phase 42e: スナップショット（出口想定・着地点）~~ → thought_snapshots テーブル＋confirmSeed/updateTask統合＋思考マップUI比較パネル
 
+### ✅ Restructure（再設計）で解決済み
+- ~~日常簡易作業の置き場がない~~ → ✅ ジョブ機能（/jobs）実装。タスクページから分離して独立ページ化
+- ~~アイデアメモの場所がない~~ → ✅ アイデアメモ機能（/memos）実装
+- ~~インボックスのアクションボタンが複雑~~ → ✅ 返信（AI自動下書き）・ジョブ（種別選択）・タスク（AIフォーム）の3つに整理
+
+### ✅ Inbox改善で解決済み
+- ~~返信下書きがコンタクト情報を参照しない~~ → ✅ メモ/AIコンテキスト・会社名・関係性・過去やり取り・スレッド文脈を反映
+- ~~ジョブ登録エラー（type NOT NULL制約）~~ → ✅ jobTypeをAPIに渡す＋DB CHECK制約を柔軟化
+
 ### 🟡 次の設計課題
-- ~~タスク詳細の「詳細」タブの役割を再定義~~ → ✅「📊 変遷」タブに転換済み（フェーズタイムライン＋スナップショット比較＋会話ハイライト）
+- ~~タスク詳細の「詳細」タブの役割を再定義~~ → ✅「📊 変遷」タブに転換済み
 - ~~Phase 42g: 検索・サジェスト機能~~ → ✅ ノード重なり検索API + 思考マップUI検索パネル + 関連タスク表示
 - ~~Phase 42h: 比較モード・AI対話モード~~ → ✅ 比較Canvas（共有ノード・分岐点） + リプレイAIチャットUI 実装完了
 
