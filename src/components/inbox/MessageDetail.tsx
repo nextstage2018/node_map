@@ -367,7 +367,6 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
           title: structured.title,
           description: structured.description,
           type: jobType,
-          type: jobType,
           sourceMessageId: message.id,
           sourceChannel: message.channel,
         }),

@@ -13,7 +13,6 @@ function mapJobFromDb(row: Record<string, unknown>) {
     title: row.title,
     description: row.description,
     type: row.type,
-    type: row.type,
     status: row.status,
     sourceMessageId: row.source_message_id,
     sourceChannel: row.source_channel,
@@ -70,7 +69,6 @@ export async function POST(request: NextRequest) {
     const sb = getServerSupabase() || getSupabase();
     const insertData: Record<string, unknown> = {
       user_id: userId,
-      type: type || 'other',
       title,
       type: type || 'other',
       status: 'pending',
