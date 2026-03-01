@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { UnifiedMessage } from '@/lib/types';
 import Button from '@/components/ui/Button';
 import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
@@ -9,6 +9,7 @@ interface ReplyFormProps {
   message: UnifiedMessage;
   onClose: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
+  autoAiDraft?: boolean;
 }
 
 /**
@@ -116,13 +117,14 @@ function RecipientInput({
  * Slack: メンション追加可能
  * Chatwork: 宛先指定可能
  */
-export default function ReplyForm({ message, onClose, onSentMessage }: ReplyFormProps) {
+export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft = false }: ReplyFormProps) {
   const [replyText, setReplyText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [showInstruction, setShowInstruction] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
+  const [autoTriggered, setAutoTriggered] = useState(false);
 
   // メール向け: 全員返信の宛先計算
   const isEmail = message.channel === 'email';
@@ -211,6 +213,14 @@ export default function ReplyForm({ message, onClose, onSentMessage }: ReplyForm
       setIsDrafting(false);
     }
   };
+
+  // autoAiDraft: 返信フォーム表示時にAI下書きを自動生成
+  useEffect(() => {
+    if (autoAiDraft && !autoTriggered && !isDrafting && !replyText) {
+      setAutoTriggered(true);
+      handleAiDraft();
+    }
+  }, [autoAiDraft, autoTriggered, isDrafting, replyText]);
 
   // 返信送信
   const handleSend = async () => {

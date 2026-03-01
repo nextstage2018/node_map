@@ -9,7 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
 import ChatworkBody from '@/components/inbox/ChatworkBody';
-import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
+
 
 // リアクション用の絵文字リスト
 const REACTION_EMOJIS = [
@@ -312,188 +312,190 @@ function LinkifiedText({ text, className }: { text: string; className?: string }
 }
 
 /**
- * Phase 40b: コンテキストメッセージの型
+ * ジョブ種別選択ドロップダウン＋AI構造化
  */
-interface ContextMessage {
-  from: string;
-  body: string;
-  timestamp: string;
-  isTarget?: boolean;
-}
+const JOB_TYPES = [
+  { value: 'schedule', label: '日程調整', icon: '📅' },
+  { value: 'reply_later', label: 'あとで返信', icon: '💬' },
+  { value: 'check', label: '要確認', icon: '🔍' },
+  { value: 'other', label: 'その他', icon: '📝' },
+] as const;
 
-/**
- * 種にする（Seed）ボタンの状態管理hook
- * Phase 40b: コンテキストメッセージ対応 — 前後の会話をAIに送って種化
- */
-function useSeedAction() {
-  const [seedingId, setSeedingId] = useState<string | null>(null);
-  const [seedResult, setSeedResult] = useState<{ id: string; type: 'success' | 'error'; text: string } | null>(null);
-  // Phase 40c: 複数プロジェクト候補の選択モーダル
-  const [projectCandidates, setProjectCandidates] = useState<{ projectId: string; projectName: string }[] | null>(null);
-  const [pendingSeedId, setPendingSeedId] = useState<string | null>(null);
+function JobActionButton({ message }: { message: UnifiedMessage }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const createSeed = async (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => {
-    if (seedingId) return;
-    setSeedingId(msg.id);
-    setSeedResult(null);
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    }
+    if (showMenu) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMenu]);
+
+  const handleJobType = async (jobType: string) => {
+    setShowMenu(false);
+    setIsCreating(true);
     try {
-      const fallbackContent = msg.subject
-        ? `【${msg.subject}】\n${msg.body}`
-        : msg.body;
-
-      const requestBody: any = {
-        sourceChannel: msg.channel,
-        sourceMessageId: msg.id,
-        sourceFrom: msg.from?.name || msg.from?.address || '',
-        sourceDate: msg.timestamp,
-      };
-
-      // Phase 40c: チャネル識別子を渡す（プロジェクト自動検出用）
-      if (msg.channel === 'slack' && msg.metadata?.slackChannel) {
-        requestBody.channelIdentifier = msg.metadata.slackChannel;
-      } else if (msg.channel === 'chatwork' && msg.metadata?.chatworkRoomId) {
-        requestBody.channelIdentifier = msg.metadata.chatworkRoomId;
-      } else if (msg.channel === 'email' && msg.from?.address) {
-        requestBody.channelIdentifier = msg.from.address;
-      }
-
-      if (contextMessages && contextMessages.length > 0) {
-        // Phase 40b: AIがコンテキストから要約生成
-        requestBody.contextMessages = contextMessages;
-      } else {
-        // フォールバック: 従来どおりメッセージ本文のみ
-        requestBody.content = fallbackContent.slice(0, 500);
-      }
-
-      const res = await fetch('/api/seeds', {
+      // AIがメッセージ内容からジョブ情報を構造化
+      const aiRes = await fetch('/api/ai/structure-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          channel: message.channel,
+          from: message.from?.name || '',
+          subject: message.subject || '',
+          body: message.body,
+          jobType,
+        }),
       });
-      const data = await res.json();
-      if (data.success) {
-        // Phase 40c: 複数プロジェクト候補があればモーダル表示
-        if (data.projectCandidates && data.projectCandidates.length > 0) {
-          setProjectCandidates(data.projectCandidates);
-          setPendingSeedId(data.data.id);
-          setSeedResult({ id: msg.id, type: 'success', text: 'プロジェクトを選択してください' });
-        } else {
-          const projectNote = data.data.projectName ? ` → ${data.data.projectName}` : '';
-          setSeedResult({ id: msg.id, type: 'success', text: `AIが文脈を読んで種を生成しました${projectNote}` });
-        }
-        // Phase 28: ナレッジパイプラインのフィードバック表示
-        handleKnowledgeResponse(data, 'seed');
+      const aiJson = await aiRes.json();
+      const structured = aiJson.success ? aiJson.data : {
+        title: message.subject || message.body.slice(0, 30),
+        description: message.body.slice(0, 100),
+      };
+
+      // ジョブを登録
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: structured.title,
+          description: structured.description,
+          sourceMessageId: message.id,
+          sourceChannel: message.channel,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setResult({ type: 'success', text: 'ジョブに追加しました' });
       } else {
-        setSeedResult({ id: msg.id, type: 'error', text: data.error || '追加に失敗しました' });
+        setResult({ type: 'error', text: json.error || '作成に失敗' });
       }
     } catch {
-      setSeedResult({ id: msg.id, type: 'error', text: '通信エラーが発生しました' });
+      setResult({ type: 'error', text: '通信エラー' });
     } finally {
-      setSeedingId(null);
-      setTimeout(() => {
-        if (!projectCandidates) setSeedResult(null);
-      }, 4000);
+      setIsCreating(false);
+      setTimeout(() => setResult(null), 3000);
     }
   };
 
-  // Phase 40c: プロジェクト選択後の紐づけ
-  const selectProject = async (projectId: string) => {
-    if (!pendingSeedId) return;
-    try {
-      await fetch('/api/seeds', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ seedId: pendingSeedId, content: '', projectId }),
-      });
-    } catch { /* silent */ }
-    setProjectCandidates(null);
-    setPendingSeedId(null);
-    setSeedResult(null);
-  };
-
-  const dismissProjectModal = () => {
-    setProjectCandidates(null);
-    setPendingSeedId(null);
-    setSeedResult(null);
-  };
-
-  return { seedingId, seedResult, createSeed, projectCandidates, selectProject, dismissProjectModal };
-}
-
-/**
- * 種にするボタンコンポーネント
- */
-function SeedButton({
-  targetMessage,
-  contextMessages,
-  seedingId,
-  seedResult,
-  onSeed,
-}: {
-  targetMessage: UnifiedMessage;
-  contextMessages?: ContextMessage[];
-  seedingId: string | null;
-  seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
-  onSeed: (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => void;
-}) {
-  const isSeeding = seedingId === targetMessage.id;
-  const result = seedResult?.id === targetMessage.id ? seedResult : null;
-
   if (result) {
     return (
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
-          result.type === 'success'
-            ? 'bg-green-50 text-green-700 border border-green-200'
-            : 'bg-red-50 text-red-700 border border-red-200'
-        )}
-      >
+      <span className={cn(
+        'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
+        result.type === 'success'
+          ? 'bg-green-50 text-green-700 border border-green-200'
+          : 'bg-red-50 text-red-700 border border-red-200'
+      )}>
         {result.type === 'success' ? '✅' : '❌'} {result.text}
-        {result.type === 'success' && (
-          <a href="/seeds" className="ml-1 underline hover:no-underline text-green-600">
-            種ボックスを見る →
-          </a>
-        )}
       </span>
     );
   }
 
   return (
-    <Button
-      variant="secondary"
-      onClick={() => onSeed(targetMessage, contextMessages)}
-      disabled={isSeeding}
-    >
-      {isSeeding ? (
-        <span className="flex items-center gap-1">
-          <span className="animate-spin">⟳</span> AI分析中...
-        </span>
-      ) : (
-        '🌱 種にする'
+    <div className="relative" ref={menuRef}>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={() => setShowMenu(!showMenu)}
+        disabled={isCreating}
+      >
+        {isCreating ? '⏳ 登録中...' : '⚡ ジョブ'}
+      </Button>
+      {showMenu && (
+        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[180px] z-50">
+          <div className="px-3 py-1.5 text-[10px] text-slate-400 font-medium border-b border-slate-100">
+            種別を選択
+          </div>
+          {JOB_TYPES.map((jt) => (
+            <button
+              key={jt.value}
+              onClick={() => handleJobType(jt.value)}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors flex items-center gap-2"
+            >
+              <span>{jt.icon}</span>
+              <span className="text-slate-700">{jt.label}</span>
+            </button>
+          ))}
+        </div>
       )}
-    </Button>
+    </div>
   );
 }
 
 /**
- * Phase Restructure: インボックスからの振り分けボタン群
- * タスク作成・メモ作成・ジョブ作成
+ * タスク作成ポップアップ（AI自動入力フォーム）
  */
-function QuickActionButtons({ message }: { message: UnifiedMessage }) {
-  const [actionResult, setActionResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [isCreating, setIsCreating] = useState<string | null>(null);
+function TaskActionButton({ message }: { message: UnifiedMessage }) {
+  const [showModal, setShowModal] = useState(false);
+  const [isStructuring, setIsStructuring] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [form, setForm] = useState({
+    title: '',
+    goal: '',
+    description: '',
+    priority: 'medium',
+    deadline: '',
+    concerns: '',
+  });
 
-  const createTask = async () => {
-    setIsCreating('task');
+  const openAndStructure = async () => {
+    setShowModal(true);
+    setIsStructuring(true);
+    try {
+      const res = await fetch('/api/ai/structure-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: message.channel,
+          from: message.from?.name || '',
+          subject: message.subject || '',
+          body: message.body,
+          timestamp: message.timestamp,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setForm({
+          title: json.data.title || '',
+          goal: json.data.goal || '',
+          description: json.data.description || '',
+          priority: json.data.priority || 'medium',
+          deadline: json.data.deadline || '',
+          concerns: json.data.concerns || '',
+        });
+      }
+    } catch {
+      // AIが失敗してもフォームは手入力可能
+      setForm(prev => ({
+        ...prev,
+        title: message.subject || message.body.slice(0, 50),
+        description: message.body.slice(0, 500),
+      }));
+    } finally {
+      setIsStructuring(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!form.title.trim()) return;
+    setIsSubmitting(true);
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: message.subject || message.body.slice(0, 50),
-          description: message.body.slice(0, 500),
-          priority: 'medium',
+          title: form.title,
+          description: form.description,
+          goal: form.goal,
+          priority: form.priority,
+          dueDate: form.deadline || undefined,
           sourceMessageId: message.id,
           sourceChannel: message.channel,
           sourceContent: message.body,
@@ -501,93 +503,165 @@ function QuickActionButtons({ message }: { message: UnifiedMessage }) {
       });
       const json = await res.json();
       if (json.success) {
-        setActionResult({ type: 'success', text: 'タスクを作成しました' });
+        setShowModal(false);
+        setResult({ type: 'success', text: 'タスクを登録しました' });
       } else {
-        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
+        setResult({ type: 'error', text: json.error || '登録に失敗' });
       }
     } catch {
-      setActionResult({ type: 'error', text: '通信エラー' });
+      setResult({ type: 'error', text: '通信エラー' });
     } finally {
-      setIsCreating(null);
-      setTimeout(() => setActionResult(null), 3000);
+      setIsSubmitting(false);
+      setTimeout(() => setResult(null), 3000);
     }
   };
 
-  const createMemo = async () => {
-    setIsCreating('memo');
-    try {
-      const res = await fetch('/api/memos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: `[${message.channel}] ${message.subject || ''}\n${message.from?.name || ''}: ${message.body.slice(0, 500)}`,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setActionResult({ type: 'success', text: 'メモに追加しました' });
-      } else {
-        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
-      }
-    } catch {
-      setActionResult({ type: 'error', text: '通信エラー' });
-    } finally {
-      setIsCreating(null);
-      setTimeout(() => setActionResult(null), 3000);
-    }
-  };
-
-  const createJob = async () => {
-    setIsCreating('job');
-    try {
-      const res = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: `${message.from?.name || ''}に返信: ${(message.subject || message.body.slice(0, 30))}`,
-          description: message.body.slice(0, 200),
-          sourceMessageId: message.id,
-          sourceChannel: message.channel,
-        }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setActionResult({ type: 'success', text: 'ジョブを作成しました' });
-      } else {
-        setActionResult({ type: 'error', text: json.error || '作成に失敗' });
-      }
-    } catch {
-      setActionResult({ type: 'error', text: '通信エラー' });
-    } finally {
-      setIsCreating(null);
-      setTimeout(() => setActionResult(null), 3000);
-    }
-  };
-
-  if (actionResult) {
+  if (result && !showModal) {
     return (
       <span className={cn(
         'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
-        actionResult.type === 'success'
+        result.type === 'success'
           ? 'bg-green-50 text-green-700 border border-green-200'
           : 'bg-red-50 text-red-700 border border-red-200'
       )}>
-        {actionResult.type === 'success' ? '✅' : '❌'} {actionResult.text}
+        {result.type === 'success' ? '✅' : '❌'} {result.text}
       </span>
     );
   }
 
   return (
+    <>
+      <Button variant="secondary" size="sm" onClick={openAndStructure}>
+        📋 タスク化
+      </Button>
+
+      {/* タスク登録モーダル */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl w-[480px] max-h-[80vh] overflow-y-auto mx-4">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-slate-900">タスクを登録</h3>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {isStructuring ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="animate-spin text-2xl">⟳</div>
+                  <p className="text-xs text-slate-500">AIがメッセージを分析中...</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* タイトル */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">タイトル</label>
+                    <input
+                      type="text"
+                      value={form.title}
+                      onChange={(e) => setForm({ ...form, title: e.target.value })}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* ゴール */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">ゴール</label>
+                    <input
+                      type="text"
+                      value={form.goal}
+                      onChange={(e) => setForm({ ...form, goal: e.target.value })}
+                      placeholder="何を達成するか"
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  {/* 詳細 */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">詳細</label>
+                    <textarea
+                      value={form.description}
+                      onChange={(e) => setForm({ ...form, description: e.target.value })}
+                      rows={3}
+                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    />
+                  </div>
+
+                  {/* 優先度＋期限 */}
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">優先度</label>
+                      <select
+                        value={form.priority}
+                        onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="high">高</option>
+                        <option value="medium">中</option>
+                        <option value="low">低</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-slate-600 mb-1">期限</label>
+                      <input
+                        type="date"
+                        value={form.deadline}
+                        onChange={(e) => setForm({ ...form, deadline: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* 懸念事項 */}
+                  {form.concerns && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">懸念事項</label>
+                      <textarea
+                        value={form.concerns}
+                        onChange={(e) => setForm({ ...form, concerns: e.target.value })}
+                        rows={2}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                      />
+                    </div>
+                  )}
+
+                  <p className="text-[10px] text-slate-400">AIが自動入力しました。内容を確認・編集してから登録してください。</p>
+
+                  {/* ボタン */}
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="ghost" size="sm" onClick={() => setShowModal(false)}>
+                      キャンセル
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleSubmit}
+                      disabled={isSubmitting || !form.title.trim()}
+                    >
+                      {isSubmitting ? '登録中...' : '登録する'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * インボックスアクションボタン群（ジョブ＋タスク）
+ */
+function InboxActionButtons({ message }: { message: UnifiedMessage }) {
+  return (
     <div className="flex items-center gap-1">
-      <Button variant="secondary" onClick={createTask} disabled={!!isCreating} size="sm">
-        {isCreating === 'task' ? '作成中...' : '📋 タスク'}
-      </Button>
-      <Button variant="secondary" onClick={createMemo} disabled={!!isCreating} size="sm">
-        {isCreating === 'memo' ? '作成中...' : '💡 メモ'}
-      </Button>
-      <Button variant="secondary" onClick={createJob} disabled={!!isCreating} size="sm">
-        {isCreating === 'job' ? '作成中...' : '⚡ ジョブ'}
-      </Button>
+      <JobActionButton message={message} />
+      <TaskActionButton message={message} />
     </div>
   );
 }
@@ -796,7 +870,6 @@ interface MessageDetailProps {
 
 export default function MessageDetail({ message, group, onSentMessage, onBlockSender }: MessageDetailProps) {
   const [showReply, setShowReply] = useState(false);
-  const { seedingId, seedResult, createSeed, projectCandidates, selectProject, dismissProjectModal } = useSeedAction();
   const [blockResult, setBlockResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // ブロック処理
@@ -831,8 +904,6 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
     );
   }
 
-  const seedProps = { seedingId, seedResult, onSeed: createSeed };
-
   // ブロック結果バナー
   const blockBanner = blockResult && (
     <div className={`mx-6 mt-2 px-3 py-2 rounded-lg text-xs font-medium ${
@@ -842,50 +913,18 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
     </div>
   );
 
-  // Phase 40c: プロジェクト選択モーダル
-  const projectModal = projectCandidates && projectCandidates.length > 0 && (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="bg-white rounded-xl shadow-xl p-5 w-80 mx-4">
-        <h3 className="text-sm font-bold text-slate-900 mb-1">プロジェクトを選択</h3>
-        <p className="text-xs text-slate-500 mb-3">このチャネルは複数のプロジェクトに紐づいています</p>
-        <div className="space-y-2 mb-3">
-          {projectCandidates.map((c) => (
-            <button
-              key={c.projectId}
-              onClick={() => selectProject(c.projectId)}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left bg-slate-50 border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
-            >
-              <span className="text-blue-500">📁</span>
-              <span className="text-slate-700">{c.projectName}</span>
-            </button>
-          ))}
-        </div>
-        <button
-          onClick={dismissProjectModal}
-          className="w-full px-3 py-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
-        >
-          スキップ（紐づけない）
-        </button>
-      </div>
-    </div>
-  );
-
   // グループが選択されている場合（複数メッセージのグループ）
   if (group && group.messageCount > 1) {
     return (
-      <>
-        {projectModal}
-        <GroupDetail
-          group={group}
-          showReply={showReply}
-          onToggleReply={() => setShowReply(!showReply)}
-          onCloseReply={() => setShowReply(false)}
-          onSentMessage={onSentMessage}
-          seedProps={seedProps}
-          onBlock={handleBlock}
-          blockBanner={blockBanner}
-        />
-      </>
+      <GroupDetail
+        group={group}
+        showReply={showReply}
+        onToggleReply={() => setShowReply(!showReply)}
+        onCloseReply={() => setShowReply(false)}
+        onSentMessage={onSentMessage}
+        onBlock={handleBlock}
+        blockBanner={blockBanner}
+      />
     );
   }
 
@@ -895,85 +934,34 @@ export default function MessageDetail({ message, group, onSentMessage, onBlockSe
   // メールで引用チェーンが解析されている場合は会話ビューで表示
   if (displayMessage.channel === 'email' && displayMessage.threadMessages && displayMessage.threadMessages.length > 1) {
     return (
-      <>
-        {projectModal}
-        <EmailThreadDetail
-          message={displayMessage}
-          showReply={showReply}
-          onToggleReply={() => setShowReply(!showReply)}
-          onCloseReply={() => setShowReply(false)}
-          onSentMessage={onSentMessage}
-          seedProps={seedProps}
-          onBlock={handleBlock}
-          blockBanner={blockBanner}
-        />
-      </>
-    );
-  }
-
-  return (
-    <>
-      {projectModal}
-      <SingleMessageDetail
+      <EmailThreadDetail
         message={displayMessage}
         showReply={showReply}
         onToggleReply={() => setShowReply(!showReply)}
         onCloseReply={() => setShowReply(false)}
         onSentMessage={onSentMessage}
-        seedProps={seedProps}
         onBlock={handleBlock}
         blockBanner={blockBanner}
       />
-    </>
+    );
+  }
+
+  return (
+    <SingleMessageDetail
+        message={displayMessage}
+        showReply={showReply}
+        onToggleReply={() => setShowReply(!showReply)}
+        onCloseReply={() => setShowReply(false)}
+        onSentMessage={onSentMessage}
+        onBlock={handleBlock}
+        blockBanner={blockBanner}
+      />
   );
 }
 
 /**
  * グループ表示：グループ内の全メッセージを会話形式で表示
  */
-interface SeedProps {
-  seedingId: string | null;
-  seedResult: { id: string; type: 'success' | 'error'; text: string } | null;
-  onSeed: (msg: UnifiedMessage, contextMessages?: ContextMessage[]) => void;
-}
-
-// Phase 40b: グループ/スレッドから前後3件のコンテキストを抽出するヘルパー
-function extractContextFromMessages(
-  messages: UnifiedMessage[],
-  targetId: string,
-): ContextMessage[] {
-  const idx = messages.findIndex(m => m.id === targetId);
-  if (idx === -1) {
-    // ターゲットが見つからない場合は直近7件
-    return messages.slice(-7).map(m => ({
-      from: m.from?.name || m.from?.address || '不明',
-      body: m.body,
-      timestamp: m.timestamp,
-      isTarget: m.id === targetId,
-    }));
-  }
-  const start = Math.max(0, idx - 3);
-  const end = Math.min(messages.length, idx + 4); // 前3件 + 本人 + 後3件
-  return messages.slice(start, end).map(m => ({
-    from: m.from?.name || m.from?.address || '不明',
-    body: m.body,
-    timestamp: m.timestamp,
-    isTarget: m.id === targetId,
-  }));
-}
-
-function extractContextFromThread(
-  threadMessages: { id: string; from: { name: string; address: string }; body: string; timestamp: string; isOwn: boolean }[],
-  targetTimestamp: string,
-): ContextMessage[] {
-  // スレッドは全件少ないことが多いので直近7件
-  return threadMessages.slice(-7).map(m => ({
-    from: m.from?.name || m.from?.address || '不明',
-    body: m.body,
-    timestamp: m.timestamp,
-    isTarget: m.timestamp === targetTimestamp,
-  }));
-}
 
 function GroupDetail({
   group,
@@ -981,7 +969,6 @@ function GroupDetail({
   onToggleReply,
   onCloseReply,
   onSentMessage,
-  seedProps,
   onBlock,
   blockBanner,
 }: {
@@ -990,15 +977,11 @@ function GroupDetail({
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
-  seedProps: SeedProps;
   onBlock?: (address: string, type: 'exact' | 'domain') => void;
   blockBanner?: React.ReactNode;
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
-
-  // Phase 40b: コンテキストメッセージを準備
-  const seedContext = extractContextFromMessages(group.messages, latestMessage.id);
 
   // 最新メッセージに自動スクロール
   useEffect(() => {
@@ -1057,23 +1040,14 @@ function GroupDetail({
             message={latestMessage}
             onClose={onCloseReply}
             onSentMessage={onSentMessage}
+            autoAiDraft
           />
         ) : (
           <div className="flex gap-2">
             <Button onClick={onToggleReply}>
-              ↩ 返信
+              ↩ 返信（AI下書き）
             </Button>
-            <Button variant="secondary" onClick={onToggleReply}>
-              🤖 AIで下書き
-            </Button>
-            <SeedButton
-              targetMessage={latestMessage}
-              contextMessages={seedContext}
-              seedingId={seedProps.seedingId}
-              seedResult={seedProps.seedResult}
-              onSeed={seedProps.onSeed}
-            />
-            <QuickActionButtons message={latestMessage} />
+            <InboxActionButtons message={latestMessage} />
             {onBlock && <BlockButton message={latestMessage} onBlock={onBlock} />}
           </div>
         )}
@@ -1156,7 +1130,6 @@ function EmailThreadDetail({
   onToggleReply,
   onCloseReply,
   onSentMessage,
-  seedProps,
   onBlock,
   blockBanner,
 }: {
@@ -1165,7 +1138,6 @@ function EmailThreadDetail({
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
-  seedProps: SeedProps;
   onBlock?: (address: string, type: 'exact' | 'domain') => void;
   blockBanner?: React.ReactNode;
 }) {
@@ -1333,25 +1305,11 @@ function EmailThreadDetail({
       {/* アクションバー */}
       <div className="p-4 border-t border-slate-200 bg-slate-50">
         {showReply ? (
-          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} />
+          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
         ) : (
           <div className="flex gap-2">
-            <Button onClick={onToggleReply}>↩ 返信</Button>
-            <Button variant="secondary" onClick={onToggleReply}>
-              🤖 AIで下書き
-            </Button>
-            <SeedButton
-              targetMessage={message}
-              contextMessages={
-                threadMessages.length > 0
-                  ? extractContextFromThread(threadMessages, message.timestamp)
-                  : [{ from: message.from?.name || '', body: message.body || message.subject || '', timestamp: message.timestamp, isTarget: true }]
-              }
-              seedingId={seedProps.seedingId}
-              seedResult={seedProps.seedResult}
-              onSeed={seedProps.onSeed}
-            />
-            <QuickActionButtons message={message} />
+            <Button onClick={onToggleReply}>↩ 返信（AI下書き）</Button>
+            <InboxActionButtons message={message} />
             {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
@@ -1374,7 +1332,6 @@ function SingleMessageDetail({
   onToggleReply,
   onCloseReply,
   onSentMessage,
-  seedProps,
   onBlock,
   blockBanner,
 }: {
@@ -1383,7 +1340,6 @@ function SingleMessageDetail({
   onToggleReply: () => void;
   onCloseReply: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
-  seedProps: SeedProps;
   onBlock?: (address: string, type: 'exact' | 'domain') => void;
   blockBanner?: React.ReactNode;
 }) {
@@ -1523,27 +1479,14 @@ function SingleMessageDetail({
             message={message}
             onClose={onCloseReply}
             onSentMessage={onSentMessage}
+            autoAiDraft
           />
         ) : (
           <div className="flex gap-2">
             <Button onClick={onToggleReply}>
-              ↩ 返信
+              ↩ 返信（AI下書き）
             </Button>
-            <Button variant="secondary" onClick={onToggleReply}>
-              🤖 AIで下書き
-            </Button>
-            <SeedButton
-              targetMessage={message}
-              contextMessages={
-                message.threadMessages && message.threadMessages.length > 0
-                  ? extractContextFromThread(message.threadMessages, message.timestamp)
-                  : [{ from: message.from?.name || '', body: message.body || message.subject || '', timestamp: message.timestamp, isTarget: true }]
-              }
-              seedingId={seedProps.seedingId}
-              seedResult={seedProps.seedResult}
-              onSeed={seedProps.onSeed}
-            />
-            <QuickActionButtons message={message} />
+            <InboxActionButtons message={message} />
             {onBlock && <BlockButton message={message} onBlock={onBlock} />}
           </div>
         )}
