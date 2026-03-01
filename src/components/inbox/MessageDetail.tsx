@@ -366,6 +366,7 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
         body: JSON.stringify({
           title: structured.title,
           description: structured.description,
+          type: jobType,
           sourceMessageId: message.id,
           sourceChannel: message.channel,
         }),

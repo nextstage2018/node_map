@@ -12,6 +12,7 @@ function mapJobFromDb(row: Record<string, unknown>) {
     id: row.id,
     title: row.title,
     description: row.description,
+    type: row.type,
     status: row.status,
     sourceMessageId: row.source_message_id,
     sourceChannel: row.source_channel,
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, sourceMessageId, sourceChannel, dueDate } = body;
+    const { title, description, type, sourceMessageId, sourceChannel, dueDate } = body;
 
     if (!title) {
       return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -69,6 +70,7 @@ export async function POST(request: NextRequest) {
     const insertData: Record<string, unknown> = {
       user_id: userId,
       title,
+      type: type || 'other',
       status: 'pending',
     };
 
