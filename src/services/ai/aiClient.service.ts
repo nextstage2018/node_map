@@ -19,11 +19,28 @@ function getApiKey(): string {
 }
 
 /**
+ * 返信下書きに渡す追加コンテキスト
+ */
+export interface ReplyContext {
+  contactContext?: {
+    notes: string;
+    aiContext: string;
+    companyName: string;
+    department: string;
+    relationshipType: string;
+  };
+  recentMessages?: string[];
+  threadContext?: string;
+}
+
+/**
  * メッセージに対するAI返信下書きを生成
+ * コンタクト情報・過去のやり取り・スレッド文脈を含めて生成
  */
 export async function generateReplyDraft(
   message: UnifiedMessage,
-  instruction?: string
+  instruction?: string,
+  context?: ReplyContext
 ): Promise<AiDraftResponse> {
   const apiKey = getApiKey();
 
@@ -35,27 +52,77 @@ export async function generateReplyDraft(
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
 
-    const systemPrompt = `あなたはビジネスメッセージの返信を下書きするアシスタントです。
-以下のルールに従ってください：
-- 日本のビジネスマナーに沿った丁寧な文面
+    // --- チャネル別のトーン指示 ---
+    const channelTone: Record<string, string> = {
+      email: 'フォーマルなビジネスメール。適切な挨拶・締めの言葉を含める。',
+      slack: 'やや柔軟でカジュアル。適度にフレンドリーに。長い挨拶は不要。',
+      chatwork: '標準的なビジネストーン。簡潔で読みやすく。',
+    };
+
+    // --- コンタクト情報からの指示を構築 ---
+    const contactParts: string[] = [];
+    if (context?.contactContext) {
+      const cc = context.contactContext;
+      if (cc.companyName) contactParts.push(`相手の会社: ${cc.companyName}`);
+      if (cc.department) contactParts.push(`部署: ${cc.department}`);
+      if (cc.relationshipType) contactParts.push(`関係性: ${cc.relationshipType}`);
+      if (cc.notes) contactParts.push(`メモ（口調・関係性などの情報）:\n${cc.notes}`);
+      if (cc.aiContext) contactParts.push(`AI分析による相手の特徴:\n${cc.aiContext}`);
+    }
+
+    // --- システムプロンプト ---
+    let systemPrompt = `あなたはビジネスメッセージの返信を下書きするアシスタントです。
+
+## 基本ルール
+- 日本のビジネスマナーに沿った文面
 - 簡潔かつ要点を押さえた内容
 - 元のメッセージの文脈を踏まえた返信
-- チャネルに応じた適切なトーン（メール=フォーマル、Slack=やや柔軟、Chatwork=標準）`;
 
-    const userPrompt = `以下のメッセージに対する返信を下書きしてください。
+## チャネル別トーン
+${channelTone[message.channel] || channelTone.email}`;
+
+    if (contactParts.length > 0) {
+      systemPrompt += `
+
+## 相手の情報（重要：この情報を踏まえて口調や内容を調整してください）
+${contactParts.join('\n')}`;
+    }
+
+    if (context?.recentMessages && context.recentMessages.length > 0) {
+      systemPrompt += `
+
+## 過去のやり取り（直近のメッセージ。文脈を把握してください）
+${context.recentMessages.join('\n')}`;
+    }
+
+    // --- ユーザープロンプト ---
+    let userPrompt = `以下のメッセージに対する返信を下書きしてください。
 
 【チャネル】${message.channel}
 【送信者】${message.from.name}
 【件名】${message.subject || 'なし'}
 【本文】
-${message.body}
+${message.body}`;
 
-${instruction ? `【追加指示】${instruction}` : ''}
+    if (context?.threadContext) {
+      userPrompt += `
+
+【スレッド内の過去の会話】
+${context.threadContext}`;
+    }
+
+    if (instruction) {
+      userPrompt += `
+
+【追加指示】${instruction}`;
+    }
+
+    userPrompt += `
 
 返信文のみを出力してください（「以下は返信案です」などの前置きは不要です）。`;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-5-20251101',
+      model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1000,
       system: systemPrompt,
       messages: [
