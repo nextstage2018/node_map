@@ -81,6 +81,7 @@ type Intent =
   | 'business_log'    // ビジネスログ
   | 'business_summary' // 活動要約・週間レポート
   | 'create_business_event' // ビジネスイベント登録
+  | 'knowledge_structuring' // ナレッジ構造化提案
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -141,6 +142,12 @@ function classifyIntent(message: string): Intent {
   if (m.includes('ドライブ') || m.includes('google drive') || m.includes('drive')) return 'documents';
   if (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('書類')) return 'documents';
   if (m.includes('添付') && (m.includes('一覧') || m.includes('見') || m.includes('検索'))) return 'documents';
+
+  // ナレッジ構造化提案（thought_mapより先に判定）
+  if (m.includes('ナレッジ') && (m.includes('提案') || m.includes('構造') || m.includes('整理') || m.includes('分類'))) return 'knowledge_structuring';
+  if (m.includes('キーワード') && (m.includes('整理') || m.includes('グループ') || m.includes('分類') || m.includes('提案'))) return 'knowledge_structuring';
+  if (m.includes('自動') && (m.includes('分類') || m.includes('構造化'))) return 'knowledge_structuring';
+  if (m.includes('ナレッジ') && m.includes('確認')) return 'knowledge_structuring';
 
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
@@ -278,6 +285,19 @@ async function fetchDataAndBuildCards(
         // エラー時は0のまま
       }
 
+      // ナレッジ提案数を取得
+      let pendingKnowledgeProposals = 0;
+      try {
+        const { count } = await supabase
+          .from('knowledge_clustering_proposals')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('status', 'pending');
+        pendingKnowledgeProposals = count || 0;
+      } catch {
+        // エラー時は0のまま
+      }
+
       // 次の予定を計算
       let nextEvent: { title: string; time: string; minutesUntil?: number } | undefined;
       const now = new Date();
@@ -306,6 +326,7 @@ async function fetchDataAndBuildCards(
           pendingJobCount,
           todayEventCount: calendarEvents.length,
           pendingFileCount,
+          pendingKnowledgeProposals,
           nextEvent,
         },
       });
@@ -633,6 +654,51 @@ async function fetchDataAndBuildCards(
           description: 'ナレッジノードの全体地図と思考の流れを可視化',
         },
       });
+    }
+
+    // ナレッジ構造化提案 → KnowledgeProposalCard
+    if (intent === 'knowledge_structuring') {
+      try {
+        // 待機中の提案を取得
+        const { data: pendingProposals } = await supabase
+          .from('knowledge_clustering_proposals')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+        if (pendingProposals && pendingProposals.length > 0) {
+          for (const proposal of pendingProposals) {
+            cards.push({
+              type: 'knowledge_proposal',
+              data: {
+                id: proposal.id,
+                proposedStructure: proposal.proposed_structure,
+                clusteringConfidence: proposal.clustering_confidence,
+                aiReasoning: proposal.ai_reasoning,
+                entryCount: proposal.entry_count,
+                proposalWeek: proposal.proposal_week,
+              },
+            });
+          }
+          parts.push(`ナレッジ構造化の提案が${pendingProposals.length}件あります。`);
+        } else {
+          // 提案がない場合、未確認キーワード数を表示
+          const { count } = await supabase
+            .from('knowledge_master_entries')
+            .select('*', { count: 'exact', head: true })
+            .eq('is_confirmed', false);
+
+          parts.push(`現在待機中のナレッジ提案はありません。未確認キーワード: ${count || 0}個`);
+          if ((count || 0) >= 5) {
+            parts.push('手動でクラスタリングを実行することもできます。');
+          }
+        }
+      } catch (err) {
+        console.error('[Agent] Knowledge structuring error:', err);
+        parts.push('ナレッジ提案の取得に失敗しました。');
+      }
     }
 
     // ビジネスログ → NavigateCard
@@ -1312,6 +1378,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? '共有するファイルを選んでください。カードから共有リンクを生成できます。'
         : '共有するファイルが見つかりませんでした。まずドキュメント一覧を確認してみてください。';
+    case 'knowledge_structuring':
+      return hasCards
+        ? 'ナレッジ構造化の提案を表示しました。AIが蓄積されたキーワードを分析し、領域/分野の構造を提案しています。内容を確認して「承認」または「却下」してください。'
+        : '現在待機中のナレッジ提案はありません。キーワードが十分に蓄積されると、週次で自動的に提案が生成されます。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'create_business_event':

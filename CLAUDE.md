@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）まで反映）
 
 ---
 
@@ -138,6 +138,60 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 45b | 秘書ファイル格納指示（store_file intent＋StorageConfirmationCard＋store-file API） | TBD |
 | Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | TBD |
 | Phase 46 | ビジネスログページ改善（コンポーネント分割・AI区別・フィルタ・ダッシュボード）＋ナレッジページ改善（CRUD UI・未確認ノード管理・キーワード詳細） | mainにマージ済み |
+| Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | TBD |
+
+---
+
+## Phase 47 実装内容（ナレッジ自動構造化）
+
+### 概要
+蓄積されたキーワード（knowledge_master_entries）をAIが週次でクラスタリングし、領域/分野の構造を自動提案。秘書チャットまたは/masterページから承認/却下するフロー。手動での領域/分野設定を不要にする。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 037_phase47_knowledge_auto_structure.sql
+CREATE TABLE knowledge_clustering_proposals (提案管理);
+ALTER TABLE knowledge_master_entries ADD COLUMN created_via TEXT DEFAULT 'manual';
+```
+
+### 新規ファイル
+- `supabase/migrations/037_phase47_knowledge_auto_structure.sql` — DBスキーマ
+- `src/services/nodemap/knowledgeClustering.service.ts` — クラスタリングサービス（AIクラスタリング＋提案CRUD＋承認/却下）
+- `src/app/api/cron/cluster-knowledge-weekly/route.ts` — 週次Cron（毎週月曜2:30）
+- `src/app/api/knowledge/proposals/route.ts` — 提案一覧/手動生成API
+- `src/app/api/knowledge/proposals/[id]/apply/route.ts` — 提案承認API
+- `src/app/api/knowledge/proposals/[id]/reject/route.ts` — 提案却下API
+
+### 変更ファイル
+- `src/app/api/agent/chat/route.ts` — `knowledge_structuring` intent追加、ブリーフィングにpendingKnowledgeProposals追加
+- `src/components/secretary/ChatCards.tsx` — `KnowledgeProposalCard` コンポーネント追加、BriefingSummaryCardにナレッジ提案数追加
+- `src/components/secretary/SecretaryChat.tsx` — approve/reject_knowledge_proposal アクション追加、「ナレッジ提案」サジェストチップ追加
+- `src/app/master/page.tsx` — 「AI提案履歴」タブ追加、待機中提案バッジ表示
+- `vercel.json` — cluster-knowledge-weekly Cron追加
+
+### 処理フロー
+```
+【蓄積（既存）】
+AI会話/メッセージCron/ビジネスイベント → extractKeywords() → knowledge_master_entries (is_confirmed=false)
+
+【週次クラスタリング（新規）】
+Cron cluster-knowledge-weekly（毎週月曜2:30）
+  → 未確認キーワード50個以上のユーザー対象
+  → Claude Sonnetでキーワード群を意味的クラスタリング
+  → knowledge_clustering_proposals に提案保存
+
+【秘書から確認（新規）】
+ブリーフィング or 「ナレッジ提案を見せて」
+  → KnowledgeProposalCard表示（ツリー構造＋信頼度＋AI説明）
+  → 承認 → 領域/分野自動作成 + キーワードconfirmed
+  → 却下 → 次回再提案
+```
+
+### 重要な実装ノート
+- **AIフォールバック**: ANTHROPIC_API_KEYなし時はカテゴリベース簡易分類
+- **ISO週番号で重複防止**: 同じ週に同じユーザーの提案は1回のみ
+- **最低5個**: 未確認キーワードが5個未満なら提案生成しない
+- **既存構造参照**: AIに既存の領域/分野をコンテキストとして渡し、整合性を保つ
 
 ---
 

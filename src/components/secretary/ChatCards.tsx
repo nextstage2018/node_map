@@ -7,7 +7,7 @@ import {
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
-  FolderInput, Check, X, ChevronDown,
+  FolderInput, Check, X, ChevronDown, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -32,7 +32,8 @@ export type CardType =
   | 'file_intake'         // ファイル確認・承認
   | 'storage_confirmation' // ファイル格納確認
   | 'business_summary'    // ビジネス活動要約
-  | 'business_event_form'; // ビジネスイベント登録フォーム
+  | 'business_event_form' // ビジネスイベント登録フォーム
+  | 'knowledge_proposal'; // ナレッジ構造化提案
 
 // カードデータ共通
 export interface CardData {
@@ -603,6 +604,7 @@ interface BriefingSummaryData {
   pendingJobCount: number;
   todayEventCount: number;
   pendingFileCount?: number;  // 未確認ファイル数
+  pendingKnowledgeProposals?: number; // ナレッジ提案数
   nextEvent?: {           // 次の予定
     title: string;
     time: string;         // "10:00〜11:00"
@@ -655,6 +657,15 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <div>
               <span className="text-lg font-bold text-amber-700">{summary.pendingFileCount}</span>
               <span className="text-[10px] text-amber-600 ml-1">確認待ちファイル</span>
+            </div>
+          </div>
+        )}
+        {(summary.pendingKnowledgeProposals ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            <div>
+              <span className="text-lg font-bold text-purple-700">{summary.pendingKnowledgeProposals}</span>
+              <span className="text-[10px] text-purple-600 ml-1">ナレッジ提案</span>
             </div>
           </div>
         )}
@@ -1293,6 +1304,14 @@ export function CardRenderer({
           onCancel={() => onAction?.('cancel_event_creation', {})}
         />
       );
+    case 'knowledge_proposal':
+      return (
+        <KnowledgeProposalCard
+          data={card.data}
+          onApprove={(proposalId) => onAction?.('approve_knowledge_proposal', { proposalId })}
+          onReject={(proposalId) => onAction?.('reject_knowledge_proposal', { proposalId })}
+        />
+      );
     default:
       return null;
   }
@@ -1757,6 +1776,162 @@ function BusinessEventFormCard({
             キャンセル
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// ナレッジ構造化提案カード（Phase 47）
+// ========================================
+interface KnowledgeProposalData {
+  id: string;
+  proposedStructure: {
+    domains: {
+      label: string;
+      description: string;
+      color: string;
+      fields: {
+        label: string;
+        description: string;
+        entries: { id: string; label: string; confidence: number }[];
+      }[];
+    }[];
+  };
+  clusteringConfidence: number;
+  aiReasoning: string;
+  entryCount: number;
+  proposalWeek: string;
+}
+
+function KnowledgeProposalCard({
+  data,
+  onApprove,
+  onReject,
+}: {
+  data: KnowledgeProposalData;
+  onApprove: (proposalId: string) => void;
+  onReject: (proposalId: string) => void;
+}) {
+  const [showReasoning, setShowReasoning] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const confidencePercent = Math.round((data.clusteringConfidence || 0) * 100);
+  const domains = data.proposedStructure?.domains || [];
+
+  const handleApprove = () => {
+    setIsProcessing(true);
+    onApprove(data.id);
+  };
+
+  const handleReject = () => {
+    setIsProcessing(true);
+    onReject(data.id);
+  };
+
+  return (
+    <div className="border-l-4 border-purple-400 bg-gradient-to-r from-purple-50 to-white rounded-lg p-4 shadow-sm">
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">🧠</span>
+          <h3 className="text-sm font-bold text-slate-800">
+            ナレッジ構造化提案
+          </h3>
+          <span className="text-xs text-slate-500">({data.entryCount}個のキーワード)</span>
+        </div>
+        <span className={cn(
+          'text-xs font-medium px-2 py-0.5 rounded-full',
+          confidencePercent >= 80 ? 'bg-green-100 text-green-700' :
+          confidencePercent >= 60 ? 'bg-yellow-100 text-yellow-700' :
+          'bg-red-100 text-red-700'
+        )}>
+          信頼度 {confidencePercent}%
+        </span>
+      </div>
+
+      {/* 提案構造ツリー */}
+      <div className="space-y-2 mb-3">
+        {domains.map((domain, dIdx) => (
+          <div key={dIdx} className="bg-white rounded-lg border border-slate-100 p-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={cn('px-2 py-0.5 rounded-full text-[10px] font-medium', domain.color || 'bg-slate-100 text-slate-700')}>
+                領域
+              </span>
+              <span className="text-sm font-semibold text-slate-800">{domain.label}</span>
+            </div>
+            <p className="text-xs text-slate-500 mb-2">{domain.description}</p>
+            {domain.fields.map((field, fIdx) => (
+              <div key={fIdx} className="ml-4 mb-1.5">
+                <div className="text-xs font-medium text-slate-600 mb-0.5">
+                  ├ {field.label}
+                </div>
+                <div className="ml-4 flex flex-wrap gap-1">
+                  {field.entries.slice(0, 5).map((entry, eIdx) => (
+                    <span key={eIdx} className="inline-block px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px]">
+                      {entry.label}
+                    </span>
+                  ))}
+                  {field.entries.length > 5 && (
+                    <span className="text-[10px] text-slate-400">
+                      +{field.entries.length - 5}個
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* AI説明（折りたたみ） */}
+      {data.aiReasoning && (
+        <div className="mb-3">
+          <button
+            onClick={() => setShowReasoning(!showReasoning)}
+            className="text-xs text-purple-600 hover:text-purple-800 transition-colors"
+          >
+            {showReasoning ? '▼' : '▶'} AI分析の説明
+          </button>
+          {showReasoning && (
+            <p className="mt-1 text-xs text-slate-600 bg-purple-50 p-2 rounded border border-purple-100 whitespace-pre-wrap">
+              {data.aiReasoning}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* アクションボタン */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleApprove}
+          disabled={isProcessing}
+          className={cn(
+            'flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
+            isProcessing
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-green-600 text-white hover:bg-green-700'
+          )}
+        >
+          {isProcessing ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Check className="w-4 h-4" />
+          )}
+          承認して適用
+        </button>
+        <button
+          onClick={handleReject}
+          disabled={isProcessing}
+          className={cn(
+            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+            isProcessing
+              ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+              : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+          )}
+        >
+          <X className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

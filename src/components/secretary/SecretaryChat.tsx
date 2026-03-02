@@ -32,6 +32,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
   { label: 'イベント記録', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '打ち合わせを記録したい', category: 'log' },
+  { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
 ];
 
 // ========================================
@@ -498,6 +499,69 @@ export default function SecretaryChat() {
           content: 'イベント登録をキャンセルしました。',
           timestamp: new Date().toISOString(),
         }]);
+        break;
+      }
+      case 'approve_knowledge_proposal': {
+        const proposalId = d?.proposalId as string;
+        if (proposalId) {
+          try {
+            const res = await fetch(`/api/knowledge/proposals/${proposalId}/apply`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            const result = await res.json();
+            if (result.success) {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `ナレッジ構造を確定しました。${result.message || ''}`,
+                cards: [{ type: 'action_result', data: { success: true, message: result.message || 'ナレッジ構造が更新されました' } }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `提案の適用に失敗しました: ${result.error}`,
+                cards: [{ type: 'action_result', data: { success: false, message: result.error } }],
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch (err) {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'ナレッジ提案の適用中にエラーが発生しました。',
+              cards: [{ type: 'action_result', data: { success: false, message: 'ネットワークエラー' } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'reject_knowledge_proposal': {
+        const rejectProposalId = d?.proposalId as string;
+        if (rejectProposalId) {
+          try {
+            await fetch(`/api/knowledge/proposals/${rejectProposalId}/reject`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '提案を却下しました。次回のクラスタリングで別の構造が提案されます。',
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '提案の却下に失敗しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
         break;
       }
       default: {
