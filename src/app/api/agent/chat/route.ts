@@ -866,7 +866,7 @@ async function fetchDataAndBuildCards(
     // Driveフォルダ/ドキュメント作成
     if (intent === 'create_drive_folder') {
       try {
-        const { isDriveConnected, createFolder: driveCreateFolder } = await import('@/services/drive/driveClient.service');
+        const { isDriveConnected, createFolder: driveCreateFolder, createShareLink } = await import('@/services/drive/driveClient.service');
         const driveConnected = await isDriveConnected(userId);
         if (!driveConnected) {
           parts.push('\n\n【Google Drive】\nGoogle Drive が未連携です。設定画面からGmailを再連携し、Driveスコープを有効にしてください。');
@@ -907,12 +907,26 @@ async function fetchDataAndBuildCards(
             folderName = `新規フォルダ_${new Date().toISOString().slice(0, 10)}`;
           }
 
-          const folder = await driveCreateFolder(userId, folderName);
+          // 親フォルダ（GOOGLE_DRIVE_ROOT_FOLDER_ID）配下に作成
+          const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || undefined;
+          const folder = await driveCreateFolder(userId, folderName, rootFolderId);
           if (folder) {
-            parts.push(`\n\n【Google Drive フォルダ作成完了】\n- フォルダ名: ${folder.name}\n- リンク: ${folder.webViewLink}`);
+            // 共有リンク（リンクを知っている全員が閲覧可能）を付与
+            let shareUrl = folder.webViewLink;
+            try {
+              const shareLink = await createShareLink(userId, folder.id, 'writer');
+              if (shareLink?.webViewLink) {
+                shareUrl = shareLink.webViewLink;
+              }
+            } catch (shareErr) {
+              console.error('[Agent] Drive share error:', shareErr);
+              // 共有失敗は無視（フォルダ自体は作成成功）
+            }
+
+            parts.push(`\n\n【Google Drive フォルダ作成完了】\n- フォルダ名: ${folder.name}\n- リンク: ${shareUrl}\n- 共有: リンクを知っている全員が編集可能`);
             cards.push({
               type: 'action_result',
-              data: { success: true, message: `フォルダ「${folder.name}」を作成しました` },
+              data: { success: true, message: `フォルダ「${folder.name}」を作成しました（共有リンク付き）` },
             });
           } else {
             parts.push('\n\n【Google Drive】\nフォルダの作成に失敗しました。Driveの権限を確認してください。');
