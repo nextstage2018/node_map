@@ -204,14 +204,18 @@ async function fetchDataAndBuildCards(
     // ブリーフィング → カレンダー予定取得 + サマリーカード + カレンダーカード + 期限アラート
     let calendarEvents: CalendarEvent[] = [];
     if (intent === 'briefing') {
-      // カレンダー予定を取得
+      // カレンダー予定を取得（Google Calendar API実データのみ）
       try {
         const calConnected = await isCalendarConnected(userId);
+        console.log('[Secretary API] ブリーフィング カレンダー接続:', calConnected);
         if (calConnected) {
           calendarEvents = await getTodayEvents(userId);
+          console.log('[Secretary API] ブリーフィング 取得予定:', calendarEvents.length, '件',
+            calendarEvents.map(e => ({ id: e.id, summary: e.summary, start: e.start })));
         }
       } catch (calErr) {
         console.error('[Secretary API] ブリーフィング カレンダー取得エラー:', calErr);
+        calendarEvents = []; // エラー時は空配列を明示（捏造防止）
       }
 
       // (1) ブリーフィングサマリーカード
@@ -422,16 +426,18 @@ async function fetchDataAndBuildCards(
     if (intent === 'calendar' || intent === 'schedule' || intent === 'briefing') {
       try {
         const calConnected = await isCalendarConnected(userId);
+        console.log('[Secretary API] カレンダー接続状態:', calConnected, 'userId:', userId);
         if (calConnected) {
           if (intent === 'calendar' || intent === 'briefing') {
             // ブリーフィング時は既に calendarEvents を取得済み
             const todayEvents = intent === 'briefing' && calendarEvents.length > 0
               ? calendarEvents
               : await getTodayEvents(userId);
+            console.log('[Secretary API] 取得した予定件数:', todayEvents.length, '予定ID一覧:', todayEvents.map(e => e.id));
             if (todayEvents.length > 0) {
-              parts.push(`\n\n【今日の予定（${todayEvents.length}件）】\n${formatEventsForContext(todayEvents)}`);
+              parts.push(`\n\n【今日の予定（Google Calendar APIから取得、${todayEvents.length}件）- この情報は実際のGoogleカレンダーから取得した確定データです】\n${formatEventsForContext(todayEvents)}`);
             } else {
-              parts.push('\n\n【今日の予定】\n予定なし');
+              parts.push('\n\n【今日の予定（Google Calendar APIから取得）】\n予定なし（Googleカレンダーに本日の予定は登録されていません）');
             }
           }
           if (intent === 'schedule') {
@@ -440,8 +446,9 @@ async function fetchDataAndBuildCards(
             const nextStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
             const nextEnd = new Date(nextStart.getTime() + 7 * 24 * 60 * 60 * 1000);
             const freeSlots = await findFreeSlots(userId, nextStart.toISOString(), nextEnd.toISOString(), 60);
+            console.log('[Secretary API] 空き時間検索結果:', freeSlots.length, '件');
             if (freeSlots.length > 0) {
-              parts.push(`\n\n【空き時間（今後7日間、Googleカレンダー＋NodeMap作業ブロック考慮済み）】\n${formatFreeSlotsForContext(freeSlots, 8)}`);
+              parts.push(`\n\n【空き時間（今後7日間、Googleカレンダー＋NodeMap作業ブロック考慮済み）- 実データに基づく計算結果】\n${formatFreeSlotsForContext(freeSlots, 8)}`);
             } else {
               parts.push('\n\n【空き時間】\n空き時間が見つかりませんでした');
             }
@@ -450,9 +457,13 @@ async function fetchDataAndBuildCards(
           if (intent === 'calendar' || intent === 'schedule') {
             parts.push('\n\n【カレンダー】\nGoogle Calendar が未連携です。設定画面から Gmail を再連携すると、カレンダー情報も取得できるようになります。');
           }
+          if (intent === 'briefing') {
+            parts.push('\n\n【今日の予定】\nGoogle Calendar未連携のため予定を取得できません');
+          }
         }
       } catch (calError) {
         console.error('[Secretary API] カレンダー取得エラー:', calError);
+        parts.push('\n\n【今日の予定】\nカレンダー情報の取得に失敗しました。予定データはありません');
       }
     }
 
@@ -790,6 +801,11 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 
   return `あなたはNodeMapのパーソナル秘書です。ユーザーの仕事全体を把握し、的確なサポートを提供します。
 
+## 最重要ルール（絶対遵守）
+- 【データ厳格性】下記「ユーザーのデータ」セクションに記載されている情報のみを報告すること。データに存在しない予定・メッセージ・タスクを絶対に捏造・推測・補完してはならない
+- 【カレンダー厳格性】カレンダー予定は「今日の予定」セクションに明示的にリストされたもののみ報告すること。セクションに「予定なし」「カレンダー未連携」「取得失敗」と記載されている場合は、予定がないことをそのまま伝えること。架空の予定を生成してはならない
+- 【不明時の対応】データが不足・取得失敗している場合は「確認できませんでした」と正直に伝えること。推測で補わない
+
 ## 基本ルール
 - 日本語で簡潔に回答する（1応答200文字以内を目安）
 - 具体的なデータに基づいてアドバイスする
@@ -826,7 +842,7 @@ ${intent === 'schedule'
     ? '日程調整の相談です。ユーザーのカレンダーの空き時間データを参照し、候補を提案してください。相手の名前がわかれば「○○さんとの打ち合わせ」として候補を出してください。'
     : ''}
 ${intent === 'calendar'
-    ? '予定の確認です。カレンダーデータを参照して、今日の予定を簡潔に報告してください。次の予定までの時間や、今日の残りのスケジュールの概要を含めると良いです。'
+    ? '予定の確認です。【重要】下記「ユーザーのデータ」の「今日の予定」セクションに記載された予定のみを報告してください。セクションに記載がないイベントは存在しません。「予定なし」と記載されている場合は「本日の予定はありません」と報告してください。架空の予定を絶対に追加しないでください。'
     : ''}
 
 ## 今日の日付
