@@ -88,6 +88,7 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
         body: JSON.stringify({
           name: companyName.trim(),
           domain: domainValue || undefined,
+          relationship_type: 'internal',
         }),
       });
       const data = await res.json();
@@ -115,12 +116,32 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
     setError(null);
 
     try {
+      // まず自社組織を検索（ステップ1で登録した組織を紐づけるため）
+      let ownOrgId: string | null = null;
+      try {
+        const orgRes = await fetch('/api/organizations');
+        const orgData = await orgRes.json();
+        if (orgData.success && orgData.data?.length > 0) {
+          // relationship_type='internal' の組織、またはドメインが一致する組織を探す
+          const ownOrg = orgData.data.find(
+            (org: { relationship_type?: string; domain?: string }) =>
+              org.relationship_type === 'internal' ||
+              (companyDomain && org.domain === companyDomain.trim())
+          ) || orgData.data.find(
+            (org: { name?: string }) => companyName && org.name === companyName.trim()
+          );
+          if (ownOrg) ownOrgId = ownOrg.id;
+        }
+      } catch { /* 組織取得失敗は無視 */ }
+
       for (const member of validMembers) {
+        // auto_ プレフィックスでないIDを使い、直接contact_personsに登録
+        const newId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const res = await fetch('/api/contacts', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            id: `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            id: newId,
             name: member.name.trim(),
             address: member.email.trim() || undefined,
             isTeamMember: true,
@@ -129,12 +150,25 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
             lastContactAt: new Date().toISOString(),
             relationshipType: 'internal',
             confirmed: true,
+            companyName: companyName.trim() || undefined,
           }),
         });
         const data = await res.json();
         if (!data.success) {
           setError(`${member.name} の登録に失敗: ${data.error}`);
           return false;
+        }
+
+        // 自社組織が見つかった場合、メンバーとして追加
+        const contactId = data.data?.id || newId;
+        if (ownOrgId) {
+          try {
+            await fetch(`/api/organizations/${ownOrgId}/members`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contact_ids: [contactId] }),
+            });
+          } catch { /* メンバー追加失敗は無視 */ }
         }
       }
       return true;
@@ -146,7 +180,7 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
     }
   };
 
-  // ステップ3: プロジェクト登録（ノードとして保存）
+  // ステップ3: プロジェクト登録（projectsテーブルに保存）
   const saveProject = async () => {
     if (!projectName.trim()) {
       // プロジェクト未入力はスキップ可能
@@ -156,13 +190,12 @@ export default function SetupWizard({ isOpen, onClose, onCompleted }: SetupWizar
     setError(null);
 
     try {
-      // Phase 30b: プロジェクト名をノードとして登録
-      const res = await fetch('/api/nodes', {
+      const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          label: projectName.trim(),
-          type: 'project',
+          name: projectName.trim(),
+          status: 'active',
         }),
       });
       const data = await res.json();

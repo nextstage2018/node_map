@@ -21,17 +21,16 @@ interface SuggestChip {
 }
 
 const SUGGEST_CHIPS: SuggestChip[] = [
-  { label: '今日の状況は？', icon: <Sun className="w-3.5 h-3.5" />, message: '今日の状況を教えて', category: 'general' },
+  { label: '今日やること', icon: <Sun className="w-3.5 h-3.5" />, message: '今日の状況を教えて', category: 'general' },
+  { label: 'プロジェクトを確認', icon: <ClipboardList className="w-3.5 h-3.5" />, message: 'プロジェクト一覧を見せて', category: 'log' },
+  { label: 'タスクを進める', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '進行中のタスクを見せて', category: 'task' },
   { label: '新着メッセージ', icon: <Inbox className="w-3.5 h-3.5" />, message: '新着メッセージを見せて', category: 'inbox' },
   { label: '対応が必要なこと', icon: <Zap className="w-3.5 h-3.5" />, message: '対応が必要なことは？', category: 'job' },
-  { label: 'タスクの状況', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '進行中のタスクを見せて', category: 'task' },
-  { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
-  { label: 'ビジネスログ', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '最近のビジネスログを見せて', category: 'log' },
   { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
   { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
   { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
-  { label: 'イベント記録', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '打ち合わせを記録したい', category: 'log' },
+  { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
   { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
 ];
 

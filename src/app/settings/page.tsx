@@ -80,6 +80,7 @@ export default function SettingsPage() {
 
   // Phase 30b: セットアップウィザード
   const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [hasOwnOrg, setHasOwnOrg] = useState<boolean | null>(null);
 
   // Phase 25: チャネル購読モーダル
   const [channelModal, setChannelModal] = useState<{
@@ -182,11 +183,30 @@ export default function SettingsPage() {
     }
   }, []);
 
+  // 自社組織の存在チェック
+  const checkOwnOrg = useCallback(async () => {
+    try {
+      const res = await fetch('/api/organizations');
+      const data = await res.json();
+      if (data.success && data.data?.length > 0) {
+        const hasInternal = data.data.some(
+          (org: { relationship_type?: string }) => org.relationship_type === 'internal'
+        );
+        setHasOwnOrg(hasInternal || data.data.length > 0);
+      } else {
+        setHasOwnOrg(false);
+      }
+    } catch {
+      setHasOwnOrg(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadTokens();
     loadProfile();
     loadSubscriptionCounts();
-  }, [loadTokens, loadProfile, loadSubscriptionCounts]);
+    checkOwnOrg();
+  }, [loadTokens, loadProfile, loadSubscriptionCounts, checkOwnOrg]);
 
   // OAuth認証コールバック結果チェック
   useEffect(() => {
@@ -346,7 +366,8 @@ export default function SettingsPage() {
     { id: 'channels', label: 'チャンネル接続' },
     { id: 'profile', label: 'プロフィール' },
     { id: 'notifications', label: '通知設定' },
-    { id: 'setup', label: '初回セットアップ' },
+    // 自社組織が未登録の場合のみセットアップタブを表示
+    ...(!hasOwnOrg ? [{ id: 'setup', label: '初回セットアップ' }] : []),
   ];
 
   return (
@@ -605,74 +626,14 @@ export default function SettingsPage() {
           {/* 通知設定タブ */}
           {activeTab === 'notifications' && (
             <Card variant="outlined" padding="lg" className="max-w-2xl">
-              <div className="space-y-4">
-                {/* メール通知 */}
-                <Card variant="flat" padding="md" className="bg-slate-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-slate-900">メール通知</h3>
-                      <p className="text-sm text-slate-500 mt-0.5">新着メッセージをメールで通知</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={notifications.emailNotification} onChange={(e) => setNotifications({ ...notifications, emailNotification: e.target.checked })} className="sr-only peer" />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                    </label>
-                  </div>
-                </Card>
-
-                {/* デスクトップ通知 */}
-                <Card variant="flat" padding="md" className="bg-slate-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-slate-900">デスクトップ通知</h3>
-                      <p className="text-sm text-slate-500 mt-0.5">ブラウザのプッシュ通知</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={notifications.desktopNotification} onChange={(e) => setNotifications({ ...notifications, desktopNotification: e.target.checked })} className="sr-only peer" />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                    </label>
-                  </div>
-                </Card>
-
-                {/* メンションのみ */}
-                <Card variant="flat" padding="md" className="bg-slate-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="font-medium text-slate-900">メンションのみ</h3>
-                      <p className="text-sm text-slate-500 mt-0.5">自分宛てのメンションのみ通知</p>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input type="checkbox" checked={notifications.mentionOnly} onChange={(e) => setNotifications({ ...notifications, mentionOnly: e.target.checked })} className="sr-only peer" />
-                      <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:bg-blue-600 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></div>
-                    </label>
-                  </div>
-                </Card>
-
-                {/* 通知頻度 */}
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1.5">通知頻度</label>
-                  <select
-                    value={notifications.digestFrequency}
-                    onChange={(e) => setNotifications({ ...notifications, digestFrequency: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="realtime">リアルタイム</option>
-                    <option value="hourly">1時間ごと</option>
-                    <option value="daily">1日1回</option>
-                  </select>
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                  <span className="text-3xl">🔔</span>
                 </div>
-
-                {/* 保存ボタン */}
-                <div className="pt-2">
-                  <Button
-                    onClick={handleSaveNotifications}
-                    disabled={loading}
-                    variant="primary"
-                    size="md"
-                  >
-                    {loading ? '保存中...' : '通知設定を保存'}
-                  </Button>
-                </div>
+                <h3 className="text-lg font-bold text-slate-700 mb-2">準備中</h3>
+                <p className="text-sm text-slate-500 max-w-sm">
+                  通知設定機能は現在開発中です。今後のアップデートで、メール通知やデスクトップ通知の設定が可能になります。
+                </p>
               </div>
             </Card>
           )}

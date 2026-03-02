@@ -481,8 +481,18 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'IDが必要です' }, { status: 400 });
     }
 
-    // 自動生成コンタクトの場合、contact_personsに新規登録
-    if (id.startsWith('auto_')) {
+    // 新規コンタクト登録（auto_ プレフィックスまたは team_ プレフィックス、または存在しないID）
+    // 既存チェック
+    let isNew = id.startsWith('auto_') || id.startsWith('team_');
+    if (!isNew) {
+      const { data: existing } = await supabase
+        .from('contact_persons')
+        .select('id')
+        .eq('id', id)
+        .maybeSingle();
+      if (!existing) isNew = true;
+    }
+    if (isNew) {
       const address = body.address || '';
       const channel = mainChannel || 'email';
       const newId = crypto.randomUUID();

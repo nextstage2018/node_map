@@ -73,6 +73,7 @@ type Intent =
   | 'schedule'        // 日程調整・空き時間
   | 'tasks'           // タスク状況
   | 'jobs'            // ジョブ・対応必要
+  | 'projects'        // プロジェクト一覧
   | 'documents'       // ドキュメント・ファイル一覧
   | 'file_intake'     // ファイル確認・承認フロー
   | 'store_file'      // ファイル格納指示
@@ -116,6 +117,9 @@ function classifyIntent(message: string): Intent {
   // メッセージ
   if (m.includes('メッセージ') || m.includes('メール') || m.includes('新着') || m.includes('受信')) return 'inbox';
   if (m.includes('誰から') || m.includes('連絡')) return 'inbox';
+
+  // プロジェクト一覧
+  if (m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('リスト') || m.includes('確認') || m.includes('見せて') || m.includes('見たい'))) return 'projects';
 
   // タスク
   if (m.includes('タスク') || m.includes('進行') || m.includes('やること') || m.includes('期限')) return 'tasks';
@@ -698,6 +702,47 @@ async function fetchDataAndBuildCards(
       } catch (err) {
         console.error('[Agent] Knowledge structuring error:', err);
         parts.push('ナレッジ提案の取得に失敗しました。');
+      }
+    }
+
+    // プロジェクト一覧
+    if (intent === 'projects') {
+      try {
+        const { data: projectList } = await supabase
+          .from('projects')
+          .select('id, name, status, created_at, organization_id, organizations(name)')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (projectList && projectList.length > 0) {
+          const projectLines = projectList.map((p: { name: string; status: string; organizations?: { name: string } | null }) => {
+            const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
+            return `- ${p.name}（${p.status || 'active'}）${orgName ? `[${orgName}]` : ''}`;
+          }).join('\n');
+          parts.push(`\n\n【プロジェクト一覧（${projectList.length}件）】\n${projectLines}`);
+
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/business-log',
+              label: 'ビジネスログでプロジェクトを管理',
+              description: `${projectList.length}件のプロジェクトがあります`,
+            },
+          });
+        } else {
+          parts.push('\n\n【プロジェクト】\nプロジェクトはまだ登録されていません。ビジネスログ画面から新規プロジェクトを作成できます。');
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/business-log',
+              label: 'ビジネスログでプロジェクトを作成',
+              description: '新しいプロジェクトを作成します',
+            },
+          });
+        }
+      } catch (err) {
+        console.error('[Agent] Projects fetch error:', err);
+        parts.push('プロジェクト情報の取得に失敗しました。');
       }
     }
 
@@ -1388,6 +1433,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'イベント登録フォームを表示しました。内容を入力して「記録する」を押してください。メッセージの内容からタイトルや種別を推定しています。'
         : 'イベント登録フォームの準備に失敗しました。もう一度お試しください。';
+    case 'projects':
+      return hasCards
+        ? 'プロジェクト一覧を確認しました。ビジネスログ画面で詳細を管理できます。'
+        : 'プロジェクトはまだ登録されていません。ビジネスログ画面から新規作成できます。';
     case 'business_log':
       return 'ビジネスログへのリンクを表示しました。クリックして開いてください。';
     default:
