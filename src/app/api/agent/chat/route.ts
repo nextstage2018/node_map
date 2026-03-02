@@ -80,6 +80,7 @@ type Intent =
   | 'thought_map'     // 思考マップ
   | 'business_log'    // ビジネスログ
   | 'business_summary' // 活動要約・週間レポート
+  | 'create_business_event' // ビジネスイベント登録
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -143,6 +144,12 @@ function classifyIntent(message: string): Intent {
 
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
+
+  // ビジネスイベント登録（「打ち合わせを記録して」「会議を登録」「イベント追加」）
+  if ((m.includes('記録') || m.includes('登録') || m.includes('追加')) && (m.includes('打ち合わせ') || m.includes('会議') || m.includes('電話') || m.includes('商談'))) return 'create_business_event';
+  if (m.includes('イベント') && (m.includes('記録') || m.includes('追加') || m.includes('登録') || m.includes('作成'))) return 'create_business_event';
+  if ((m.includes('記録') || m.includes('登録')) && (m.includes('活動') || m.includes('ビジネス'))) return 'create_business_event';
+  if (m.includes('ログ') && (m.includes('残') || m.includes('追加') || m.includes('記録'))) return 'create_business_event';
 
   // ビジネス活動要約
   if (m.includes('活動') && (m.includes('要約') || m.includes('まとめ') || m.includes('サマリー'))) return 'business_summary';
@@ -686,6 +693,15 @@ async function fetchDataAndBuildCards(
       }
     }
 
+    // ビジネスイベント登録 → プロジェクト・コンタクトを取得してフォームカード生成
+    if (intent === 'create_business_event') {
+      try {
+        await handleCreateBusinessEventIntent(supabase, userId, userMessage, cards);
+      } catch (eventError) {
+        console.error('[Secretary API] ビジネスイベント作成エラー:', eventError);
+      }
+    }
+
     // 返信下書き → 直近の未読メッセージからAI下書きを生成
     if (intent === 'reply_draft' && messages.length > 0) {
       const targetMsg = messages.find(m => !m.is_read) || messages[0];
@@ -946,6 +962,80 @@ async function handleCreateJobIntent(
       },
     });
   }
+}
+
+// ========================================
+// ビジネスイベント作成ハンドラー
+// ========================================
+async function handleCreateBusinessEventIntent(
+  supabase: SupabaseClient,
+  userId: string,
+  userMessage: string,
+  cards: CardData[]
+): Promise<void> {
+  // プロジェクト一覧を取得
+  const { data: projects } = await supabase
+    .from('projects')
+    .select('id, name, organization_id')
+    .eq('user_id', userId)
+    .order('name');
+
+  // コンタクト一覧を取得
+  const { data: contacts } = await supabase
+    .from('contact_persons')
+    .select('id, name, company_name')
+    .order('name')
+    .limit(50);
+
+  // ユーザーメッセージからイベント情報を推定
+  const m = userMessage.toLowerCase();
+  let suggestedType = 'note';
+  if (m.includes('打ち合わせ') || m.includes('会議') || m.includes('ミーティング') || m.includes('mtg')) suggestedType = 'meeting';
+  else if (m.includes('電話') || m.includes('コール')) suggestedType = 'call';
+  else if (m.includes('メール') || m.includes('mail')) suggestedType = 'email';
+  else if (m.includes('チャット') || m.includes('slack') || m.includes('chatwork')) suggestedType = 'chat';
+  else if (m.includes('決定') || m.includes('意思決定') || m.includes('決めた')) suggestedType = 'decision';
+
+  // タイトルの推定（「○○の打ち合わせを記録して」→「○○の打ち合わせ」）
+  let suggestedTitle = '';
+  const titleMatch = userMessage.match(/[「『](.+?)[」』]/);
+  if (titleMatch) {
+    suggestedTitle = titleMatch[1];
+  } else {
+    // 「○○を記録」「○○を登録」パターン
+    const actionMatch = userMessage.match(/(.+?)[をの](記録|登録|追加|作成)/);
+    if (actionMatch) {
+      suggestedTitle = actionMatch[1].replace(/^(ビジネス|イベント|ログ|活動)\s*/, '').trim();
+    }
+  }
+
+  // コンタクト名の推定
+  let suggestedContactIds: string[] = [];
+  if (contacts && contacts.length > 0) {
+    for (const c of contacts) {
+      if (userMessage.includes(c.name)) {
+        suggestedContactIds.push(c.id);
+      }
+    }
+  }
+
+  cards.push({
+    type: 'business_event_form',
+    data: {
+      suggestedTitle,
+      suggestedType,
+      suggestedContactIds,
+      projects: (projects || []).map((p: { id: string; name: string; organization_id: string | null }) => ({
+        id: p.id,
+        name: p.name,
+      })),
+      contacts: (contacts || []).map((c: { id: string; name: string; company_name: string | null }) => ({
+        id: c.id,
+        name: c.name,
+        companyName: c.company_name || '',
+      })),
+    },
+  });
 }
 
 // ========================================
@@ -1216,6 +1306,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
         : '共有するファイルが見つかりませんでした。まずドキュメント一覧を確認してみてください。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
+    case 'create_business_event':
+      return hasCards
+        ? 'イベント登録フォームを表示しました。内容を入力して「記録する」を押してください。メッセージの内容からタイトルや種別を推定しています。'
+        : 'イベント登録フォームの準備に失敗しました。もう一度お試しください。';
     case 'business_log':
       return 'ビジネスログへのリンクを表示しました。クリックして開いてください。';
     default:

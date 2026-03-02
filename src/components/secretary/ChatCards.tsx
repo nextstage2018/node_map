@@ -31,7 +31,8 @@ export type CardType =
   | 'document_list'       // ドキュメント一覧
   | 'file_intake'         // ファイル確認・承認
   | 'storage_confirmation' // ファイル格納確認
-  | 'business_summary';   // ビジネス活動要約
+  | 'business_summary'    // ビジネス活動要約
+  | 'business_event_form'; // ビジネスイベント登録フォーム
 
 // カードデータ共通
 export interface CardData {
@@ -1284,6 +1285,14 @@ export function CardRenderer({
           data={card.data}
         />
       );
+    case 'business_event_form':
+      return (
+        <BusinessEventFormCard
+          data={card.data}
+          onCreate={(eventData) => onAction?.('create_business_event', eventData)}
+          onCancel={() => onAction?.('cancel_event_creation', {})}
+        />
+      );
     default:
       return null;
   }
@@ -1543,6 +1552,211 @@ function BusinessSummaryCard({
             )}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// ビジネスイベント登録フォームカード
+// ========================================
+const EVENT_TYPES = [
+  { key: 'meeting', label: '打ち合わせ', color: 'bg-blue-100 text-blue-700' },
+  { key: 'call', label: '電話', color: 'bg-green-100 text-green-700' },
+  { key: 'email', label: 'メール', color: 'bg-orange-100 text-orange-700' },
+  { key: 'chat', label: 'チャット', color: 'bg-purple-100 text-purple-700' },
+  { key: 'decision', label: '意思決定', color: 'bg-red-100 text-red-700' },
+  { key: 'note', label: 'メモ', color: 'bg-slate-100 text-slate-600' },
+];
+
+interface BusinessEventFormData {
+  suggestedTitle: string;
+  suggestedType: string;
+  suggestedContactIds: string[];
+  projects: Array<{ id: string; name: string }>;
+  contacts: Array<{ id: string; name: string; companyName: string }>;
+}
+
+function BusinessEventFormCard({
+  data,
+  onCreate,
+  onCancel,
+}: {
+  data: BusinessEventFormData;
+  onCreate: (eventData: Record<string, unknown>) => void;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(data.suggestedTitle || '');
+  const [eventType, setEventType] = useState(data.suggestedType || 'note');
+  const [projectId, setProjectId] = useState('');
+  const [content, setContent] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState<string[]>(data.suggestedContactIds || []);
+  const [showContacts, setShowContacts] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const toggleContact = (id: string) => {
+    setSelectedContacts(prev =>
+      prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+    );
+  };
+
+  const handleCreate = () => {
+    if (!title.trim()) return;
+    setIsSubmitting(true);
+
+    // 参加者の名前をコンテンツに追加
+    let fullContent = content.trim();
+    if (selectedContacts.length > 0) {
+      const names = selectedContacts
+        .map(id => data.contacts.find(c => c.id === id)?.name || id)
+        .join(', ');
+      fullContent = `【参加者】${names}\n\n${fullContent}`;
+    }
+
+    onCreate({
+      title: title.trim(),
+      content: fullContent || null,
+      eventType,
+      projectId: projectId || null,
+      participants: selectedContacts,
+    });
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-blue-600" />
+          <h3 className="text-sm font-semibold text-blue-900">ビジネスイベント登録</h3>
+        </div>
+        <button
+          onClick={onCancel}
+          className="p-1 rounded hover:bg-blue-100 text-blue-400 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* イベント種別 */}
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1.5">種別</label>
+          <div className="flex flex-wrap gap-1.5">
+            {EVENT_TYPES.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setEventType(t.key)}
+                className={cn(
+                  'px-2.5 py-1 rounded-full text-xs font-medium transition-all',
+                  eventType === t.key ? 'ring-2 ring-offset-1 ring-blue-400' : '',
+                  t.color
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* タイトル */}
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">タイトル</label>
+          <input
+            type="text"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="例: A社との打ち合わせ"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoFocus
+          />
+        </div>
+
+        {/* プロジェクト */}
+        {data.projects.length > 0 && (
+          <div>
+            <label className="text-xs font-medium text-slate-500 block mb-1">プロジェクト</label>
+            <select
+              value={projectId}
+              onChange={e => setProjectId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">選択しない</option>
+              {data.projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* コンタクト（参加者） */}
+        {(eventType === 'meeting' || eventType === 'call') && data.contacts.length > 0 && (
+          <div>
+            <button
+              onClick={() => setShowContacts(!showContacts)}
+              className="flex items-center gap-1.5 text-xs font-medium text-slate-500 mb-1.5 hover:text-slate-700"
+            >
+              参加者 {selectedContacts.length > 0 && `(${selectedContacts.length}名)`}
+              <ChevronDown className={cn('w-3 h-3 transition-transform', showContacts && 'rotate-180')} />
+            </button>
+            {showContacts && (
+              <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-slate-50 rounded-lg">
+                {data.contacts.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => toggleContact(c.id)}
+                    className={cn(
+                      'px-2 py-1 rounded-full text-xs transition-colors',
+                      selectedContacts.includes(c.id)
+                        ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    )}
+                  >
+                    {c.name}{c.companyName ? ` (${c.companyName})` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 内容 */}
+        <div>
+          <label className="text-xs font-medium text-slate-500 block mb-1">内容（任意）</label>
+          <textarea
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            placeholder="詳細やメモを記入..."
+            rows={3}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+          />
+        </div>
+
+        {/* ボタン */}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={handleCreate}
+            disabled={!title.trim() || isSubmitting}
+            className={cn(
+              'flex-1 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5',
+              title.trim() && !isSubmitting
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+            )}
+          >
+            {isSubmitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            記録する
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+          >
+            キャンセル
+          </button>
+        </div>
       </div>
     </div>
   );

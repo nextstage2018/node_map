@@ -31,6 +31,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
   { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
+  { label: 'イベント記録', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '打ち合わせを記録したい', category: 'log' },
 ];
 
 // ========================================
@@ -452,6 +453,51 @@ export default function SecretaryChat() {
             timestamp: new Date().toISOString(),
           }]);
         }
+        break;
+      }
+      case 'create_business_event': {
+        const eventData = data as Record<string, unknown>;
+        try {
+          const res = await fetch('/api/business-events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: eventData.title,
+              content: eventData.content || null,
+              eventType: eventData.eventType || 'note',
+              projectId: eventData.projectId || null,
+            }),
+          });
+          const result = await res.json();
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            cards: [{
+              type: 'action_result',
+              data: result.success
+                ? { success: true, message: 'ビジネスイベントを登録しました', details: eventData.title as string }
+                : { success: false, message: 'イベント登録に失敗しました', details: result.error || '' },
+            }],
+            timestamp: new Date().toISOString(),
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'イベント登録中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      case 'cancel_event_creation': {
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: 'イベント登録をキャンセルしました。',
+          timestamp: new Date().toISOString(),
+        }]);
         break;
       }
       default: {
