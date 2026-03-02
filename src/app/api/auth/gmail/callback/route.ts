@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
                 ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
                 : null,
               email: userEmail,
+              scope: tokenData.scope || '',
             },
             is_active: true,
             connected_at: now,

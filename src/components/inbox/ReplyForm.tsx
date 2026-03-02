@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { UnifiedMessage } from '@/lib/types';
 import Button from '@/components/ui/Button';
 import { handleKnowledgeResponse } from '@/components/knowledge/KnowledgeToast';
@@ -12,21 +12,36 @@ interface ReplyFormProps {
   autoAiDraft?: boolean;
 }
 
+interface SuggestItem {
+  address: string;
+  name: string;
+  channel: string;
+  source: 'contact' | 'message_history';
+  companyName?: string;
+}
+
 /**
- * 宛先入力コンポーネント（タグ形式）
+ * 宛先入力コンポーネント（タグ形式 + サジェストドロップダウン）
  */
 function RecipientInput({
   label,
   values,
   onChange,
   placeholder,
+  channelFilter,
 }: {
   label: string;
   values: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
+  channelFilter?: string;
 }) {
   const [inputValue, setInputValue] = useState('');
+  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+  const suggestRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
   // Phase 29: メールアドレスの簡易バリデーション
   const isValidEmail = (email: string): boolean => {
@@ -34,24 +49,105 @@ function RecipientInput({
   };
   const [validationError, setValidationError] = useState('');
 
+  // サジェスト検索
+  const fetchSuggestions = useCallback(async (q: string) => {
+    if (q.length < 1) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    try {
+      const params = new URLSearchParams({ q });
+      if (channelFilter) params.set('channel', channelFilter);
+      const res = await fetch(`/api/contacts/suggest?${params}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        // 既に追加済みのアドレスを除外
+        const filtered = (data.data as SuggestItem[]).filter(
+          s => !values.includes(s.address)
+        );
+        setSuggestions(filtered);
+        setShowSuggestions(filtered.length > 0);
+        setSelectedIndex(-1);
+      }
+    } catch {
+      setSuggestions([]);
+    }
+  }, [channelFilter, values]);
+
+  // 入力変更時にデバウンスしてサジェスト検索
+  const handleInputChange = (val: string) => {
+    setInputValue(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchSuggestions(val.trim()), 200);
+  };
+
+  // サジェスト選択
+  const selectSuggestion = (item: SuggestItem) => {
+    if (!values.includes(item.address)) {
+      onChange([...values, item.address]);
+    }
+    setInputValue('');
+    setSuggestions([]);
+    setShowSuggestions(false);
+    setValidationError('');
+  };
+
+  // 外部クリックでサジェストを閉じる
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const addAddress = (trimmed: string) => {
+    const needsEmailCheck = label.match(/^(To|Cc|Bcc):$/);
+    if (trimmed && (!needsEmailCheck || isValidEmail(trimmed))) {
+      if (!values.includes(trimmed)) {
+        onChange([...values, trimmed]);
+        setValidationError('');
+      }
+    } else if (trimmed && !isValidEmail(trimmed)) {
+      setValidationError(`"${trimmed}" は有効なメールアドレスではありません`);
+      return;
+    }
+    setInputValue('');
+    setShowSuggestions(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if ((e.key === 'Enter' || e.key === ',' || e.key === ' ' || e.key === 'Tab') && inputValue.trim()) {
-      e.preventDefault();
-      const trimmed = inputValue.trim().replace(/,$/g, '');
-      // Phase 29: メールアドレスのバリデーション（label が To/Cc/Bcc の場合のみ）
-      if (trimmed && (label === '宛先:' || !label.match(/^(To|Cc|Bcc):$/)) || isValidEmail(trimmed)) {
-        if (trimmed && !values.includes(trimmed)) {
-          onChange([...values, trimmed]);
-          setValidationError('');
-        }
-      } else if (trimmed && !isValidEmail(trimmed)) {
-        setValidationError(`"${trimmed}" は有効なメールアドレスではありません`);
+    // サジェスト表示中のキーボード操作
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex(prev => Math.min(prev + 1, suggestions.length - 1));
         return;
       }
-      setInputValue('');
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex(prev => Math.max(prev - 1, -1));
+        return;
+      }
+      if (e.key === 'Enter' && selectedIndex >= 0) {
+        e.preventDefault();
+        selectSuggestion(suggestions[selectedIndex]);
+        return;
+      }
+    }
+
+    if ((e.key === 'Enter' || e.key === ',' || e.key === ' ' || e.key === 'Tab') && inputValue.trim()) {
+      e.preventDefault();
+      addAddress(inputValue.trim().replace(/,$/g, ''));
     }
     if (e.key === 'Backspace' && !inputValue && values.length > 0) {
       onChange(values.slice(0, -1));
+    }
+    if (e.key === 'Escape') {
+      setShowSuggestions(false);
     }
   };
 
@@ -60,52 +156,78 @@ function RecipientInput({
   };
 
   return (
-    <div className="flex gap-2 items-start">
-      <span className="text-slate-400 w-8 shrink-0 pt-1 text-xs">{label}</span>
-      <div className="flex-1 flex flex-wrap gap-1 min-h-[28px] items-center">
-        {values.map((v, i) => (
-          <span
-            key={`${v}-${i}`}
-            className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs"
-          >
-            {v}
-            <button
-              onClick={() => handleRemove(i)}
-              className="text-slate-400 hover:text-red-500 ml-0.5"
-              type="button"
+    <div className="relative" ref={suggestRef}>
+      <div className="flex gap-2 items-start">
+        <span className="text-slate-400 w-8 shrink-0 pt-1 text-xs">{label}</span>
+        <div className="flex-1 flex flex-wrap gap-1 min-h-[28px] items-center">
+          {values.map((v, i) => (
+            <span
+              key={`${v}-${i}`}
+              className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-xs"
             >
-              ×
-            </button>
-          </span>
-        ))}
-        <input
-          type="text"
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={() => {
-            const trimmed = inputValue.trim().replace(/,$/g, '');
-            if (trimmed) {
-              // Phase 29: onBlur時もバリデーション
-              const needsEmailCheck = label.match(/^(To|Cc|Bcc):$/);
-              if (!needsEmailCheck || isValidEmail(trimmed)) {
-                if (!values.includes(trimmed)) {
-                  onChange([...values, trimmed]);
+              {v}
+              <button
+                onClick={() => handleRemove(i)}
+                className="text-slate-400 hover:text-red-500 ml-0.5"
+                type="button"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => handleInputChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+            onBlur={() => {
+              // 少し遅延してblur（サジェストクリックを拾えるように）
+              setTimeout(() => {
+                const trimmed = inputValue.trim().replace(/,$/g, '');
+                if (trimmed && !showSuggestions) {
+                  addAddress(trimmed);
                 }
-                setValidationError('');
-              } else {
-                setValidationError(`"${trimmed}" は有効なメールアドレスではありません`);
-              }
-              setInputValue('');
-            }
-          }}
-          placeholder={values.length === 0 ? placeholder : ''}
-          className="flex-1 min-w-[120px] text-xs py-0.5 bg-transparent focus:outline-none"
-        />
+              }, 200);
+            }}
+            placeholder={values.length === 0 ? placeholder : ''}
+            className="flex-1 min-w-[120px] text-xs py-0.5 bg-transparent focus:outline-none"
+          />
+        </div>
       </div>
-      {/* Phase 29: バリデーションエラー表示 */}
+      {/* バリデーションエラー表示 */}
       {validationError && (
         <p className="text-[10px] text-red-500 ml-10 mt-0.5">{validationError}</p>
+      )}
+      {/* サジェストドロップダウン */}
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute left-8 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto">
+          {suggestions.map((item, idx) => (
+            <button
+              key={`${item.channel}-${item.address}`}
+              type="button"
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-blue-50 flex items-center gap-2 ${
+                idx === selectedIndex ? 'bg-blue-50' : ''
+              }`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                selectSuggestion(item);
+              }}
+            >
+              <span className="shrink-0 w-4 text-center">
+                {item.source === 'contact' ? '👤' : '📨'}
+              </span>
+              <span className="flex-1 truncate">
+                {item.name && <span className="font-medium text-slate-800">{item.name} </span>}
+                <span className="text-slate-500">&lt;{item.address}&gt;</span>
+              </span>
+              {item.companyName && (
+                <span className="text-[10px] text-slate-400 shrink-0">{item.companyName}</span>
+              )}
+              <span className="text-[10px] text-slate-300 shrink-0">{item.channel}</span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -298,13 +420,15 @@ export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft
             label="To:"
             values={toRecipients}
             onChange={setToRecipients}
-            placeholder="メールアドレスを入力"
+            placeholder="メールアドレスを入力（名前で検索可）"
+            channelFilter="email"
           />
           <RecipientInput
             label="Cc:"
             values={ccRecipients}
             onChange={setCcRecipients}
             placeholder="CC（任意）"
+            channelFilter="email"
           />
           {showBcc ? (
             <RecipientInput
@@ -312,6 +436,7 @@ export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft
               values={bccRecipients}
               onChange={setBccRecipients}
               placeholder="BCC（任意）"
+              channelFilter="email"
             />
           ) : (
             <button

@@ -176,10 +176,14 @@ export async function DELETE(request: NextRequest) {
 }
 
 // ヘルパー: トークン値をマスクする（セキュリティ対策）
+// scope / email はマスクしない（フロントでスコープ確認に使用）
+const UNMASK_KEYS = ['email', 'scope', 'team_name', 'account_name', 'expiry'];
 function maskTokenData(tokenData: Record<string, any>): Record<string, any> {
   const masked: Record<string, any> = {};
   for (const [key, value] of Object.entries(tokenData)) {
-    if (typeof value === 'string' && value.length > 8) {
+    if (UNMASK_KEYS.includes(key)) {
+      masked[key] = value;
+    } else if (typeof value === 'string' && value.length > 8) {
       masked[key] = value.slice(0, 4) + '****' + value.slice(-4);
     } else if (typeof value === 'string') {
       masked[key] = '****';

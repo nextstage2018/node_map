@@ -96,8 +96,8 @@ export default function SettingsPage() {
   });
 
   // チャンネル接続状態
-  const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string }>>({
-    gmail: { connected: false, accountName: '' },
+  const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean }>>({
+    gmail: { connected: false, accountName: '', hasCalendarScope: false },
     slack: { connected: false, accountName: '' },
     chatwork: { connected: false, accountName: '' },
   });
@@ -124,17 +124,21 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/tokens');
       const data = await res.json();
       if (data.success && data.data) {
-        const newChannels: Record<string, { connected: boolean; accountName: string }> = {
-          gmail: { connected: false, accountName: '' },
+        const newChannels: Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean }> = {
+          gmail: { connected: false, accountName: '', hasCalendarScope: false },
           slack: { connected: false, accountName: '' },
           chatwork: { connected: false, accountName: '' },
         };
         for (const token of data.data) {
           const serviceName = token.service_name;
           if (newChannels[serviceName]) {
+            const scope = token.token_data?.scope || '';
             newChannels[serviceName] = {
               connected: token.is_active,
               accountName: token.token_data?.email || token.token_data?.team_name || token.token_data?.account_name || '接続済み',
+              ...(serviceName === 'gmail' ? {
+                hasCalendarScope: scope.includes('calendar'),
+              } : {}),
             };
           }
         }
@@ -395,6 +399,31 @@ export default function SettingsPage() {
                 onConfigureChannels={() => openChannelModal('gmail', 'Gmail')}
                 subscriptionCount={subscriptionCounts.gmail}
               />
+
+              {/* カレンダー再認証バナー: Gmail接続済みだがカレンダースコープがない場合 */}
+              {channels.gmail.connected && !channels.gmail.hasCalendarScope && (
+                <Card variant="flat" padding="md" className="bg-amber-50 border border-amber-200 -mt-2">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl shrink-0">📅</span>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-amber-800 mb-1">
+                        カレンダー連携が必要です
+                      </h4>
+                      <p className="text-xs text-amber-700 mb-3">
+                        秘書AIのカレンダー機能（今日の予定表示・空き時間検索・予定作成）を使うには、
+                        Gmailを再連携してカレンダーへのアクセス権を追加してください。
+                      </p>
+                      <Button
+                        onClick={handleGmailAuth}
+                        variant="primary"
+                        size="sm"
+                      >
+                        📅 カレンダー権限を追加して再連携
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              )}
 
               {/* Slack（OAuth） */}
               <ChannelAuthCard
