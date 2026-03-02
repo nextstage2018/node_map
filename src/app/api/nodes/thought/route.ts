@@ -22,6 +22,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const taskId = searchParams.get('taskId') || undefined;
     const seedId = searchParams.get('seedId') || undefined;
+    const entryId = searchParams.get('entryId') || undefined;
+
+    // Phase 46: entryId指定時はナレッジエントリに紐づくタスク/種を返す
+    if (entryId) {
+      const tasks = await ThoughtNodeService.getTasksByEntryId(entryId);
+      return NextResponse.json({ success: true, data: tasks });
+    }
 
     if (!taskId && !seedId) {
       return NextResponse.json(

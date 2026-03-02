@@ -606,6 +606,47 @@ export class ThoughtNodeService {
   }
 
   /**
+   * Phase 46: ナレッジエントリIDに紐づくタスク/種の一覧を取得
+   */
+  static async getTasksByEntryId(entryId: string): Promise<any[]> {
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return [];
+
+    try {
+      const { data, error } = await sb
+        .from('thought_task_nodes')
+        .select('task_id, seed_id, tasks(id, title, status), seeds(id, content)')
+        .eq('node_id', entryId)
+        .limit(20);
+
+      if (error) {
+        console.error('[ThoughtNode] getTasksByEntryId エラー:', error);
+        // JOINエラー時のフォールバック
+        const { data: fallbackData } = await sb
+          .from('thought_task_nodes')
+          .select('task_id, seed_id')
+          .eq('node_id', entryId)
+          .limit(20);
+        return (fallbackData || []).map((row: any) => ({
+          task_id: row.task_id,
+          seed_id: row.seed_id,
+        }));
+      }
+
+      return (data || []).map((row: any) => ({
+        task_id: row.task_id,
+        seed_id: row.seed_id,
+        task_title: row.tasks?.title,
+        task_status: row.tasks?.status,
+        seed_title: row.seeds?.content?.slice(0, 50),
+      }));
+    } catch (error) {
+      console.error('[ThoughtNode] getTasksByEntryId 例外:', error);
+      return [];
+    }
+  }
+
+  /**
    * ユーザーの未確認ノードを取得（週次振り返り用）
    */
   static async getUnconfirmedNodes(userId: string): Promise<{

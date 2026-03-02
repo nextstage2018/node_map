@@ -41,3 +41,40 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+// PUT: 分野更新
+export async function PUT(req: NextRequest) {
+  try {
+    await getServerUserId();
+    const body = await req.json();
+    const { id, name, description, domainId } = body;
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'id は必須です' }, { status: 400 });
+    }
+    const result = await KnowledgeMasterService.updateField(id, { name, description, domainId });
+    return NextResponse.json({ success: true, data: result });
+  } catch (e) {
+    return NextResponse.json(
+      { success: false, error: e instanceof Error ? e.message : '分野の更新に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE: 分野削除
+export async function DELETE(req: NextRequest) {
+  try {
+    await getServerUserId();
+    const id = req.nextUrl.searchParams.get('id');
+    if (!id) {
+      return NextResponse.json({ success: false, error: 'id は必須です' }, { status: 400 });
+    }
+    await KnowledgeMasterService.deleteField(id);
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    return NextResponse.json(
+      { success: false, error: e instanceof Error ? e.message : '分野の削除に失敗しました' },
+      { status: 500 }
+    );
+  }
+}

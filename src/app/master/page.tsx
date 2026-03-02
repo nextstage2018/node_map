@@ -1,10 +1,12 @@
+// Phase 46: ナレッジ — CRUD UI + 未確認ノード管理 + キーワード詳細
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import DomainTree from '@/components/master/DomainTree';
 import MasterStats from '@/components/master/MasterStats';
+import UnconfirmedPanel from '@/components/master/UnconfirmedPanel';
 import { LoadingState } from '@/components/ui/EmptyState';
 import type { KnowledgeHierarchy } from '@/lib/types';
 
@@ -22,45 +24,42 @@ export default function MasterPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const [hierRes, statsRes] = await Promise.all([
-          fetch('/api/master'),
-          fetch('/api/master/domains'),
-        ]);
-        const hierData = await hierRes.json();
-        const domainsData = await statsRes.json();
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [hierRes, statsRes] = await Promise.all([
+        fetch('/api/master'),
+        fetch('/api/master/domains'),
+      ]);
+      const hierData = await hierRes.json();
+      const domainsData = await statsRes.json();
 
-        if (hierData.success) {
-          setHierarchy(hierData.data);
-          // 統計を階層データから計算
-          const domainStats: DomainStat[] = hierData.data.domains.map(
-            (d: KnowledgeHierarchy['domains'][0]) => ({
-              domainId: d.id,
-              domainName: d.name,
-              color: d.color,
-              nodeCount: d.fields.reduce(
-                (sum: number, f: KnowledgeHierarchy['domains'][0]['fields'][0]) => sum + f.nodeCount,
-                0
-              ),
-              fieldCount: d.fields.length,
-            })
-          );
-          setStats(domainStats);
-        }
-
-        // domainsDataは将来の拡張用（個別操作時）
-        void domainsData;
-      } catch {
-        // エラーハンドリング
-      } finally {
-        setIsLoading(false);
+      if (hierData.success) {
+        setHierarchy(hierData.data);
+        const domainStats: DomainStat[] = hierData.data.domains.map(
+          (d: KnowledgeHierarchy['domains'][0]) => ({
+            domainId: d.id,
+            domainName: d.name,
+            color: d.color,
+            nodeCount: d.fields.reduce(
+              (sum: number, f: KnowledgeHierarchy['domains'][0]['fields'][0]) => sum + f.nodeCount,
+              0
+            ),
+            fieldCount: d.fields.length,
+          })
+        );
+        setStats(domainStats);
       }
-    };
-    fetchData();
+
+      void domainsData;
+    } catch {
+      // エラーハンドリング
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
     <AppLayout>
@@ -68,7 +67,6 @@ export default function MasterPage() {
         title="ナレッジ"
         subtitle="組織共通の知識分類体系（領域 → 分野 → キーワード）"
       >
-        {/* 検索入力を ContextBar に統合 */}
         {!isLoading && (
           <div className="relative w-64">
             <input
@@ -97,6 +95,9 @@ export default function MasterPage() {
             <LoadingState />
           ) : (
             <>
+              {/* 未確認ノードパネル */}
+              <UnconfirmedPanel onConfirmed={fetchData} />
+
               {/* 統計カード */}
               {hierarchy && (
                 <MasterStats
@@ -106,9 +107,13 @@ export default function MasterPage() {
                 />
               )}
 
-              {/* ツリー表示 */}
+              {/* ツリー表示（CRUD対応） */}
               {hierarchy && (
-                <DomainTree hierarchy={hierarchy} searchQuery={searchQuery} />
+                <DomainTree
+                  hierarchy={hierarchy}
+                  searchQuery={searchQuery}
+                  onDataChanged={fetchData}
+                />
               )}
             </>
           )}

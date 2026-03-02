@@ -137,6 +137,52 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 45a | URL検出（Google Docs/Sheets/Drive）＋Slack/Chatwork添付ファイル自動取り込み＋全チャネルCron対応 | TBD |
 | Phase 45b | 秘書ファイル格納指示（store_file intent＋StorageConfirmationCard＋store-file API） | TBD |
 | Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | TBD |
+| Phase 46 | ビジネスログページ改善（コンポーネント分割・AI区別・フィルタ・ダッシュボード）＋ナレッジページ改善（CRUD UI・未確認ノード管理・キーワード詳細） | mainにマージ済み |
+
+---
+
+## Phase 46 実装内容（ビジネスログ + ナレッジ ページ改善）
+
+### 概要
+/business-log と /master の2ページを実用レベルに改善。ビジネスログはpage.tsxを750行から250行に分割し、AI自動イベント区別・フィルタ・ダッシュボードを追加。ナレッジはCRUD UI・未確認ノード管理・キーワード詳細パネルを追加。
+
+### ビジネスログ改善
+
+**コンポーネント分割**:
+- `src/components/business-log/types.ts` — 共有型定義・定数・ユーティリティ・EventFilter型
+- `src/components/business-log/ProjectSidebar.tsx` — プロジェクトサイドバー（一覧・作成フォーム）
+- `src/components/business-log/EventTimeline.tsx` — イベントタイムライン（フィルタ・AI区別・週間要約カード）
+- `src/components/business-log/EventForm.tsx` — イベント作成フォーム（種別・参加者・議事録・意思決定ログ）
+- `src/components/business-log/EventDetail.tsx` — イベント詳細パネル（編集・削除・AI生成表示・コンタクト・ソース）
+- `src/components/business-log/ChannelPanel.tsx` — チャネル設定・メッセージ一覧・ドキュメント一覧
+- `src/components/business-log/Dashboard.tsx` — 全体ダッシュボード（統計カード・週間要約・プロジェクト別アクティビティ・直近イベント）
+
+**新機能**:
+- AI自動生成イベント（ai_generated=true）にBotラベル表示
+- AI週間要約（summary_period付きイベント）を折りたたみサマリーカードで表示
+- イベント種別・日付範囲・AI生成のみフィルタ
+- プロジェクト未選択時に全プロジェクト横断の全体ダッシュボード表示
+
+### ナレッジ改善
+
+**新規ファイル**:
+- `src/components/master/UnconfirmedPanel.tsx` — 未確認ノード管理パネル（一括承認・個別承認・削除）
+
+**変更ファイル**:
+- `src/components/master/DomainTree.tsx` — CRUD対応に全面改修（領域/分野/キーワードの追加・編集・削除、インラインフォーム、同義語編集、関連タスク表示）
+- `src/app/master/page.tsx` — UnconfirmedPanel追加、onDataChangedによるデータ再読み込み対応
+- `src/app/api/master/domains/route.ts` — PUT/DELETE追加
+- `src/app/api/master/fields/route.ts` — PUT/DELETE追加
+- `src/app/api/master/entries/route.ts` — POST/PUT/DELETE追加
+- `src/services/nodemap/knowledgeMaster.service.ts` — updateDomain/deleteDomain/updateField/deleteField/addEntry/updateEntry/deleteEntry メソッド追加
+- `src/app/api/nodes/thought/route.ts` — entryIdパラメータ対応（ナレッジエントリに紐づくタスク/種を返す）
+- `src/services/nodemap/thoughtNode.service.ts` — getTasksByEntryId メソッド追加
+
+### 重要な実装ノート
+- **BusinessEvent型拡張**: ai_generated/summary_period/source_message_id/source_channel/event_date/contact_persons/projects を追加
+- **EVENT_TYPE_CONFIG拡張**: document_received/document_submitted/summary を追加（AI自動生成イベント用）
+- **キーワード手動登録**: IDは `me_manual_${Date.now()}_${random}` で生成、is_confirmed=true（手動登録は即確認済み）
+- **DomainTree onDataChanged**: CRUD操作後にpage.tsxのfetchDataを呼び出してデータを再読み込み
 
 ---
 

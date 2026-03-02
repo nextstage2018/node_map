@@ -845,4 +845,158 @@ export class KnowledgeMasterService {
         };
       });
   }
+
+  // ===== Phase 46: CRUD メソッド追加 =====
+
+  /** 領域更新 */
+  static async updateDomain(
+    id: string,
+    updates: { name?: string; description?: string; color?: string }
+  ): Promise<KnowledgeDomain | null> {
+    const sb = getSupabase();
+    if (sb) {
+      const updateData: Record<string, any> = {};
+      if (updates.name) updateData.name = updates.name;
+      if (updates.description) updateData.description = updates.description;
+      if (updates.color) updateData.color = updates.color;
+
+      const { data, error } = await sb
+        .from('knowledge_domains')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return {
+          id: data.id, name: data.name, description: data.description,
+          color: data.color, sortOrder: data.sort_order, createdAt: data.created_at,
+        };
+      }
+    }
+    return null;
+  }
+
+  /** 領域削除 */
+  static async deleteDomain(id: string): Promise<void> {
+    const sb = getSupabase();
+    if (sb) {
+      await sb.from('knowledge_domains').delete().eq('id', id);
+    }
+  }
+
+  /** 分野更新 */
+  static async updateField(
+    id: string,
+    updates: { name?: string; description?: string; domainId?: string }
+  ): Promise<KnowledgeField | null> {
+    const sb = getSupabase();
+    if (sb) {
+      const updateData: Record<string, any> = {};
+      if (updates.name) updateData.name = updates.name;
+      if (updates.description) updateData.description = updates.description;
+      if (updates.domainId) updateData.domain_id = updates.domainId;
+
+      const { data, error } = await sb
+        .from('knowledge_fields')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return {
+          id: data.id, domainId: data.domain_id, name: data.name,
+          description: data.description, sortOrder: data.sort_order, createdAt: data.created_at,
+        };
+      }
+    }
+    return null;
+  }
+
+  /** 分野削除 */
+  static async deleteField(id: string): Promise<void> {
+    const sb = getSupabase();
+    if (sb) {
+      await sb.from('knowledge_fields').delete().eq('id', id);
+    }
+  }
+
+  /** キーワード追加 */
+  static async addEntry(
+    fieldId: string | null,
+    label: string,
+    synonyms: string[],
+    description: string | null
+  ): Promise<KnowledgeMasterEntry> {
+    const sb = getSupabase();
+    const now = new Date().toISOString();
+    const id = `me_manual_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    if (sb) {
+      const { data, error } = await sb
+        .from('knowledge_master_entries')
+        .insert({
+          id,
+          field_id: fieldId,
+          label,
+          synonyms: synonyms || [],
+          description: description || null,
+          is_confirmed: true,
+          created_at: now,
+        })
+        .select()
+        .single();
+
+      if (!error && data) {
+        return {
+          id: data.id, fieldId: data.field_id, label: data.label,
+          synonyms: data.synonyms || [], description: data.description,
+          createdAt: data.created_at,
+        };
+      }
+    }
+
+    return { id, fieldId: fieldId || '', label, synonyms, description: description || undefined, createdAt: now };
+  }
+
+  /** キーワード更新（同義語含む） */
+  static async updateEntry(
+    id: string,
+    updates: { label?: string; synonyms?: string[]; description?: string; fieldId?: string }
+  ): Promise<KnowledgeMasterEntry | null> {
+    const sb = getSupabase();
+    if (sb) {
+      const updateData: Record<string, any> = {};
+      if (updates.label) updateData.label = updates.label;
+      if (updates.synonyms !== undefined) updateData.synonyms = updates.synonyms;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.fieldId !== undefined) updateData.field_id = updates.fieldId;
+
+      const { data, error } = await sb
+        .from('knowledge_master_entries')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (!error && data) {
+        return {
+          id: data.id, fieldId: data.field_id, label: data.label,
+          synonyms: data.synonyms || [], description: data.description,
+          createdAt: data.created_at,
+        };
+      }
+    }
+    return null;
+  }
+
+  /** キーワード削除 */
+  static async deleteEntry(id: string): Promise<void> {
+    const sb = getSupabase();
+    if (sb) {
+      // thought_task_nodesの紐づけも削除される（ON DELETE CASCADE）
+      await sb.from('knowledge_master_entries').delete().eq('id', id);
+    }
+  }
 }
