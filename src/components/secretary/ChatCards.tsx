@@ -6,6 +6,7 @@ import {
   Mail, MessageSquare, Hash, Clock, CheckCircle2, XCircle,
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
+  Calendar, AlertTriangle, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -15,14 +16,17 @@ import { cn } from '@/lib/utils';
 
 // 秘書AIが返すカードの種類
 export type CardType =
-  | 'inbox_summary'    // メッセージ要約一覧
-  | 'message_detail'   // 個別メッセージ詳細
-  | 'job_approval'     // ジョブ承認カード
-  | 'reply_draft'      // 返信下書き承認カード
-  | 'task_created'     // タスク作成完了
-  | 'task_resume'      // タスク再開提案
-  | 'navigate'         // 画面遷移カード
-  | 'action_result';   // アクション実行結果
+  | 'inbox_summary'       // メッセージ要約一覧
+  | 'message_detail'      // 個別メッセージ詳細
+  | 'job_approval'        // ジョブ承認カード
+  | 'reply_draft'         // 返信下書き承認カード
+  | 'task_created'        // タスク作成完了
+  | 'task_resume'         // タスク再開提案
+  | 'navigate'            // 画面遷移カード
+  | 'action_result'       // アクション実行結果
+  | 'briefing_summary'    // ブリーフィングサマリー
+  | 'calendar_events'     // カレンダー予定一覧
+  | 'deadline_alert';     // 期限アラート
 
 // カードデータ共通
 export interface CardData {
@@ -583,6 +587,212 @@ export function ReplyDraftCard({
 }
 
 // ========================================
+// ブリーフィングサマリーカード
+// ========================================
+interface BriefingSummaryData {
+  date: string;           // 表示日付（例: "3月2日（月）"）
+  unreadCount: number;
+  urgentCount: number;
+  activeTaskCount: number;
+  pendingJobCount: number;
+  todayEventCount: number;
+  nextEvent?: {           // 次の予定
+    title: string;
+    time: string;         // "10:00〜11:00"
+    minutesUntil?: number;
+  };
+}
+
+export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData }) {
+  return (
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-3 border-b border-blue-100 flex items-center gap-2">
+        <TrendingUp className="w-4 h-4 text-blue-600" />
+        <span className="text-xs font-semibold text-blue-800">{summary.date} のブリーフィング</span>
+      </div>
+      <div className="px-4 py-3 grid grid-cols-2 gap-3">
+        <div className="flex items-center gap-2">
+          <Mail className="w-4 h-4 text-slate-500" />
+          <div>
+            <span className="text-lg font-bold text-slate-800">{summary.unreadCount}</span>
+            <span className="text-[10px] text-slate-500 ml-1">未読</span>
+            {summary.urgentCount > 0 && (
+              <span className="text-[10px] text-red-600 ml-1">({summary.urgentCount}件 緊急)</span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <CheckSquare className="w-4 h-4 text-slate-500" />
+          <div>
+            <span className="text-lg font-bold text-slate-800">{summary.activeTaskCount}</span>
+            <span className="text-[10px] text-slate-500 ml-1">進行中タスク</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-slate-500" />
+          <div>
+            <span className="text-lg font-bold text-slate-800">{summary.pendingJobCount}</span>
+            <span className="text-[10px] text-slate-500 ml-1">未処理ジョブ</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-slate-500" />
+          <div>
+            <span className="text-lg font-bold text-slate-800">{summary.todayEventCount}</span>
+            <span className="text-[10px] text-slate-500 ml-1">今日の予定</span>
+          </div>
+        </div>
+      </div>
+      {summary.nextEvent && (
+        <div className="px-4 py-2 bg-white/60 border-t border-blue-100 flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 text-blue-600" />
+          <span className="text-xs text-blue-800">
+            次の予定: <span className="font-medium">{summary.nextEvent.title}</span>
+            <span className="text-blue-600 ml-1">({summary.nextEvent.time})</span>
+            {summary.nextEvent.minutesUntil !== undefined && summary.nextEvent.minutesUntil > 0 && (
+              <span className="text-blue-500 ml-1">あと{summary.nextEvent.minutesUntil}分</span>
+            )}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// カレンダー予定カード
+// ========================================
+interface CalendarEventItem {
+  id: string;
+  title: string;
+  startTime: string;     // "10:00"
+  endTime: string;       // "11:00"
+  location?: string;
+  isAllDay?: boolean;
+  isNow?: boolean;       // 現在進行中
+}
+
+interface CalendarEventsData {
+  date: string;           // "今日" or "3月2日"
+  events: CalendarEventItem[];
+}
+
+export function CalendarEventsCard({ calendar }: { calendar: CalendarEventsData }) {
+  return (
+    <div className="bg-white rounded-xl border border-purple-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+        <Calendar className="w-4 h-4 text-purple-600" />
+        <span className="text-xs font-semibold text-purple-800">{calendar.date}の予定 {calendar.events.length}件</span>
+      </div>
+      {calendar.events.length === 0 ? (
+        <div className="px-4 py-3 text-xs text-slate-400">予定はありません</div>
+      ) : (
+        <div className="divide-y divide-slate-100">
+          {calendar.events.map((ev) => (
+            <div
+              key={ev.id}
+              className={cn(
+                'px-4 py-2.5 flex items-center gap-3',
+                ev.isNow && 'bg-purple-50/50'
+              )}
+            >
+              <div className="w-14 shrink-0">
+                {ev.isAllDay ? (
+                  <span className="text-[10px] font-medium text-purple-600 bg-purple-100 px-1.5 py-0.5 rounded">終日</span>
+                ) : (
+                  <span className={cn('text-xs font-medium', ev.isNow ? 'text-purple-700' : 'text-slate-600')}>
+                    {ev.startTime}
+                  </span>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className={cn('text-xs truncate', ev.isNow ? 'font-semibold text-purple-800' : 'text-slate-700')}>
+                  {ev.isNow && <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-500 mr-1.5 animate-pulse" />}
+                  {ev.title}
+                </p>
+                {!ev.isAllDay && (
+                  <p className="text-[10px] text-slate-400">{ev.startTime} 〜 {ev.endTime}</p>
+                )}
+                {ev.location && (
+                  <p className="text-[10px] text-slate-400 truncate">{ev.location}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// 期限アラートカード
+// ========================================
+interface DeadlineItem {
+  id: string;
+  title: string;
+  dueDate: string;       // "2026-03-02"
+  dueLabel: string;      // "今日" / "明日" / "3日後"
+  priority: string;
+  type: 'task' | 'job';
+  urgency: 'overdue' | 'today' | 'soon';  // 期限切れ / 今日 / 近日
+}
+
+interface DeadlineAlertData {
+  items: DeadlineItem[];
+}
+
+export function DeadlineAlertCard({
+  deadlines,
+  onClickItem,
+}: {
+  deadlines: DeadlineAlertData;
+  onClickItem?: (id: string, type: string) => void;
+}) {
+  const urgencyStyle = {
+    overdue: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', badge: 'bg-red-100 text-red-700' },
+    today: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-700' },
+    soon: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-700' },
+  };
+
+  const overdueItems = deadlines.items.filter(d => d.urgency === 'overdue');
+  const todayItems = deadlines.items.filter(d => d.urgency === 'today');
+  const soonItems = deadlines.items.filter(d => d.urgency === 'soon');
+
+  return (
+    <div className="bg-white rounded-xl border border-amber-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 text-amber-600" />
+        <span className="text-xs font-semibold text-amber-800">期限アラート {deadlines.items.length}件</span>
+      </div>
+      <div className="divide-y divide-slate-100">
+        {[...overdueItems, ...todayItems, ...soonItems].map((item) => {
+          const style = urgencyStyle[item.urgency];
+          return (
+            <button
+              key={`${item.type}-${item.id}`}
+              onClick={() => onClickItem?.(item.id, item.type)}
+              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-slate-50 transition-colors text-left"
+            >
+              <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0', style.badge)}>
+                {item.dueLabel}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-slate-700 truncate">{item.title}</p>
+                <p className="text-[10px] text-slate-400">
+                  {item.type === 'task' ? 'タスク' : 'ジョブ'} ・ 優先度{item.priority === 'high' ? '高' : item.priority === 'medium' ? '中' : '低'}
+                </p>
+              </div>
+              <ArrowRight className="w-3 h-3 text-slate-300 shrink-0" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
 export function CardRenderer({
@@ -640,6 +850,17 @@ export function CardRenderer({
       return <NavigateCard nav={card.data} />;
     case 'action_result':
       return <ActionResultCard result={card.data} />;
+    case 'briefing_summary':
+      return <BriefingSummaryCard summary={card.data} />;
+    case 'calendar_events':
+      return <CalendarEventsCard calendar={card.data} />;
+    case 'deadline_alert':
+      return (
+        <DeadlineAlertCard
+          deadlines={card.data}
+          onClickItem={(id, type) => onAction?.('click_deadline', { id, type })}
+        />
+      );
     default:
       return null;
   }

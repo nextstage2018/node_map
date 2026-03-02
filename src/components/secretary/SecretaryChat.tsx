@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, Send, Loader2, Trash2,
   Inbox, CheckSquare, Zap, GitBranch,
-  ClipboardList, Sun, Sparkles,
+  ClipboardList, Sun, Sparkles, Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
@@ -27,6 +27,8 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: 'タスクの状況', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '進行中のタスクを見せて', category: 'task' },
   { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
   { label: 'ビジネスログ', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '最近のビジネスログを見せて', category: 'log' },
+  { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
+  { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
 ];
 
 // ========================================
@@ -304,6 +306,16 @@ export default function SecretaryChat() {
           content: '返信を却下しました。別の対応が必要ですか？',
           timestamp: new Date().toISOString(),
         }]);
+        break;
+      }
+      case 'click_deadline': {
+        const itemType = d?.type as string;
+        const itemId = d?.id as string;
+        if (itemType === 'task' && itemId) {
+          window.location.href = `/tasks?open=${itemId}`;
+        } else if (itemType === 'job' && itemId) {
+          window.location.href = `/jobs`;
+        }
         break;
       }
       default: {

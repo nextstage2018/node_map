@@ -9,6 +9,7 @@ import { sendEmail } from '@/services/email/emailClient.service';
 import { sendSlackMessage } from '@/services/slack/slackClient.service';
 import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service';
 import { saveMessages } from '@/services/inbox/inboxStorage.service';
+import { createEvent, isCalendarConnected } from '@/services/calendar/calendarClient.service';
 import type { UnifiedMessage, ChannelType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,41 @@ export async function POST(
       const metadata = (job.execution_metadata || {}) as Record<string, unknown>;
       const targetAddress = job.target_address || '';
 
+      // === 日程調整ジョブ: カレンダー予定作成 ===
+      if (job.type === 'schedule') {
+        const calendarData = metadata.calendarEvent as Record<string, unknown> | undefined;
+        if (calendarData && calendarData.summary && calendarData.start && calendarData.end) {
+          const calConnected = await isCalendarConnected(userId);
+          if (calConnected) {
+            try {
+              const created = await createEvent(userId, {
+                summary: calendarData.summary as string,
+                description: calendarData.description as string | undefined,
+                start: calendarData.start as string,
+                end: calendarData.end as string,
+                location: calendarData.location as string | undefined,
+                attendees: calendarData.attendees as string[] | undefined,
+                timeZone: (calendarData.timeZone as string) || 'Asia/Tokyo',
+              });
+              if (created) {
+                executionLogs.push(`📅 カレンダー予定作成: ${created.summary}（${new Date(created.start).toLocaleString('ja-JP')}）`);
+                if (created.htmlLink) {
+                  executionLogs.push(`カレンダーリンク: ${created.htmlLink}`);
+                }
+              } else {
+                executionLogs.push(`⚠️ カレンダー予定作成に失敗（送信は続行）`);
+              }
+            } catch (calErr) {
+              console.error('[Job Execute] カレンダー予定作成エラー:', calErr);
+              executionLogs.push(`⚠️ カレンダー予定作成エラー: ${calErr instanceof Error ? calErr.message : '不明'}`);
+            }
+          } else {
+            executionLogs.push(`⚠️ Googleカレンダー未連携: 予定作成をスキップ`);
+          }
+        }
+      }
+
+      // === メッセージ送信 ===
       switch (job.type) {
         case 'reply':
         case 'schedule':
@@ -82,6 +118,12 @@ export async function POST(
         default: {
           // 送信チャネルに応じてメッセージ送信
           if (!draftText) {
+            // schedule ジョブでカレンダーのみの場合は送信スキップ可
+            if (job.type === 'schedule' && executionLogs.some(l => l.includes('カレンダー予定作成'))) {
+              sendSuccess = true;
+              executionLogs.push(`メッセージ下書きなし: カレンダー予定のみ作成`);
+              break;
+            }
             throw new Error('送信する下書きがありません');
           }
 

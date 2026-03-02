@@ -1,8 +1,16 @@
-// Phase B拡張: 秘書AI会話API（意図分類 + インラインカード生成 + 返信下書き + ジョブ自律実行）
+// Phase B拡張: 秘書AI会話API（意図分類 + インラインカード生成 + 返信下書き + ジョブ自律実行 + カレンダー連携）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { createServerClient, isSupabaseConfigured, getServerSupabase, getSupabase } from '@/lib/supabase';
 import { generateReplyDraft } from '@/services/ai/aiClient.service';
+import {
+  getTodayEvents,
+  findFreeSlots,
+  formatEventsForContext,
+  formatFreeSlotsForContext,
+  isCalendarConnected,
+} from '@/services/calendar/calendarClient.service';
+import type { CalendarEvent } from '@/services/calendar/calendarClient.service';
 import type { UnifiedMessage } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -61,6 +69,8 @@ type Intent =
   | 'message_detail'  // 特定メッセージ
   | 'reply_draft'     // 返信下書き生成
   | 'create_job'      // ジョブ作成（AIに任せる）
+  | 'calendar'        // カレンダー・予定確認
+  | 'schedule'        // 日程調整・空き時間
   | 'tasks'           // タスク状況
   | 'jobs'            // ジョブ・対応必要
   | 'thought_map'     // 思考マップ
@@ -78,12 +88,22 @@ function classifyIntent(message: string): Intent {
   if (m.includes('任せ') || m.includes('代わりに') || m.includes('おまかせ') || m.includes('自動で')) return 'create_job';
   if (m.includes('ジョブにして') || m.includes('ジョブとして')) return 'create_job';
 
+  // 日程調整（空き時間検索を含む）
+  if (m.includes('日程') && (m.includes('調整') || m.includes('候補') || m.includes('提案'))) return 'schedule';
+  if (m.includes('空') && (m.includes('時間') || m.includes('き') || m.includes('いてる'))) return 'schedule';
+  if (m.includes('いつ空') || m.includes('打ち合わせ') && m.includes('いつ')) return 'schedule';
+
+  // カレンダー・予定確認
+  if (m.includes('予定') || m.includes('スケジュール') || m.includes('カレンダー')) return 'calendar';
+  if (m.includes('今日') && m.includes('予定')) return 'calendar';
+  if (m.includes('今週') && (m.includes('予定') || m.includes('スケジュール'))) return 'calendar';
+
   // 返信下書き（優先度高め）
   if (m.includes('返信') && (m.includes('下書き') || m.includes('作って') || m.includes('書いて'))) return 'reply_draft';
   if (m.includes('返信して') || (m.includes('返事') && (m.includes('書') || m.includes('作')))) return 'reply_draft';
 
   // ブリーフィング
-  if (m.includes('今日') && (m.includes('状況') || m.includes('教えて') || m.includes('予定'))) return 'briefing';
+  if (m.includes('今日') && (m.includes('状況') || m.includes('教えて'))) return 'briefing';
   if (m.includes('おはよう') || m.includes('ブリーフィング') || m.includes('報告')) return 'briefing';
 
   // メッセージ
@@ -181,6 +201,133 @@ async function fetchDataAndBuildCards(
 
     // ---- カード生成 ----
 
+    // ブリーフィング → カレンダー予定取得 + サマリーカード + カレンダーカード + 期限アラート
+    let calendarEvents: CalendarEvent[] = [];
+    if (intent === 'briefing') {
+      // カレンダー予定を取得
+      try {
+        const calConnected = await isCalendarConnected(userId);
+        if (calConnected) {
+          calendarEvents = await getTodayEvents(userId);
+        }
+      } catch (calErr) {
+        console.error('[Secretary API] ブリーフィング カレンダー取得エラー:', calErr);
+      }
+
+      // (1) ブリーフィングサマリーカード
+      const unreadCount = messages.filter(m => !m.is_read).length;
+      const urgentCount = messages.filter(m => !m.is_read && determineUrgency(m) === 'high').length;
+      const activeTaskCount = tasks.filter(t => t.status !== 'done').length;
+      const pendingJobCount = jobs.filter(j => j.status === 'pending' || j.status === 'draft').length;
+
+      // 次の予定を計算
+      let nextEvent: { title: string; time: string; minutesUntil?: number } | undefined;
+      const now = new Date();
+      const upcoming = calendarEvents
+        .filter(e => !e.isAllDay && new Date(e.start) > now)
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      if (upcoming.length > 0) {
+        const next = upcoming[0];
+        const startDate = new Date(next.start);
+        const endDate = new Date(next.end);
+        const minutesUntil = Math.round((startDate.getTime() - now.getTime()) / 60000);
+        nextEvent = {
+          title: next.summary,
+          time: `${startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}〜${endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}`,
+          minutesUntil: minutesUntil > 0 ? minutesUntil : undefined,
+        };
+      }
+
+      cards.push({
+        type: 'briefing_summary',
+        data: {
+          date: now.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' }),
+          unreadCount,
+          urgentCount,
+          activeTaskCount,
+          pendingJobCount,
+          todayEventCount: calendarEvents.length,
+          nextEvent,
+        },
+      });
+
+      // (2) カレンダー予定カード（予定がある場合）
+      if (calendarEvents.length > 0) {
+        cards.push({
+          type: 'calendar_events',
+          data: {
+            date: '今日',
+            events: calendarEvents.map(ev => {
+              const startDate = new Date(ev.start);
+              const endDate = new Date(ev.end);
+              const isNow = !ev.isAllDay && startDate <= now && endDate > now;
+              return {
+                id: ev.id,
+                title: ev.summary,
+                startTime: ev.isAllDay ? '' : startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                endTime: ev.isAllDay ? '' : endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                location: ev.location,
+                isAllDay: ev.isAllDay,
+                isNow,
+              };
+            }),
+          },
+        });
+      }
+
+      // (3) 期限アラートカード（今日〜3日以内に期限のタスク/ジョブ）
+      const deadlineItems: Array<{
+        id: string; title: string; dueDate: string; dueLabel: string;
+        priority: string; type: 'task' | 'job'; urgency: 'overdue' | 'today' | 'soon';
+      }> = [];
+
+      const todayStr = now.toISOString().split('T')[0];
+      const threeDaysLater = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+      for (const t of tasks.filter(tk => tk.status !== 'done' && tk.due_date)) {
+        const due = t.due_date!;
+        if (due <= threeDaysLater) {
+          let urgency: 'overdue' | 'today' | 'soon' = 'soon';
+          let dueLabel = '';
+          if (due < todayStr) { urgency = 'overdue'; dueLabel = '期限切れ'; }
+          else if (due === todayStr) { urgency = 'today'; dueLabel = '今日'; }
+          else {
+            const diffDays = Math.ceil((new Date(due).getTime() - now.getTime()) / 86400000);
+            dueLabel = diffDays === 1 ? '明日' : `${diffDays}日後`;
+          }
+          deadlineItems.push({
+            id: t.id, title: t.title, dueDate: due, dueLabel,
+            priority: t.priority, type: 'task', urgency,
+          });
+        }
+      }
+
+      for (const j of jobs.filter(jb => (jb.status === 'pending' || jb.status === 'draft') && jb.due_date)) {
+        const due = j.due_date!;
+        if (due <= threeDaysLater) {
+          let urgency: 'overdue' | 'today' | 'soon' = 'soon';
+          let dueLabel = '';
+          if (due < todayStr) { urgency = 'overdue'; dueLabel = '期限切れ'; }
+          else if (due === todayStr) { urgency = 'today'; dueLabel = '今日'; }
+          else {
+            const diffDays = Math.ceil((new Date(due).getTime() - now.getTime()) / 86400000);
+            dueLabel = diffDays === 1 ? '明日' : `${diffDays}日後`;
+          }
+          deadlineItems.push({
+            id: j.id, title: j.title, dueDate: due, dueLabel,
+            priority: 'medium', type: 'job', urgency,
+          });
+        }
+      }
+
+      if (deadlineItems.length > 0) {
+        cards.push({
+          type: 'deadline_alert',
+          data: { items: deadlineItems },
+        });
+      }
+    }
+
     // ブリーフィング or メッセージ一覧 → InboxSummaryCard
     if ((intent === 'briefing' || intent === 'inbox') && messages.length > 0) {
       const unreadMessages = messages.filter(m => !m.is_read);
@@ -269,6 +416,44 @@ async function fetchDataAndBuildCards(
           description: 'プロジェクトごとの活動履歴を閲覧',
         },
       });
+    }
+
+    // カレンダー → 今日の予定 or 空き時間
+    if (intent === 'calendar' || intent === 'schedule' || intent === 'briefing') {
+      try {
+        const calConnected = await isCalendarConnected(userId);
+        if (calConnected) {
+          if (intent === 'calendar' || intent === 'briefing') {
+            // ブリーフィング時は既に calendarEvents を取得済み
+            const todayEvents = intent === 'briefing' && calendarEvents.length > 0
+              ? calendarEvents
+              : await getTodayEvents(userId);
+            if (todayEvents.length > 0) {
+              parts.push(`\n\n【今日の予定（${todayEvents.length}件）】\n${formatEventsForContext(todayEvents)}`);
+            } else {
+              parts.push('\n\n【今日の予定】\n予定なし');
+            }
+          }
+          if (intent === 'schedule') {
+            // 来週の空き時間を検索
+            const now = new Date();
+            const nextStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
+            const nextEnd = new Date(nextStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+            const freeSlots = await findFreeSlots(userId, nextStart.toISOString(), nextEnd.toISOString(), 60);
+            if (freeSlots.length > 0) {
+              parts.push(`\n\n【空き時間（今後7日間）】\n${formatFreeSlotsForContext(freeSlots, 8)}`);
+            } else {
+              parts.push('\n\n【空き時間】\n空き時間が見つかりませんでした');
+            }
+          }
+        } else {
+          if (intent === 'calendar' || intent === 'schedule') {
+            parts.push('\n\n【カレンダー】\nGoogle Calendar が未連携です。設定画面から Gmail を再連携すると、カレンダー情報も取得できるようになります。');
+          }
+        }
+      } catch (calError) {
+        console.error('[Secretary API] カレンダー取得エラー:', calError);
+      }
     }
 
     // ジョブ作成 → AI下書き生成 + ジョブ登録 + 承認カード
@@ -617,6 +802,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - タスクの状況確認・優先度の提案
 - ジョブ（簡易作業）の作成と自動実行（返信、日程調整、確認連絡など）
 - 承認されたジョブはAIが自動で実行する
+- Google Calendar連携（今日の予定表示・空き時間検索・予定作成）
 - ビジネスログの参照
 - 思考マップ・ナレッジの参照
 
@@ -629,7 +815,18 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 
 ## 朝のブリーフィング
 ${intent === 'briefing'
-    ? '今日の状況報告です。未読メッセージ・対応必要なタスク・ジョブの要点を1〜2文で簡潔にまとめてください。データはカードで表示されるので、テキストでは全体像と「何から始めるべきか」の提案だけしてください。'
+    ? `今日の状況報告です。
+- サマリーカード・カレンダーカード・期限アラートカード・メッセージカード・タスクカードが画面に表示されています
+- テキスト回答ではカードの内容を繰り返さず、全体的な状況と「今日何から始めるべきか」の具体的な提案に集中してください
+- 緊急度の高い事項（期限切れ・今日期限のタスク、未読の緊急メッセージ）があれば最初に触れてください
+- カレンダーに予定があれば時間を意識したアドバイスをしてください（例：「10時からミーティングがあるので、それまでに○○の返信を」）
+- 1〜3文で簡潔にまとめること。リスト形式ではなく自然な日本語で。`
+    : ''}
+${intent === 'schedule'
+    ? '日程調整の相談です。ユーザーのカレンダーの空き時間データを参照し、候補を提案してください。相手の名前がわかれば「○○さんとの打ち合わせ」として候補を出してください。'
+    : ''}
+${intent === 'calendar'
+    ? '予定の確認です。カレンダーデータを参照して、今日の予定を簡潔に報告してください。次の予定までの時間や、今日の残りのスケジュールの概要を含めると良いです。'
     : ''}
 
 ## 今日の日付
@@ -739,7 +936,7 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
   switch (intent) {
     case 'briefing':
       return hasCards
-        ? 'おはようございます。今日の状況です。\n\n上のカードに新着メッセージとタスクを表示しています。緊急度の高いものから確認してみてください。'
+        ? 'おはようございます。今日の状況をまとめました。\n\nカードに全体サマリー・予定・期限アラート・メッセージ・タスクを表示しています。緊急度の高いものから順に対応していきましょう。'
         : 'おはようございます。\n\n現在データがないようです。メッセージの受信やタスクの登録を始めると、ここに状況報告が表示されます。';
     case 'inbox':
       return hasCards
@@ -761,6 +958,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? '返信の下書きを作成しました。内容を確認して、修正が必要なら「修正する」を押してください。'
         : '返信対象のメッセージが見つかりませんでした。「新着メッセージを見せて」で確認してみてください。';
+    case 'calendar':
+      return 'カレンダーの予定を確認しました。上の情報を参照してください。';
+    case 'schedule':
+      return '空き時間を検索しました。候補の日時を確認してください。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'business_log':
