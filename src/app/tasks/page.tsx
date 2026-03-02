@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -11,7 +11,7 @@ import {
   useSensors,
   closestCorners,
 } from '@dnd-kit/core';
-import type { Task, TaskStatus, CreateTaskRequest, TaskBoardViewMode } from '@/lib/types';
+import type { Task, TaskStatus, TaskCategory, CreateTaskRequest, TaskBoardViewMode } from '@/lib/types';
 import { useTasks } from '@/hooks/useTasks';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
@@ -38,6 +38,39 @@ export default function TasksPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [viewMode, setViewMode] = useState<TaskBoardViewMode>('status');
+
+  // Phase 50d: フィルタ
+  const [filterProjectId, setFilterProjectId] = useState<string>('');
+  const [filterCategory, setFilterCategory] = useState<string>('');
+  const [projects, setProjects] = useState<{ id: string; name: string; organizationName?: string }[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/projects?status=active');
+        const data = await res.json();
+        if (data.success) {
+          setProjects((data.data || []).map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            organizationName: p.organization_name,
+          })));
+        }
+      } catch { /* silent */ }
+    })();
+  }, []);
+
+  // フィルタリング + 親子グループ化
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
+    if (filterProjectId) {
+      result = result.filter((t) => t.projectId === filterProjectId);
+    }
+    if (filterCategory) {
+      result = result.filter((t) => (t.taskCategory || 'individual') === filterCategory);
+    }
+    return result;
+  }, [tasks, filterProjectId, filterCategory]);
 
   // ドラッグ&ドロップ設定
   const sensors = useSensors(
@@ -157,11 +190,11 @@ export default function TasksPage() {
 
               {/* カウンター */}
               <div className="flex items-center gap-2 text-xs text-slate-400">
-                <span>未着手 {statusCounts.todo}</span>
+                <span>未着手 {filteredTasks.filter(t => t.status === 'todo').length}</span>
                 <span>・</span>
-                <span>進行中 {statusCounts.in_progress}</span>
+                <span>進行中 {filteredTasks.filter(t => t.status === 'in_progress').length}</span>
                 <span>・</span>
-                <span>完了 {statusCounts.done}</span>
+                <span>完了 {filteredTasks.filter(t => t.status === 'done').length}</span>
               </div>
             </div>
 
@@ -177,6 +210,40 @@ export default function TasksPage() {
                 ＋ 新規タスク
               </Button>
             </div>
+          </div>
+
+          {/* Phase 50d: フィルタバー */}
+          <div className="px-4 pb-2 flex items-center gap-2">
+            <select
+              value={filterProjectId}
+              onChange={(e) => setFilterProjectId(e.target.value)}
+              className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">全プロジェクト</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.organizationName ? `${p.organizationName} / ${p.name}` : p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+              className="px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">全種類</option>
+              <option value="routine">定型</option>
+              <option value="individual">個別</option>
+              <option value="team">チーム</option>
+            </select>
+            {(filterProjectId || filterCategory) && (
+              <button
+                onClick={() => { setFilterProjectId(''); setFilterCategory(''); }}
+                className="text-xs text-slate-400 hover:text-slate-600"
+              >
+                クリア
+              </button>
+            )}
           </div>
 
           {error && (
@@ -198,7 +265,7 @@ export default function TasksPage() {
                     <TaskColumn
                       key={status}
                       status={status}
-                      tasks={tasks.filter((t) => t.status === status)}
+                      tasks={filteredTasks.filter((t) => t.status === status)}
                       selectedTaskId={selectedTask?.id || null}
                       onSelectTask={(task) => setSelectedTask(task)}
                       onQuickChat={handleQuickChat}

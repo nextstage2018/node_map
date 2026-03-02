@@ -144,6 +144,12 @@ export interface AiConversationMessage {
 // タスクの種類
 export type TaskType = 'personal' | 'group';
 
+// Phase 50: タスクカテゴリ（定型・個別・チーム）
+export type TaskCategory = 'routine' | 'individual' | 'team';
+
+// Phase 50: 繰り返しタイプ
+export type RecurrenceType = 'weekly' | 'biweekly' | 'monthly';
+
 // タスク
 export interface Task {
   id: string;
@@ -182,6 +188,15 @@ export interface Task {
   scheduledStart?: string;
   scheduledEnd?: string;
   calendarEventId?: string;
+  // Phase 50: タスクカテゴリ拡張
+  taskCategory?: TaskCategory;       // 定型/個別/チーム
+  parentTaskId?: string;             // 親タスクID（チームタスクの子の場合）
+  templateId?: string;               // テンプレートID（定型タスクの場合）
+  estimatedHours?: number;           // 見積時間
+  recurrenceType?: RecurrenceType;   // 繰り返しタイプ
+  recurrenceDay?: number;            // 繰り返し曜日/日
+  assigneeContactId?: string;        // 担当者コンタクトID
+  childTasks?: Task[];               // 子タスク一覧（UI表示用、DB非保存）
 }
 
 // タスクメンバー（グループタスク用）
@@ -210,6 +225,14 @@ export interface CreateTaskRequest {
   scheduledStart?: string;
   scheduledEnd?: string;
   members?: { userId: string; role?: 'owner' | 'member' }[];
+  // Phase 50: タスクカテゴリ拡張
+  taskCategory?: TaskCategory;
+  parentTaskId?: string;
+  templateId?: string;
+  estimatedHours?: number;
+  recurrenceType?: RecurrenceType;
+  recurrenceDay?: number;
+  assigneeContactId?: string;
 }
 
 // タスク更新リクエスト
@@ -226,6 +249,13 @@ export interface UpdateTaskRequest {
   // Calendar統合
   scheduledStart?: string;
   scheduledEnd?: string;
+  // Phase 50: タスクカテゴリ拡張
+  taskCategory?: TaskCategory;
+  parentTaskId?: string;
+  estimatedHours?: number;
+  recurrenceType?: RecurrenceType;
+  recurrenceDay?: number;
+  assigneeContactId?: string;
 }
 
 // AI会話リクエスト
@@ -768,9 +798,44 @@ export interface Project {
   status: string;
   organizationId?: string;
   organizationName?: string;
+  projectTypeId?: string;          // Phase 50: プロジェクト種別
+  projectTypeName?: string;        // Phase 50: 種別名（表示用）
   userId: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ===== Phase 50: プロジェクト種別マスタ =====
+
+// プロジェクト種別（広告運用、Web制作 等）
+export interface ProjectType {
+  id: string;
+  name: string;
+  description?: string;
+  userId: string;
+  createdAt: string;
+  templates?: TaskTemplate[];      // 紐づくテンプレート一覧（UI表示用）
+}
+
+// 定型タスクテンプレート
+export interface TaskTemplate {
+  id: string;
+  projectTypeId: string;
+  title: string;
+  description?: string;
+  estimatedHours?: number;
+  recurrenceType?: RecurrenceType; // null=単発 / weekly / biweekly / monthly
+  recurrenceDay?: number;          // 曜日(0-6) or 日(1-31)
+  sortOrder: number;
+  userId: string;
+  createdAt: string;
+}
+
+// タスクフィルタ（Phase 50d: カンバンフィルタ用）
+export interface TaskFilter {
+  projectId?: string;
+  taskCategory?: TaskCategory;
+  assigneeContactId?: string;
 }
 
 // グループ

@@ -9,6 +9,7 @@ import SetupWizard from '@/components/setup/SetupWizard';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/EmptyState';
+import ProjectTypeManager from '@/components/settings/ProjectTypeManager';
 
 // Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
 const CHATWORK_FORM_CONFIG = {
@@ -364,6 +365,7 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'channels', label: 'チャンネル接続' },
+    { id: 'project-types', label: 'プロジェクト種別' },
     { id: 'profile', label: 'プロフィール' },
     { id: 'notifications', label: '通知設定' },
     // 自社組織が未登録の場合のみセットアップタブを表示
@@ -559,6 +561,13 @@ export default function SettingsPage() {
                   </li>
                 </ul>
               </Card>
+            </div>
+          )}
+
+          {/* プロジェクト種別タブ */}
+          {activeTab === 'project-types' && (
+            <div className="max-w-2xl">
+              <ProjectTypeManager />
             </div>
           )}
 

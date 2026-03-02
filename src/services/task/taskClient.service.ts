@@ -53,6 +53,14 @@ function mapTaskFromDb(dbRow: any): Task {
     scheduledStart: dbRow.scheduled_start,
     scheduledEnd: dbRow.scheduled_end,
     calendarEventId: dbRow.calendar_event_id,
+    // Phase 50: タスクカテゴリ拡張
+    taskCategory: dbRow.task_category || 'individual',
+    parentTaskId: dbRow.parent_task_id,
+    templateId: dbRow.template_id,
+    estimatedHours: dbRow.estimated_hours ? parseFloat(dbRow.estimated_hours) : undefined,
+    recurrenceType: dbRow.recurrence_type,
+    recurrenceDay: dbRow.recurrence_day,
+    assigneeContactId: dbRow.assignee_contact_id,
   };
 }
 
@@ -245,6 +253,14 @@ export class TaskService {
       // Calendar統合
       if (req.scheduledStart) insertData.scheduled_start = req.scheduledStart;
       if (req.scheduledEnd) insertData.scheduled_end = req.scheduledEnd;
+      // Phase 50: タスクカテゴリ拡張
+      insertData.task_category = req.taskCategory || 'individual';
+      if (req.parentTaskId) insertData.parent_task_id = req.parentTaskId;
+      if (req.templateId) insertData.template_id = req.templateId;
+      if (req.estimatedHours) insertData.estimated_hours = req.estimatedHours;
+      if (req.recurrenceType) insertData.recurrence_type = req.recurrenceType;
+      if (req.recurrenceDay !== undefined) insertData.recurrence_day = req.recurrenceDay;
+      if (req.assigneeContactId) insertData.assignee_contact_id = req.assigneeContactId;
 
       const { data, error } = await sb
         .from('tasks')
@@ -300,6 +316,32 @@ export class TaskService {
       if ((req as any).scheduledEnd !== undefined) {
         updateData.scheduled_end = (req as any).scheduledEnd;
         delete updateData.scheduledEnd;
+      }
+
+      // Phase 50: タスクカテゴリ拡張のsnake_case変換
+      if (req.taskCategory !== undefined) {
+        updateData.task_category = req.taskCategory;
+        delete updateData.taskCategory;
+      }
+      if (req.parentTaskId !== undefined) {
+        updateData.parent_task_id = req.parentTaskId;
+        delete updateData.parentTaskId;
+      }
+      if (req.estimatedHours !== undefined) {
+        updateData.estimated_hours = req.estimatedHours;
+        delete updateData.estimatedHours;
+      }
+      if (req.recurrenceType !== undefined) {
+        updateData.recurrence_type = req.recurrenceType;
+        delete updateData.recurrenceType;
+      }
+      if (req.recurrenceDay !== undefined) {
+        updateData.recurrence_day = req.recurrenceDay;
+        delete updateData.recurrenceDay;
+      }
+      if (req.assigneeContactId !== undefined) {
+        updateData.assignee_contact_id = req.assigneeContactId;
+        delete updateData.assigneeContactId;
       }
 
       // Set completedAt if marking as done

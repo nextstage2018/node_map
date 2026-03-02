@@ -153,15 +153,19 @@ export default function BusinessLogPage() {
   // ========================================
   // アクション
   // ========================================
-  const handleCreateProject = async (name: string, description: string, orgId: string) => {
+  const handleCreateProject = async (name: string, description: string, orgId: string, projectTypeId?: string) => {
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description: description || null, organizationId: orgId || null }),
+        body: JSON.stringify({ name, description: description || null, organizationId: orgId || null, projectTypeId: projectTypeId || null }),
       });
       const data = await res.json();
-      if (data.success) { fetchProjects(); showMsg('success', 'プロジェクトを作成しました'); }
+      if (data.success) {
+        fetchProjects();
+        const taskMsg = data.generatedTaskCount ? ` （定型タスク${data.generatedTaskCount}件を自動生成しました）` : '';
+        showMsg('success', `プロジェクトを作成しました${taskMsg}`);
+      }
       else showMsg('error', data.error || '作成に失敗しました');
     } catch { showMsg('error', '通信エラー'); }
   };

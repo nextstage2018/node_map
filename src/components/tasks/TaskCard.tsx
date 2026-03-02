@@ -132,15 +132,33 @@ export default function TaskCard({ task, isSelected, onClick, onQuickChat }: Tas
 
       {/* フッター */}
       <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-            phase.color
+        <div className="flex items-center gap-1">
+          <span
+            className={cn(
+              'text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+              phase.color
+            )}
+          >
+            {phase.icon} {phase.label}
+          </span>
+          {/* Phase 50: カテゴリバッジ */}
+          {task.taskCategory === 'routine' && (
+            <span className="text-[10px] px-1 py-0.5 rounded bg-green-50 text-green-600">定型</span>
           )}
-        >
-          {phase.icon} {phase.label}
-        </span>
+          {task.taskCategory === 'team' && (
+            <span className="text-[10px] px-1 py-0.5 rounded bg-purple-50 text-purple-600">チーム</span>
+          )}
+          {/* Phase 50: 繰り返しアイコン */}
+          {task.recurrenceType && (
+            <span className="text-[10px] text-slate-400" title={`繰り返し: ${task.recurrenceType}`}>🔄</span>
+          )}
+        </div>
         <div className="flex items-center gap-1.5">
+          {task.estimatedHours && (
+            <span className="text-[10px] text-slate-400">
+              ⏱{task.estimatedHours}h
+            </span>
+          )}
           {task.conversations.length > 0 && (
             <span className="text-[10px] text-slate-400">
               💬 {task.conversations.length}
