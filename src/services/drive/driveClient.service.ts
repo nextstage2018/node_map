@@ -155,7 +155,11 @@ export async function isDriveConnected(userId: string): Promise<boolean> {
   const token = await getGoogleToken(userId);
   if (!token) return false;
   // scopeにdrive.fileが含まれるかチェック
-  if (token.scope && !token.scope.includes('drive')) return false;
+  const scope = token.scope || '';
+  if (!scope.includes('drive.file')) {
+    console.log('[Drive] Driveスコープなし。Gmail再連携が必要です。scope:', scope);
+    return false;
+  }
   return true;
 }
 

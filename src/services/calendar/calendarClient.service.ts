@@ -399,7 +399,14 @@ export async function createEvent(
 // ========================================
 export async function isCalendarConnected(userId: string): Promise<boolean> {
   const token = await getGoogleToken(userId);
-  return !!token;
+  if (!token) return false;
+  // カレンダースコープが付与されているかチェック
+  const scope = token.scope || '';
+  if (!scope.includes('calendar')) {
+    console.log('[Calendar] カレンダースコープなし。Gmail再連携が必要です。scope:', scope);
+    return false;
+  }
+  return true;
 }
 
 // ========================================

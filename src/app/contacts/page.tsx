@@ -215,6 +215,7 @@ export default function ContactsPage() {
   const [orgName, setOrgName] = useState('');
   const [showProjectAdd, setShowProjectAdd] = useState(false);
   const [selectedProjectToAdd, setSelectedProjectToAdd] = useState('');
+  const [contactProjects, setContactProjects] = useState<{ id: string; project_id: string; projects?: { id: string; name: string; status: string } | null }[]>([]);
 
   // --- Phase 35: 重複検出・マージ ---
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
@@ -493,8 +494,27 @@ export default function ContactsPage() {
   };
 
   // ========================================
-  // Phase 34: プロジェクトメンバー追加
+  // Phase 34: プロジェクトメンバー追加 + 所属プロジェクト表示
   // ========================================
+  const loadContactProjects = useCallback(async (contactId: string) => {
+    try {
+      const res = await fetch(`/api/project-members?contact_id=${contactId}`);
+      const data = await res.json();
+      if (data.success) {
+        setContactProjects(data.data || []);
+      }
+    } catch { setContactProjects([]); }
+  }, []);
+
+  // コンタクト選択時にプロジェクト一覧を取得
+  useEffect(() => {
+    if (selectedContact) {
+      loadContactProjects(selectedContact.id);
+    } else {
+      setContactProjects([]);
+    }
+  }, [selectedContact, loadContactProjects]);
+
   const addToProject = async () => {
     if (!selectedContact || !selectedProjectToAdd) return;
     try {
@@ -508,8 +528,22 @@ export default function ContactsPage() {
         setActionResult({ type: 'success', text: 'プロジェクトに追加しました' });
         setShowProjectAdd(false);
         setSelectedProjectToAdd('');
+        loadContactProjects(selectedContact.id);
       } else {
         setActionResult({ type: 'error', text: data.error || '追加に失敗しました' });
+      }
+    } catch { setActionResult({ type: 'error', text: '通信エラー' }); }
+    setTimeout(() => setActionResult(null), 3000);
+  };
+
+  const removeFromProject = async (projectId: string) => {
+    if (!selectedContact) return;
+    try {
+      const res = await fetch(`/api/project-members?project_id=${projectId}&contact_id=${selectedContact.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setContactProjects(prev => prev.filter(p => p.project_id !== projectId));
+        setActionResult({ type: 'success', text: 'プロジェクトから外しました' });
       }
     } catch { setActionResult({ type: 'error', text: '通信エラー' }); }
     setTimeout(() => setActionResult(null), 3000);
@@ -1240,6 +1274,31 @@ export default function ContactsPage() {
                       )}
                       {projects.length === 0 && showProjectAdd && (
                         <p className="text-xs text-slate-400 mb-2">プロジェクトがありません。ビジネスログから作成してください。</p>
+                      )}
+
+                      {/* 所属プロジェクト一覧 */}
+                      {contactProjects.length > 0 && (
+                        <div className="space-y-1 mt-2">
+                          {contactProjects.map((cp) => {
+                            const proj = cp.projects;
+                            return (
+                              <div key={cp.id} className="flex items-center gap-2 px-2 py-1.5 bg-blue-50 rounded-lg group">
+                                <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                <span className="text-xs text-slate-700 flex-1 truncate">{proj?.name || cp.project_id}</span>
+                                {proj?.status && (
+                                  <span className="text-[10px] text-slate-400">{proj.status}</span>
+                                )}
+                                <button
+                                  onClick={() => removeFromProject(cp.project_id)}
+                                  className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all p-0.5"
+                                  title="プロジェクトから外す"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
 
