@@ -5,7 +5,9 @@ import { usePathname } from 'next/navigation';
 import { Inbox, CheckSquare, Users, BookOpen, Settings, ClipboardList, Bot, Building2, Lightbulb, GitBranch, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+// Phase A-1: 秘書ファーストのナビゲーション
 const NAV_ITEMS = [
+  { href: '/', label: '秘書', icon: Bot },
   { href: '/inbox', label: 'インボックス', icon: Inbox },
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
   { href: '/jobs', label: 'ジョブ', icon: Zap },
@@ -15,7 +17,6 @@ const NAV_ITEMS = [
   { href: '/organizations', label: '組織', icon: Building2 },
   { href: '/master', label: 'ナレッジ', icon: BookOpen },
   { href: '/business-log', label: 'ビジネスログ', icon: ClipboardList },
-  { href: '/agent', label: '秘書', icon: Bot },
   { href: '/settings', label: '設定', icon: Settings },
 ];
 
@@ -25,7 +26,7 @@ export default function Header() {
   return (
     <header className="h-12 border-b border-slate-200 bg-white flex items-center justify-between px-4 shrink-0">
       {/* ロゴ */}
-      <Link href="/inbox" className="flex items-center gap-2">
+      <Link href="/" className="flex items-center gap-2">
         <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center">
           <span className="text-white text-xs font-bold">NM</span>
         </div>
@@ -35,7 +36,9 @@ export default function Header() {
       {/* ナビゲーション */}
       <nav className="flex items-center gap-1">
         {NAV_ITEMS.map((item) => {
-          const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+          const isActive = item.href === '/'
+              ? pathname === '/'
+              : (pathname === item.href || pathname?.startsWith(item.href + '/'));
           const Icon = item.icon;
           return (
             <Link
