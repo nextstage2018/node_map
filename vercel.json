@@ -1,4 +1,10 @@
 {
+  "functions": {
+    "src/app/api/drive/upload/route.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/enrich-contacts",

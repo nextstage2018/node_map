@@ -103,30 +103,74 @@ function FileUploadPanel({ onClose, onUploadComplete }: FileUploadPanelProps) {
     if (!file || !selectedProjectId) return;
     setUploading(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('projectId', selectedProjectId);
-      formData.append('documentType', documentType);
-      formData.append('direction', direction);
-      formData.append('memo', memo);
-
-      const res = await fetch('/api/drive/upload', {
+      // Step 1: サーバーにフォルダ準備 + resumable upload URL取得（ファイル本体は送らない）
+      const prepRes = await fetch('/api/drive/upload', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: selectedProjectId,
+          documentType,
+          direction,
+          memo,
+          fileName: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          fileSize: file.size,
+        }),
       });
-      const result = await res.json();
-      if (result.success) {
+      const prepResult = await prepRes.json();
+      if (!prepResult.success) {
+        alert(prepResult.error || 'アップロード準備に失敗しました');
+        return;
+      }
+
+      const { uploadUrl, metadata } = prepResult.data;
+
+      // Step 2: クライアントからGoogle Drive APIに直接アップロード（Vercelを経由しない）
+      const fileBuffer = await file.arrayBuffer();
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+          'Content-Length': String(file.size),
+        },
+        body: fileBuffer,
+      });
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        console.error('Drive upload failed:', uploadRes.status, errText);
+        alert('Google Driveへのアップロードに失敗しました');
+        return;
+      }
+
+      const driveFile = await uploadRes.json();
+
+      // Step 3: DB登録（complete API）
+      const completeRes = await fetch('/api/drive/upload/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...metadata,
+          driveFileId: driveFile.id,
+          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
+        }),
+      });
+      const completeResult = await completeRes.json();
+
+      if (completeResult.success) {
         onUploadComplete({
-          fileName: result.data.fileName,
-          driveUrl: result.data.driveUrl,
-          projectName: result.data.projectName,
-          documentType: result.data.documentType,
+          fileName: completeResult.data.fileName,
+          driveUrl: completeResult.data.driveUrl,
+          projectName: completeResult.data.projectName,
+          documentType: completeResult.data.documentType,
         });
         onClose();
       } else {
-        alert(result.error || 'アップロードに失敗しました');
+        // Driveにはアップロード済みだがDB登録失敗
+        alert('ファイルはDriveにアップロードされましたが、DB登録に失敗しました: ' + (completeResult.error || ''));
       }
-    } catch {
+    } catch (err) {
+      console.error('Upload error:', err);
       alert('アップロード中にエラーが発生しました');
     } finally {
       setUploading(false);
