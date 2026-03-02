@@ -43,34 +43,53 @@ function generateId(): string {
 
 // ========================================
 // テキスト内のURLをクリック可能なリンクに変換
+// Markdown形式 [text](url) と 生URL の両方に対応
 // ========================================
 function linkifyText(text: string, isUser: boolean): React.ReactNode {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
-  const parts = text.split(urlRegex);
-  if (parts.length === 1) return text; // URLなし
+  // Markdown形式のリンク [text](url) と 生URL を同時に検出
+  const combinedRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s)]+)/g;
+  const result: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
 
-  return parts.map((part, i) => {
-    if (urlRegex.test(part)) {
-      // URLの末尾の記号を除去（。、）など）
-      urlRegex.lastIndex = 0;
-      const cleaned = part.replace(/[。、）」』\]]+$/, '');
-      const trailing = part.slice(cleaned.length);
-      return (
-        <span key={i}>
-          <a
-            href={cleaned}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={isUser ? 'underline text-blue-100 hover:text-white' : 'underline text-blue-600 hover:text-blue-800'}
-          >
+  const linkClass = isUser ? 'underline text-blue-100 hover:text-white' : 'underline text-blue-600 hover:text-blue-800';
+
+  while ((match = combinedRegex.exec(text)) !== null) {
+    // マッチ前のテキストを追加
+    if (match.index > lastIndex) {
+      result.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[1] && match[2]) {
+      // Markdown形式: [text](url)
+      result.push(
+        <a key={match.index} href={match[2]} target="_blank" rel="noopener noreferrer" className={linkClass}>
+          {match[1]}
+        </a>
+      );
+    } else if (match[3]) {
+      // 生URL: 末尾の記号を除去
+      const cleaned = match[3].replace(/[。、）」』\])]+$/, '');
+      const trailing = match[3].slice(cleaned.length);
+      result.push(
+        <span key={match.index}>
+          <a href={cleaned} target="_blank" rel="noopener noreferrer" className={linkClass}>
             {cleaned}
           </a>
           {trailing}
         </span>
       );
     }
-    return part;
-  });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // 残りのテキスト
+  if (lastIndex < text.length) {
+    result.push(text.slice(lastIndex));
+  }
+
+  return result.length > 0 ? result : text;
 }
 
 // ========================================
