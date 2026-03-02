@@ -844,10 +844,74 @@ export interface DriveFolderMapping {
   projectId?: string;
   driveFolderId: string;
   folderName: string;
-  hierarchyLevel: 1 | 2;
+  hierarchyLevel: 1 | 2 | 3 | 4;
+  direction?: 'received' | 'submitted';
+  yearMonth?: string;
 }
 
 export interface DriveSearchResult {
   documents: DriveDocument[];
   totalCount: number;
+}
+
+// ===== Phase 44a: ファイル取り込み管理 =====
+
+export type DriveDocumentType = '見積書' | '契約書' | '請求書' | '仕様書' | '議事録' | '報告書' | 'その他';
+export type DriveDirection = 'received' | 'submitted';
+export type DriveStagingStatus = 'pending_review' | 'approved' | 'uploaded' | 'rejected' | 'expired';
+
+export interface DriveFileStaging {
+  id: string;
+  userId: string;
+  sourceMessageId?: string;
+  sourceType: string;
+  sourceFromName?: string;
+  sourceFromAddress?: string;
+  sourceSubject?: string;
+  fileName: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  tempDriveFileId?: string;
+  organizationId?: string;
+  organizationName?: string;
+  projectId?: string;
+  projectName?: string;
+  aiDocumentType?: DriveDocumentType;
+  aiDirection: DriveDirection;
+  aiYearMonth?: string;
+  aiSuggestedName?: string;
+  aiConfidence: number;
+  aiReasoning?: string;
+  status: DriveStagingStatus;
+  confirmedDocumentType?: string;
+  confirmedDirection?: string;
+  confirmedYearMonth?: string;
+  confirmedFileName?: string;
+  finalDriveFileId?: string;
+  finalDriveFolderId?: string;
+  finalDriveUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileIntakeCardData {
+  items: FileIntakeItem[];
+  totalPending: number;
+}
+
+export interface FileIntakeItem {
+  id: string;
+  fileName: string;
+  fileSizeBytes?: number;
+  mimeType?: string;
+  sourceChannel: string;
+  sourceFromName?: string;
+  aiDocumentType?: DriveDocumentType;
+  aiDirection: DriveDirection;
+  aiYearMonth?: string;
+  aiSuggestedName?: string;
+  aiConfidence: number;
+  organizationName?: string;
+  projectName?: string;
+  createdAt: string;
 }

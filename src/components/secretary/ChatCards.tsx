@@ -7,6 +7,7 @@ import {
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
+  FolderInput, Check, X, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -27,7 +28,8 @@ export type CardType =
   | 'briefing_summary'    // ブリーフィングサマリー
   | 'calendar_events'     // カレンダー予定一覧
   | 'deadline_alert'      // 期限アラート
-  | 'document_list';      // ドキュメント一覧
+  | 'document_list'       // ドキュメント一覧
+  | 'file_intake';        // ファイル確認・承認
 
 // カードデータ共通
 export interface CardData {
@@ -597,6 +599,7 @@ interface BriefingSummaryData {
   activeTaskCount: number;
   pendingJobCount: number;
   todayEventCount: number;
+  pendingFileCount?: number;  // 未確認ファイル数
   nextEvent?: {           // 次の予定
     title: string;
     time: string;         // "10:00〜11:00"
@@ -643,6 +646,15 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <span className="text-[10px] text-slate-500 ml-1">今日の予定</span>
           </div>
         </div>
+        {(summary.pendingFileCount ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <FolderInput className="w-4 h-4 text-amber-500" />
+            <div>
+              <span className="text-lg font-bold text-amber-700">{summary.pendingFileCount}</span>
+              <span className="text-[10px] text-amber-600 ml-1">確認待ちファイル</span>
+            </div>
+          </div>
+        )}
       </div>
       {summary.nextEvent && (
         <div className="px-4 py-2 bg-white/60 border-t border-blue-100 flex items-center gap-2">
@@ -895,6 +907,282 @@ function DocumentListCard({
 }
 
 // ========================================
+// ファイル確認・承認カード（Phase 44c）
+// ========================================
+interface FileIntakeItem {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes?: number;
+  organizationId?: string;
+  projectId?: string;
+  aiDocumentType: string;
+  aiDirection: string;
+  aiYearMonth: string;
+  aiSuggestedName: string;
+  aiConfidence: number;
+  sourceType?: string;
+  createdAt: string;
+}
+
+const DOCUMENT_TYPES = [
+  '見積書', '契約書', '請求書', '発注書', '納品書',
+  '仕様書', '議事録', '報告書', '提案書', '企画書', 'その他',
+];
+
+export function FileIntakeCard({
+  files,
+  totalCount,
+  onApprove,
+  onReject,
+  onApproveAll,
+}: {
+  files: FileIntakeItem[];
+  totalCount: number;
+  onApprove?: (fileId: string, overrides: { documentType: string; direction: string; yearMonth: string }) => void;
+  onReject?: (fileId: string) => void;
+  onApproveAll?: () => void;
+}) {
+  // 各ファイルの編集状態
+  const [editStates, setEditStates] = useState<Record<string, {
+    documentType: string;
+    direction: string;
+    yearMonth: string;
+    expanded: boolean;
+  }>>(() => {
+    const initial: Record<string, { documentType: string; direction: string; yearMonth: string; expanded: boolean }> = {};
+    files.forEach(f => {
+      initial[f.id] = {
+        documentType: f.aiDocumentType,
+        direction: f.aiDirection,
+        yearMonth: f.aiYearMonth,
+        expanded: false,
+      };
+    });
+    return initial;
+  });
+  const [approvedIds, setApprovedIds] = useState<Set<string>>(new Set());
+  const [rejectedIds, setRejectedIds] = useState<Set<string>>(new Set());
+  const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  const updateState = (id: string, field: string, value: string) => {
+    setEditStates(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value },
+    }));
+  };
+
+  const toggleExpand = (id: string) => {
+    setEditStates(prev => ({
+      ...prev,
+      [id]: { ...prev[id], expanded: !prev[id]?.expanded },
+    }));
+  };
+
+  const handleApprove = async (fileId: string) => {
+    const state = editStates[fileId];
+    if (!state) return;
+    setLoadingId(fileId);
+    onApprove?.(fileId, {
+      documentType: state.documentType,
+      direction: state.direction,
+      yearMonth: state.yearMonth,
+    });
+    setApprovedIds(prev => new Set([...prev, fileId]));
+    setLoadingId(null);
+  };
+
+  const handleReject = (fileId: string) => {
+    onReject?.(fileId);
+    setRejectedIds(prev => new Set([...prev, fileId]));
+  };
+
+  const pendingFiles = files.filter(f => !approvedIds.has(f.id) && !rejectedIds.has(f.id));
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FolderInput className="w-4 h-4 text-amber-600" />
+          <span className="text-xs font-semibold text-amber-800">
+            確認待ちファイル {totalCount}件
+          </span>
+        </div>
+        {pendingFiles.length > 1 && onApproveAll && (
+          <button
+            onClick={onApproveAll}
+            className="px-3 py-1 text-[11px] font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors flex items-center gap-1"
+          >
+            <Check className="w-3 h-3" />
+            一括承認
+          </button>
+        )}
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {files.map((file) => {
+          const state = editStates[file.id];
+          const isApproved = approvedIds.has(file.id);
+          const isRejected = rejectedIds.has(file.id);
+          const isLoading = loadingId === file.id;
+
+          if (isApproved) {
+            return (
+              <div key={file.id} className="px-4 py-3 bg-green-50 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-green-600" />
+                <span className="text-xs text-green-700">{file.fileName} — 承認済み</span>
+              </div>
+            );
+          }
+          if (isRejected) {
+            return (
+              <div key={file.id} className="px-4 py-3 bg-red-50 flex items-center gap-2">
+                <XCircle className="w-4 h-4 text-red-500" />
+                <span className="text-xs text-red-600">{file.fileName} — 却下</span>
+              </div>
+            );
+          }
+
+          return (
+            <div key={file.id} className="px-4 py-3">
+              {/* ファイル基本情報 */}
+              <div className="flex items-start gap-3">
+                <FileText className="w-4 h-4 text-slate-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-slate-800 truncate">{file.fileName}</span>
+                    {file.fileSizeBytes && (
+                      <span className="text-[10px] text-slate-400 shrink-0">{formatFileSize(file.fileSizeBytes)}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={cn(
+                      'px-1.5 py-0.5 text-[10px] font-medium rounded',
+                      file.aiConfidence >= 0.8 ? 'bg-green-100 text-green-700' :
+                      file.aiConfidence >= 0.5 ? 'bg-amber-100 text-amber-700' :
+                      'bg-slate-100 text-slate-600'
+                    )}>
+                      {state?.documentType || file.aiDocumentType}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {(state?.direction || file.aiDirection) === 'received' ? '受領' : '提出'}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {state?.yearMonth || file.aiYearMonth}
+                    </span>
+                    <button
+                      onClick={() => toggleExpand(file.id)}
+                      className="ml-auto text-[10px] text-blue-500 hover:text-blue-700 flex items-center gap-0.5"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      {state?.expanded ? '閉じる' : '編集'}
+                    </button>
+                  </div>
+
+                  {/* 展開時の編集フォーム */}
+                  {state?.expanded && (
+                    <div className="mt-2 p-2 bg-slate-50 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-slate-500 w-14 shrink-0">書類種別</label>
+                        <div className="relative flex-1">
+                          <select
+                            value={state.documentType}
+                            onChange={(e) => updateState(file.id, 'documentType', e.target.value)}
+                            className="w-full text-xs border border-slate-200 rounded px-2 py-1 appearance-none bg-white pr-6"
+                          >
+                            {DOCUMENT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                          <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-slate-500 w-14 shrink-0">方向</label>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => updateState(file.id, 'direction', 'received')}
+                            className={cn(
+                              'px-2 py-0.5 text-[10px] rounded border transition-colors',
+                              state.direction === 'received'
+                                ? 'bg-blue-50 border-blue-300 text-blue-700'
+                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                            )}
+                          >
+                            受領
+                          </button>
+                          <button
+                            onClick={() => updateState(file.id, 'direction', 'submitted')}
+                            className={cn(
+                              'px-2 py-0.5 text-[10px] rounded border transition-colors',
+                              state.direction === 'submitted'
+                                ? 'bg-purple-50 border-purple-300 text-purple-700'
+                                : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                            )}
+                          >
+                            提出
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] text-slate-500 w-14 shrink-0">年月</label>
+                        <input
+                          type="month"
+                          value={state.yearMonth}
+                          onChange={(e) => updateState(file.id, 'yearMonth', e.target.value)}
+                          className="text-xs border border-slate-200 rounded px-2 py-1 bg-white"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* アクションボタン */}
+              <div className="flex gap-2 mt-2 ml-7">
+                <button
+                  onClick={() => handleApprove(file.id)}
+                  disabled={isLoading || !file.organizationId || !file.projectId}
+                  className={cn(
+                    'px-3 py-1 text-[11px] font-medium rounded-lg transition-colors flex items-center gap-1',
+                    (!file.organizationId || !file.projectId)
+                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                  )}
+                >
+                  {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                  承認
+                </button>
+                <button
+                  onClick={() => handleReject(file.id)}
+                  className="px-3 py-1 text-[11px] font-medium bg-slate-100 text-slate-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  却下
+                </button>
+                {(!file.organizationId || !file.projectId) && (
+                  <span className="text-[10px] text-amber-600 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    組織/プロジェクト未設定
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 処理済みサマリー */}
+      {(approvedIds.size > 0 || rejectedIds.size > 0) && pendingFiles.length === 0 && (
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-100">
+          <p className="text-xs text-slate-600">
+            全{files.length}件処理完了（承認: {approvedIds.size}件、却下: {rejectedIds.size}件）
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
 export function CardRenderer({
@@ -969,6 +1257,16 @@ export function CardRenderer({
           documents={card.data.documents || []}
           totalCount={card.data.totalCount || 0}
           onShare={(docId) => onAction?.('share_document', { docId })}
+        />
+      );
+    case 'file_intake':
+      return (
+        <FileIntakeCard
+          files={card.data.files || []}
+          totalCount={card.data.totalCount || 0}
+          onApprove={(fileId, overrides) => onAction?.('approve_file', { fileId, ...overrides })}
+          onReject={(fileId) => onAction?.('reject_file', { fileId })}
+          onApproveAll={() => onAction?.('approve_all_files', {})}
         />
       );
     default:

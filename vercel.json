@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/sync-drive-documents",
       "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/clean-drive-staging",
+      "schedule": "30 0 * * *"
     }
   ]
 }

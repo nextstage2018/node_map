@@ -1,14 +1,16 @@
-// Google Drive 添付ファイル自動同期 Cron Job
-// inbox_messages の添付ファイルを自動検出し、Driveにアップロード
+// Phase 44b: Google Drive 添付ファイル自動同期 Cron Job（ステージング経由版）
+// inbox_messages の添付ファイルを自動検出 → 一時フォルダにアップロード → AI分類 → ステージング登録
+// ユーザー承認後に最終フォルダへ移動（承認は秘書チャットの FileIntakeCard 経由）
 // 日次実行（vercel.json で設定）
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import * as DriveService from '@/services/drive/driveClient.service';
+import { classifyFile } from '@/services/drive/fileClassification.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // 最大2分
 
-const BATCH_SIZE = 30; // 1回あたりの処理件数
+const BATCH_SIZE = 20; // AI分類の分だけ処理時間が増えるため30→20に削減
 
 export async function GET(request: NextRequest) {
   // Vercel Cron認証
@@ -19,29 +21,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  console.log('[Cron/DriveDocs] 添付ファイル同期開始:', new Date().toISOString());
+  console.log('[Cron/DriveDocs] 添付ファイル同期開始（ステージング経由）:', new Date().toISOString());
 
   const supabase = createServerClient();
   if (!supabase || !isSupabaseConfigured()) {
-    return NextResponse.json({
-      success: false,
-      error: 'Supabase未設定',
-    });
+    return NextResponse.json({ success: false, error: 'Supabase未設定' });
   }
 
   const stats = {
     processed: 0,
-    uploaded: 0,
+    staged: 0,
     skipped: 0,
     errors: 0,
   };
 
   try {
     // drive_synced = false かつ Gmail チャネルのメッセージを取得
-    // （Slack/Chatworkの添付取得はAPI制限のため将来対応）
     const { data: messages, error } = await supabase
       .from('inbox_messages')
-      .select('id, channel, from_address, from_name, subject, metadata, direction, created_at')
+      .select('id, channel, from_address, from_name, subject, body, metadata, direction, created_at')
       .eq('drive_synced', false)
       .eq('channel', 'email')
       .order('created_at', { ascending: false })
@@ -59,8 +57,7 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Cron/DriveDocs] ${messages.length}件のメッセージを処理`);
 
-    // ユーザーごとにグループ化（user_service_tokensからユーザーを特定）
-    // inbox_messagesにuser_idカラムはないため、全ユーザーのトークンを取得
+    // Gmail連携ユーザーのトークン取得
     const { data: tokenUsers } = await supabase
       .from('user_service_tokens')
       .select('user_id, token_data')
@@ -69,7 +66,6 @@ export async function GET(request: NextRequest) {
 
     if (!tokenUsers || tokenUsers.length === 0) {
       console.log('[Cron/DriveDocs] Gmail連携ユーザーなし');
-      // 全メッセージをdrive_synced=trueにマーク（処理不要）
       const msgIds = messages.map(m => m.id);
       await supabase
         .from('inbox_messages')
@@ -86,7 +82,6 @@ export async function GET(request: NextRequest) {
         const gmailMessageId = metadata.messageId;
 
         if (!gmailMessageId) {
-          // Gmail messageIdがないメッセージはスキップ
           stats.skipped++;
           await supabase
             .from('inbox_messages')
@@ -95,7 +90,6 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        // 各ユーザーのトークンで添付ファイルを確認
         let attachmentFound = false;
 
         for (const tokenUser of tokenUsers) {
@@ -107,13 +101,15 @@ export async function GET(request: NextRequest) {
 
           // Gmail添付ファイル一覧取得
           const attachments = await DriveService.getGmailAttachments(userId, gmailMessageId);
-
           if (attachments.length === 0) continue;
 
           attachmentFound = true;
 
-          // 組織/プロジェクトを推定（from_addressからコンタクト → 組織）
+          // 組織/プロジェクトを推定
           const orgProject = await detectOrgProject(supabase, msg.from_address, userId);
+
+          // 一時保管フォルダ取得（なければ作成）
+          const tempFolderId = await DriveService.getOrCreateTempFolder(userId);
 
           for (const att of attachments) {
             try {
@@ -127,64 +123,74 @@ export async function GET(request: NextRequest) {
                 continue;
               }
 
-              // アップロード先フォルダ確定
-              let folderId: string | null = null;
+              // ========================================
+              // 1. 一時フォルダにアップロード
+              // ========================================
+              let tempDriveFileId: string | null = null;
 
-              if (orgProject.orgId && orgProject.orgName) {
-                const orgFolderId = await DriveService.getOrCreateOrgFolder(
-                  userId, orgProject.orgId, orgProject.orgName
+              if (tempFolderId) {
+                const tempFile = await DriveService.uploadFile(
+                  userId,
+                  fileData.data,
+                  att.fileName,
+                  att.mimeType,
+                  tempFolderId
                 );
-
-                if (orgFolderId && orgProject.projectId && orgProject.projectName) {
-                  folderId = await DriveService.getOrCreateProjectFolder(
-                    userId, orgProject.orgId, orgProject.projectId, orgProject.projectName
-                  );
-                } else {
-                  folderId = orgFolderId;
-                }
+                tempDriveFileId = tempFile?.id || null;
               }
 
-              if (!folderId) {
-                // フォルダ未特定の場合、「未分類」フォルダを作成
-                const unsortedFolder = await DriveService.createFolder(userId, '[NodeMap] 未分類');
-                folderId = unsortedFolder?.id || null;
-              }
+              // ========================================
+              // 2. AI分類
+              // ========================================
+              const sourceType = msg.direction === 'sent'
+                ? 'submitted_email'
+                : 'received_email';
 
-              if (!folderId) {
-                stats.errors++;
-                continue;
-              }
-
-              // Driveにアップロード
-              const driveFile = await DriveService.uploadFile(
-                userId,
-                fileData.data,
-                att.fileName,
-                att.mimeType,
-                folderId
-              );
-
-              if (!driveFile) {
-                stats.errors++;
-                continue;
-              }
-
-              // DBに記録
-              await DriveService.recordDocument({
-                userId,
-                organizationId: orgProject.orgId || undefined,
-                projectId: orgProject.projectId || undefined,
-                driveFileId: driveFile.id,
-                driveFolderId: folderId,
-                fileName: driveFile.name,
-                fileSizeBytes: driveFile.size,
-                mimeType: driveFile.mimeType,
-                driveUrl: driveFile.webViewLink,
-                sourceChannel: 'email',
-                sourceMessageId: msg.id,
+              const classification = await classifyFile({
+                fileName: att.fileName,
+                mimeType: att.mimeType,
+                emailSubject: msg.subject || undefined,
+                emailBody: msg.body ? (msg.body as string).slice(0, 200) : undefined,
+                senderName: msg.from_name || undefined,
+                senderAddress: msg.from_address || undefined,
+                direction: msg.direction === 'sent' ? 'sent' : 'received',
+                messageDate: msg.created_at,
+                organizationName: orgProject.orgName || undefined,
+                projectName: orgProject.projectName || undefined,
               });
 
-              stats.uploaded++;
+              // ========================================
+              // 3. ステージングに登録
+              // ========================================
+              const stagingId = await DriveService.saveStagingFile({
+                userId,
+                sourceMessageId: msg.id,
+                sourceType,
+                sourceFromName: msg.from_name || undefined,
+                sourceFromAddress: msg.from_address || undefined,
+                sourceSubject: msg.subject || undefined,
+                fileName: att.fileName,
+                mimeType: att.mimeType,
+                fileSizeBytes: fileData.data.length,
+                tempDriveFileId: tempDriveFileId || undefined,
+                organizationId: orgProject.orgId || undefined,
+                organizationName: orgProject.orgName || undefined,
+                projectId: orgProject.projectId || undefined,
+                projectName: orgProject.projectName || undefined,
+                aiDocumentType: classification.documentType,
+                aiDirection: classification.direction,
+                aiYearMonth: classification.yearMonth,
+                aiSuggestedName: classification.suggestedName,
+                aiConfidence: classification.confidence,
+                aiReasoning: classification.reasoning,
+              });
+
+              if (stagingId) {
+                stats.staged++;
+                console.log(`[Cron/DriveDocs] ステージング登録: ${att.fileName} → ${classification.documentType} (${Math.round(classification.confidence * 100)}%)`);
+              } else {
+                stats.errors++;
+              }
             } catch (attError) {
               console.error('[Cron/DriveDocs] 添付処理エラー:', att.fileName, attError);
               stats.errors++;
@@ -207,7 +213,6 @@ export async function GET(request: NextRequest) {
       } catch (msgError) {
         console.error('[Cron/DriveDocs] メッセージ処理エラー:', msg.id, msgError);
         stats.errors++;
-        // エラーでもdrive_syncedをtrueにして無限リトライを防止
         await supabase
           .from('inbox_messages')
           .update({ drive_synced: true })
@@ -261,7 +266,6 @@ async function detectOrgProject(
     if (channels && channels.length > 0) {
       const contactId = channels[0].contact_id;
 
-      // コンタクトからcompany_nameを取得
       const { data: contact } = await supabase
         .from('contact_persons')
         .select('company_name')
@@ -269,7 +273,6 @@ async function detectOrgProject(
         .single();
 
       if (contact?.company_name) {
-        // company_nameから組織を検索
         const { data: org } = await supabase
           .from('organizations')
           .select('id, name')
@@ -281,7 +284,6 @@ async function detectOrgProject(
           result.orgId = org.id;
           result.orgName = org.name;
 
-          // 組織に紐づくプロジェクトを検索（最新1件）
           const { data: project } = await supabase
             .from('projects')
             .select('id, name')

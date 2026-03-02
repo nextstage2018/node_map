@@ -74,6 +74,7 @@ type Intent =
   | 'tasks'           // タスク状況
   | 'jobs'            // ジョブ・対応必要
   | 'documents'       // ドキュメント・ファイル一覧
+  | 'file_intake'     // ファイル確認・承認フロー
   | 'share_file'      // ファイル共有
   | 'thought_map'     // 思考マップ
   | 'business_log'    // ビジネスログ
@@ -118,6 +119,13 @@ function classifyIntent(message: string): Intent {
   // ジョブ一覧
   if (m.includes('ジョブ') || (m.includes('対応') && m.includes('必要'))) return 'jobs';
   if (m.includes('対応が必要') || m.includes('やるべき')) return 'jobs';
+
+  // ファイル確認・承認（受領ファイルの確認フロー）
+  if (m.includes('ファイル') && (m.includes('確認') || m.includes('承認') || m.includes('チェック'))) return 'file_intake';
+  if (m.includes('届いた') && (m.includes('書類') || m.includes('ファイル') || m.includes('資料'))) return 'file_intake';
+  if (m.includes('受け取った') && (m.includes('ファイル') || m.includes('書類'))) return 'file_intake';
+  if (m.includes('未確認') && (m.includes('ファイル') || m.includes('書類'))) return 'file_intake';
+  if (m.includes('取り込み') || m.includes('インテーク')) return 'file_intake';
 
   // ドキュメント・ファイル（Drive）
   if (m.includes('共有') && (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('ドライブ'))) return 'share_file';
@@ -232,6 +240,16 @@ async function fetchDataAndBuildCards(
       const activeTaskCount = tasks.filter(t => t.status !== 'done').length;
       const pendingJobCount = jobs.filter(j => j.status === 'pending' || j.status === 'draft').length;
 
+      // 未確認ファイル数を取得
+      let pendingFileCount = 0;
+      try {
+        const { getPendingStagingFiles } = await import('@/services/drive/driveClient.service');
+        const stagingFiles = await getPendingStagingFiles(userId);
+        pendingFileCount = stagingFiles.length;
+      } catch {
+        // エラー時は0のまま
+      }
+
       // 次の予定を計算
       let nextEvent: { title: string; time: string; minutesUntil?: number } | undefined;
       const now = new Date();
@@ -259,6 +277,7 @@ async function fetchDataAndBuildCards(
           activeTaskCount,
           pendingJobCount,
           todayEventCount: calendarEvents.length,
+          pendingFileCount,
           nextEvent,
         },
       });
@@ -403,6 +422,45 @@ async function fetchDataAndBuildCards(
             targetName: undefined,
           },
         });
+      }
+    }
+
+    // ファイル確認 → file_intake カード（pending_review のステージングファイル）
+    if (intent === 'file_intake' || intent === 'briefing') {
+      try {
+        const { getPendingStagingFiles, formatStagingForContext } = await import('@/services/drive/driveClient.service');
+        const stagingFiles = await getPendingStagingFiles(userId);
+        if (stagingFiles.length > 0) {
+          cards.push({
+            type: 'file_intake',
+            data: {
+              files: stagingFiles.map((f: Record<string, unknown>) => ({
+                id: f.id,
+                fileName: f.file_name,
+                mimeType: f.mime_type,
+                fileSizeBytes: f.file_size_bytes,
+                organizationId: f.organization_id,
+                projectId: f.project_id,
+                aiDocumentType: f.ai_document_type || 'その他',
+                aiDirection: f.ai_direction || 'received',
+                aiYearMonth: f.ai_year_month || new Date().toISOString().slice(0, 7),
+                aiSuggestedName: f.ai_suggested_name || f.file_name,
+                aiConfidence: f.ai_confidence || 0,
+                sourceType: f.source_type,
+                createdAt: f.created_at,
+              })),
+              totalCount: stagingFiles.length,
+            },
+          });
+          parts.push(`\n\n【未確認ファイル（${stagingFiles.length}件）】\n${formatStagingForContext(stagingFiles)}`);
+        } else if (intent === 'file_intake') {
+          parts.push('\n\n【未確認ファイル】\n確認待ちのファイルはありません');
+        }
+      } catch (intakeError) {
+        console.error('[Secretary API] ステージングファイル取得エラー:', intakeError);
+        if (intent === 'file_intake') {
+          parts.push('\n\n【未確認ファイル】\nファイル情報の取得に失敗しました');
+        }
       }
     }
 
@@ -862,6 +920,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - 承認されたジョブはAIが自動で実行する
 - Google Calendar連携（今日の予定表示・空き時間検索・予定作成）
 - Google Drive連携（ドキュメント一覧表示・ファイル検索・共有リンク生成）
+- ファイル取り込み管理（受領ファイルのAI自動分類→確認→承認→最終保管フロー）
 - ビジネスログの参照
 - 思考マップ・ナレッジの参照
 
@@ -879,6 +938,7 @@ ${intent === 'briefing'
 - テキスト回答ではカードの内容を繰り返さず、全体的な状況と「今日何から始めるべきか」の具体的な提案に集中してください
 - 緊急度の高い事項（期限切れ・今日期限のタスク、未読の緊急メッセージ）があれば最初に触れてください
 - カレンダーに予定があれば時間を意識したアドバイスをしてください（例：「10時からミーティングがあるので、それまでに○○の返信を」）
+- 確認待ちファイルがある場合は自然に報告してください（例：「昨日2件のファイルが届いています。確認しますか？」）
 - 1〜3文で簡潔にまとめること。リスト形式ではなく自然な日本語で。`
     : ''}
 ${intent === 'schedule'
@@ -1021,6 +1081,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return 'カレンダーの予定を確認しました。上の情報を参照してください。';
     case 'schedule':
       return '空き時間を検索しました。候補の日時を確認してください。';
+    case 'file_intake':
+      return hasCards
+        ? '確認待ちのファイルがあります。カードからAIの分類結果を確認し、承認または修正してください。一括承認も可能です。'
+        : '確認待ちのファイルはありません。メッセージの添付ファイルは自動で取り込まれ、ここに表示されます。';
     case 'documents':
       return hasCards
         ? 'ドキュメント一覧を表示しました。ファイル名をクリックするとGoogle Driveで開けます。'

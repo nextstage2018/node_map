@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, Send, Loader2, Trash2,
   Inbox, CheckSquare, Zap, GitBranch,
-  ClipboardList, Sun, Sparkles, Calendar,
+  ClipboardList, Sun, Sparkles, Calendar, FolderInput,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
@@ -29,6 +29,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: 'ビジネスログ', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '最近のビジネスログを見せて', category: 'log' },
   { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
   { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
+  { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
 ];
 
 // ========================================
@@ -310,6 +311,102 @@ export default function SecretaryChat() {
           window.location.href = `/tasks?open=${itemId}`;
         } else if (itemType === 'job' && itemId) {
           window.location.href = `/jobs`;
+        }
+        break;
+      }
+      case 'approve_file': {
+        // Phase 44c: ファイル承認 → approve API呼び出し
+        const fileId = d?.fileId as string;
+        if (fileId) {
+          try {
+            const res = await fetch(`/api/drive/files/intake/${fileId}/approve`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                documentType: d?.documentType || 'その他',
+                direction: d?.direction || 'received',
+                yearMonth: d?.yearMonth || new Date().toISOString().slice(0, 7),
+              }),
+            });
+            const result = await res.json();
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{
+                type: 'action_result',
+                data: result.success
+                  ? { success: true, message: 'ファイルを承認しました', details: result.data?.driveUrl ? `Drive: ${result.data.driveUrl}` : '' }
+                  : { success: false, message: 'ファイルの承認に失敗しました', details: result.error || '' },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'ファイルの承認中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'reject_file': {
+        const fileId = d?.fileId as string;
+        if (fileId) {
+          try {
+            await fetch(`/api/drive/files/intake/${fileId}/reject`, {
+              method: 'POST',
+            });
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{
+                type: 'action_result',
+                data: { success: true, message: 'ファイルを却下しました' },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'ファイルの却下中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'approve_all_files': {
+        try {
+          const res = await fetch('/api/drive/files/intake/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+          });
+          const result = await res.json();
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            cards: [{
+              type: 'action_result',
+              data: result.success
+                ? { success: true, message: result.data?.message || '一括承認が完了しました', details: `承認: ${result.data?.approved || 0}件` }
+                : { success: false, message: '一括承認に失敗しました', details: result.error || '' },
+            }],
+            timestamp: new Date().toISOString(),
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '一括承認中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
         }
         break;
       }

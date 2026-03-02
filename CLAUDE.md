@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）まで反映）
 
 ---
 
@@ -37,6 +37,9 @@
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
 | `thought_edges` | 思考動線。from_node_id→to_node_idの順序付きエッジ。UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
+| `drive_file_staging` | ファイル一時保管ステージング。status: pending_review→approved→uploaded / rejected / expired。AI分類結果（ai_document_type/ai_direction/ai_year_month/ai_suggested_name/ai_confidence）。ユーザー確定値（confirmed_*）。final_drive_file_id で最終配置追跡 |
+| `drive_folders` | DriveフォルダマッピングPhase 44拡張: hierarchy_level 1-4（組織/プロジェクト/方向/年月）、direction/year_month カラム追加 |
+| `drive_documents` | DriveドキュメントPhase 44拡張: direction/document_type/year_month/original_file_name カラム追加 |
 | `thought_snapshots` | Phase 42e: タスクのスナップショット。snapshot_type = 'initial_goal' / 'final_landing'。node_ids TEXT[] |
 | `task_members` | グループタスクのメンバー管理。UNIQUE(task_id, user_id)。role='owner'/'member'。calendar_event_idでメンバーごとのカレンダー予定を追跡 |
 
@@ -129,7 +132,88 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Calendar連携 | Gmail OAuthにカレンダースコープ追加＋calendarClient.service.ts＋/api/calendar＋秘書AIカレンダーコンテキスト＋日程調整ジョブでカレンダー予定自動作成 | b69dead |
 | ブリーフィング強化 | ブリーフィングサマリーカード＋カレンダー予定カード＋期限アラートカード＋AIプロンプト改善 | b69dead |
 | Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | TBD |
-| Google Drive連携 | OAuth drive.fileスコープ＋drive_folders/drive_documentsテーブル＋DriveClientService＋フォルダ/ドキュメントAPI＋添付自動同期Cron＋秘書AIドキュメントintent/card＋ビジネスログドキュメントタブ＋設定Drive再認証バナー | TBD |
+| Google Drive連携 | OAuth drive.fileスコープ＋drive_folders/drive_documentsテーブル＋DriveClientService＋フォルダ/ドキュメントAPI＋添付自動同期Cron＋秘書AIドキュメントintent/card＋ビジネスログドキュメントタブ＋設定Drive再認証バナー | 23f9b4e |
+| Drive実運用対応 | 4階層フォルダ（組織/プロジェクト/方向/年月）＋drive_file_stagingテーブル＋AI自動分類＋秘書ファイル確認フロー（FileIntakeCard）＋承認/却下/一括API＋ステージングクリーンアップCron＋ブリーフィング未確認ファイル数 | TBD |
+
+---
+
+## Drive実運用対応（Phase 44a-44d）実装内容
+
+### 概要
+Google Drive連携を実運用に耐える形に拡張。受領/提出の区別、月別フォルダ、AI自動分類、秘書確認フロー、一括承認を実装。
+
+**フォルダ構造**:
+```
+[NodeMap] A社/
+  プロジェクトX/
+    受領/
+      2026-03/
+        2026-03-01_見積書_original-filename.pdf
+    提出/
+      2026-03/
+        2026-03-01_発注書_purchase-order.pdf
+```
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 034_phase44a_drive_file_intake.sql
+-- drive_folders拡張: direction, year_month カラム追加（4階層: 組織/プロジェクト/方向/年月）
+-- drive_file_staging テーブル新設（ステージング管理、AI分類結果、承認フロー）
+-- drive_documents拡張: direction, document_type, year_month, original_file_name 追加
+```
+
+### 新規ファイル
+- `supabase/migrations/034_phase44a_drive_file_intake.sql` — DBスキーマ（ステージング + 4階層対応）
+- `src/services/drive/fileClassification.service.ts` — AI分類サービス（Claude API、ファイル名+メール文脈から書類種別/方向/年月/リネーム候補を判定）
+- `src/app/api/drive/files/intake/[id]/approve/route.ts` — ファイル承認API（4階層フォルダ作成→リネーム移動→drive_documents登録）
+- `src/app/api/drive/files/intake/[id]/reject/route.ts` — ファイル却下API（一時Driveファイル削除→staging更新）
+- `src/app/api/drive/files/intake/batch/route.ts` — 一括承認API（全pending_reviewをAI推奨値で承認）
+- `src/app/api/cron/clean-drive-staging/route.ts` — ステージングクリーンアップCron（14日放置→期限切れ、30日→削除）
+
+### 変更ファイル
+- `src/lib/types.ts` — DriveFileStaging, FileIntakeCardData, FileIntakeItem 型追加、DriveFolderMapping 4階層対応
+- `src/services/drive/driveClient.service.ts` — 4階層フォルダ管理（getOrCreateDirectionFolder/getOrCreateMonthFolder/ensureFinalFolder）+ ステージングCRUD（saveStagingFile/getPendingStagingFiles/approveStagingFile/rejectStagingFile）+ moveAndRenameFile + formatStagingForContext
+- `src/app/api/cron/sync-drive-documents/route.ts` — ステージングベースフローに全面改修（一時フォルダアップロード→AI分類→staging登録）
+- `src/app/api/agent/chat/route.ts` — file_intake intent追加（キーワード: ファイル確認/届いた書類/受け取ったファイル）、ブリーフィングにpendingFileCount追加、システムプロンプトにファイル取り込み能力記述追加
+- `src/components/secretary/ChatCards.tsx` — FileIntakeCard コンポーネント追加（書類種別ドロップダウン/方向トグル/年月ピッカー/承認/却下/一括承認）、BriefingSummaryCard に確認待ちファイル数表示追加
+- `src/components/secretary/SecretaryChat.tsx` — handleCardAction に approve_file/reject_file/approve_all_files アクション追加、サジェストチップに「届いたファイル確認」追加
+- `vercel.json` — clean-drive-staging Cron追加（毎日0:30実行）
+
+### ファイル取り込みフロー
+```
+【メール受信→自動取り込み】
+Cron sync-drive-documents（毎日23:00）
+  → drive_synced=false のメッセージ取得
+  → 添付ファイルDL → [NodeMap]一時保管フォルダにアップロード
+  → fileClassification.service.ts でAI分類（ファイル名+メール文脈）
+  → drive_file_staging に登録（status=pending_review）
+
+【秘書AI確認フロー】
+ブリーフィング or「届いたファイル確認して」
+  → file_intake カード表示（AI分類結果プレビュー）
+  → ユーザーが確認・編集（書類種別/方向/年月）
+  → 承認 → 4階層フォルダ作成+リネーム移動+drive_documents登録
+  → 却下 → 一時ファイル削除
+
+【クリーンアップ】
+Cron clean-drive-staging（毎日0:30）
+  → 14日放置 → expired
+  → 30日超 rejected/expired → Driveファイル削除+DB削除
+```
+
+### AI分類の仕様
+- ファイル名 + メール文脈（件名/本文/送信者）のみで判定（PDF中身は読まない: 軽量設計）
+- 書類種別: 見積書/契約書/請求書/発注書/納品書/仕様書/議事録/報告書/提案書/企画書/その他
+- 方向: received/submitted（メールのdirectionから自動判定）
+- リネーム候補: `YYYY-MM-DD_種別_元ファイル名.拡張子`
+- 信頼度(confidence): 0.0-1.0（AI判定結果に付与）
+- Claude API使用不可時はキーワードベースのフォールバック分類
+
+### 重要な実装ノート
+- **ステージングベース**: ファイルは最終フォルダに直接置かず、まず一時保管→AI分類→ユーザー確認→承認後に最終配置
+- **4階層フォルダ**: 組織 > プロジェクト > 方向（受領/提出）> 年月（YYYY-MM）
+- **[NodeMap]一時保管フォルダ**: ルートDriveに自動作成、承認前のファイルを一時保管
+- **zshでの[id]パス**: `git add "src/app/api/drive/files/intake/[id]/approve/route.ts"` のようにブラケットを引用符で囲む
 
 ---
 

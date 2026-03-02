@@ -672,26 +672,40 @@ export async function recordDocument(params: {
   driveUrl?: string;
   sourceChannel?: string;
   sourceMessageId?: string;
+  // Phase 44a 拡張
+  direction?: string;
+  documentType?: string;
+  yearMonth?: string;
+  originalFileName?: string;
 }): Promise<string | null> {
   const sb = createServerClient();
   if (!sb) return null;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const insertData: Record<string, any> = {
+    user_id: params.userId,
+    organization_id: params.organizationId || null,
+    project_id: params.projectId || null,
+    drive_file_id: params.driveFileId,
+    drive_folder_id: params.driveFolderId || null,
+    file_name: params.fileName,
+    file_size_bytes: params.fileSizeBytes || null,
+    mime_type: params.mimeType || null,
+    drive_url: params.driveUrl || `https://drive.google.com/file/d/${params.driveFileId}/view`,
+    source_channel: params.sourceChannel || null,
+    source_message_id: params.sourceMessageId || null,
+    synced_at: new Date().toISOString(),
+  };
+
+  // Phase 44a 拡張カラム
+  if (params.direction) insertData.direction = params.direction;
+  if (params.documentType) insertData.document_type = params.documentType;
+  if (params.yearMonth) insertData.year_month = params.yearMonth;
+  if (params.originalFileName) insertData.original_file_name = params.originalFileName;
+
   const { data, error } = await sb
     .from('drive_documents')
-    .insert({
-      user_id: params.userId,
-      organization_id: params.organizationId || null,
-      project_id: params.projectId || null,
-      drive_file_id: params.driveFileId,
-      drive_folder_id: params.driveFolderId || null,
-      file_name: params.fileName,
-      file_size_bytes: params.fileSizeBytes || null,
-      mime_type: params.mimeType || null,
-      drive_url: params.driveUrl || `https://drive.google.com/file/d/${params.driveFileId}/view`,
-      source_channel: params.sourceChannel || null,
-      source_message_id: params.sourceMessageId || null,
-      synced_at: new Date().toISOString(),
-    })
+    .insert(insertData)
     .select('id')
     .single();
 
@@ -769,6 +783,466 @@ export function formatDocumentsForContext(
     const sizeStr = size ? `${(size / 1024).toFixed(0)}KB` : '不明';
     const date = d.uploaded_at ? new Date(d.uploaded_at as string).toLocaleDateString('ja-JP') : '';
     const channel = d.source_channel ? `[${d.source_channel}]` : '';
-    return `- ${name}（${sizeStr}）${channel} ${date}`;
+    const dir = d.direction === 'submitted' ? '[提出]' : '[受領]';
+    const docType = d.document_type ? `(${d.document_type})` : '';
+    return `- ${dir}${docType} ${name}（${sizeStr}）${channel} ${date}`;
+  }).join('\n');
+}
+
+// ========================================
+// Phase 44a: 4階層フォルダ管理（組織/プロジェクト/方向/年月）
+// ========================================
+
+const DIRECTION_LABELS: Record<string, string> = {
+  received: '受領',
+  submitted: '提出',
+};
+
+// 方向フォルダ（受領/提出）取得 or 作成
+export async function getOrCreateDirectionFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  direction: 'received' | 'submitted'
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('direction', direction)
+    .eq('hierarchy_level', 3)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // 親のプロジェクトフォルダを取得
+  const { data: projFolder } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('hierarchy_level', 2)
+    .single();
+
+  const parentFolderId = projFolder?.drive_folder_id || undefined;
+  if (!parentFolderId) {
+    console.error('[Drive] プロジェクトフォルダが見つかりません:', projectId);
+    return null;
+  }
+
+  // Driveにフォルダ作成
+  const folderName = DIRECTION_LABELS[direction] || direction;
+  const folder = await createFolder(userId, folderName, parentFolderId);
+  if (!folder) return null;
+
+  // DBに記録
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: parentFolderId,
+    hierarchy_level: 3,
+    direction,
+  });
+
+  return folder.id;
+}
+
+// 年月フォルダ取得 or 作成
+export async function getOrCreateMonthFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  direction: 'received' | 'submitted',
+  yearMonth: string // 'YYYY-MM'
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('direction', direction)
+    .eq('year_month', yearMonth)
+    .eq('hierarchy_level', 4)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // 親の方向フォルダを取得 or 作成
+  const dirFolderId = await getOrCreateDirectionFolder(userId, orgId, projectId, direction);
+  if (!dirFolderId) return null;
+
+  // Driveにフォルダ作成
+  const folder = await createFolder(userId, yearMonth, dirFolderId);
+  if (!folder) return null;
+
+  // DBに記録
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: dirFolderId,
+    hierarchy_level: 4,
+    direction,
+    year_month: yearMonth,
+  });
+
+  return folder.id;
+}
+
+// 最終フォルダまで一括作成（4階層すべて）
+export async function ensureFinalFolder(
+  userId: string,
+  orgId: string,
+  orgName: string,
+  projectId: string,
+  projectName: string,
+  direction: 'received' | 'submitted',
+  yearMonth: string
+): Promise<string | null> {
+  // Level 1: 組織
+  const orgFolderId = await getOrCreateOrgFolder(userId, orgId, orgName);
+  if (!orgFolderId) return null;
+
+  // Level 2: プロジェクト
+  const projFolderId = await getOrCreateProjectFolder(userId, orgId, projectId, projectName);
+  if (!projFolderId) return null;
+
+  // Level 3+4: 方向 + 年月
+  const monthFolderId = await getOrCreateMonthFolder(userId, orgId, projectId, direction, yearMonth);
+  return monthFolderId;
+}
+
+// ファイル移動（一時フォルダ → 最終フォルダ）+ リネーム
+export async function moveAndRenameFile(
+  userId: string,
+  fileId: string,
+  newParentFolderId: string,
+  newFileName: string
+): Promise<DriveFile | null> {
+  try {
+    // 1. 現在の親フォルダを取得
+    const currentFile = await getFile(userId, fileId);
+    if (!currentFile) return null;
+
+    const oldParent = currentFile.parents?.[0] || '';
+
+    // 2. 移動 + リネーム（PATCH）
+    const res = await driveFetch(
+      userId,
+      `/files/${fileId}?addParents=${newParentFolderId}&removeParents=${oldParent}&fields=id,name,mimeType,size,webViewLink,createdTime,modifiedTime,parents`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ name: newFileName }),
+      }
+    );
+
+    if (!res || !res.ok) {
+      console.error('[Drive] ファイル移動失敗:', res?.status);
+      return null;
+    }
+
+    const data = await res.json();
+    return {
+      id: data.id,
+      name: data.name,
+      mimeType: data.mimeType,
+      size: parseInt(data.size || '0', 10),
+      webViewLink: data.webViewLink || `https://drive.google.com/file/d/${data.id}/view`,
+      createdTime: data.createdTime,
+      modifiedTime: data.modifiedTime,
+      parents: data.parents,
+    };
+  } catch (error) {
+    console.error('[Drive] ファイル移動エラー:', error);
+    return null;
+  }
+}
+
+// 一時保管フォルダ取得 or 作成
+export async function getOrCreateTempFolder(userId: string): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // 特殊なキー: organization_id=NULL, hierarchy_level=1, folder_name='[NodeMap] 一時保管'
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('folder_name', '[NodeMap] 一時保管')
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // Driveにフォルダ作成
+  const folder = await createFolder(userId, '[NodeMap] 一時保管');
+  if (!folder) return null;
+
+  // DBに記録（hierarchy_level=1だがorganization_idはNULL → CHECK制約回避のためlevel=0を使わない）
+  // 一時保管フォルダはdrive_foldersには記録せず、IDをユーザー設定で管理するか
+  // 実装の簡略化: drive_foldersに入れず、ID直接管理
+  // → ここではDBに入れずキャッシュのみ
+  return folder.id;
+}
+
+// ========================================
+// Phase 44a: ステージングCRUD
+// ========================================
+
+// ステージングファイル登録
+export async function saveStagingFile(params: {
+  userId: string;
+  sourceMessageId?: string;
+  sourceType: string;
+  sourceFromName?: string;
+  sourceFromAddress?: string;
+  sourceSubject?: string;
+  fileName: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  tempDriveFileId?: string;
+  organizationId?: string;
+  organizationName?: string;
+  projectId?: string;
+  projectName?: string;
+  aiDocumentType?: string;
+  aiDirection?: string;
+  aiYearMonth?: string;
+  aiSuggestedName?: string;
+  aiConfidence?: number;
+  aiReasoning?: string;
+}): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  const { data, error } = await sb
+    .from('drive_file_staging')
+    .insert({
+      user_id: params.userId,
+      source_message_id: params.sourceMessageId || null,
+      source_type: params.sourceType,
+      source_from_name: params.sourceFromName || null,
+      source_from_address: params.sourceFromAddress || null,
+      source_subject: params.sourceSubject || null,
+      file_name: params.fileName,
+      mime_type: params.mimeType || null,
+      file_size_bytes: params.fileSizeBytes || null,
+      temp_drive_file_id: params.tempDriveFileId || null,
+      organization_id: params.organizationId || null,
+      organization_name: params.organizationName || null,
+      project_id: params.projectId || null,
+      project_name: params.projectName || null,
+      ai_document_type: params.aiDocumentType || null,
+      ai_direction: params.aiDirection || 'received',
+      ai_year_month: params.aiYearMonth || null,
+      ai_suggested_name: params.aiSuggestedName || null,
+      ai_confidence: params.aiConfidence || 0,
+      ai_reasoning: params.aiReasoning || null,
+      status: 'pending_review',
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[Drive] ステージング登録エラー:', error);
+    return null;
+  }
+
+  return data?.id || null;
+}
+
+// 未確認ステージングファイル一覧取得
+export async function getPendingStagingFiles(userId: string): Promise<Record<string, unknown>[]> {
+  const sb = createServerClient();
+  if (!sb) return [];
+
+  const { data, error } = await sb
+    .from('drive_file_staging')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('status', 'pending_review')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('[Drive] ステージング一覧取得エラー:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+// ステージングファイル承認 → 最終フォルダにアップロード
+export async function approveStagingFile(params: {
+  stagingId: string;
+  userId: string;
+  documentType: string;
+  direction: 'received' | 'submitted';
+  yearMonth: string;
+  fileName?: string; // ユーザーが編集したファイル名
+}): Promise<{ success: boolean; driveUrl?: string; error?: string }> {
+  const sb = createServerClient();
+  if (!sb) return { success: false, error: 'DB未設定' };
+
+  // 1. ステージングレコード取得
+  const { data: staging } = await sb
+    .from('drive_file_staging')
+    .select('*')
+    .eq('id', params.stagingId)
+    .eq('user_id', params.userId)
+    .single();
+
+  if (!staging) {
+    return { success: false, error: 'ステージングファイルが見つかりません' };
+  }
+
+  if (!staging.organization_id || !staging.project_id) {
+    return { success: false, error: '組織/プロジェクトが未設定です' };
+  }
+
+  if (!staging.temp_drive_file_id) {
+    return { success: false, error: '一時ファイルが見つかりません' };
+  }
+
+  // 2. 最終フォルダ作成（4階層）
+  const finalFolderId = await ensureFinalFolder(
+    params.userId,
+    staging.organization_id,
+    staging.organization_name || '不明',
+    staging.project_id,
+    staging.project_name || '不明',
+    params.direction,
+    params.yearMonth
+  );
+
+  if (!finalFolderId) {
+    return { success: false, error: '最終フォルダの作成に失敗しました' };
+  }
+
+  // 3. リネーム候補（ユーザー指定 or AI推奨 or デフォルト）
+  const ext = staging.file_name.includes('.')
+    ? '.' + staging.file_name.split('.').pop()
+    : '';
+  const baseName = staging.file_name.replace(/\.[^.]+$/, '');
+  const finalFileName = params.fileName
+    || staging.ai_suggested_name
+    || `${params.yearMonth.replace('-', '')}_${params.documentType}_${baseName}${ext}`;
+
+  // 4. ファイル移動 + リネーム
+  const movedFile = await moveAndRenameFile(
+    params.userId,
+    staging.temp_drive_file_id,
+    finalFolderId,
+    finalFileName
+  );
+
+  if (!movedFile) {
+    return { success: false, error: 'ファイルの移動に失敗しました' };
+  }
+
+  // 5. drive_documents にレコード追加
+  await recordDocument({
+    userId: params.userId,
+    organizationId: staging.organization_id,
+    projectId: staging.project_id,
+    driveFileId: movedFile.id,
+    driveFolderId: finalFolderId,
+    fileName: movedFile.name,
+    fileSizeBytes: movedFile.size,
+    mimeType: movedFile.mimeType,
+    driveUrl: movedFile.webViewLink,
+    sourceChannel: staging.source_type.replace('received_', '').replace('submitted_', '') as 'email' | 'slack' | 'chatwork' | undefined,
+    sourceMessageId: staging.source_message_id || undefined,
+    direction: params.direction,
+    documentType: params.documentType,
+    yearMonth: params.yearMonth,
+    originalFileName: staging.file_name,
+  });
+
+  // 6. ステージングレコード更新
+  await sb
+    .from('drive_file_staging')
+    .update({
+      status: 'uploaded',
+      confirmed_document_type: params.documentType,
+      confirmed_direction: params.direction,
+      confirmed_year_month: params.yearMonth,
+      confirmed_file_name: movedFile.name,
+      final_drive_file_id: movedFile.id,
+      final_drive_folder_id: finalFolderId,
+      final_drive_url: movedFile.webViewLink,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', params.stagingId);
+
+  return { success: true, driveUrl: movedFile.webViewLink };
+}
+
+// ステージングファイル却下
+export async function rejectStagingFile(
+  stagingId: string,
+  userId: string
+): Promise<boolean> {
+  const sb = createServerClient();
+  if (!sb) return false;
+
+  // ステージングレコード取得
+  const { data: staging } = await sb
+    .from('drive_file_staging')
+    .select('temp_drive_file_id')
+    .eq('id', stagingId)
+    .eq('user_id', userId)
+    .single();
+
+  // 一時Driveファイル削除
+  if (staging?.temp_drive_file_id) {
+    await deleteFile(userId, staging.temp_drive_file_id);
+  }
+
+  // ステータス更新
+  const { error } = await sb
+    .from('drive_file_staging')
+    .update({
+      status: 'rejected',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', stagingId)
+    .eq('user_id', userId);
+
+  return !error;
+}
+
+// ステージングの要約（秘書AI用）
+export function formatStagingForContext(
+  files: Record<string, unknown>[],
+  maxFiles = 10
+): string {
+  if (files.length === 0) return '確認待ちファイルなし';
+
+  return files.slice(0, maxFiles).map((f) => {
+    const name = f.file_name as string;
+    const docType = f.ai_document_type ? `(${f.ai_document_type})` : '';
+    const dir = f.ai_direction === 'submitted' ? '[提出]' : '[受領]';
+    const from = f.source_from_name ? `← ${f.source_from_name}` : '';
+    const conf = f.ai_confidence ? ` 確度${Math.round((f.ai_confidence as number) * 100)}%` : '';
+    return `- ${dir}${docType} ${name} ${from}${conf}`;
   }).join('\n');
 }
