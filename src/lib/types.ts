@@ -856,9 +856,21 @@ export interface DriveSearchResult {
 
 // ===== Phase 44a: ファイル取り込み管理 =====
 
-export type DriveDocumentType = '見積書' | '契約書' | '請求書' | '仕様書' | '議事録' | '報告書' | 'その他';
+export type DriveDocumentType = '見積書' | '契約書' | '請求書' | '発注書' | '納品書' | '仕様書' | '議事録' | '報告書' | '提案書' | '企画書' | 'その他';
 export type DriveDirection = 'received' | 'submitted';
 export type DriveStagingStatus = 'pending_review' | 'approved' | 'uploaded' | 'rejected' | 'expired';
+export type DriveDocumentLinkType = 'sheet' | 'doc' | 'drive' | null;
+
+// Phase 45c: ビジネスログサマリーカードデータ
+export interface BusinessSummaryCardData {
+  projectId: string;
+  projectName: string;
+  summaryText: string;
+  periodStart: string;
+  periodEnd: string;
+  eventCount: number;
+  topContacts: Array<{ name: string; count: number }>;
+}
 
 export interface DriveFileStaging {
   id: string;

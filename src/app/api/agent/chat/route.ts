@@ -75,9 +75,11 @@ type Intent =
   | 'jobs'            // ジョブ・対応必要
   | 'documents'       // ドキュメント・ファイル一覧
   | 'file_intake'     // ファイル確認・承認フロー
+  | 'store_file'      // ファイル格納指示
   | 'share_file'      // ファイル共有
   | 'thought_map'     // 思考マップ
   | 'business_log'    // ビジネスログ
+  | 'business_summary' // 活動要約・週間レポート
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -120,6 +122,12 @@ function classifyIntent(message: string): Intent {
   if (m.includes('ジョブ') || (m.includes('対応') && m.includes('必要'))) return 'jobs';
   if (m.includes('対応が必要') || m.includes('やるべき')) return 'jobs';
 
+  // ファイル格納指示（「格納して」「保存して」「入れて」+ URL検出）
+  if (m.includes('格納') || (m.includes('保存') && (m.includes('ドライブ') || m.includes('フォルダ')))) return 'store_file';
+  if ((m.includes('入れて') || m.includes('入れといて')) && (m.includes('フォルダ') || m.includes('ドライブ'))) return 'store_file';
+  // URLが含まれている場合の格納指示
+  if ((m.includes('格納') || m.includes('保存して')) && (m.includes('http') || m.includes('docs.google') || m.includes('sheets.google') || m.includes('drive.google'))) return 'store_file';
+
   // ファイル確認・承認（受領ファイルの確認フロー）
   if (m.includes('ファイル') && (m.includes('確認') || m.includes('承認') || m.includes('チェック'))) return 'file_intake';
   if (m.includes('届いた') && (m.includes('書類') || m.includes('ファイル') || m.includes('資料'))) return 'file_intake';
@@ -135,6 +143,11 @@ function classifyIntent(message: string): Intent {
 
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
+
+  // ビジネス活動要約
+  if (m.includes('活動') && (m.includes('要約') || m.includes('まとめ') || m.includes('サマリー'))) return 'business_summary';
+  if (m.includes('週間') && (m.includes('レポート') || m.includes('報告') || m.includes('要約'))) return 'business_summary';
+  if (m.includes('プロジェクト') && (m.includes('状況') || m.includes('進捗') || m.includes('サマリー'))) return 'business_summary';
 
   // ビジネスログ
   if (m.includes('ログ') || m.includes('ビジネス') || m.includes('活動')) return 'business_log';
@@ -495,6 +508,103 @@ async function fetchDataAndBuildCards(
       } catch (docError) {
         console.error('[Secretary API] ドキュメント取得エラー:', docError);
         parts.push('\n\n【ドキュメント】\nドキュメント情報の取得に失敗しました');
+      }
+    }
+
+    // ファイル格納指示 → StorageConfirmationCard
+    if (intent === 'store_file') {
+      try {
+        const { extractUrlsFromText } = await import('@/services/drive/driveClient.service');
+        const urls = extractUrlsFromText(userMessage);
+
+        // 組織/プロジェクト一覧を取得（選択肢として）
+        const { data: orgs } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .order('name');
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id')
+          .eq('user_id', userId)
+          .order('name');
+
+        cards.push({
+          type: 'storage_confirmation',
+          data: {
+            urls: urls.length > 0 ? urls : [{ url: '', linkType: 'drive', documentId: '', title: '' }],
+            rawMessage: userMessage,
+            organizations: (orgs || []).map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })),
+            projects: (projects || []).map((p: { id: string; name: string; organization_id: string }) => ({
+              id: p.id, name: p.name, organizationId: p.organization_id,
+            })),
+          },
+        });
+
+        if (urls.length > 0) {
+          parts.push(`\n\n【検出されたURL（${urls.length}件）】\n${urls.map(u => `- ${u.url} (${u.linkType})`).join('\n')}`);
+        } else {
+          parts.push('\n\n【格納指示】\nURLが検出できませんでした。URLを含めて再度お伝えください。');
+        }
+      } catch (storeError) {
+        console.error('[Secretary API] 格納指示処理エラー:', storeError);
+        parts.push('\n\n【格納指示】\n処理中にエラーが発生しました');
+      }
+    }
+
+    // ビジネス活動要約 → BusinessSummaryCard
+    if (intent === 'business_summary') {
+      try {
+        const { data: summaryEvents } = await supabase
+          .from('business_events')
+          .select('id, project_id, event_type, title, content, event_date, summary_period, ai_generated')
+          .eq('user_id', userId)
+          .eq('event_type', 'summary')
+          .eq('ai_generated', true)
+          .order('event_date', { ascending: false })
+          .limit(3);
+
+        if (summaryEvents && summaryEvents.length > 0) {
+          // プロジェクト情報を取得
+          const projectIds = [...new Set(summaryEvents.map((e: { project_id: string }) => e.project_id).filter(Boolean))];
+          let projectMap: Record<string, string> = {};
+          if (projectIds.length > 0) {
+            const { data: projData } = await supabase
+              .from('projects')
+              .select('id, name')
+              .in('id', projectIds);
+            if (projData) {
+              projectMap = Object.fromEntries(projData.map((p: { id: string; name: string }) => [p.id, p.name]));
+            }
+          }
+
+          cards.push({
+            type: 'business_summary',
+            data: {
+              summaries: summaryEvents.map((e: Record<string, unknown>) => ({
+                id: e.id,
+                projectId: e.project_id,
+                projectName: projectMap[e.project_id as string] || '全体',
+                period: e.summary_period || '',
+                content: e.content || '',
+                eventDate: e.event_date,
+              })),
+            },
+          });
+          parts.push(`\n\n【活動要約（${summaryEvents.length}件）】\n最新の活動要約が見つかりました`);
+        } else {
+          // 要約がない場合は直近のビジネスイベントをカウント
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+          const { count } = await supabase
+            .from('business_events')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .gte('event_date', weekAgo);
+
+          parts.push(`\n\n【活動要約】\nまだAI要約が生成されていません。直近1週間のビジネスイベントは${count || 0}件あります。毎週月曜日にAI要約が自動生成されます。`);
+        }
+      } catch (summaryError) {
+        console.error('[Secretary API] 活動要約取得エラー:', summaryError);
+        parts.push('\n\n【活動要約】\n要約の取得に失敗しました');
       }
     }
 
@@ -921,7 +1031,10 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - Google Calendar連携（今日の予定表示・空き時間検索・予定作成）
 - Google Drive連携（ドキュメント一覧表示・ファイル検索・共有リンク生成）
 - ファイル取り込み管理（受領ファイルのAI自動分類→確認→承認→最終保管フロー）
-- ビジネスログの参照
+- ファイル格納指示（「このURLをA社に格納して」→ 確認→ 保存）
+- ビジネスログの参照・活動要約の表示
+- ビジネスイベント自動蓄積（メッセージ・ドキュメント・会議が時系列で自動記録）
+- 週間活動要約（AI生成の週次レポート）
 - 思考マップ・ナレッジの参照
 
 ## ジョブの流れ
@@ -1085,6 +1198,14 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? '確認待ちのファイルがあります。カードからAIの分類結果を確認し、承認または修正してください。一括承認も可能です。'
         : '確認待ちのファイルはありません。メッセージの添付ファイルは自動で取り込まれ、ここに表示されます。';
+    case 'store_file':
+      return hasCards
+        ? 'URLを検出しました。格納先の組織・プロジェクトを選択して「格納する」を押してください。'
+        : 'URLが検出できませんでした。格納したいURLを含めてもう一度お伝えください。';
+    case 'business_summary':
+      return hasCards
+        ? '活動要約を表示します。プロジェクトごとの連絡・提出物・会議の状況をまとめています。'
+        : 'まだAI要約が生成されていません。毎週月曜日に自動生成されます。ビジネスログ画面で個別のイベントは確認できます。';
     case 'documents':
       return hasCards
         ? 'ドキュメント一覧を表示しました。ファイル名をクリックするとGoogle Driveで開けます。'

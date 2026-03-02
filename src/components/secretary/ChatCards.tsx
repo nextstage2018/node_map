@@ -29,7 +29,9 @@ export type CardType =
   | 'calendar_events'     // カレンダー予定一覧
   | 'deadline_alert'      // 期限アラート
   | 'document_list'       // ドキュメント一覧
-  | 'file_intake';        // ファイル確認・承認
+  | 'file_intake'         // ファイル確認・承認
+  | 'storage_confirmation' // ファイル格納確認
+  | 'business_summary';   // ビジネス活動要約
 
 // カードデータ共通
 export interface CardData {
@@ -1269,7 +1271,279 @@ export function CardRenderer({
           onApproveAll={() => onAction?.('approve_all_files', {})}
         />
       );
+    case 'storage_confirmation':
+      return (
+        <StorageConfirmationCard
+          data={card.data}
+          onConfirm={(storeData) => onAction?.('confirm_storage', storeData)}
+        />
+      );
+    case 'business_summary':
+      return (
+        <BusinessSummaryCard
+          data={card.data}
+        />
+      );
     default:
       return null;
   }
+}
+
+// ========================================
+// ファイル格納確認カード（Phase 45b）
+// ========================================
+interface StorageConfirmationData {
+  urls: Array<{ url: string; linkType: string; documentId: string; title?: string }>;
+  rawMessage: string;
+  organizations: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; name: string; organizationId: string }>;
+}
+
+function StorageConfirmationCard({
+  data,
+  onConfirm,
+}: {
+  data: StorageConfirmationData;
+  onConfirm: (storeData: Record<string, unknown>) => void;
+}) {
+  const [selectedOrgId, setSelectedOrgId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [documentType, setDocumentType] = useState<string>('その他');
+  const [direction, setDirection] = useState<string>('submitted');
+  const [yearMonth, setYearMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [isStored, setIsStored] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const DOCUMENT_TYPES = ['見積書', '契約書', '請求書', '発注書', '納品書', '仕様書', '議事録', '報告書', '提案書', '企画書', 'その他'];
+
+  const filteredProjects = data.projects.filter(
+    p => !selectedOrgId || p.organizationId === selectedOrgId
+  );
+
+  const handleConfirm = () => {
+    setIsLoading(true);
+    const urls = data.urls.filter(u => u.url);
+    onConfirm({
+      urls,
+      organizationId: selectedOrgId || undefined,
+      projectId: selectedProjectId || undefined,
+      documentType,
+      direction,
+      yearMonth,
+    });
+    setTimeout(() => {
+      setIsStored(true);
+      setIsLoading(false);
+    }, 500);
+  };
+
+  if (isStored) {
+    return (
+      <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4 border border-green-200 dark:border-green-800">
+        <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+          <Check className="w-5 h-5" />
+          <span className="font-medium">格納完了</span>
+        </div>
+        <p className="text-sm text-green-600 dark:text-green-500 mt-1">
+          {data.urls.filter(u => u.url).length}件のリンクを記録しました
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="px-4 py-3 bg-blue-50 dark:bg-blue-900/30 border-b border-blue-100 dark:border-blue-800">
+        <div className="flex items-center gap-2">
+          <FolderInput className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <h3 className="font-medium text-blue-900 dark:text-blue-200">ファイル格納</h3>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* 検出URL表示 */}
+        {data.urls.filter(u => u.url).length > 0 && (
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">検出URL</label>
+            {data.urls.filter(u => u.url).map((u, i) => (
+              <div key={i} className="flex items-center gap-2 mt-1 text-sm">
+                <FileText className="w-4 h-4 text-gray-400" />
+                <a href={u.url} target="_blank" rel="noopener noreferrer"
+                  className="text-blue-600 dark:text-blue-400 hover:underline truncate">
+                  {u.url}
+                </a>
+                <span className="text-xs text-gray-400">({u.linkType})</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 組織選択 */}
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400">組織</label>
+          <select
+            value={selectedOrgId}
+            onChange={(e) => { setSelectedOrgId(e.target.value); setSelectedProjectId(''); }}
+            className="w-full mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700"
+          >
+            <option value="">選択してください</option>
+            {data.organizations.map(o => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* プロジェクト選択 */}
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400">プロジェクト</label>
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="w-full mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700"
+          >
+            <option value="">選択してください</option>
+            {filteredProjects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* 書類種別 + 方向 */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">書類種別</label>
+            <select
+              value={documentType}
+              onChange={(e) => setDocumentType(e.target.value)}
+              className="w-full mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700"
+            >
+              {DOCUMENT_TYPES.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 dark:text-gray-400">方向</label>
+            <div className="flex gap-2 mt-1">
+              <button
+                onClick={() => setDirection('submitted')}
+                className={cn(
+                  'flex-1 text-xs py-1.5 rounded border',
+                  direction === 'submitted'
+                    ? 'bg-orange-100 dark:bg-orange-900/30 border-orange-300 dark:border-orange-700 text-orange-700 dark:text-orange-300'
+                    : 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400'
+                )}
+              >
+                提出
+              </button>
+              <button
+                onClick={() => setDirection('received')}
+                className={cn(
+                  'flex-1 text-xs py-1.5 rounded border',
+                  direction === 'received'
+                    ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-300'
+                    : 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400'
+                )}
+              >
+                受領
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 年月 */}
+        <div>
+          <label className="text-xs text-gray-500 dark:text-gray-400">年月</label>
+          <input
+            type="month"
+            value={yearMonth}
+            onChange={(e) => setYearMonth(e.target.value)}
+            className="w-full mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1.5 bg-white dark:bg-gray-700"
+          />
+        </div>
+
+        {/* 格納ボタン */}
+        <button
+          onClick={handleConfirm}
+          disabled={isLoading || data.urls.filter(u => u.url).length === 0}
+          className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+        >
+          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderInput className="w-4 h-4" />}
+          格納する
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// ビジネス活動要約カード（Phase 45c）
+// ========================================
+interface BusinessSummaryItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  period: string;
+  content: string;
+  eventDate: string;
+}
+
+function BusinessSummaryCard({
+  data,
+}: {
+  data: { summaries: BusinessSummaryItem[] };
+}) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  if (!data.summaries || data.summaries.length === 0) {
+    return (
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-center text-gray-500 dark:text-gray-400 text-sm">
+        活動要約はまだありません。毎週月曜日にAIが自動生成します。
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="px-4 py-3 bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-800">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+          <h3 className="font-medium text-indigo-900 dark:text-indigo-200">活動要約</h3>
+        </div>
+      </div>
+
+      <div className="divide-y divide-gray-100 dark:divide-gray-700">
+        {data.summaries.map((summary) => (
+          <div key={summary.id} className="p-4">
+            <button
+              onClick={() => setExpandedId(expandedId === summary.id ? null : summary.id)}
+              className="w-full text-left"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
+                    {summary.projectName}
+                  </div>
+                  {summary.period && (
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                      {summary.period}
+                    </div>
+                  )}
+                </div>
+                <ChevronDown className={cn(
+                  'w-4 h-4 text-gray-400 transition-transform',
+                  expandedId === summary.id && 'rotate-180'
+                )} />
+              </div>
+            </button>
+            {expandedId === summary.id && (
+              <div className="mt-3 text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap leading-relaxed">
+                {summary.content}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

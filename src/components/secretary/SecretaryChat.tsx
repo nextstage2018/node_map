@@ -30,6 +30,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
   { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
   { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
+  { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
 ];
 
 // ========================================
@@ -405,6 +406,49 @@ export default function SecretaryChat() {
             id: generateId(),
             role: 'assistant',
             content: '一括承認中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      case 'confirm_storage': {
+        try {
+          const storeData = data as Record<string, unknown>;
+          const urls = (storeData.urls as Array<{ url: string }>) || [];
+          let successCount = 0;
+          for (const urlItem of urls) {
+            const res = await fetch('/api/drive/store-file', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                fileUrl: urlItem.url,
+                organizationId: storeData.organizationId,
+                projectId: storeData.projectId,
+                documentType: storeData.documentType,
+                direction: storeData.direction,
+                yearMonth: storeData.yearMonth,
+              }),
+            });
+            const result = await res.json();
+            if (result.success) successCount++;
+          }
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            cards: [{
+              type: 'action_result',
+              data: successCount > 0
+                ? { success: true, message: `${successCount}件のファイルを格納しました` }
+                : { success: false, message: '格納に失敗しました' },
+            }],
+            timestamp: new Date().toISOString(),
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'ファイル格納中にエラーが発生しました。',
             timestamp: new Date().toISOString(),
           }]);
         }

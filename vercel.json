@@ -19,6 +19,14 @@
     {
       "path": "/api/cron/clean-drive-staging",
       "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/sync-business-events",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/summarize-business-log",
+      "schedule": "0 2 * * 1"
     }
   ]
 }

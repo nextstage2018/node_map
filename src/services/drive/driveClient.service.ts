@@ -1030,6 +1030,7 @@ export async function saveStagingFile(params: {
   aiSuggestedName?: string;
   aiConfidence?: number;
   aiReasoning?: string;
+  sourceChannel?: string;
 }): Promise<string | null> {
   const sb = createServerClient();
   if (!sb) return null;
@@ -1057,6 +1058,7 @@ export async function saveStagingFile(params: {
       ai_suggested_name: params.aiSuggestedName || null,
       ai_confidence: params.aiConfidence || 0,
       ai_reasoning: params.aiReasoning || null,
+      source_channel: params.sourceChannel || 'email',
       status: 'pending_review',
     })
     .select('id')
@@ -1245,4 +1247,289 @@ export function formatStagingForContext(
     const conf = f.ai_confidence ? ` 確度${Math.round((f.ai_confidence as number) * 100)}%` : '';
     return `- ${dir}${docType} ${name} ${from}${conf}`;
   }).join('\n');
+}
+
+// ========================================
+// Phase 45a: URL抽出 + マルチチャネル対応
+// ========================================
+
+export interface ExtractedUrl {
+  url: string;
+  documentId: string;
+  linkType: 'sheet' | 'doc' | 'drive';
+  title?: string;
+}
+
+/**
+ * テキストからGoogle Docs/Sheets/Drive URLを抽出
+ */
+export function extractUrlsFromText(text: string): ExtractedUrl[] {
+  if (!text) return [];
+  const results: ExtractedUrl[] = [];
+  const seen = new Set<string>();
+
+  // Google Sheets
+  const sheetRegex = /https?:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)[^\s)>]*/g;
+  let match;
+  while ((match = sheetRegex.exec(text)) !== null) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      results.push({ url: match[0], documentId: match[1], linkType: 'sheet' });
+    }
+  }
+
+  // Google Docs
+  const docRegex = /https?:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)[^\s)>]*/g;
+  while ((match = docRegex.exec(text)) !== null) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      results.push({ url: match[0], documentId: match[1], linkType: 'doc' });
+    }
+  }
+
+  // Google Drive file
+  const driveRegex = /https?:\/\/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)[^\s)>]*/g;
+  while ((match = driveRegex.exec(text)) !== null) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      results.push({ url: match[0], documentId: match[1], linkType: 'drive' });
+    }
+  }
+
+  // Google Drive open
+  const driveOpenRegex = /https?:\/\/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/g;
+  while ((match = driveOpenRegex.exec(text)) !== null) {
+    if (!seen.has(match[1])) {
+      seen.add(match[1]);
+      results.push({ url: match[0], documentId: match[1], linkType: 'drive' });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * URLリンクをdrive_documentsに記録
+ */
+export async function recordDocumentLink(params: {
+  userId: string;
+  url: string;
+  linkType: 'sheet' | 'doc' | 'drive';
+  documentId: string;
+  title?: string;
+  organizationId?: string;
+  projectId?: string;
+  sourceMessageId?: string;
+  sourceChannel?: string;
+  fromName?: string;
+  direction?: string;
+  documentType?: string;
+  yearMonth?: string;
+}): Promise<string | null> {
+  const supabase = getServerSupabase() || getSupabase();
+  if (!supabase) return null;
+
+  // 重複チェック（同じlink_urlが既に登録されていないか）
+  const { data: existing } = await supabase
+    .from('drive_documents')
+    .select('id')
+    .eq('link_url', params.url)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    console.log('[DriveService] URL既に記録済み:', params.url);
+    return existing[0];
+  }
+
+  // ファイル名をURLから推定（titleがあれば使用）
+  const linkTypeNames = { sheet: 'スプレッドシート', doc: 'ドキュメント', drive: 'ファイル' };
+  const fileName = params.title || `[${linkTypeNames[params.linkType]}] ${params.documentId.slice(0, 12)}...`;
+
+  const { data, error } = await supabase
+    .from('drive_documents')
+    .insert({
+      user_id: params.userId,
+      file_name: fileName,
+      drive_file_id: params.documentId,
+      drive_url: params.url,
+      mime_type: params.linkType === 'sheet' ? 'application/vnd.google-apps.spreadsheet'
+        : params.linkType === 'doc' ? 'application/vnd.google-apps.document'
+        : 'application/octet-stream',
+      link_type: params.linkType,
+      link_url: params.url,
+      organization_id: params.organizationId || null,
+      project_id: params.projectId || null,
+      source_message_id: params.sourceMessageId || null,
+      source_channel: params.sourceChannel || null,
+      direction: params.direction === 'sent' ? 'submitted'
+        : params.direction === 'submitted' ? 'submitted'
+        : params.direction === 'received' ? 'received'
+        : 'received',
+      document_type: params.documentType || null,
+      year_month: params.yearMonth || new Date().toISOString().slice(0, 7),
+      uploaded_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[DriveService] URLリンク記録エラー:', error);
+    return null;
+  }
+
+  console.log('[DriveService] URLリンク記録完了:', params.url, '→', data?.id);
+  return data?.id || null;
+}
+
+/**
+ * project_channelsテーブルからSlack/Chatworkのチャネル情報で組織/プロジェクトを推定
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function detectOrgProjectFromChannel(supabase: any, channel: string, channelId: string): Promise<{
+  orgId: string | null;
+  orgName: string | null;
+  projectId: string | null;
+  projectName: string | null;
+}> {
+  const result = {
+    orgId: null as string | null,
+    orgName: null as string | null,
+    projectId: null as string | null,
+    projectName: null as string | null,
+  };
+  if (!channelId) return result;
+
+  try {
+    const { data: channels } = await supabase
+      .from('project_channels')
+      .select('project_id, projects(id, name, organization_id, organizations(id, name))')
+      .eq('service_name', channel)
+      .eq('channel_identifier', channelId)
+      .limit(1);
+
+    if (channels && channels.length > 0) {
+      result.projectId = channels[0].project_id;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const project = channels[0].projects as any;
+      if (project) {
+        result.projectName = project.name || null;
+        if (project.organization_id) {
+          result.orgId = project.organization_id;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const org = project.organizations as any;
+          if (org) {
+            result.orgName = org.name || null;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[DriveService] チャネル→プロジェクト推定エラー:', err);
+  }
+
+  return result;
+}
+
+/**
+ * Slackファイルをダウンロード（内部APIプロキシ経由）
+ */
+export async function downloadSlackFile(
+  userId: string,
+  fileId: string
+): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+  try {
+    // user_service_tokens からSlackトークン取得
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return null;
+
+    const { data: tokenRow } = await supabase
+      .from('user_service_tokens')
+      .select('access_token')
+      .eq('user_id', userId)
+      .eq('service_name', 'slack')
+      .single();
+
+    if (!tokenRow?.access_token) {
+      console.log('[DriveService] Slackトークン未設定:', userId);
+      return null;
+    }
+
+    // Slack files.info APIでファイル情報取得
+    const infoRes = await fetch(`https://slack.com/api/files.info?file=${fileId}`, {
+      headers: { 'Authorization': `Bearer ${tokenRow.access_token}` },
+    });
+    const infoData = await infoRes.json();
+    if (!infoData.ok || !infoData.file) {
+      console.error('[DriveService] Slack file info取得失敗:', infoData.error);
+      return null;
+    }
+
+    const fileInfo = infoData.file;
+    const downloadUrl = fileInfo.url_private_download || fileInfo.url_private;
+    if (!downloadUrl) return null;
+
+    // ファイルダウンロード
+    const dlRes = await fetch(downloadUrl, {
+      headers: { 'Authorization': `Bearer ${tokenRow.access_token}` },
+    });
+    if (!dlRes.ok) return null;
+
+    const arrayBuffer = await dlRes.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      fileName: fileInfo.name || `slack_file_${fileId}`,
+      mimeType: fileInfo.mimetype || 'application/octet-stream',
+    };
+  } catch (err) {
+    console.error('[DriveService] Slackファイルダウンロードエラー:', err);
+    return null;
+  }
+}
+
+/**
+ * Chatworkファイルをダウンロード
+ */
+export async function downloadChatworkFile(
+  userId: string,
+  roomId: string,
+  fileId: string
+): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+  try {
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return null;
+
+    const { data: tokenRow } = await supabase
+      .from('user_service_tokens')
+      .select('access_token')
+      .eq('user_id', userId)
+      .eq('service_name', 'chatwork')
+      .single();
+
+    if (!tokenRow?.access_token) {
+      console.log('[DriveService] Chatworkトークン未設定:', userId);
+      return null;
+    }
+
+    // Chatwork files API でダウンロードURL取得
+    const apiRes = await fetch(
+      `https://api.chatwork.com/v2/rooms/${roomId}/files/${fileId}?create_download_url=1`,
+      { headers: { 'X-ChatWorkToken': tokenRow.access_token } }
+    );
+    const fileData = await apiRes.json();
+    if (!fileData.download_url) return null;
+
+    // ファイルダウンロード
+    const dlRes = await fetch(fileData.download_url);
+    if (!dlRes.ok) return null;
+
+    const arrayBuffer = await dlRes.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      fileName: fileData.filename || `chatwork_file_${fileId}`,
+      mimeType: 'application/octet-stream', // Chatwork APIはMIME type返さない
+    };
+  } catch (err) {
+    console.error('[DriveService] Chatworkファイルダウンロードエラー:', err);
+    return null;
+  }
 }

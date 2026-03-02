@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）まで反映）
 
 ---
 
@@ -134,6 +134,58 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | TBD |
 | Google Drive連携 | OAuth drive.fileスコープ＋drive_folders/drive_documentsテーブル＋DriveClientService＋フォルダ/ドキュメントAPI＋添付自動同期Cron＋秘書AIドキュメントintent/card＋ビジネスログドキュメントタブ＋設定Drive再認証バナー | 23f9b4e |
 | Drive実運用対応 | 4階層フォルダ（組織/プロジェクト/方向/年月）＋drive_file_stagingテーブル＋AI自動分類＋秘書ファイル確認フロー（FileIntakeCard）＋承認/却下/一括API＋ステージングクリーンアップCron＋ブリーフィング未確認ファイル数 | TBD |
+| Phase 45a | URL検出（Google Docs/Sheets/Drive）＋Slack/Chatwork添付ファイル自動取り込み＋全チャネルCron対応 | TBD |
+| Phase 45b | 秘書ファイル格納指示（store_file intent＋StorageConfirmationCard＋store-file API） | TBD |
+| Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | TBD |
+
+---
+
+## Phase 45a-45c 実装内容（マルチチャネル・URL・格納指示・ビジネスログ自動蓄積）
+
+### 概要
+Drive連携を全チャネル（Email/Slack/Chatwork）に拡張し、本文中のGoogle Docs/Sheets/Drive URLも自動検出・記録。秘書から「このURLを格納して」と指示できるフロー。ビジネスイベントをメッセージ・ドキュメント・会議から自動蓄積し、AI週間要約を自動生成。
+
+### Phase 45a: URL検出 + 全チャネル対応
+**DBマイグレーション**: `035_phase45a_url_and_multichannel.sql`
+- `drive_documents` に `link_type TEXT` / `link_url TEXT` カラム追加
+- `drive_file_staging` に `source_channel TEXT DEFAULT 'email'` 追加
+
+**新規・変更ファイル**:
+- `src/services/drive/driveClient.service.ts` — `extractUrlsFromText()`, `recordDocumentLink()`, `detectOrgProjectFromChannel()`, `downloadSlackFile()`, `downloadChatworkFile()` 追加。`saveStagingFile()` に `sourceChannel` パラメータ追加
+- `src/app/api/cron/sync-drive-documents/route.ts` — 全面改修: `.eq('channel','email')` → `.in('channel',['email','slack','chatwork'])`、チャネル別ファイルDL、URL検出、共通processAttachment関数
+
+**URL検出パターン**: Google Sheets, Google Docs, Google Drive open, Google Drive file
+
+### Phase 45b: 秘書ファイル格納指示
+**新規ファイル**:
+- `src/app/api/drive/store-file/route.ts` — URLを受け取り → リンク情報抽出 → drive_documents登録
+
+**変更ファイル**:
+- `src/app/api/agent/chat/route.ts` — `store_file` intent追加（キーワード: 格納/保存+ドライブ/フォルダ、入れて+フォルダ/ドライブ）。組織/プロジェクト選択データを含む`storage_confirmation`カード生成
+- `src/components/secretary/ChatCards.tsx` — `StorageConfirmationCard` コンポーネント追加（組織/プロジェクト選択、書類種別、方向、年月ピッカー、格納ボタン）
+- `src/components/secretary/SecretaryChat.tsx` — `confirm_storage` アクション追加（store-file API呼び出し）
+
+### Phase 45c: ビジネスイベント自動蓄積 + AI週間要約
+**DBマイグレーション**: `036_phase45c_business_auto_accumulate.sql`
+- `business_events` に `source_message_id`, `source_channel`, `ai_generated`, `summary_period`, `event_date`, `source_document_id` カラム追加
+
+**新規ファイル**:
+- `src/app/api/cron/sync-business-events/route.ts` — 日次Cron。過去24時間のinbox_messagesからビジネスイベント自動生成（source_message_idで重複防止）。チャネル→プロジェクト→コンタクト自動推定
+- `src/app/api/cron/summarize-business-log/route.ts` — 週次Cron（毎週月曜）。プロジェクトごとに過去1週間のイベントをClaude APIで要約。ISO週番号で重複防止。APIなし時はテンプレートフォールバック
+
+**変更ファイル**:
+- `src/app/api/agent/chat/route.ts` — `business_summary` intent追加（活動+要約/まとめ/サマリー、週間+レポート/報告、プロジェクト+状況/進捗）。business_eventsからAI要約取得→BusinessSummaryCard生成
+- `src/components/secretary/ChatCards.tsx` — `BusinessSummaryCard` コンポーネント追加（プロジェクトごとの要約を折りたたみ表示）
+- `src/components/secretary/SecretaryChat.tsx` — 「活動要約」サジェストチップ追加
+- `src/app/api/drive/files/intake/[id]/approve/route.ts` — 承認時にbusiness_eventsに`document_received`/`document_submitted`イベント自動記録
+- `vercel.json` — `sync-business-events`（毎日1:00）+ `summarize-business-log`（毎週月曜2:00）Cron追加
+
+### 重要な実装ノート
+- **URL検出はCron+手動両対応**: Cronバッチで本文URLを自動検出 & 秘書の格納指示で手動登録
+- **Slack/Chatworkファイル**: Slack=files.info API+Bearer DL、Chatwork=files/{id}?create_download_url=1
+- **detectOrgProjectFromChannel**: project_channels→projects→organizationsのJOINで一括推定
+- **ビジネスイベント重複防止**: source_message_idで既存チェック、ISO週番号で要約重複防止
+- **AI要約フォールバック**: ANTHROPIC_API_KEYなし時はテンプレートベース要約（カテゴリ別件数）
 
 ---
 
