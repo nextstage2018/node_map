@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, Plus, Clock, Users, X } from 'lucide-react';
+import { FolderOpen, Plus, Clock, Users, X, ExternalLink } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import { Project, Organization, PROJECT_STATUS_LABELS } from './types';
@@ -42,6 +42,35 @@ export default function ProjectSidebar({
   const [orgId, setOrgId] = useState('');
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
+  const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
+
+  // 選択中プロジェクトのDriveフォルダを取得
+  const loadDriveFolder = useCallback(async () => {
+    if (!selectedProjectId) {
+      setDriveFolderUrl(null);
+      return;
+    }
+    try {
+      const res = await fetch('/api/drive/folders');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const match = data.data.find((f: { project_id: string; hierarchy_level: number }) =>
+          f.project_id === selectedProjectId && f.hierarchy_level === 2
+        );
+        if (match?.drive_folder_id) {
+          setDriveFolderUrl(`https://drive.google.com/drive/folders/${match.drive_folder_id}`);
+        } else {
+          setDriveFolderUrl(null);
+        }
+      }
+    } catch {
+      setDriveFolderUrl(null);
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    loadDriveFolder();
+  }, [loadDriveFolder]);
 
   // 選択中プロジェクトのメンバーを取得
   const loadMembers = useCallback(async () => {
@@ -184,6 +213,22 @@ export default function ProjectSidebar({
           })
         )}
       </div>
+
+      {/* Driveフォルダリンク */}
+      {selectedProjectId && driveFolderUrl && (
+        <div className="border-t border-slate-200 bg-white px-4 py-2">
+          <a
+            href={driveFolderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 transition-colors"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            <span className="flex-1">Google Drive フォルダ</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
 
       {/* 選択中プロジェクトのメンバー一覧 */}
       {selectedProjectId && (

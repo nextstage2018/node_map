@@ -863,10 +863,10 @@ async function fetchDataAndBuildCards(
       }
     }
 
-    // Driveフォルダ/ドキュメント作成
+    // Driveフォルダ/ドキュメント作成（プロジェクト紐づけ + 命名規則適用）
     if (intent === 'create_drive_folder') {
       try {
-        const { isDriveConnected, createFolder: driveCreateFolder, createShareLink } = await import('@/services/drive/driveClient.service');
+        const { isDriveConnected, getOrCreateOrgFolder, getOrCreateProjectFolder, createFolder: driveCreateFolder, createShareLink } = await import('@/services/drive/driveClient.service');
         const driveConnected = await isDriveConnected(userId);
         if (!driveConnected) {
           parts.push('\n\n【Google Drive】\nGoogle Drive が未連携です。設定画面からGmailを再連携し、Driveスコープを有効にしてください。');
@@ -875,15 +875,30 @@ async function fetchDataAndBuildCards(
             data: { href: '/settings', label: '設定画面を開く', description: 'Gmail再連携でDrive機能を有効化' },
           });
         } else {
-          // メッセージからフォルダ名を抽出
-          const folderNameMatch = userMessage.match(/[「『](.+?)[」』]/);
-          let folderName = folderNameMatch ? folderNameMatch[1] : '';
+          // プロジェクト一覧を取得してメッセージからマッチするものを探す
+          const { data: userProjects } = await supabase
+            .from('projects')
+            .select('id, name, organization_id, organizations(id, name)')
+            .eq('user_id', userId)
+            .order('updated_at', { ascending: false });
 
-          if (!folderName) {
-            // AIで抽出
+          const projectList = userProjects || [];
+
+          // メッセージからプロジェクト名を検出
+          let matchedProject: { id: string; name: string; organization_id: string | null; organizations?: { id: string; name: string } | null } | null = null;
+          for (const p of projectList) {
+            if (userMessage.includes(p.name)) {
+              matchedProject = p;
+              break;
+            }
+          }
+
+          // AIでプロジェクト推定（マッチしなかった場合）
+          if (!matchedProject && projectList.length > 0) {
             const apiKey = process.env.ANTHROPIC_API_KEY;
             if (apiKey) {
               try {
+                const projectNames = projectList.map((p: { name: string }) => p.name).join(', ');
                 const parseRes = await fetch('https://api.anthropic.com/v1/messages', {
                   method: 'POST',
                   headers: {
@@ -894,46 +909,106 @@ async function fetchDataAndBuildCards(
                   body: JSON.stringify({
                     model: 'claude-sonnet-4-5-20250929',
                     max_tokens: 100,
-                    messages: [{ role: 'user', content: `ユーザーが作りたいフォルダまたはドキュメントの名前を抽出してください。名前だけを返してください。\n\nメッセージ: "${userMessage}"` }],
+                    messages: [{ role: 'user', content: `ユーザーのメッセージに最も関連するプロジェクト名を以下から1つ選んでください。関連がなければ "none" と返してください。プロジェクト名だけを返してください。\n\nプロジェクト一覧: ${projectNames}\n\nメッセージ: "${userMessage}"` }],
                   }),
                 });
                 const parseData = await parseRes.json();
-                folderName = (parseData?.content?.[0]?.text || '').trim().replace(/[「」『』"']/g, '');
+                const guessedName = (parseData?.content?.[0]?.text || '').trim();
+                if (guessedName && guessedName !== 'none') {
+                  matchedProject = projectList.find((p: { name: string }) => p.name === guessedName) || null;
+                }
               } catch { /* ignore */ }
             }
           }
 
-          if (!folderName) {
-            folderName = `新規フォルダ_${new Date().toISOString().slice(0, 10)}`;
-          }
+          if (matchedProject && matchedProject.organization_id) {
+            // プロジェクト紐づけフォルダ作成（既存の階層構造を利用）
+            const orgData = matchedProject.organizations && typeof matchedProject.organizations === 'object' && 'name' in matchedProject.organizations
+              ? matchedProject.organizations as { id: string; name: string }
+              : null;
+            const orgName = orgData?.name || '未分類組織';
 
-          // 親フォルダ（GOOGLE_DRIVE_ROOT_FOLDER_ID）配下に作成
-          const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || undefined;
-          const folder = await driveCreateFolder(userId, folderName, rootFolderId);
-          if (folder) {
-            // 共有リンク（リンクを知っている全員が閲覧可能）を付与
-            let shareUrl = folder.webViewLink;
-            try {
-              const shareLink = await createShareLink(userId, folder.id, 'writer');
-              if (shareLink?.webViewLink) {
-                shareUrl = shareLink.webViewLink;
+            // 組織フォルダ → プロジェクトフォルダの階層で作成（既存なら再利用）
+            const orgFolderId = await getOrCreateOrgFolder(userId, matchedProject.organization_id, orgName);
+            if (orgFolderId) {
+              const projectFolderId = await getOrCreateProjectFolder(userId, matchedProject.organization_id, matchedProject.id, matchedProject.name);
+              if (projectFolderId) {
+                // 共有リンクを付与
+                const folderUrl = `https://drive.google.com/drive/folders/${projectFolderId}`;
+                let shareUrl = folderUrl;
+                try {
+                  const shareLink = await createShareLink(userId, projectFolderId, 'writer');
+                  if (shareLink?.webViewLink) shareUrl = shareLink.webViewLink;
+                } catch { /* 共有失敗は無視 */ }
+
+                parts.push(`\n\n【Google Drive フォルダ作成完了】\n- プロジェクト: ${matchedProject.name}\n- 組織: ${orgName}\n- フォルダ構成: [NodeMap] ${orgName} / ${matchedProject.name}\n- リンク: ${shareUrl}\n- 共有: リンクを知っている全員が編集可能`);
+                cards.push({
+                  type: 'action_result',
+                  data: { success: true, message: `「${matchedProject.name}」のDriveフォルダを作成しました（共有リンク付き）` },
+                });
+              } else {
+                parts.push('\n\n【Google Drive】\nプロジェクトフォルダの作成に失敗しました。');
+                cards.push({ type: 'action_result', data: { success: false, message: 'フォルダの作成に失敗しました' } });
               }
-            } catch (shareErr) {
-              console.error('[Agent] Drive share error:', shareErr);
-              // 共有失敗は無視（フォルダ自体は作成成功）
+            } else {
+              parts.push('\n\n【Google Drive】\n組織フォルダの作成に失敗しました。');
+              cards.push({ type: 'action_result', data: { success: false, message: 'フォルダの作成に失敗しました' } });
             }
+          } else if (matchedProject && !matchedProject.organization_id) {
+            // 組織未設定のプロジェクト → ルート配下に直接作成
+            const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || undefined;
+            const folder = await driveCreateFolder(userId, `[NodeMap] ${matchedProject.name}`, rootFolderId);
+            if (folder) {
+              // drive_foldersにプロジェクト紐づけで記録
+              await supabase.from('drive_folders').upsert({
+                user_id: userId,
+                project_id: matchedProject.id,
+                drive_folder_id: folder.id,
+                folder_name: folder.name,
+                hierarchy_level: 2,
+              }, { onConflict: 'drive_folder_id' });
 
-            parts.push(`\n\n【Google Drive フォルダ作成完了】\n- フォルダ名: ${folder.name}\n- リンク: ${shareUrl}\n- 共有: リンクを知っている全員が編集可能`);
-            cards.push({
-              type: 'action_result',
-              data: { success: true, message: `フォルダ「${folder.name}」を作成しました（共有リンク付き）` },
-            });
+              let shareUrl = folder.webViewLink;
+              try {
+                const shareLink = await createShareLink(userId, folder.id, 'writer');
+                if (shareLink?.webViewLink) shareUrl = shareLink.webViewLink;
+              } catch { /* 共有失敗は無視 */ }
+
+              parts.push(`\n\n【Google Drive フォルダ作成完了】\n- プロジェクト: ${matchedProject.name}\n- フォルダ名: ${folder.name}\n- リンク: ${shareUrl}\n- 共有: リンクを知っている全員が編集可能`);
+              cards.push({
+                type: 'action_result',
+                data: { success: true, message: `「${matchedProject.name}」のDriveフォルダを作成しました（共有リンク付き）` },
+              });
+            } else {
+              parts.push('\n\n【Google Drive】\nフォルダの作成に失敗しました。');
+              cards.push({ type: 'action_result', data: { success: false, message: 'フォルダの作成に失敗しました' } });
+            }
           } else {
-            parts.push('\n\n【Google Drive】\nフォルダの作成に失敗しました。Driveの権限を確認してください。');
-            cards.push({
-              type: 'action_result',
-              data: { success: false, message: 'フォルダの作成に失敗しました' },
-            });
+            // プロジェクトが特定できない → プロジェクト一覧を表示して案内
+            if (projectList.length > 0) {
+              const projListText = projectList.map((p: { name: string }, idx: number) => `${idx + 1}. ${p.name}`).join('\n');
+              parts.push(`\n\n【Google Drive】\nどのプロジェクトのフォルダを作成しますか？\n\n${projListText}\n\n例:「○○プロジェクトのフォルダを作成して」のようにお伝えください。`);
+            } else {
+              // プロジェクト自体がない → 汎用フォルダ作成
+              const folderNameMatch = userMessage.match(/[「『](.+?)[」』]/);
+              let folderName = folderNameMatch ? folderNameMatch[1] : `新規フォルダ_${new Date().toISOString().slice(0, 10)}`;
+
+              const rootFolderId = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || undefined;
+              const folder = await driveCreateFolder(userId, folderName, rootFolderId);
+              if (folder) {
+                let shareUrl = folder.webViewLink;
+                try {
+                  const shareLink = await createShareLink(userId, folder.id, 'writer');
+                  if (shareLink?.webViewLink) shareUrl = shareLink.webViewLink;
+                } catch { /* ignore */ }
+
+                parts.push(`\n\n【Google Drive フォルダ作成完了】\n- フォルダ名: ${folder.name}\n- リンク: ${shareUrl}\n- 共有: リンクを知っている全員が編集可能\n\n※プロジェクトに紐づけるには、先にビジネスログでプロジェクトを作成してください。`);
+                cards.push({ type: 'action_result', data: { success: true, message: `フォルダ「${folder.name}」を作成しました（共有リンク付き）` } });
+              } else {
+                parts.push('\n\n【Google Drive】\nフォルダの作成に失敗しました。');
+                cards.push({ type: 'action_result', data: { success: false, message: 'フォルダの作成に失敗しました' } });
+              }
+            }
           }
         }
       } catch (driveErr) {
