@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）まで反映）
+最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）まで反映）
 
 ---
 
@@ -139,6 +139,85 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | mainにマージ済み |
 | Phase 46 | ビジネスログページ改善（コンポーネント分割・AI区別・フィルタ・ダッシュボード）＋ナレッジページ改善（CRUD UI・未確認ノード管理・キーワード詳細） | mainにマージ済み |
 | Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | caa30d6 |
+| Phase 48 | バグ修正・機能強化: セットアップウィザード修正＋秘書サジェスト改善＋Drive/Calendarスコープチェック＋カレンダー予定作成intent＋Driveフォルダ作成intent（プロジェクト紐付け＋命名規則＋drive_folders登録）＋URLリンク化＋プロジェクトメンバー表示＋コンタクトプロジェクト表示＋秘書ファイルアップロード（resumable upload方式＋CORS対応サーバー検索） | mainにマージ済み |
+
+---
+
+## Phase 48 実装内容（バグ修正・機能強化・ファイルアップロード）
+
+### 概要
+複数のバグ修正と機能強化を実施。セットアップウィザード修正、秘書チャットの各種intent追加（カレンダー予定作成・Driveフォルダ作成・プロジェクト一覧）、URLリンク化、プロジェクトメンバー表示、秘書チャットからのファイルアップロード機能を実装。
+
+### 主な変更点
+
+**セットアップウィザード修正**:
+- 組織作成時のバリデーション修正
+
+**秘書サジェストチップ改善**:
+- 「今日やること」「プロジェクトを確認」「タスクを進める」をトップ3に変更
+
+**Drive/Calendarスコープチェック**:
+- `isCalendarConnected()`: `token.scope.includes('calendar')` チェック追加
+- `isDriveConnected()`: `scope.includes('drive.file')` チェック追加（空scopeバグ修正）
+
+**新規intent追加（agent/chat/route.ts）**:
+- `projects`: プロジェクト一覧表示（「プロジェクト一覧」「プロジェクトを確認」）
+- `create_calendar_event`: カレンダー予定作成（「予定+追加/登録/入れて」）。Claude APIで自然言語から日時パース
+- `create_drive_folder`: Driveフォルダ作成（「フォルダ/ドライブ+作成/追加」）。プロジェクト自動検出、`[NodeMap] 組織名 / プロジェクト名` 命名、`drive_folders`登録、共有リンク設定
+
+**URLリンク化（SecretaryChat.tsx）**:
+- `linkifyText()` 関数: Markdown形式 `[text](url)` と 生URL の両方に対応
+- 末尾の日本語記号（。、）等）を除去して正しいURLを生成
+
+**プロジェクトメンバー表示**:
+- `ProjectSidebar.tsx`: メンバー一覧 + Driveフォルダリンク表示
+- `contacts/page.tsx`: コンタクト詳細にプロジェクト一覧表示
+- `/api/project-members`: GET（contact_id/project_id）+ DELETE対応
+
+**秘書ファイルアップロード（Resumable Upload方式）**:
+- 📎ボタンからアップロードパネルを開く
+- ドラッグ&ドロップ or クリックでファイル選択
+- プロジェクト / 書類種別（提案書・見積書・契約書 etc.）/ 方向（提出・受領）/ メモ
+- 命名規則: `YYYY-MM-DD_種別_元ファイル名.拡張子`
+
+### ファイルアップロードのアーキテクチャ（Vercelサイズ制限回避）
+```
+【3段階方式】
+Step 1: POST /api/drive/upload （JSONのみ、ファイル本体なし）
+  → フォルダ準備（4階層: 組織/プロジェクト/方向/年月）
+  → Google Drive Resumable Upload Session URL生成
+  → uploadUrl + metadata を返却
+
+Step 2: クライアント → Google Drive API に直接PUT
+  → ブラウザからresumable URLにファイル送信
+  → Vercelを経由しないのでサイズ制限なし
+  → CORS制約でレスポンスが読めない場合あり（想定内）
+
+Step 3: POST /api/drive/upload/complete
+  → driveFileId があればそのまま使用
+  → なければサーバー側でDrive APIファイル名検索
+  → drive_documents + business_events にDB登録
+```
+
+### 新規ファイル
+- `src/app/api/drive/upload/route.ts` — アップロード準備API（POST: resumable URL生成、GET: プロジェクト一覧）
+- `src/app/api/drive/upload/complete/route.ts` — アップロード完了DB登録API（サーバー側ファイル検索対応）
+
+### 変更ファイル
+- `src/components/secretary/SecretaryChat.tsx` — FileUploadPanel追加、📎ボタン、linkifyText、サジェストチップ改善
+- `src/app/api/agent/chat/route.ts` — projects/create_calendar_event/create_drive_folder intent追加
+- `src/services/calendar/calendarClient.service.ts` — isCalendarConnected スコープチェック
+- `src/services/drive/driveClient.service.ts` — isDriveConnected スコープチェック
+- `src/app/api/project-members/route.ts` — GET(contact_id対応) + DELETE追加
+- `src/components/business-log/ProjectSidebar.tsx` — メンバー + Driveリンク表示
+- `src/app/contacts/page.tsx` — プロジェクト一覧表示
+- `next.config.mjs` — serverActions.bodySizeLimit追加
+- `vercel.json` — upload関数のmaxDuration/memory設定
+
+### 重要な実装ノート
+- **Resumable Upload**: Vercelの4.5MBボディサイズ制限を回避するため、ファイルはVercelを経由せずブラウザからGoogle Driveに直接アップロード
+- **CORS対応**: ブラウザからGoogle Drive APIへのPUTはCORS制約でレスポンスが読めない場合がある → complete APIでサーバー側がファイル名検索で対応
+- **accessToken返却**: upload APIがクライアントにアクセストークンを返却（resumable URLに含まれるため実質不要だが互換性のため）
 
 ---
 
