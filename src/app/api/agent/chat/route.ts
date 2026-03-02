@@ -9,6 +9,7 @@ import {
   formatEventsForContext,
   formatFreeSlotsForContext,
   isCalendarConnected,
+  createEvent,
 } from '@/services/calendar/calendarClient.service';
 import type { CalendarEvent } from '@/services/calendar/calendarClient.service';
 import type { UnifiedMessage } from '@/lib/types';
@@ -83,6 +84,7 @@ type Intent =
   | 'business_summary' // 活動要約・週間レポート
   | 'create_business_event' // ビジネスイベント登録
   | 'knowledge_structuring' // ナレッジ構造化提案
+  | 'create_calendar_event' // カレンダー予定作成
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -100,6 +102,10 @@ function classifyIntent(message: string): Intent {
   if (m.includes('日程') && (m.includes('調整') || m.includes('候補') || m.includes('提案'))) return 'schedule';
   if (m.includes('空') && (m.includes('時間') || m.includes('き') || m.includes('いてる'))) return 'schedule';
   if (m.includes('いつ空') || m.includes('打ち合わせ') && m.includes('いつ')) return 'schedule';
+
+  // カレンダー予定作成（「予定を追加/登録/入れて」）— 予定確認より先に判定
+  if (m.includes('予定') && (m.includes('追加') || m.includes('登録') || m.includes('入れ') || m.includes('作成') || m.includes('作って') || m.includes('セット'))) return 'create_calendar_event';
+  if (m.includes('カレンダー') && (m.includes('追加') || m.includes('登録') || m.includes('入れ') || m.includes('作成'))) return 'create_calendar_event';
 
   // カレンダー・予定確認
   if (m.includes('予定') || m.includes('スケジュール') || m.includes('カレンダー')) return 'calendar';
@@ -756,6 +762,100 @@ async function fetchDataAndBuildCards(
           description: 'プロジェクトごとの活動履歴を閲覧',
         },
       });
+    }
+
+    // カレンダー予定作成
+    if (intent === 'create_calendar_event') {
+      try {
+        const calConnected = await isCalendarConnected(userId);
+        if (!calConnected) {
+          parts.push('\n\n【カレンダー】\nGoogle Calendar が未連携です。設定画面からGmailを再連携すると、カレンダー機能が使えるようになります。');
+          cards.push({
+            type: 'navigate',
+            data: { href: '/settings', label: '設定画面を開く', description: 'Gmail再連携でカレンダー機能を有効化' },
+          });
+        } else {
+          // AIでメッセージから日時・タイトルを解析
+          const now = new Date();
+          const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          const parsePrompt = `ユーザーのメッセージからカレンダー予定の情報を抽出してください。
+今日の日付: ${todayStr}
+
+メッセージ: "${userMessage}"
+
+以下のJSON形式で返してください（他のテキストは不要）:
+{"summary":"予定のタイトル","date":"YYYY-MM-DD","startTime":"HH:MM","endTime":"HH:MM","description":"説明（あれば）"}
+
+ルール:
+- 「明日」は今日+1日、「明後日」は+2日
+- 「来週月曜」などは適切に計算
+- 時間が指定されていなければ startTime="10:00", endTime="11:00" をデフォルトに
+- 終了時間が指定されていなければ開始から1時間後`;
+
+          let parsed = null;
+          const apiKey = process.env.ANTHROPIC_API_KEY;
+          if (apiKey) {
+            try {
+              const parseRes = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': apiKey,
+                  'anthropic-version': '2023-06-01',
+                },
+                body: JSON.stringify({
+                  model: 'claude-sonnet-4-5-20250929',
+                  max_tokens: 200,
+                  messages: [{ role: 'user', content: parsePrompt }],
+                }),
+              });
+              const parseData = await parseRes.json();
+              const parseText = parseData?.content?.[0]?.text || '';
+              // JSONを抽出
+              const jsonMatch = parseText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                parsed = JSON.parse(jsonMatch[0]);
+              }
+            } catch (parseErr) {
+              console.error('[Agent] Calendar parse error:', parseErr);
+            }
+          }
+
+          if (parsed && parsed.summary && parsed.date && parsed.startTime) {
+            const startISO = `${parsed.date}T${parsed.startTime}:00`;
+            const endISO = `${parsed.date}T${parsed.endTime || parsed.startTime.replace(/:\d{2}$/, ':00').replace(/^(\d{2}):/, (m: string, h: string) => `${String(Number(h) + 1).padStart(2, '0')}:`)}:00`;
+
+            const event = await createEvent(userId, {
+              summary: parsed.summary,
+              start: startISO,
+              end: endISO,
+              description: parsed.description || undefined,
+            });
+
+            if (event) {
+              parts.push(`\n\n【カレンダー予定作成完了】\n- タイトル: ${event.summary}\n- 日時: ${new Date(event.start).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })} 〜 ${new Date(event.end).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}\n- リンク: ${event.htmlLink || 'Google Calendar'}`);
+              cards.push({
+                type: 'action_result',
+                data: {
+                  success: true,
+                  message: `予定「${event.summary}」を${parsed.date}に登録しました`,
+                },
+              });
+            } else {
+              parts.push('\n\n【カレンダー】\n予定の作成に失敗しました。Google Calendar APIの権限を確認してください。設定画面からGmailを再連携すると解決する場合があります。');
+              cards.push({
+                type: 'action_result',
+                data: { success: false, message: '予定の作成に失敗しました' },
+              });
+            }
+          } else {
+            parts.push('\n\n【カレンダー】\n予定の日時やタイトルを読み取れませんでした。「明日14時にミーティング」のように具体的に教えてください。');
+          }
+        }
+      } catch (calErr) {
+        console.error('[Agent] Calendar create error:', calErr);
+        parts.push('\n\nカレンダー予定の作成中にエラーが発生しました。');
+      }
     }
 
     // カレンダー → 今日の予定 or 空き時間
@@ -1433,6 +1533,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'イベント登録フォームを表示しました。内容を入力して「記録する」を押してください。メッセージの内容からタイトルや種別を推定しています。'
         : 'イベント登録フォームの準備に失敗しました。もう一度お試しください。';
+    case 'create_calendar_event':
+      return hasCards
+        ? 'カレンダーに予定を登録しました。'
+        : '予定の作成に失敗しました。日時とタイトルを含めてもう一度お伝えください。';
     case 'projects':
       return hasCards
         ? 'プロジェクト一覧を確認しました。ビジネスログ画面で詳細を管理できます。'
