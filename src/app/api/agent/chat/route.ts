@@ -73,6 +73,8 @@ type Intent =
   | 'schedule'        // 日程調整・空き時間
   | 'tasks'           // タスク状況
   | 'jobs'            // ジョブ・対応必要
+  | 'documents'       // ドキュメント・ファイル一覧
+  | 'share_file'      // ファイル共有
   | 'thought_map'     // 思考マップ
   | 'business_log'    // ビジネスログ
   | 'general';        // その他
@@ -116,6 +118,12 @@ function classifyIntent(message: string): Intent {
   // ジョブ一覧
   if (m.includes('ジョブ') || (m.includes('対応') && m.includes('必要'))) return 'jobs';
   if (m.includes('対応が必要') || m.includes('やるべき')) return 'jobs';
+
+  // ドキュメント・ファイル（Drive）
+  if (m.includes('共有') && (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('ドライブ'))) return 'share_file';
+  if (m.includes('ドライブ') || m.includes('google drive') || m.includes('drive')) return 'documents';
+  if (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('書類')) return 'documents';
+  if (m.includes('添付') && (m.includes('一覧') || m.includes('見') || m.includes('検索'))) return 'documents';
 
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
@@ -395,6 +403,40 @@ async function fetchDataAndBuildCards(
             targetName: undefined,
           },
         });
+      }
+    }
+
+    // ドキュメント・ファイル一覧 → document_list カード
+    if (intent === 'documents' || intent === 'share_file') {
+      try {
+        const { getDocuments, formatDocumentsForContext } = await import('@/services/drive/driveClient.service');
+        const docs = await getDocuments({ userId, limit: 20 });
+        if (docs.length > 0) {
+          cards.push({
+            type: 'document_list',
+            data: {
+              documents: docs.map((d: Record<string, unknown>) => ({
+                id: d.id,
+                fileName: d.file_name,
+                fileSizeBytes: d.file_size_bytes,
+                mimeType: d.mime_type,
+                driveUrl: d.drive_url,
+                sourceChannel: d.source_channel,
+                uploadedAt: d.uploaded_at,
+                isShared: d.is_shared,
+                organizationId: d.organization_id,
+                projectId: d.project_id,
+              })),
+              totalCount: docs.length,
+            },
+          });
+          parts.push(`\n\n【ドキュメント（${docs.length}件）】\n${formatDocumentsForContext(docs)}`);
+        } else {
+          parts.push('\n\n【ドキュメント】\nGoogle Driveに保存されたドキュメントはまだありません');
+        }
+      } catch (docError) {
+        console.error('[Secretary API] ドキュメント取得エラー:', docError);
+        parts.push('\n\n【ドキュメント】\nドキュメント情報の取得に失敗しました');
       }
     }
 
@@ -819,6 +861,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - ジョブ（簡易作業）の作成と自動実行（返信、日程調整、確認連絡など）
 - 承認されたジョブはAIが自動で実行する
 - Google Calendar連携（今日の予定表示・空き時間検索・予定作成）
+- Google Drive連携（ドキュメント一覧表示・ファイル検索・共有リンク生成）
 - ビジネスログの参照
 - 思考マップ・ナレッジの参照
 
@@ -978,6 +1021,14 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return 'カレンダーの予定を確認しました。上の情報を参照してください。';
     case 'schedule':
       return '空き時間を検索しました。候補の日時を確認してください。';
+    case 'documents':
+      return hasCards
+        ? 'ドキュメント一覧を表示しました。ファイル名をクリックするとGoogle Driveで開けます。'
+        : 'Google Driveに保存されたドキュメントはまだありません。メッセージの添付ファイルが自動的に保存されます。';
+    case 'share_file':
+      return hasCards
+        ? '共有するファイルを選んでください。カードから共有リンクを生成できます。'
+        : '共有するファイルが見つかりませんでした。まずドキュメント一覧を確認してみてください。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'business_log':

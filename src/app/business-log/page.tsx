@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   FolderOpen, Plus, Clock, FileText, Phone, Mail, MessageSquare,
   Handshake, X, ChevronRight, ClipboardList, Pencil, Trash2, Users,
-  AlertTriangle, Bookmark, Link2, Hash,
+  AlertTriangle, Bookmark, Link2, Hash, ExternalLink,
 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
@@ -145,7 +145,10 @@ export default function BusinessLogPage() {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [showChannelSettings, setShowChannelSettings] = useState(false);
   const [orgChannels, setOrgChannels] = useState<any[]>([]);
-  const [timelineTab, setTimelineTab] = useState<'events' | 'messages'>('events');
+  const [timelineTab, setTimelineTab] = useState<'events' | 'messages' | 'documents'>('events');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [projectDocuments, setProjectDocuments] = useState<any[]>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
 
   // 新規作成フォーム
   const [showNewProject, setShowNewProject] = useState(false);
@@ -748,6 +751,26 @@ export default function BusinessLogPage() {
                 >
                   チャネルメッセージ {channelMessages.length > 0 && `(${channelMessages.length})`}
                 </button>
+                <button
+                  onClick={() => {
+                    setTimelineTab('documents');
+                    if (selectedProjectId && projectDocuments.length === 0 && !isLoadingDocuments) {
+                      setIsLoadingDocuments(true);
+                      fetch(`/api/drive/documents?projectId=${selectedProjectId}`)
+                        .then(r => r.json())
+                        .then(d => { if (d.success) setProjectDocuments(d.data || []); })
+                        .catch(() => {})
+                        .finally(() => setIsLoadingDocuments(false));
+                    }
+                  }}
+                  className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+                    timelineTab === 'documents'
+                      ? 'text-blue-600 border-blue-600'
+                      : 'text-slate-500 border-transparent hover:text-slate-700'
+                  }`}
+                >
+                  📁 ドキュメント {projectDocuments.length > 0 && `(${projectDocuments.length})`}
+                </button>
               </div>
             )}
 
@@ -950,7 +973,7 @@ export default function BusinessLogPage() {
                   ))
                 )}
               </div>
-            ) : (
+            ) : timelineTab === 'messages' ? (
               /* Phase 40c: チャネルメッセージ表示 */
               <div className="px-6 py-4">
                 {isLoadingMessages ? (
@@ -1002,7 +1025,56 @@ export default function BusinessLogPage() {
                   </div>
                 )}
               </div>
-            )}
+            ) : timelineTab === 'documents' ? (
+              /* ドキュメントタブ（Google Drive連携） */
+              <div className="px-6 py-4">
+                {isLoadingDocuments ? (
+                  <LoadingState message="ドキュメント読み込み中..." />
+                ) : projectDocuments.length === 0 ? (
+                  <div className="flex items-center justify-center h-48 text-slate-400">
+                    <div className="text-center">
+                      <FileText className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                      <p className="text-sm">ドキュメントがありません</p>
+                      <p className="text-xs mt-1">メッセージの添付ファイルが自動でGoogle Driveに保存されます</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {projectDocuments.map((doc: Record<string, unknown>) => (
+                      <a
+                        key={doc.id as string}
+                        href={doc.drive_url as string}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+                      >
+                        <span className="text-lg">
+                          {(doc.mime_type as string || '').includes('pdf') ? '📕' :
+                           (doc.mime_type as string || '').includes('image') ? '🖼️' :
+                           (doc.mime_type as string || '').includes('spreadsheet') ? '📊' :
+                           (doc.mime_type as string || '').includes('presentation') ? '📙' : '📄'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-900 truncate">{doc.file_name as string}</p>
+                          <div className="flex items-center gap-2 text-xs text-slate-500">
+                            {doc.file_size_bytes && (
+                              <span>{((doc.file_size_bytes as number) / 1024).toFixed(0)}KB</span>
+                            )}
+                            {doc.source_channel && (
+                              <span className="px-1.5 py-0.5 bg-slate-100 rounded text-[10px]">{doc.source_channel as string}</span>
+                            )}
+                            {doc.uploaded_at && (
+                              <span>{new Date(doc.uploaded_at as string).toLocaleDateString('ja-JP')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <ExternalLink className="w-4 h-4 text-slate-400 shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
 
           {/* ========================================

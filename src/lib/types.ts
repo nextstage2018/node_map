@@ -817,3 +817,37 @@ export interface WeeklyNodesResponse {
   weekStart: string;
   alreadyConfirmed: boolean;
 }
+
+// ===== Google Drive ドキュメント管理 =====
+
+export interface DriveDocument {
+  id: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  driveFileId: string;
+  driveUrl: string;
+  webViewLink?: string;
+  sourceChannel?: ChannelType;
+  sourceMessageId?: string;
+  uploadedAt: string;
+  syncedAt?: string;
+  isShared: boolean;
+  shareLink?: string;
+  organizationId?: string;
+  projectId?: string;
+}
+
+export interface DriveFolderMapping {
+  id: string;
+  organizationId: string;
+  projectId?: string;
+  driveFolderId: string;
+  folderName: string;
+  hierarchyLevel: 1 | 2;
+}
+
+export interface DriveSearchResult {
+  documents: DriveDocument[];
+  totalCount: number;
+}

@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 まで反映）
 
 ---
 
@@ -129,6 +129,47 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Calendar連携 | Gmail OAuthにカレンダースコープ追加＋calendarClient.service.ts＋/api/calendar＋秘書AIカレンダーコンテキスト＋日程調整ジョブでカレンダー予定自動作成 | b69dead |
 | ブリーフィング強化 | ブリーフィングサマリーカード＋カレンダー予定カード＋期限アラートカード＋AIプロンプト改善 | b69dead |
 | Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | TBD |
+| Google Drive連携 | OAuth drive.fileスコープ＋drive_folders/drive_documentsテーブル＋DriveClientService＋フォルダ/ドキュメントAPI＋添付自動同期Cron＋秘書AIドキュメントintent/card＋ビジネスログドキュメントタブ＋設定Drive再認証バナー | TBD |
+
+---
+
+## Google Drive連携 実装内容
+
+### 概要
+メッセージの添付ファイルを組織→プロジェクトの2階層Google Driveフォルダに自動保存。秘書AIからドキュメント閲覧・検索・共有リンク生成が可能。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 033_google_drive_integration.sql
+CREATE TABLE drive_folders (組織/プロジェクトとDriveフォルダのマッピング);
+CREATE TABLE drive_documents (ドキュメント追跡);
+ALTER TABLE inbox_messages ADD COLUMN drive_synced BOOLEAN DEFAULT false;
+```
+
+### 新規ファイル
+- `supabase/migrations/033_google_drive_integration.sql` — DBスキーマ
+- `src/services/drive/driveClient.service.ts` — Google Drive APIラッパー（フォルダ/ファイルCRUD・共有・Gmail添付ダウンロード）
+- `src/app/api/drive/folders/route.ts` — フォルダ管理API
+- `src/app/api/drive/documents/route.ts` — ドキュメントCRUD API
+- `src/app/api/drive/documents/[id]/route.ts` — ドキュメント詳細API
+- `src/app/api/drive/documents/[id]/share/route.ts` — 共有リンク生成/メール共有API
+- `src/app/api/drive/search/route.ts` — ドキュメント検索API
+- `src/app/api/cron/sync-drive-documents/route.ts` — 添付ファイル自動同期Cronジョブ
+
+### 変更ファイル
+- `src/app/api/auth/gmail/route.ts` — drive.fileスコープ追加
+- `src/lib/types.ts` — DriveDocument/DriveFolderMapping/DriveSearchResult型追加
+- `src/app/api/agent/chat/route.ts` — documents/share_file intent追加、document_listカード生成
+- `src/components/secretary/ChatCards.tsx` — DocumentListCardコンポーネント追加
+- `src/app/business-log/page.tsx` — ドキュメントタブ追加
+- `src/app/settings/page.tsx` — Drive再認証バナー追加（drive.fileスコープなし時）
+- `vercel.json` — sync-drive-documents Cron追加（毎日23:00）
+
+### 重要な実装ノート
+- **drive.fileスコープ**: アプリが作成・開いたファイルのみ管理可能（安全）
+- **トークン再利用**: Gmail/Calendar/Driveは同じOAuthトークン（service_name='gmail'）
+- **Cronバッチ**: Gmail添付のみ対応（Slack/Chatworkは将来対応）。組織/プロジェクトはfrom_addressからコンタクト→組織→プロジェクトを自動推定
+- **GCP設定が必要**: Google Drive APIの有効化 + OAuth同意画面にdrive.fileスコープ追加
 
 ---
 

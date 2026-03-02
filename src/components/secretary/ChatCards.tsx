@@ -26,7 +26,8 @@ export type CardType =
   | 'action_result'       // アクション実行結果
   | 'briefing_summary'    // ブリーフィングサマリー
   | 'calendar_events'     // カレンダー予定一覧
-  | 'deadline_alert';     // 期限アラート
+  | 'deadline_alert'      // 期限アラート
+  | 'document_list';      // ドキュメント一覧
 
 // カードデータ共通
 export interface CardData {
@@ -793,6 +794,107 @@ export function DeadlineAlertCard({
 }
 
 // ========================================
+// ドキュメント一覧カード（Google Drive）
+// ========================================
+interface DocumentItem {
+  id: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  driveUrl: string;
+  sourceChannel?: string;
+  uploadedAt: string;
+  isShared: boolean;
+}
+
+function getFileIcon(mimeType: string): string {
+  if (!mimeType) return '📄';
+  if (mimeType.includes('pdf')) return '📕';
+  if (mimeType.includes('image')) return '🖼️';
+  if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) return '📊';
+  if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) return '📙';
+  if (mimeType.includes('document') || mimeType.includes('word')) return '📘';
+  if (mimeType.includes('zip') || mimeType.includes('archive')) return '📦';
+  return '📄';
+}
+
+function formatFileSize(bytes: number): string {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function DocumentListCard({
+  documents,
+  totalCount,
+  onShare,
+}: {
+  documents: DocumentItem[];
+  totalCount: number;
+  onShare?: (docId: string) => void;
+}) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+        <FileText className="w-4 h-4 text-blue-600" />
+        <span className="text-sm font-medium text-blue-800">ドキュメント（{totalCount}件）</span>
+      </div>
+      <div className="divide-y divide-gray-100 max-h-[300px] overflow-y-auto">
+        {documents.map((doc) => (
+          <div
+            key={doc.id}
+            className="px-4 py-2.5 hover:bg-gray-50 flex items-center gap-3"
+          >
+            <span className="text-lg flex-shrink-0">{getFileIcon(doc.mimeType)}</span>
+            <div className="flex-1 min-w-0">
+              <a
+                href={doc.driveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-gray-900 hover:text-blue-600 truncate block"
+              >
+                {doc.fileName}
+              </a>
+              <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                {doc.fileSizeBytes > 0 && <span>{formatFileSize(doc.fileSizeBytes)}</span>}
+                {doc.sourceChannel && (
+                  <span className="px-1.5 py-0.5 bg-gray-100 rounded text-[10px]">
+                    {doc.sourceChannel}
+                  </span>
+                )}
+                {doc.isShared && <span className="text-green-600">共有済み</span>}
+                <span>{new Date(doc.uploadedAt).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}</span>
+              </div>
+            </div>
+            <div className="flex-shrink-0 flex items-center gap-1">
+              <a
+                href={doc.driveUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1.5 hover:bg-gray-100 rounded"
+                title="Driveで開く"
+              >
+                <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+              </a>
+              {onShare && (
+                <button
+                  onClick={() => onShare(doc.id)}
+                  className="p-1.5 hover:bg-blue-50 rounded"
+                  title="共有リンク生成"
+                >
+                  <Send className="w-3.5 h-3.5 text-blue-500" />
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
 export function CardRenderer({
@@ -859,6 +961,14 @@ export function CardRenderer({
         <DeadlineAlertCard
           deadlines={card.data}
           onClickItem={(id, type) => onAction?.('click_deadline', { id, type })}
+        />
+      );
+    case 'document_list':
+      return (
+        <DocumentListCard
+          documents={card.data.documents || []}
+          totalCount={card.data.totalCount || 0}
+          onShare={(docId) => onAction?.('share_document', { docId })}
         />
       );
     default:

@@ -96,8 +96,8 @@ export default function SettingsPage() {
   });
 
   // チャンネル接続状態
-  const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean }>>({
-    gmail: { connected: false, accountName: '', hasCalendarScope: false },
+  const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean; hasDriveScope?: boolean }>>({
+    gmail: { connected: false, accountName: '', hasCalendarScope: false, hasDriveScope: false },
     slack: { connected: false, accountName: '' },
     chatwork: { connected: false, accountName: '' },
   });
@@ -124,8 +124,8 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/tokens');
       const data = await res.json();
       if (data.success && data.data) {
-        const newChannels: Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean }> = {
-          gmail: { connected: false, accountName: '', hasCalendarScope: false },
+        const newChannels: Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean; hasDriveScope?: boolean }> = {
+          gmail: { connected: false, accountName: '', hasCalendarScope: false, hasDriveScope: false },
           slack: { connected: false, accountName: '' },
           chatwork: { connected: false, accountName: '' },
         };
@@ -138,6 +138,7 @@ export default function SettingsPage() {
               accountName: token.token_data?.email || token.token_data?.team_name || token.token_data?.account_name || '接続済み',
               ...(serviceName === 'gmail' ? {
                 hasCalendarScope: scope.includes('calendar'),
+                hasDriveScope: scope.includes('drive'),
               } : {}),
             };
           }
@@ -419,6 +420,31 @@ export default function SettingsPage() {
                         size="sm"
                       >
                         📅 カレンダー権限を追加して再連携
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              {/* Drive再認証バナー: Gmail接続済みだがDriveスコープがない場合 */}
+              {channels.gmail.connected && !channels.gmail.hasDriveScope && (
+                <Card variant="flat" padding="md" className="bg-blue-50 border border-blue-200 -mt-2">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl shrink-0">📁</span>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-medium text-blue-800 mb-1">
+                        Google Drive連携が必要です
+                      </h4>
+                      <p className="text-xs text-blue-700 mb-3">
+                        メッセージの添付ファイル自動保存・ドキュメント管理機能を使うには、
+                        Gmailを再連携してGoogle Driveへのアクセス権を追加してください。
+                      </p>
+                      <Button
+                        onClick={handleGmailAuth}
+                        variant="primary"
+                        size="sm"
+                      >
+                        📁 Drive権限を追加して再連携
                       </Button>
                     </div>
                   </div>

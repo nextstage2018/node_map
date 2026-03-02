@@ -14,6 +14,8 @@ const SCOPES = [
   // Phase B拡張: Google Calendar 連携
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  // Google Drive 連携（アプリが作成・開いたファイルのみ管理）
+  'https://www.googleapis.com/auth/drive.file',
 ].join(' ');
 
 export async function GET() {
