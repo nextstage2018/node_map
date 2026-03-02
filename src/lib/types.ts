@@ -178,6 +178,20 @@ export interface Task {
   dueDate?: string;      // 期限日（タイムラインビュー用、ISO日付）
   // Phase 40c: プロジェクト紐づけ
   projectId?: string;
+  // Calendar統合: スケジュール時刻 + カレンダーイベントID
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  calendarEventId?: string;
+}
+
+// タスクメンバー（グループタスク用）
+export interface TaskMember {
+  id: string;
+  taskId: string;
+  userId: string;
+  role: 'owner' | 'member';
+  calendarEventId?: string;
+  addedAt: string;
 }
 
 // タスク作成リクエスト
@@ -192,6 +206,10 @@ export interface CreateTaskRequest {
   tags?: string[];
   seedId?: string;       // Phase 40c: 種から変換時の種ID（段階的廃止）
   projectId?: string;    // Phase 40c: プロジェクト紐づけ
+  // Calendar統合
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  members?: { userId: string; role?: 'owner' | 'member' }[];
 }
 
 // タスク更新リクエスト
@@ -205,6 +223,9 @@ export interface UpdateTaskRequest {
   resultSummary?: string;
   tags?: string[];
   dueDate?: string;
+  // Calendar統合
+  scheduledStart?: string;
+  scheduledEnd?: string;
 }
 
 // AI会話リクエスト
@@ -255,6 +276,10 @@ export interface Job {
   sourceChannel?: ChannelType;
   aiDraft?: string;            // AIが生成した下書き/提案
   dueDate?: string;
+  // Calendar統合
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  calendarEventId?: string;
   createdAt: string;
   completedAt?: string;
 }
@@ -295,6 +320,9 @@ export interface CreateJobRequest {
   sourceMessageId?: string;
   sourceChannel?: ChannelType;
   dueDate?: string;
+  // Calendar統合
+  scheduledStart?: string;
+  scheduledEnd?: string;
 }
 
 // アイデアメモ

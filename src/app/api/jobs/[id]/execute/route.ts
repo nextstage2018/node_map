@@ -96,6 +96,11 @@ export async function POST(
                 if (created.htmlLink) {
                   executionLogs.push(`カレンダーリンク: ${created.htmlLink}`);
                 }
+                // calendar_event_id をジョブに保存
+                await sb
+                  .from('jobs')
+                  .update({ calendar_event_id: created.id })
+                  .eq('id', jobId);
               } else {
                 executionLogs.push(`⚠️ カレンダー予定作成に失敗（送信は続行）`);
               }

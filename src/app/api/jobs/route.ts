@@ -30,6 +30,10 @@ function mapJobFromDb(row: Record<string, unknown>) {
     targetAddress: row.target_address,
     targetName: row.target_name,
     executionMetadata: row.execution_metadata,
+    // Calendar統合
+    scheduledStart: row.scheduled_start,
+    scheduledEnd: row.scheduled_end,
+    calendarEventId: row.calendar_event_id,
   };
 }
 
@@ -76,6 +80,8 @@ export async function POST(request: NextRequest) {
       // Phase B拡張
       replyToMessageId, targetContactId, targetAddress, targetName,
       executionMetadata,
+      // Calendar統合
+      scheduledStart, scheduledEnd,
     } = body;
 
     if (!title) {
@@ -101,6 +107,9 @@ export async function POST(request: NextRequest) {
     if (targetAddress) insertData.target_address = targetAddress;
     if (targetName) insertData.target_name = targetName;
     if (executionMetadata) insertData.execution_metadata = executionMetadata;
+    // Calendar統合
+    if (scheduledStart) insertData.scheduled_start = scheduledStart;
+    if (scheduledEnd) insertData.scheduled_end = scheduledEnd;
 
     const { data, error } = await sb
       .from('jobs')
@@ -111,6 +120,16 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('ジョブ作成エラー:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Calendar統合: スケジュール時刻がある場合はカレンダーに同期
+    if (scheduledStart && scheduledEnd) {
+      try {
+        const { syncJobToCalendar } = await import('@/services/calendar/calendarSync.service');
+        await syncJobToCalendar(data.id, userId);
+      } catch (calErr) {
+        console.error('[Jobs API] カレンダー同期エラー（ジョブ作成は成功）:', calErr);
+      }
     }
 
     return NextResponse.json({ success: true, data: mapJobFromDb(data) });
@@ -154,6 +173,9 @@ export async function PUT(request: NextRequest) {
     }
     if (dueDate !== undefined) updateData.due_date = dueDate;
     if (aiDraft !== undefined) updateData.ai_draft = aiDraft;
+    // Calendar統合
+    if (body.scheduledStart !== undefined) updateData.scheduled_start = body.scheduledStart;
+    if (body.scheduledEnd !== undefined) updateData.scheduled_end = body.scheduledEnd;
 
     // Phase B: execution_log更新
     if (body.executionLog !== undefined) updateData.execution_log = body.executionLog;
@@ -169,6 +191,25 @@ export async function PUT(request: NextRequest) {
     if (error) {
       console.error('ジョブ更新エラー:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Calendar統合: 完了/失敗時にカレンダー予定を削除
+    if ((status === 'done' || status === 'failed') && data.calendar_event_id) {
+      try {
+        const { deleteCalendarEvent } = await import('@/services/calendar/calendarSync.service');
+        await deleteCalendarEvent(data.calendar_event_id, userId);
+      } catch (calErr) {
+        console.error('[Jobs API] カレンダー削除エラー:', calErr);
+      }
+    }
+    // Calendar統合: スケジュール変更時にカレンダー更新
+    if ((body.scheduledStart || body.scheduledEnd) && !['done', 'failed'].includes(status)) {
+      try {
+        const { syncJobToCalendar } = await import('@/services/calendar/calendarSync.service');
+        await syncJobToCalendar(id, userId);
+      } catch (calErr) {
+        console.error('[Jobs API] カレンダー同期エラー:', calErr);
+      }
     }
 
     return NextResponse.json({ success: true, data: mapJobFromDb(data) });

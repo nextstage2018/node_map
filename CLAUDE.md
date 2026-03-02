@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 まで反映）
 
 ---
 
@@ -38,6 +38,7 @@
 | `thought_edges` | 思考動線。from_node_id→to_node_idの順序付きエッジ。UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジマスタ。Phase 42aで category / source_type / is_confirmed 等のカラム追加 |
 | `thought_snapshots` | Phase 42e: タスクのスナップショット。snapshot_type = 'initial_goal' / 'final_landing'。node_ids TEXT[] |
+| `task_members` | グループタスクのメンバー管理。UNIQUE(task_id, user_id)。role='owner'/'member'。calendar_event_idでメンバーごとのカレンダー予定を追跡 |
 
 ---
 
@@ -127,6 +128,76 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase B拡張 | ジョブ自律実行（pending→approved→executing→done/failed）＋AI下書き生成＋承認カード編集＋自動送信エンジン | b69dead |
 | Calendar連携 | Gmail OAuthにカレンダースコープ追加＋calendarClient.service.ts＋/api/calendar＋秘書AIカレンダーコンテキスト＋日程調整ジョブでカレンダー予定自動作成 | b69dead |
 | ブリーフィング強化 | ブリーフィングサマリーカード＋カレンダー予定カード＋期限アラートカード＋AIプロンプト改善 | b69dead |
+| Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | TBD |
+
+---
+
+## Calendar×タスク/ジョブ統合 実装内容
+
+### 概要
+タスク/ジョブの作成・更新・完了時にGoogleカレンダーと自動同期。空き時間検索もNodeMap内の作業ブロックを考慮するよう拡張。グループタスクのメンバー管理基盤を新設。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 032_calendar_task_integration.sql
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS scheduled_start TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS scheduled_end TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS calendar_event_id TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scheduled_start TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS scheduled_end TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS calendar_event_id TEXT;
+CREATE TABLE IF NOT EXISTS task_members (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'member',
+  calendar_event_id TEXT,
+  added_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(task_id, user_id)
+);
+```
+
+### 新規ファイル
+- `src/services/calendar/calendarSync.service.ts` — カレンダー同期コアロジック（syncTaskToCalendar/syncJobToCalendar/updateCalendarEvent/deleteCalendarEvent/syncGroupTaskToMembers/getNodeMapScheduledBlocks）
+- `src/app/api/tasks/[id]/members/route.ts` — タスクメンバーCRUD API
+
+### 変更ファイル
+- `src/lib/types.ts` — Task/Job/CreateTaskRequest/UpdateTaskRequest/CreateJobRequest に scheduledStart/scheduledEnd/calendarEventId 追加。TaskMember型新設
+- `src/services/calendar/calendarClient.service.ts` — findFreeSlots() 拡張（NodeMap作業ブロック考慮＋二重カウント防止）
+- `src/services/task/taskClient.service.ts` — mapTaskFromDb に scheduled_start/end/calendar_event_id マッピング追加。createTask/updateTask でスケジュール時刻をDB保存
+- `src/app/api/tasks/route.ts` — POST: カレンダー同期＋グループメンバー登録。PUT: スケジュール変更時カレンダー更新、完了時カレンダー削除
+- `src/app/api/jobs/route.ts` — POST/PUT: カレンダー同期。完了/失敗時カレンダー削除
+- `src/app/api/jobs/[id]/execute/route.ts` — カレンダー予定作成時にcalendar_event_idをジョブに保存
+- `src/components/tasks/TaskAiChat.tsx` — 構想メモフォームに作業予定時刻（datetime-local）ピッカー追加
+- `src/app/api/agent/chat/route.ts` — 空き時間検索結果にNodeMap考慮済みラベル追加
+
+### カレンダー同期フロー
+```
+【タスク/ジョブ作成時】
+scheduledStart + scheduledEnd あり
+  → syncTaskToCalendar() / syncJobToCalendar()
+    → Google Calendar API POST（extendedProperties.private に nodeMapType/nodeMapId）
+    → calendar_event_id をDB保存
+    → グループタスク: task_members全員にも予定作成
+
+【タスク/ジョブ更新時】
+スケジュール変更 → Google Calendar PATCH で更新
+status='done' → Google Calendar DELETE で削除
+
+【空き時間検索】
+findFreeSlots()
+  → Google Calendar events 取得
+  → NodeMap tasks/jobs の scheduled_start/end を取得
+  → calendar_event_id 設定済みは除外（二重カウント防止）
+  → 全busyスロットを統合して空き時間計算
+```
+
+### 重要な実装ノート
+- **extendedProperties**: Google Calendar API の extendedProperties.private に `nodeMapType`（task/job）と `nodeMapId`（UUID）を埋め込み。UI には表示されず API で検索可能
+- **二重カウント防止**: NodeMap で calendar_event_id が設定済み = 既にGoogleカレンダーに登録済みなので、findFreeSlots では除外
+- **トークン再利用**: calendarSync.service.ts は user_service_tokens の gmail トークンを直接使用（calendarClient.service.ts の内部関数は非export のため）
+- **エラー許容**: カレンダー同期の失敗はログのみで、タスク/ジョブの作成・更新処理には影響しない
+- **zshでの[id]パス**: git add時は `"src/app/api/tasks/[id]/members/route.ts"` のようにブラケットを引用符で囲む
 
 ---
 

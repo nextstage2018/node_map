@@ -229,8 +229,13 @@ export async function getWeekEvents(userId: string, offsetDays = 0): Promise<Cal
 }
 
 // ========================================
-// 空き時間検索
+// 空き時間検索（拡張版: NodeMap作業ブロックも考慮）
 // ========================================
+export interface EnhancedFreeSlot extends FreeSlot {
+  // 拡張情報（AI日程調整用）
+  source?: 'google' | 'nodemap';
+}
+
 export async function findFreeSlots(
   userId: string,
   startDate: string,
@@ -240,54 +245,83 @@ export async function findFreeSlots(
   workingHoursEnd = 18
 ): Promise<FreeSlot[]> {
   try {
+    // 1. Google Calendar の予定を取得
     const events = await getEvents(userId, startDate, endDate);
-    const freeSlots: FreeSlot[] = [];
 
-    // 日ごとに空き時間を計算
+    // 2. NodeMap の作業ブロックを取得（カレンダー未反映分のみ）
+    let nodeMapBlocks: { start: string; end: string; calendarEventId: string | null }[] = [];
+    try {
+      const { getNodeMapScheduledBlocks } = await import('./calendarSync.service');
+      const allBlocks = await getNodeMapScheduledBlocks(userId, startDate, endDate);
+      // calendar_event_id が設定済み = 既にGoogleカレンダーに反映済み → 除外（二重カウント防止）
+      nodeMapBlocks = allBlocks.filter(b => !b.calendarEventId);
+    } catch {
+      // calendarSync.service が存在しない場合は無視
+    }
+
+    // 3. 全ての busy スロットを統合
+    const busySlots: { start: number; end: number }[] = [];
+
+    // Google Calendar イベント
+    for (const e of events) {
+      if (e.isAllDay) continue;
+      busySlots.push({
+        start: new Date(e.start).getTime(),
+        end: new Date(e.end).getTime(),
+      });
+    }
+
+    // NodeMap 作業ブロック（カレンダー未反映分のみ）
+    for (const b of nodeMapBlocks) {
+      busySlots.push({
+        start: new Date(b.start).getTime(),
+        end: new Date(b.end).getTime(),
+      });
+    }
+
+    // 開始時間順にソート
+    busySlots.sort((a, b) => a.start - b.start);
+
+    const freeSlots: FreeSlot[] = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
 
     for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
-      // 土日はスキップ
       if (dayOfWeek === 0 || dayOfWeek === 6) continue;
 
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursStart, 0, 0);
       const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursEnd, 0, 0);
+      const dayStartMs = dayStart.getTime();
+      const dayEndMs = dayEnd.getTime();
 
-      // その日のイベントを取得
-      const dayEvents = events
-        .filter(e => {
-          if (e.isAllDay) return false; // 終日イベントは空き判定から除外
-          const eStart = new Date(e.start);
-          const eEnd = new Date(e.end);
-          return eStart < dayEnd && eEnd > dayStart;
-        })
-        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+      // その日のbusy スロットを抽出
+      const dayBusy = busySlots
+        .filter(s => s.start < dayEndMs && s.end > dayStartMs)
+        .map(s => ({
+          start: Math.max(s.start, dayStartMs),
+          end: Math.min(s.end, dayEndMs),
+        }));
 
       // 空き時間を計算
-      let cursor = dayStart.getTime();
+      let cursor = dayStartMs;
 
-      for (const evt of dayEvents) {
-        const evtStart = Math.max(new Date(evt.start).getTime(), dayStart.getTime());
-        const evtEnd = Math.min(new Date(evt.end).getTime(), dayEnd.getTime());
-
-        if (evtStart > cursor) {
-          const gapMinutes = (evtStart - cursor) / 60000;
+      for (const busy of dayBusy) {
+        if (busy.start > cursor) {
+          const gapMinutes = (busy.start - cursor) / 60000;
           if (gapMinutes >= slotDurationMinutes) {
             freeSlots.push({
               start: new Date(cursor).toISOString(),
-              end: new Date(evtStart).toISOString(),
+              end: new Date(busy.start).toISOString(),
               durationMinutes: gapMinutes,
             });
           }
         }
-        cursor = Math.max(cursor, evtEnd);
+        cursor = Math.max(cursor, busy.end);
       }
 
-      // 最後のイベント後の空き
-      if (cursor < dayEnd.getTime()) {
-        const gapMinutes = (dayEnd.getTime() - cursor) / 60000;
+      if (cursor < dayEndMs) {
+        const gapMinutes = (dayEndMs - cursor) / 60000;
         if (gapMinutes >= slotDurationMinutes) {
           freeSlots.push({
             start: new Date(cursor).toISOString(),

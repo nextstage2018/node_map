@@ -61,6 +61,18 @@ export default function TaskAiChat({
   const [showIdeationForm, setShowIdeationForm] = useState(true);
   const [isEditingIdeation, setIsEditingIdeation] = useState(false);
 
+  // Calendar統合: 作業予定時刻
+  const [scheduledStart, setScheduledStart] = useState(
+    (task as any).scheduledStart
+      ? new Date((task as any).scheduledStart).toISOString().slice(0, 16)
+      : ''
+  );
+  const [scheduledEnd, setScheduledEnd] = useState(
+    (task as any).scheduledEnd
+      ? new Date((task as any).scheduledEnd).toISOString().slice(0, 16)
+      : ''
+  );
+
   const phase = task.phase;
   const conversations = task.conversations;
 
@@ -113,10 +125,13 @@ export default function TaskAiChat({
     setShowIdeationForm(false);
     setIsEditingIdeation(false);
 
-    // 構想メモ + 期限日をDB保存
+    // 構想メモ + 期限日 + スケジュール時刻をDB保存
     try {
       const updateBody: any = { id: task.id, ideationSummary: message };
       if (ideationForm.deadline) updateBody.dueDate = ideationForm.deadline;
+      // Calendar統合: 作業予定時刻
+      if (scheduledStart) updateBody.scheduledStart = new Date(scheduledStart).toISOString();
+      if (scheduledEnd) updateBody.scheduledEnd = new Date(scheduledEnd).toISOString();
       await fetch('/api/tasks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -326,6 +341,41 @@ export default function TaskAiChat({
                 </div>
               ))}
             </div>
+
+            {/* Calendar統合: 作業予定時刻 */}
+            <div className="mt-4 pt-3 border-t border-amber-100">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-2">
+                <span>📅</span>
+                作業予定（カレンダー登録）
+              </label>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="datetime-local"
+                  value={scheduledStart}
+                  onChange={(e) => {
+                    setScheduledStart(e.target.value);
+                    // 終了時刻が未設定なら1時間後をセット
+                    if (!scheduledEnd && e.target.value) {
+                      const start = new Date(e.target.value);
+                      start.setHours(start.getHours() + 1);
+                      setScheduledEnd(start.toISOString().slice(0, 16));
+                    }
+                  }}
+                  className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+                <span className="text-xs text-slate-400">〜</span>
+                <input
+                  type="datetime-local"
+                  value={scheduledEnd}
+                  onChange={(e) => setScheduledEnd(e.target.value)}
+                  className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                設定するとGoogleカレンダーに作業ブロックが自動登録されます
+              </p>
+            </div>
+
             <div className="flex gap-2 mt-4">
               <button
                 onClick={() => { setShowIdeationForm(false); setIsEditingIdeation(false); }}

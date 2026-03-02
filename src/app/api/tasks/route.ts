@@ -53,6 +53,36 @@ export async function POST(request: NextRequest) {
 
     const task = await TaskService.createTask({ ...body, userId });
 
+    // Calendar統合: スケジュール時刻がある場合はカレンダーに同期
+    let calendarResult = null;
+    if (body.scheduledStart && body.scheduledEnd) {
+      try {
+        const { syncTaskToCalendar, syncGroupTaskToMembers } = await import('@/services/calendar/calendarSync.service');
+        calendarResult = await syncTaskToCalendar(task.id, userId);
+
+        // グループタスクの場合はメンバーにも同期
+        if (body.taskType === 'group' && body.members && body.members.length > 0) {
+          const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+          const sb = getServerSupabase() || getSupabase();
+          if (sb) {
+            // メンバーをDB登録
+            const memberRows = body.members.map((m: { userId: string; role?: string }) => ({
+              task_id: task.id,
+              user_id: m.userId,
+              role: m.role || 'member',
+            }));
+            // オーナーも追加
+            memberRows.push({ task_id: task.id, user_id: userId, role: 'owner' });
+            await sb.from('task_members').upsert(memberRows, { onConflict: 'task_id,user_id' });
+            // 全メンバーのカレンダーに同期
+            await syncGroupTaskToMembers(task.id);
+          }
+        }
+      } catch (calErr) {
+        console.error('[Tasks API] カレンダー同期エラー（タスク作成は成功）:', calErr);
+      }
+    }
+
     // Phase 28: ナレッジパイプライン実行
     let knowledgeResult = null;
     try {
@@ -114,6 +144,25 @@ export async function PUT(request: NextRequest) {
         { success: false, error: 'タスクが見つかりません' },
         { status: 404 }
       );
+    }
+
+    // Calendar統合: スケジュール変更 or タスク完了時
+    try {
+      const { syncTaskToCalendar, deleteCalendarEvent, syncGroupTaskToMembers } = await import('@/services/calendar/calendarSync.service');
+
+      if (body.status === 'done' && task.calendarEventId) {
+        // タスク完了 → カレンダー予定を削除
+        await deleteCalendarEvent(task.calendarEventId, userId);
+      } else if (body.scheduledStart || body.scheduledEnd) {
+        // スケジュール変更 → カレンダー更新
+        await syncTaskToCalendar(body.id, userId);
+        // グループタスクならメンバーにも同期
+        if (task.taskType === 'group') {
+          await syncGroupTaskToMembers(body.id);
+        }
+      }
+    } catch (calErr) {
+      console.error('[Tasks API] カレンダー同期エラー（タスク更新は成功）:', calErr);
     }
 
     // Phase 28: タスク完了時にナレッジパイプライン実行

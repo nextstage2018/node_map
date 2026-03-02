@@ -441,7 +441,7 @@ async function fetchDataAndBuildCards(
             const nextEnd = new Date(nextStart.getTime() + 7 * 24 * 60 * 60 * 1000);
             const freeSlots = await findFreeSlots(userId, nextStart.toISOString(), nextEnd.toISOString(), 60);
             if (freeSlots.length > 0) {
-              parts.push(`\n\n【空き時間（今後7日間）】\n${formatFreeSlotsForContext(freeSlots, 8)}`);
+              parts.push(`\n\n【空き時間（今後7日間、Googleカレンダー＋NodeMap作業ブロック考慮済み）】\n${formatFreeSlotsForContext(freeSlots, 8)}`);
             } else {
               parts.push('\n\n【空き時間】\n空き時間が見つかりませんでした');
             }

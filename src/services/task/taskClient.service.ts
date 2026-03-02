@@ -322,6 +322,10 @@ function mapTaskFromDb(dbRow: any): Task {
     // Phase 40c: 種・プロジェクト紐づけ
     seedId: dbRow.seed_id,
     projectId: dbRow.project_id,
+    // Calendar統合
+    scheduledStart: dbRow.scheduled_start,
+    scheduledEnd: dbRow.scheduled_end,
+    calendarEventId: dbRow.calendar_event_id,
   };
 }
 
@@ -517,6 +521,9 @@ export class TaskService {
       // Phase 40c: 種・プロジェクト紐づけ（カラム未追加でもエラーにならないよう条件付き）
       if (req.seedId) insertData.seed_id = req.seedId;
       if (req.projectId) insertData.project_id = req.projectId;
+      // Calendar統合
+      if (req.scheduledStart) insertData.scheduled_start = req.scheduledStart;
+      if (req.scheduledEnd) insertData.scheduled_end = req.scheduledEnd;
 
       const { data, error } = await sb
         .from('tasks')
@@ -588,6 +595,15 @@ export class TaskService {
       if (req.dueDate !== undefined) {
         updateData.due_date = req.dueDate;
         delete updateData.dueDate;
+      }
+      // Calendar統合: scheduled_start / scheduled_end
+      if ((req as any).scheduledStart !== undefined) {
+        updateData.scheduled_start = (req as any).scheduledStart;
+        delete updateData.scheduledStart;
+      }
+      if ((req as any).scheduledEnd !== undefined) {
+        updateData.scheduled_end = (req as any).scheduledEnd;
+        delete updateData.scheduledEnd;
       }
 
       // Set completedAt if marking as done
