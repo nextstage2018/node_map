@@ -216,6 +216,7 @@ export async function POST(request: NextRequest) {
           orgId,
           projectId,
           projectName: project.name,
+          targetFolderId,
           renamedFileName,
           originalFileName: fileName,
           mimeType: mimeType || 'application/octet-stream',

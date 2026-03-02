@@ -126,33 +126,43 @@ function FileUploadPanel({ onClose, onUploadComplete }: FileUploadPanelProps) {
       const { uploadUrl, metadata } = prepResult.data;
 
       // Step 2: クライアントからGoogle Drive APIに直接アップロード（Vercelを経由しない）
-      const fileBuffer = await file.arrayBuffer();
-      const uploadRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': file.type || 'application/octet-stream',
-          'Content-Length': String(file.size),
-        },
-        body: fileBuffer,
-      });
+      let driveFileId: string | null = null;
+      let driveUrl: string | null = null;
 
-      if (!uploadRes.ok) {
-        const errText = await uploadRes.text();
-        console.error('Drive upload failed:', uploadRes.status, errText);
-        alert('Google Driveへのアップロードに失敗しました');
-        return;
+      try {
+        const fileBuffer = await file.arrayBuffer();
+        const uploadRes = await fetch(uploadUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': file.type || 'application/octet-stream',
+          },
+          body: fileBuffer,
+        });
+
+        if (uploadRes.ok) {
+          try {
+            const driveFile = await uploadRes.json();
+            driveFileId = driveFile.id;
+            driveUrl = driveFile.webViewLink || null;
+          } catch {
+            // レスポンス読み取り失敗（CORS制約）→ サーバー側で検索するので問題なし
+            console.log('Drive response parse failed (CORS expected), server will search');
+          }
+        }
+      } catch {
+        // アップロード自体は成功している可能性がある（CORSでレスポンスだけ読めない）
+        console.log('Drive upload fetch error (CORS expected), server will search');
       }
 
-      const driveFile = await uploadRes.json();
-
       // Step 3: DB登録（complete API）
+      // driveFileId がなくてもサーバー側でファイル名検索してくれる
       const completeRes = await fetch('/api/drive/upload/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...metadata,
-          driveFileId: driveFile.id,
-          driveUrl: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
+          driveFileId: driveFileId || null,
+          driveUrl: driveUrl || null,
         }),
       });
       const completeResult = await completeRes.json();
@@ -166,8 +176,7 @@ function FileUploadPanel({ onClose, onUploadComplete }: FileUploadPanelProps) {
         });
         onClose();
       } else {
-        // Driveにはアップロード済みだがDB登録失敗
-        alert('ファイルはDriveにアップロードされましたが、DB登録に失敗しました: ' + (completeResult.error || ''));
+        alert(completeResult.error || 'アップロードの完了処理に失敗しました');
       }
     } catch (err) {
       console.error('Upload error:', err);
