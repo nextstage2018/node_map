@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>NodeMap 実装完了整理リスト</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', sans-serif; background: #f8fafc; color: #334155; padding: 24px; }
+h1 { font-size: 20px; color: #0f172a; margin-bottom: 4px; }
+h2 { font-size: 16px; color: #1e293b; margin: 28px 0 12px; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; }
+h3 { font-size: 13px; color: #475569; margin: 16px 0 8px; }
+.subtitle { font-size: 12px; color: #94a3b8; margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 12px; }
+th { background: #1e293b; color: white; padding: 8px 10px; text-align: left; font-weight: 600; }
+td { padding: 6px 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+tr:hover td { background: #f1f5f9; }
+.done { color: #16a34a; font-weight: 700; }
+.tbd { color: #d97706; font-weight: 700; }
+.delete { color: #dc2626; font-weight: 700; }
+.keep { color: #2563eb; font-weight: 700; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+.bg-green { background: #dcfce7; color: #166534; }
+.bg-yellow { background: #fef9c3; color: #854d0e; }
+.bg-red { background: #fee2e2; color: #991b1b; }
+.bg-blue { background: #dbeafe; color: #1e40af; }
+.bg-purple { background: #f3e8ff; color: #6b21a8; }
+.section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.summary-card { background: white; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.summary-card .num { font-size: 28px; font-weight: 700; }
+.summary-card .label { font-size: 11px; color: #64748b; margin-top: 4px; }
+.green { color: #16a34a; }
+.amber { color: #d97706; }
+.red { color: #dc2626; }
+.blue { color: #2563eb; }
+</style>
+</head>
+<body>
+
+<h1>NodeMap 実装完了整理リスト</h1>
+<p class="subtitle">最終更新: 2026-03-02 / Phase 47（ナレッジ自動構造化）まで</p>
+
+<!-- サマリー -->
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="num green">22</div>
+    <div class="label">完了Phase数</div>
+  </div>
+  <div class="summary-card">
+    <div class="num amber">6</div>
+    <div class="label">未デプロイ（TBD）</div>
+  </div>
+  <div class="summary-card">
+    <div class="num blue">11</div>
+    <div class="label">画面・ルート</div>
+  </div>
+  <div class="summary-card">
+    <div class="num red">24+</div>
+    <div class="label">削除候補ファイル</div>
+  </div>
+</div>
+
+<!-- ======================================== -->
+<h2>1. 実装フェーズ一覧（Phase 30〜47）</h2>
+<!-- ======================================== -->
+
+<div class="section">
+<table>
+<tr>
+  <th style="width:100px">Phase</th>
+  <th>内容</th>
+  <th style="width:80px">状態</th>
+  <th style="width:120px">コミット</th>
+</tr>
+<tr><td>30a+30b</td><td>マスターデータ基盤・簡単登録UI</td><td><span class="badge bg-green">完了</span></td><td>20fec1b</td></tr>
+<tr><td>30c+30d</td><td>自動マッチング・ビジネスログ基盤</td><td><span class="badge bg-green">完了</span></td><td>f2d2b81</td></tr>
+<tr><td>31</td><td>種AI会話強化</td><td><span class="badge bg-green">完了</span></td><td>f8b1195</td></tr>
+<tr><td>32</td><td>パーソナル秘書エージェント</td><td><span class="badge bg-green">完了</span></td><td>03ed3a7</td></tr>
+<tr><td>33</td><td>ビジネスログ強化（議事録・参加者）</td><td><span class="badge bg-green">完了</span></td><td>86b5ccf</td></tr>
+<tr><td>34</td><td>コンタクト強化・組織ページ</td><td><span class="badge bg-green">完了</span></td><td>ceb958d</td></tr>
+<tr><td>35</td><td>コンタクトマージ・重複解消・チャンネル統合</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>36</td><td>AIコミュニケーション分析（notes自動生成）</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>37</td><td>組織チャネル連携・メンバー管理</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>37b</td><td>組織関係性・詳細情報・コンタクト連動</td><td><span class="badge bg-green">完了</span></td><td>39b676e</td></tr>
+<tr><td>38</td><td>送信メッセージDB保存・スレッド統合表示</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>38b</td><td>返信修正・送信文字色改善・宛先サジェスト</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>39</td><td>AIコミュニケーション分析（双方向対応）</td><td><span class="badge bg-green">完了</span></td><td>6cbc3c8</td></tr>
+<tr><td>39b</td><td>外部サービス送信検出＋AI分析マッチング</td><td><span class="badge bg-green">完了</span></td><td>82ecfdb</td></tr>
+<tr><td>40</td><td>タスク・種ボックス・ノードマップ修正</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>40b</td><td>種AI会話DB保存・プロジェクト選択</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>40c</td><td>組織→プロジェクト→チャネル階層</td><td><span class="badge bg-green">完了</span></td><td>abbaf17</td></tr>
+<tr><td>41</td><td>種・タスクRLSバグ修正＋AI構造化タスク変換＋伴走支援</td><td><span class="badge bg-green">完了</span></td><td>7c202f2</td></tr>
+<tr><td>42a</td><td>AI会話キーワード抽出→ナレッジマスタ→紐づけ</td><td><span class="badge bg-green">完了</span></td><td>14fd589</td></tr>
+<tr><td>42d+42f</td><td>思考動線記録＋思考マップUI「地形ビュー」</td><td><span class="badge bg-green">完了</span></td><td>81abb4b</td></tr>
+<tr><td>42-fix</td><td>classifyKeywordバグ修正＋パイプライン安定化</td><td><span class="badge bg-green">完了</span></td><td>eee93d5</td></tr>
+<tr><td>42f強化</td><td>力学シミュレーション・全体マップ/トレース2モード</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>42f残り</td><td>会話ジャンプ＋飛地→種化ボタン＋turn_id基盤</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>42b</td><td>送受信メッセージからのノード抽出Cron</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>42e</td><td>スナップショット（出口想定・着地点）</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>Restructure</td><td>ジョブ・アイデアメモ・タスク種別の再設計</td><td><span class="badge bg-green">完了</span></td><td>0058180</td></tr>
+<tr><td>Inbox改善</td><td>アクションボタン再定義・返信AI下書き</td><td><span class="badge bg-green">完了</span></td><td>df71c96</td></tr>
+<tr><td>秘書A〜C</td><td>秘書チャットUI＋カードシステム＋返信下書き</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td>Phase B拡張</td><td>ジョブ自律実行＋AI下書き＋自動送信エンジン</td><td><span class="badge bg-green">完了</span></td><td>b69dead</td></tr>
+<tr><td>Calendar連携</td><td>Google Calendar＋空き時間検索＋予定作成</td><td><span class="badge bg-green">完了</span></td><td>b69dead</td></tr>
+<tr><td>ブリーフィング強化</td><td>サマリーカード＋カレンダーカード＋期限アラート</td><td><span class="badge bg-green">完了</span></td><td>b69dead</td></tr>
+<tr><td>Calendar×タスク</td><td>タスク/ジョブのカレンダー自動同期</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>Drive連携</td><td>OAuth＋フォルダ/ドキュメント管理＋添付同期</td><td><span class="badge bg-green">完了</span></td><td>23f9b4e</td></tr>
+<tr><td>44a-44d</td><td>Drive実運用（4階層フォルダ・AI分類・承認フロー）</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>45a-45c</td><td>URL検出・全チャネル対応・ビジネスイベント自動蓄積</td><td><span class="badge bg-yellow">TBD</span></td><td>—</td></tr>
+<tr><td>46</td><td>ビジネスログ＋ナレッジページ改善（CRUD・フィルタ）</td><td><span class="badge bg-green">完了</span></td><td>main</td></tr>
+<tr><td><strong>47</strong></td><td><strong>ナレッジ自動構造化（AIクラスタリング＋秘書連携＋提案履歴）</strong></td><td><span class="badge bg-purple">NEW</span></td><td>caa30d6</td></tr>
+</table>
+</div>
+
+<!-- ======================================== -->
+<h2>2. 画面・ルート一覧</h2>
+<!-- ======================================== -->
+
+<div class="section">
+<table>
+<tr>
+  <th>画面</th>
+  <th>URL</th>
+  <th>主なテーブル</th>
+  <th style="width:60px">状態</th>
+</tr>
+<tr><td>秘書（メインハブ）</td><td>/agent</td><td>全テーブル横断（AI意図分類）</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>インボックス</td><td>/inbox</td><td>inbox_messages</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>タスク</td><td>/tasks</td><td>tasks / task_conversations</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>ジョブ</td><td>/jobs</td><td>jobs</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>アイデアメモ</td><td>/memos</td><td>idea_memos / memo_conversations</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>思考マップ</td><td>/thought-map</td><td>thought_task_nodes / thought_edges</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>コンタクト</td><td>/contacts</td><td>contact_persons / contact_channels</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>組織</td><td>/organizations</td><td>organizations / organization_channels</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>ナレッジ</td><td>/master</td><td>knowledge_domains / fields / entries</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>ビジネスログ</td><td>/business-log</td><td>projects / business_events</td><td><span class="badge bg-green">稼働</span></td></tr>
+<tr><td>設定</td><td>/settings</td><td>organizations / contact_persons</td><td><span class="badge bg-green">稼働</span></td></tr>
+</table>
+</div>
+
+<!-- ======================================== -->
+<h2>3. 秘書AIのIntent一覧</h2>
+<!-- ======================================== -->
+
+<div class="section">
+<table>
+<tr>
+  <th>Intent</th>
+  <th>トリガー例</th>
+  <th>カード</th>
+</tr>
+<tr><td>briefing</td><td>「おはよう」「今日の状況は？」</td><td>briefing_summary / calendar_events / deadline_alert</td></tr>
+<tr><td>inbox</td><td>「新着メッセージ」</td><td>inbox_summary</td></tr>
+<tr><td>reply_draft</td><td>「返信の下書きを作って」</td><td>reply_draft</td></tr>
+<tr><td>create_job</td><td>「〜しておいて」「おまかせ」</td><td>job_approval</td></tr>
+<tr><td>calendar</td><td>「今日の予定は？」</td><td>calendar_events</td></tr>
+<tr><td>schedule</td><td>「空き時間を探して」</td><td>（テキスト応答）</td></tr>
+<tr><td>tasks</td><td>「タスクの状況」</td><td>task_resume</td></tr>
+<tr><td>jobs</td><td>「ジョブの状況」</td><td>job_approval</td></tr>
+<tr><td>file_intake</td><td>「届いたファイル確認」</td><td>file_intake</td></tr>
+<tr><td>store_file</td><td>「このURLをドライブに格納して」</td><td>storage_confirmation</td></tr>
+<tr><td>documents</td><td>「ドキュメント一覧」</td><td>document_list</td></tr>
+<tr><td>share_file</td><td>「ファイルを共有して」</td><td>document_list</td></tr>
+<tr><td>create_business_event</td><td>「打ち合わせを記録して」「メモを追加」</td><td>business_event_form</td></tr>
+<tr><td>business_summary</td><td>「活動要約を見せて」</td><td>business_summary</td></tr>
+<tr><td><strong>knowledge_structuring</strong></td><td><strong>「ナレッジ提案を見せて」</strong></td><td><strong>knowledge_proposal</strong></td></tr>
+<tr><td>thought_map</td><td>「思考マップ」</td><td>navigate</td></tr>
+<tr><td>business_log</td><td>「ビジネスログ」</td><td>navigate</td></tr>
+<tr><td>general</td><td>（その他の会話）</td><td>（テキスト応答）</td></tr>
+</table>
+</div>
+
+<!-- ======================================== -->
+<h2>4. Cronジョブ一覧</h2>
+<!-- ======================================== -->
+
+<div class="section">
+<table>
+<tr>
+  <th>パス</th>
+  <th>スケジュール</th>
+  <th>内容</th>
+</tr>
+<tr><td>/api/cron/enrich-contacts</td><td>毎日 21:00</td><td>コンタクト情報エンリッチメント</td></tr>
+<tr><td>/api/cron/analyze-contacts</td><td>毎日 22:00</td><td>AIコミュニケーション分析</td></tr>
+<tr><td>/api/cron/extract-message-nodes</td><td>毎日 22:30</td><td>メッセージからノード抽出</td></tr>
+<tr><td>/api/cron/sync-drive-documents</td><td>毎日 23:00</td><td>Drive添付ファイル同期</td></tr>
+<tr><td>/api/cron/clean-drive-staging</td><td>毎日 0:30</td><td>Driveステージングクリーンアップ</td></tr>
+<tr><td>/api/cron/sync-business-events</td><td>毎日 1:00</td><td>ビジネスイベント自動蓄積</td></tr>
+<tr><td>/api/cron/summarize-business-log</td><td>毎週月曜 2:00</td><td>AI週間ビジネス要約</td></tr>
+<tr><td><strong>/api/cron/cluster-knowledge-weekly</strong></td><td><strong>毎週月曜 2:30</strong></td><td><strong>ナレッジ自動クラスタリング</strong></td></tr>
+</table>
+</div>
+
+<!-- ======================================== -->
+<h2>5. 削除候補ファイル一覧</h2>
+<!-- ======================================== -->
+
+<div class="section">
+<h3>モック/テストファイル（ルート）</h3>
+<table>
+<tr><th>ファイル</th><th>理由</th><th style="width:60px">判定</th></tr>
+<tr><td>thought-map-mock.html</td><td>開発用モックファイル。本番不要</td><td><span class="badge bg-red">削除</span></td></tr>
+</table>
+
+<h3>旧SQLディレクトリ（sql/）— フォルダごと削除</h3>
+<table>
+<tr><th>ファイル</th><th>理由</th><th style="width:60px">判定</th></tr>
+<tr><td>sql/010_phase30_thinking_logs_seeds.sql</td><td>旧マイグレーション場所。supabase/migrations/に移行済み</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/011_phase30a_organizations.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/012_phase30d_business_log.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/013_phase36_ai_context.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/013_phase36_ai_context 2.sql</td><td>重複ファイル（スペース入り）</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/014_phase37_organization_channels.sql</td><td>旧マイグレーション</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/015_phase37b_organization_detail.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/016_phase38_sent_messages.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/017_phase40b_seeds_metadata.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/018_phase40b_seed_conversations.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/019_phase40b_seed_project.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/020_phase40c_project_organization.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/021_phase40c_project_channels.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>sql/022_phase40c_task_project.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+</table>
+
+<h3>旧SQLファイル（supabase/直下）</h3>
+<table>
+<tr><th>ファイル</th><th>理由</th><th style="width:60px">判定</th></tr>
+<tr><td>supabase/001_initial_schema.sql</td><td>旧配置。migrations/に移行済み</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/002_tasks_schema.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/003_nodemap_schema.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/004_phase7_10_schema.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/005_phase16_interaction_count.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/006_phase17_conversation_tags.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/007_inbox_messages_blocklist.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/008_message_reactions.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+<tr><td>supabase/009_user_channel_subscriptions.sql</td><td>同上</td><td><span class="badge bg-red">削除</span></td></tr>
+</table>
+
+<h3>重複マイグレーション</h3>
+<table>
+<tr><th>ファイル</th><th>理由</th><th style="width:60px">判定</th></tr>
+<tr><td>supabase/migrations/032_calendar_task_integration 2.sql</td><td>スペース入り重複ファイル</td><td><span class="badge bg-red">削除</span></td></tr>
+</table>
+</div>
+
+<!-- ======================================== -->
+<h2>6. 削除コマンド（ターミナル用）</h2>
+<!-- ======================================== -->
+
+<div class="section" style="background: #1e293b; color: #e2e8f0; font-family: 'SF Mono', 'Menlo', monospace; font-size: 12px; line-height: 1.8;">
+<pre>
+cd ~/Desktop/node_map_git
+
+# 1. モックファイル削除
+rm -f thought-map-mock.html
+
+# 2. 旧SQLディレクトリ削除
+rm -rf sql/
+
+# 3. 旧SQLファイル削除（supabase直下）
+rm -f supabase/001_initial_schema.sql
+rm -f supabase/002_tasks_schema.sql
+rm -f supabase/003_nodemap_schema.sql
+rm -f supabase/004_phase7_10_schema.sql
+rm -f supabase/005_phase16_interaction_count.sql
+rm -f supabase/006_phase17_conversation_tags.sql
+rm -f supabase/007_inbox_messages_blocklist.sql
+rm -f supabase/008_message_reactions.sql
+rm -f supabase/009_user_channel_subscriptions.sql
+
+# 4. 重複マイグレーション削除
+rm -f "supabase/migrations/032_calendar_task_integration 2.sql"
+
+# 5. 確認
+echo "=== 削除後の確認 ==="
+ls sql/ 2>/dev/null || echo "sql/ ディレクトリ: 削除済み"
+ls supabase/*.sql 2>/dev/null || echo "supabase/*.sql: なし"
+ls thought-map-mock.html 2>/dev/null || echo "thought-map-mock.html: 削除済み"
+</pre>
+</div>
+
+</body>
+</html>
