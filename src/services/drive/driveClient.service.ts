@@ -9,6 +9,9 @@ const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
+// Google Drive 親フォルダID（全NodeMapフォルダをこの配下に作成）
+const DRIVE_ROOT_FOLDER_ID = process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || '';
+
 // ========================================
 // 型定義
 // ========================================
@@ -220,8 +223,8 @@ export async function getOrCreateOrgFolder(
     return existing.drive_folder_id;
   }
 
-  // Driveにフォルダ作成
-  const folder = await createFolder(userId, `[NodeMap] ${orgName}`);
+  // Driveにフォルダ作成（親フォルダが設定されていればその配下に）
+  const folder = await createFolder(userId, `[NodeMap] ${orgName}`, DRIVE_ROOT_FOLDER_ID || undefined);
   if (!folder) return null;
 
   // DBに記録
@@ -993,8 +996,8 @@ export async function getOrCreateTempFolder(userId: string): Promise<string | nu
     return existing.drive_folder_id;
   }
 
-  // Driveにフォルダ作成
-  const folder = await createFolder(userId, '[NodeMap] 一時保管');
+  // Driveにフォルダ作成（親フォルダが設定されていればその配下に）
+  const folder = await createFolder(userId, '[NodeMap] 一時保管', DRIVE_ROOT_FOLDER_ID || undefined);
   if (!folder) return null;
 
   // DBに記録（hierarchy_level=1だがorganization_idはNULL → CHECK制約回避のためlevel=0を使わない）
