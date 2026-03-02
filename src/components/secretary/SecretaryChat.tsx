@@ -135,13 +135,8 @@ export default function SecretaryChat() {
     }
   }, [isLoading, messages]);
 
-  // Enterキーで送信（Shift+Enterで改行）
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
-    }
-  };
+  // Enterキーは改行のみ（送信はボタンで行う）
+  // IME変換確定のEnterで誤送信されるのを防ぐため、Enterでの送信を無効化
 
   // 会話クリア
   const handleClear = () => {
@@ -454,8 +449,7 @@ export default function SecretaryChat() {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="秘書に話しかける...（Shift+Enterで改行）"
+            placeholder="秘書に話しかける...（送信ボタンで送信）"
             rows={1}
             className="flex-1 resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-slate-50"
             style={{ maxHeight: '120px' }}
