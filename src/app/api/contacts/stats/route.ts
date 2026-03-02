@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { ContactPersonService } from '@/services/contact/contactPerson.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Phase 22: 認証確認

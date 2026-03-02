@@ -5,6 +5,8 @@ import { ThinkingLogService } from '@/services/thinking/thinkingLogClient.servic
 import { getServerUserId } from '@/lib/serverAuth';
 import { ThinkingLogType } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 // 思考ログ一覧取得
 export async function GET(request: NextRequest) {
   try {

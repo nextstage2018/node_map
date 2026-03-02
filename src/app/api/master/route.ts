@@ -3,6 +3,8 @@ import { NextResponse } from 'next/server';
 import { KnowledgeMasterService } from '@/services/nodemap/knowledgeMaster.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Phase 22: 認証確認

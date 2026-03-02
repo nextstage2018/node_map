@@ -4,6 +4,8 @@ import { generateReplyDraft } from '@/services/ai/aiClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * 送信者のコンタクト情報（メモ・AIコンテキスト・会社名等）を取得
  */

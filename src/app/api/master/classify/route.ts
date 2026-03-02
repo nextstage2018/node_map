@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { KnowledgeMasterService } from '@/services/nodemap/knowledgeMaster.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // POST: キーワードを自動分類
 export async function POST(req: NextRequest) {
   try {

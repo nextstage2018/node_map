@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { NextActionRequest, NextActionResponse, NextActionSuggestion } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * ネクストアクションサジェストAPI
  * POST /api/ai/next-action

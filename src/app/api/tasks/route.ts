@@ -7,6 +7,8 @@ import { CreateTaskRequest } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 
+export const dynamic = 'force-dynamic';
+
 // タスク一覧取得
 export async function GET() {
   try {

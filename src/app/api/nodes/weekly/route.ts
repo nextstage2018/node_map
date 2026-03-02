@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import type { NodeData, WeeklyNodesResponse } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // デモモード用のノードデータ
 const demoNodes: NodeData[] = [
   {

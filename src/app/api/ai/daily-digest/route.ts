@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { DailyDigestResponse } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * 日次ダイジェストAPI
  * GET /api/ai/daily-digest

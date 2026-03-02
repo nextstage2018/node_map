@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // 種をタスクに変換（AI構造化 → タスク生成）
 export async function POST(
   request: NextRequest,

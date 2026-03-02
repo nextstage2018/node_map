@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // ノード一覧取得（Phase 22: 認証ユーザーID適用）
 export async function GET(request: NextRequest) {
   try {

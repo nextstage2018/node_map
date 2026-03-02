@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { createServerClient } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // ========================================
 // 型定義
 // ========================================

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getChatworkFileDownloadUrl } from '@/services/chatwork/chatworkClient.service';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Chatworkファイルのダウンロードリダイレクト
  * GET /api/attachments/chatwork?roomId=xxx&fileId=xxx

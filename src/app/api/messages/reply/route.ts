@@ -12,6 +12,8 @@ import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 import { saveMessages } from '@/services/inbox/inboxStorage.service';
 import type { UnifiedMessage, ChannelType } from '@/lib/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await getServerUserId();

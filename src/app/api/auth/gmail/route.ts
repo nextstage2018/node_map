@@ -3,6 +3,8 @@
 import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI
   || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/gmail/callback`;

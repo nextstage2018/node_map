@@ -3,6 +3,8 @@
 import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 const SLACK_CLIENT_ID = process.env.SLACK_CLIENT_ID || '';
 const REDIRECT_URI = process.env.SLACK_REDIRECT_URI
   || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/slack/callback`;

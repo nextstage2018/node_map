@@ -5,6 +5,8 @@ import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { createServerClient } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const userId = await getServerUserId();

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import Anthropic from '@anthropic-ai/sdk';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * POST /api/ai/structure-job
  * インボックスメッセージの内容からAIがジョブ情報を構造化する

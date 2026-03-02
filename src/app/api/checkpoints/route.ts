@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { CheckpointService } from '@/services/nodemap/checkpoint.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // GET: チェックポイント一覧取得
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

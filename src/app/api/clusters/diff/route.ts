@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

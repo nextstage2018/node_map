@@ -8,6 +8,8 @@ import { getServerUserId } from '@/lib/serverAuth';
 import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // Phase 40c: チャネル情報からプロジェクトを自動検出
 async function detectProjectFromChannel(
   sourceChannel: string | undefined,

@@ -8,6 +8,8 @@ import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { TaskAiChatRequest, NodeData } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 // タスクAI会話
 export async function POST(request: NextRequest) {
   try {

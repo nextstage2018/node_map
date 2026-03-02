@@ -10,6 +10,8 @@ import { sendChatworkMessage } from '@/services/chatwork/chatworkClient.service'
 import { saveMessages } from '@/services/inbox/inboxStorage.service';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function isValidEmail(email: string): boolean {

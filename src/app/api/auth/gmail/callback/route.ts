@@ -3,6 +3,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI

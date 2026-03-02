@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
 
+export const dynamic = 'force-dynamic';
+
 // タスク提案取得
 export async function GET() {
   try {

@@ -4,6 +4,8 @@ import { generateThreadSummary } from '@/services/ai/aiClient.service';
 import { cache, CACHE_KEYS, CACHE_TTL } from '@/lib/cache';
 import { getServerUserId } from '@/lib/serverAuth';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Phase 22: 認証確認

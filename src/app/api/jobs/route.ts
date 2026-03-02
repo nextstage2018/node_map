@@ -7,6 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
+export const dynamic = 'force-dynamic';
+
 // DB行 → フロント用オブジェクト変換
 function mapJobFromDb(row: Record<string, unknown>) {
   return {
