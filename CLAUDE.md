@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-01（Phase 42 + Restructure まで反映）
+最終更新: 2026-03-02（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 まで反映）
 
 ---
 
@@ -31,7 +31,7 @@
 | `project_channels` | プロジェクトとチャネルの紐づけ。UNIQUE(project_id, service_name, channel_identifier) |
 | `seeds` | 種ボックス（段階的廃止予定）。project_id で紐づけ可。user_id カラムあり |
 | `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id / task_type('personal'\|'group') カラムあり |
-| `jobs` | ジョブ（AIに委ねる日常の簡易作業）。type='schedule'\|'reply_later'\|'check'\|'other'。status='pending'\|'done'。思考マップ対象外 |
+| `jobs` | ジョブ（AIに委ねる日常の簡易作業）。type='schedule'\|'reply'\|'check'\|'other'。status='pending'\|'approved'\|'executing'\|'done'\|'failed'。Phase B拡張: approved_at / executed_at / execution_log / reply_to_message_id / target_contact_id / target_address / target_name / execution_metadata カラム追加 |
 | `idea_memos` | アイデアメモ。断片的な思いつきを記録。tags TEXT[]。タスク変換機能なし |
 | `memo_conversations` | メモのAI会話。turn_id で会話ターン管理 |
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
@@ -121,6 +121,125 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 42h | 比較モード（2人の思考動線重ね・共有ノード・分岐点可視化）＋リプレイモード（完了タスクAI対話） | TBD |
 | Restructure | ジョブ・アイデアメモ・タスク種別の再設計。jobs/idea_memos/memo_conversationsテーブル新設。タスクページからジョブ分離 | 0058180 |
 | Inbox改善 | インボックスアクションボタン再定義（返信AI下書き自動・ジョブ種別選択・タスクAIフォーム）。返信プロンプトにコンタクト情報/過去やり取り/スレッド文脈を反映 | df71c96 |
+| 秘書Phase A | 秘書メインチャットUI（SecretaryChat.tsx）＋インラインカードシステム（ChatCards.tsx）＋秘書AI会話API（意図分類＋カード生成） | mainにマージ済み |
+| 秘書Phase B | インラインカード統合（InboxSummary/TaskResume/JobApproval/Navigate/ActionResult）＋実データ連携 | mainにマージ済み |
+| 秘書Phase C | 返信下書きカード（ReplyDraftCard）＋送信実行＋コンタクト情報連携 | mainにマージ済み |
+| Phase B拡張 | ジョブ自律実行（pending→approved→executing→done/failed）＋AI下書き生成＋承認カード編集＋自動送信エンジン | b69dead |
+| Calendar連携 | Gmail OAuthにカレンダースコープ追加＋calendarClient.service.ts＋/api/calendar＋秘書AIカレンダーコンテキスト＋日程調整ジョブでカレンダー予定自動作成 | b69dead |
+| ブリーフィング強化 | ブリーフィングサマリーカード＋カレンダー予定カード＋期限アラートカード＋AIプロンプト改善 | b69dead |
+
+---
+
+## 秘書ファースト実装内容（Phase A〜C + B拡張 + Calendar + ブリーフィング強化）
+
+### 概要
+NodeMapのメイン画面を秘書AIチャット中心に再設計。「秘書に話しかけるだけで全機能にアクセスできる」UIを実現。
+
+### アーキテクチャ
+```
+ユーザー → SecretaryChat.tsx（チャットUI）
+  → POST /api/agent/chat（意図分類 + データ取得 + カード生成 + AI応答）
+    → classifyIntent()（キーワードベース高速分類）
+    → fetchDataAndBuildCards()（Supabase + Calendar API）
+    → Claude API（コンテキスト付き応答生成）
+  ← { reply: string, cards: CardData[] }
+  → ChatCards.tsx（カードレンダリング）
+  → handleCardAction()（カード内アクション実行）
+```
+
+### 意図分類（Intent）
+| Intent | トリガーキーワード | 生成されるカード |
+|---|---|---|
+| briefing | おはよう/今日の状況/報告 | briefing_summary + calendar_events + deadline_alert + inbox_summary + task_resume + job_approval |
+| inbox | メッセージ/新着/受信 | inbox_summary |
+| reply_draft | 返信+下書き/作って | reply_draft |
+| create_job | しておいて/任せ/おまかせ | job_approval |
+| calendar | 予定/スケジュール/カレンダー | （テキストコンテキスト） |
+| schedule | 日程+調整/空き時間 | （テキストコンテキスト） |
+| tasks | タスク/進行/期限 | task_resume |
+| jobs | ジョブ/対応必要 | job_approval |
+| thought_map | 思考/マップ | navigate |
+| business_log | ログ/ビジネス | navigate |
+
+### カード一覧（ChatCards.tsx）
+| カード型 | 用途 | インタラクション |
+|---|---|---|
+| briefing_summary | 数値ダッシュボード（未読/タスク/ジョブ/予定/次の予定） | 表示のみ |
+| calendar_events | 今日の予定一覧（時刻/場所/進行中ハイライト） | 表示のみ |
+| deadline_alert | 期限アラート（期限切れ/今日/近日） | クリックで該当ページ遷移 |
+| inbox_summary | メッセージ一覧（緊急度ドット付き） | クリックで詳細表示 |
+| message_detail | メッセージ全文 | 返信/ジョブ化/タスク化ボタン |
+| reply_draft | 返信下書き（インライン編集可能） | 承認して送信/修正/却下 |
+| job_approval | ジョブ承認（AI下書き表示＋インライン編集） | 承認して実行/修正/却下 |
+| task_resume | タスク再開提案 | 「続ける」で/tasksへ遷移 |
+| navigate | 画面遷移リンク | クリックで遷移 |
+| action_result | アクション実行結果（成功/失敗） | 表示のみ |
+
+### ジョブ自律実行フロー（Phase B拡張）
+```
+秘書チャット「○○さんに返信しておいて」
+  → classifyIntent → create_job
+  → handleCreateJobIntent()
+    → 対象メッセージ特定（名前マッチ or 直近未読）
+    → ジョブ種別判定（reply/schedule/check）
+    → AI下書き生成（コンタクト情報＋過去やり取り反映）
+    → DBにジョブ登録（status=pending）
+    → job_approval カード返却
+  → ユーザーが承認（インライン編集可）
+  → POST /api/jobs/[id]/execute
+    → Email/Slack/Chatwork 自動送信
+    → 送信メッセージDB保存
+    → 元メッセージstatus更新
+    → schedule タイプ: Google Calendar 予定作成
+  → action_result カード（成功/失敗）
+```
+
+### Google Calendar 連携
+```
+OAuth: Gmail再認証時にcalendar.readonly + calendar.events スコープ追加
+サービス: src/services/calendar/calendarClient.service.ts
+  - getTodayEvents() / getWeekEvents() / getEvents()
+  - findFreeSlots()（営業時間9-18、土日除外）
+  - createEvent()（参加者・場所対応）
+  - formatEventsForContext() / formatFreeSlotsForContext()
+API: GET/POST /api/calendar（today/week/range/free モード）
+```
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 031_phase_b_job_autonomous.sql
+ALTER TABLE jobs ALTER COLUMN type SET DEFAULT 'other';
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS executed_at TIMESTAMPTZ;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS execution_log TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS reply_to_message_id TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS target_contact_id TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS target_address TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS target_name TEXT;
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS execution_metadata JSONB;
+CREATE INDEX IF NOT EXISTS idx_jobs_type ON jobs(type);
+CREATE INDEX IF NOT EXISTS idx_jobs_reply_to ON jobs(reply_to_message_id);
+```
+
+### 新規ファイル
+- `src/components/secretary/SecretaryChat.tsx` — 秘書チャットメインUI
+- `src/components/secretary/ChatCards.tsx` — 全カードコンポーネント群
+- `src/app/api/agent/chat/route.ts` — 秘書AI会話API
+- `src/app/api/jobs/[id]/execute/route.ts` — ジョブ実行エンジン
+- `src/services/calendar/calendarClient.service.ts` — Google Calendar サービス
+- `src/app/api/calendar/route.ts` — カレンダーAPI
+
+### 変更ファイル
+- `src/app/agent/page.tsx` — SecretaryChatコンポーネント使用に変更
+- `src/app/api/auth/gmail/route.ts` — カレンダースコープ追加
+- `src/app/api/jobs/route.ts` — Phase B拡張カラム対応
+
+### 重要な実装ノート
+- **zshでの[id]パス**: `git add "src/app/api/jobs/[id]/execute/route.ts"` のようにブラケットを引用符で囲む必要あり
+- **Vercel互換**: `{ params }: { params: Promise<{ id: string }> }` パターンでNext.js 14の非同期params対応
+- **カレンダートークン**: Gmail OAuth トークンを再利用（user_service_tokens テーブル、service_name='gmail'）
+- **Gmail再認証が必要**: 既存ユーザーはカレンダースコープが付与されていないため、設定画面からGmail連携を解除→再連携する必要あり
+- **GCP設定**: Google Calendar API有効化 + OAuth同意画面にcalendar.readonly/calendar.eventsスコープ追加が必要
 
 ---
 
@@ -611,10 +730,16 @@ CREATE INDEX IF NOT EXISTS idx_tasks_seed_id ON tasks(seed_id);
 - ~~Phase 42g: 検索・サジェスト機能~~ → ✅ ノード重なり検索API + 思考マップUI検索パネル + 関連タスク表示
 - ~~Phase 42h: 比較モード・AI対話モード~~ → ✅ 比較Canvas（共有ノード・分岐点） + リプレイAIチャットUI 実装完了
 
+### ✅ 秘書ファースト + Calendar + ブリーフィング強化で解決済み
+- ~~ジョブのAI自動実行~~ → ✅ Phase B拡張: 秘書チャットからジョブ作成→承認→自動送信の一連フロー実装
+- ~~インボックスの通知・優先度表示~~ → ✅ ブリーフィング強化: サマリーカードに未読数/緊急数表示＋期限アラートカード
+- ~~Google Calendar連携~~ → ✅ OAuth拡張＋予定取得/作成/空き時間検索＋秘書ブリーフィングにカレンダーカード
+
 ### その他の未実装課題
 1. **auto生成コンタクト同士の連絡先結合**: isAutoGenerated: true 同士の統合は未実装
 2. **ビジネスログの活動履歴連携**: business_events の contact_id 未設定問題
 3. **宛先サジェストのデータソース拡充**: API直接取得による全ルーム・全チャネル表示は未対応
+4. **Gmail再認証のUI導線**: カレンダースコープ追加後、既存ユーザーに再認証を促す仕組みが未実装
 
 ---
 
