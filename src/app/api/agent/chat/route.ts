@@ -1,7 +1,9 @@
-// Phase B: 秘書AI会話API（意図分類 + インラインカード生成）
+// Phase C: 秘書AI会話API（意図分類 + インラインカード生成 + 返信下書き連携）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
-import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { createServerClient, isSupabaseConfigured, getServerSupabase, getSupabase } from '@/lib/supabase';
+import { generateReplyDraft } from '@/services/ai/aiClient.service';
+import type { UnifiedMessage } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +59,7 @@ type Intent =
   | 'briefing'       // 今日の状況
   | 'inbox'          // メッセージ一覧
   | 'message_detail' // 特定メッセージ
+  | 'reply_draft'    // 返信下書き生成
   | 'tasks'          // タスク状況
   | 'jobs'           // ジョブ・対応必要
   | 'thought_map'    // 思考マップ
@@ -65,6 +68,10 @@ type Intent =
 
 function classifyIntent(message: string): Intent {
   const m = message.toLowerCase();
+
+  // 返信下書き（優先度高め）
+  if (m.includes('返信') && (m.includes('下書き') || m.includes('作って') || m.includes('書いて') || m.includes('お願い'))) return 'reply_draft';
+  if (m.includes('返信して') || m.includes('返事') && (m.includes('書') || m.includes('作'))) return 'reply_draft';
 
   // ブリーフィング
   if (m.includes('今日') && (m.includes('状況') || m.includes('教えて') || m.includes('予定'))) return 'briefing';
@@ -122,7 +129,7 @@ async function fetchDataAndBuildCards(
     const fetches: Promise<void>[] = [];
 
     // メッセージ取得
-    if (['briefing', 'inbox', 'message_detail', 'general'].includes(intent)) {
+    if (['briefing', 'inbox', 'message_detail', 'reply_draft', 'general'].includes(intent)) {
       fetches.push(
         supabase
           .from('inbox_messages')
@@ -253,6 +260,100 @@ async function fetchDataAndBuildCards(
           description: 'プロジェクトごとの活動履歴を閲覧',
         },
       });
+    }
+
+    // 返信下書き → 直近の未読メッセージからAI下書きを生成
+    if (intent === 'reply_draft' && messages.length > 0) {
+      // 直近の未読メッセージ（なければ直近のメッセージ）を返信対象とする
+      const targetMsg = messages.find(m => !m.is_read) || messages[0];
+      if (targetMsg) {
+        try {
+          // コンタクト情報・過去やり取りを取得
+          const sb = getServerSupabase() || getSupabase();
+          let contactContext: { notes: string; aiContext: string; companyName: string; department: string; relationshipType: string } | undefined;
+          let recentMessages: string[] = [];
+
+          if (sb) {
+            // コンタクト検索
+            const fromAddr = targetMsg.from_address || '';
+            if (fromAddr) {
+              const { data: channelData } = await sb
+                .from('contact_channels')
+                .select('contact_id')
+                .eq('address', fromAddr)
+                .limit(1);
+              if (channelData && channelData.length > 0) {
+                const { data: contact } = await sb
+                  .from('contact_persons')
+                  .select('notes, ai_context, company_name, department, relationship_type')
+                  .eq('id', channelData[0].contact_id)
+                  .single();
+                if (contact) {
+                  contactContext = {
+                    notes: contact.notes || '',
+                    aiContext: contact.ai_context || '',
+                    companyName: contact.company_name || '',
+                    department: contact.department || '',
+                    relationshipType: contact.relationship_type || '',
+                  };
+                }
+              }
+              // 過去のやり取り
+              const { data: recentData } = await sb
+                .from('inbox_messages')
+                .select('from_name, body, direction, timestamp, subject')
+                .neq('id', targetMsg.id)
+                .or(`from_address.eq.${fromAddr},to_address.eq.${fromAddr}`)
+                .order('timestamp', { ascending: false })
+                .limit(5);
+              if (recentData) {
+                recentMessages = recentData.map((msg: Record<string, unknown>) => {
+                  const dir = msg.direction === 'sent' ? 'あなた→相手' : '相手→あなた';
+                  const body = (msg.body as string || '').slice(0, 150).replace(/\n/g, ' ');
+                  return `${dir}: ${body}`;
+                });
+              }
+            }
+          }
+
+          // UnifiedMessage形式に変換して下書き生成
+          const unifiedMsg: UnifiedMessage = {
+            id: targetMsg.id,
+            channel: targetMsg.channel as UnifiedMessage['channel'],
+            channelIcon: '',
+            from: { name: targetMsg.from_name || '', address: targetMsg.from_address || '' },
+            subject: targetMsg.subject || undefined,
+            body: targetMsg.body || '',
+            timestamp: targetMsg.created_at,
+            isRead: targetMsg.is_read,
+            status: 'read',
+            metadata: (targetMsg.metadata || {}) as UnifiedMessage['metadata'],
+          };
+
+          const draftResult = await generateReplyDraft(unifiedMsg, undefined, {
+            contactContext,
+            recentMessages,
+            threadContext: '',
+          });
+
+          if (draftResult.draft) {
+            cards.push({
+              type: 'reply_draft',
+              data: {
+                originalMessageId: targetMsg.id,
+                channel: targetMsg.channel,
+                to: targetMsg.from_address || '',
+                toName: targetMsg.from_name || targetMsg.from_address || '',
+                subject: targetMsg.subject ? `Re: ${targetMsg.subject.replace(/^Re:\s*/i, '')}` : undefined,
+                draft: draftResult.draft,
+                metadata: targetMsg.metadata || {},
+              },
+            });
+          }
+        } catch (draftError) {
+          console.error('[Secretary API] 返信下書き生成エラー:', draftError);
+        }
+      }
     }
 
     // コンテキスト文（AIプロンプト用）
@@ -490,6 +591,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? '対応が必要な項目です。各カードから承認・修正・却下を選択できます。'
         : '未処理のジョブはありません。';
+    case 'reply_draft':
+      return hasCards
+        ? '返信の下書きを作成しました。内容を確認して、修正が必要なら「修正する」を押してください。'
+        : '返信対象のメッセージが見つかりませんでした。「新着メッセージを見せて」で確認してみてください。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'business_log':

@@ -236,6 +236,54 @@ export default function SecretaryChat() {
         }
         break;
       }
+      case 'send_reply': {
+        // Phase C: 返信送信 → /api/messages/reply を呼び出し
+        try {
+          const replyData = d as Record<string, unknown>;
+          const res = await fetch('/api/messages/reply', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messageId: replyData.originalMessageId,
+              channel: replyData.channel,
+              to: replyData.to,
+              subject: replyData.subject,
+              body: replyData.draft,
+              metadata: replyData.metadata,
+            }),
+          });
+          const result = await res.json();
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            cards: [{
+              type: 'action_result',
+              data: result.success
+                ? { success: true, message: `${(replyData.toName as string) || '相手'}に返信を送信しました`, details: `チャネル: ${replyData.channel}` }
+                : { success: false, message: '返信の送信に失敗しました', details: result.error || '' },
+            }],
+            timestamp: new Date().toISOString(),
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '返信の送信中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      case 'reject_reply': {
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: '返信を却下しました。別の対応が必要ですか？',
+          timestamp: new Date().toISOString(),
+        }]);
+        break;
+      }
       default: {
         sendMessage(`${action}について確認します`);
       }

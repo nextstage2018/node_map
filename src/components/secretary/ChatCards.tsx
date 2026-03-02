@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import {
   Mail, MessageSquare, Hash, Clock, CheckCircle2, XCircle,
-  ArrowRight, ExternalLink, Loader2, Edit3,
+  ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -18,6 +18,7 @@ export type CardType =
   | 'inbox_summary'    // メッセージ要約一覧
   | 'message_detail'   // 個別メッセージ詳細
   | 'job_approval'     // ジョブ承認カード
+  | 'reply_draft'      // 返信下書き承認カード
   | 'task_created'     // タスク作成完了
   | 'task_resume'      // タスク再開提案
   | 'navigate'         // 画面遷移カード
@@ -425,6 +426,111 @@ export function ActionResultCard({ result }: { result: ActionResultData }) {
 }
 
 // ========================================
+// 返信下書き承認カード（Phase C）
+// ========================================
+interface ReplyDraftData {
+  originalMessageId: string;
+  channel: string;
+  to: string;           // 送信先アドレス
+  toName: string;       // 送信先名
+  subject?: string;
+  draft: string;        // AI生成の返信文面
+  metadata?: Record<string, unknown>;  // 元メッセージのメタデータ（返信時に必要）
+}
+
+export function ReplyDraftCard({
+  reply,
+  onApprove,
+  onEdit,
+  onReject,
+}: {
+  reply: ReplyDraftData;
+  onApprove?: (data: ReplyDraftData) => void;
+  onEdit?: (data: ReplyDraftData) => void;
+  onReject?: () => void;
+}) {
+  const [status, setStatus] = useState<'pending' | 'sending' | 'sent' | 'rejected'>('pending');
+  const [editMode, setEditMode] = useState(false);
+  const [editedDraft, setEditedDraft] = useState(reply.draft);
+
+  const handleApprove = async () => {
+    setStatus('sending');
+    await onApprove?.({ ...reply, draft: editedDraft });
+    setStatus('sent');
+  };
+
+  const handleReject = () => {
+    setStatus('rejected');
+    onReject?.();
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+        <Send className="w-4 h-4 text-blue-600" />
+        <span className="text-xs font-semibold text-blue-800">
+          返信下書き → {reply.toName || reply.to}
+        </span>
+        <ChannelIcon channel={reply.channel} className="w-3.5 h-3.5 text-blue-400 ml-auto" />
+      </div>
+      <div className="px-4 py-3">
+        {reply.subject && (
+          <p className="text-xs text-slate-500 mb-2">件名: {reply.subject}</p>
+        )}
+        {editMode ? (
+          <textarea
+            value={editedDraft}
+            onChange={(e) => setEditedDraft(e.target.value)}
+            className="w-full text-sm text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+            rows={6}
+          />
+        ) : (
+          <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg p-3 border border-slate-100">
+            {editedDraft}
+          </p>
+        )}
+      </div>
+      <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
+        {status === 'pending' ? (
+          <>
+            <button
+              onClick={handleApprove}
+              className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5"
+            >
+              <Send className="w-3 h-3" /> 承認して送信
+            </button>
+            <button
+              onClick={() => setEditMode(!editMode)}
+              className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5"
+            >
+              <Edit3 className="w-3 h-3" /> {editMode ? '完了' : '修正する'}
+            </button>
+            <button
+              onClick={handleReject}
+              className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-red-600 transition-colors flex items-center gap-1.5"
+            >
+              <XCircle className="w-3 h-3" /> 却下
+            </button>
+          </>
+        ) : status === 'sending' ? (
+          <span className="text-xs text-blue-600 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> 送信中...
+          </span>
+        ) : status === 'sent' ? (
+          <span className="text-xs text-green-600 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" /> 送信完了
+          </span>
+        ) : (
+          <span className="text-xs text-slate-400 flex items-center gap-1.5">
+            <XCircle className="w-3.5 h-3.5" /> 却下しました
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
 export function CardRenderer({
@@ -458,6 +564,15 @@ export function CardRenderer({
           onApprove={() => onAction?.('approve_job', card.data)}
           onEdit={() => onAction?.('edit_job', card.data)}
           onReject={() => onAction?.('reject_job', card.data)}
+        />
+      );
+    case 'reply_draft':
+      return (
+        <ReplyDraftCard
+          reply={card.data}
+          onApprove={(data) => onAction?.('send_reply', data)}
+          onEdit={(data) => onAction?.('edit_reply', data)}
+          onReject={() => onAction?.('reject_reply', card.data)}
         />
       );
     case 'task_created':
