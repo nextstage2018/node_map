@@ -117,12 +117,12 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | 42a | AI会話キーワード自動抽出→ナレッジマスタ登録→thought_task_nodes紐づけ | 14fd589 |
 | 42d+42f | 思考動線記録（thought_edges）＋チーム向け思考マップ可視化UI | 81abb4b |
 | 42-fix | classifyKeywordバグ修正＋linkToTaskOrSeed SELECT-INSERT化＋パイプライン安定化 | eee93d5 |
-| 42f強化 | 思考マップ「地形ビュー」化: 力学シミュレーション空間配置・全体マップ/個別トレース2モード・フェーズゾーン背景・種→タスクノード統合・パン＆ズーム＋タイムスライダー | TBD |
-| 42f残り | 会話ジャンプ（ノードクリック→元の会話表示）＋飛地→種化ボタン＋turn_idによる会話追跡基盤 | TBD |
-| 42b | 送受信メッセージからのノード抽出（Cronバッチ）＋thought_task_nodesにmessage_id追加 | TBD |
-| 42e | スナップショット（出口想定・着地点）＋思考マップUIにスナップショット比較パネル | TBD |
-| 42g | ノード重なり検索API＋思考マップUI検索パネル＋関連タスク表示＋詳細タブ→変遷タブ転換 | TBD |
-| 42h | 比較モード（2人の思考動線重ね・共有ノード・分岐点可視化）＋リプレイモード（完了タスクAI対話） | TBD |
+| 42f強化 | 思考マップ「地形ビュー」化: 力学シミュレーション空間配置・全体マップ/個別トレース2モード・フェーズゾーン背景・種→タスクノード統合・パン＆ズーム＋タイムスライダー | mainにマージ済み |
+| 42f残り | 会話ジャンプ（ノードクリック→元の会話表示）＋飛地→種化ボタン＋turn_idによる会話追跡基盤 | mainにマージ済み |
+| 42b | 送受信メッセージからのノード抽出（Cronバッチ）＋thought_task_nodesにmessage_id追加 | mainにマージ済み |
+| 42e | スナップショット（出口想定・着地点）＋思考マップUIにスナップショット比較パネル | mainにマージ済み |
+| 42g | ノード重なり検索API＋思考マップUI検索パネル＋関連タスク表示＋詳細タブ→変遷タブ転換 | mainにマージ済み |
+| 42h | 比較モード（2人の思考動線重ね・共有ノード・分岐点可視化）＋リプレイモード（完了タスクAI対話） | mainにマージ済み |
 | Restructure | ジョブ・アイデアメモ・タスク種別の再設計。jobs/idea_memos/memo_conversationsテーブル新設。タスクページからジョブ分離 | 0058180 |
 | Inbox改善 | インボックスアクションボタン再定義（返信AI下書き自動・ジョブ種別選択・タスクAIフォーム）。返信プロンプトにコンタクト情報/過去やり取り/スレッド文脈を反映 | df71c96 |
 | 秘書Phase A | 秘書メインチャットUI（SecretaryChat.tsx）＋インラインカードシステム（ChatCards.tsx）＋秘書AI会話API（意図分類＋カード生成） | mainにマージ済み |
@@ -131,14 +131,14 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase B拡張 | ジョブ自律実行（pending→approved→executing→done/failed）＋AI下書き生成＋承認カード編集＋自動送信エンジン | b69dead |
 | Calendar連携 | Gmail OAuthにカレンダースコープ追加＋calendarClient.service.ts＋/api/calendar＋秘書AIカレンダーコンテキスト＋日程調整ジョブでカレンダー予定自動作成 | b69dead |
 | ブリーフィング強化 | ブリーフィングサマリーカード＋カレンダー予定カード＋期限アラートカード＋AIプロンプト改善 | b69dead |
-| Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | TBD |
+| Calendar×タスク/ジョブ統合 | タスク/ジョブのスケジュール時刻＋Googleカレンダー自動同期＋task_membersテーブル＋findFreeSlots拡張（NodeMap作業ブロック考慮）＋extendedPropertiesメタデータ | mainにマージ済み |
 | Google Drive連携 | OAuth drive.fileスコープ＋drive_folders/drive_documentsテーブル＋DriveClientService＋フォルダ/ドキュメントAPI＋添付自動同期Cron＋秘書AIドキュメントintent/card＋ビジネスログドキュメントタブ＋設定Drive再認証バナー | 23f9b4e |
-| Drive実運用対応 | 4階層フォルダ（組織/プロジェクト/方向/年月）＋drive_file_stagingテーブル＋AI自動分類＋秘書ファイル確認フロー（FileIntakeCard）＋承認/却下/一括API＋ステージングクリーンアップCron＋ブリーフィング未確認ファイル数 | TBD |
-| Phase 45a | URL検出（Google Docs/Sheets/Drive）＋Slack/Chatwork添付ファイル自動取り込み＋全チャネルCron対応 | TBD |
-| Phase 45b | 秘書ファイル格納指示（store_file intent＋StorageConfirmationCard＋store-file API） | TBD |
-| Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | TBD |
+| Drive実運用対応 | 4階層フォルダ（組織/プロジェクト/方向/年月）＋drive_file_stagingテーブル＋AI自動分類＋秘書ファイル確認フロー（FileIntakeCard）＋承認/却下/一括API＋ステージングクリーンアップCron＋ブリーフィング未確認ファイル数 | mainにマージ済み |
+| Phase 45a | URL検出（Google Docs/Sheets/Drive）＋Slack/Chatwork添付ファイル自動取り込み＋全チャネルCron対応 | mainにマージ済み |
+| Phase 45b | 秘書ファイル格納指示（store_file intent＋StorageConfirmationCard＋store-file API） | mainにマージ済み |
+| Phase 45c | ビジネスイベント自動蓄積Cron＋AI週間要約Cron＋ファイル承認時イベント記録＋business_summary intent＋BusinessSummaryCard | mainにマージ済み |
 | Phase 46 | ビジネスログページ改善（コンポーネント分割・AI区別・フィルタ・ダッシュボード）＋ナレッジページ改善（CRUD UI・未確認ノード管理・キーワード詳細） | mainにマージ済み |
-| Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | TBD |
+| Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | caa30d6 |
 
 ---
 
