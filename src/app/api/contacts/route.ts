@@ -91,45 +91,47 @@ export async function GET(request: NextRequest) {
     }[] = [];
 
     if (senderError || !senderStats) {
-      const { data: rawMessages } = await supabase
+      // Slack/Chatwork: 受信メッセージのfrom_addressからコンタクト生成（従来通り）
+      const { data: rawSlackCwMessages } = await supabase
         .from('inbox_messages')
         .select('from_name, from_address, channel, timestamp, metadata')
+        .in('channel', ['slack', 'chatwork'])
         .neq('from_name', 'あなた')
         .neq('from_name', '')
         .order('timestamp', { ascending: false });
 
-      if (rawMessages) {
-        const senderMap = new Map<string, {
-          from_name: string;
-          from_address: string;
-          channels: Set<string>;
-          count: number;
-          last_contact: string;
-          channelNames: Map<string, string>; // key -> display name
-        }>();
+      // Email: 送信メッセージのto_listからコンタクト生成（メルマガ等のノイズ除外）
+      const { data: rawSentEmails } = await supabase
+        .from('inbox_messages')
+        .select('to_list, channel, timestamp, metadata, direction')
+        .eq('channel', 'email')
+        .eq('direction', 'sent')
+        .order('timestamp', { ascending: false });
 
-        for (const msg of rawMessages) {
-          // Phase 35: チャネル別の集約キー生成
-          // email: from_address（メールアドレス）
-          // chatwork: from_address（account_id）
-          // slack: from_address（user_id: UXXXXX）
-          // from_addressが空の場合は from_name にフォールバック（全角/半角スペース正規化）
+      const senderMap = new Map<string, {
+        from_name: string;
+        from_address: string;
+        channels: Set<string>;
+        count: number;
+        last_contact: string;
+        channelNames: Map<string, string>;
+      }>();
+
+      // Slack/Chatworkメッセージ処理（従来ロジック）
+      if (rawSlackCwMessages) {
+        for (const msg of rawSlackCwMessages) {
           let key = '';
           if (msg.from_address && msg.from_address.trim()) {
             key = msg.from_address.toLowerCase().trim();
           } else {
-            // from_addressが空 → 名前で集約（スペース正規化）
             key = (msg.from_name || '').trim().replace(/[\s　]+/g, ' ').toLowerCase();
           }
           if (!key) continue;
-          // Phase 35: 自分自身のメッセージ（「Me」やログインユーザーのアドレス）を除外
           const fromNameLower = (msg.from_name || '').toLowerCase();
           if (fromNameLower === 'me' || fromNameLower === 'me（自分）') continue;
-          if (userEmailLower && key === userEmailLower) continue;
           const meta = msg.metadata || {};
           const existing = senderMap.get(key);
 
-          // チャネル名を抽出
           let channelKey = '';
           let channelDisplayName = '';
           if (msg.channel === 'slack' && meta.slackChannelName) {
@@ -138,9 +140,6 @@ export async function GET(request: NextRequest) {
           } else if (msg.channel === 'chatwork' && meta.chatworkRoomName) {
             channelKey = `chatwork:${meta.chatworkRoomId || meta.chatworkRoomName}`;
             channelDisplayName = meta.chatworkRoomName;
-          } else if (msg.channel === 'email') {
-            channelKey = 'email:main';
-            channelDisplayName = 'メール';
           }
 
           if (existing) {
@@ -166,20 +165,66 @@ export async function GET(request: NextRequest) {
             });
           }
         }
-
-        senders = Array.from(senderMap.values()).map((s) => ({
-          from_name: s.from_name,
-          from_address: s.from_address,
-          channel: Array.from(s.channels)[0],
-          channels: Array.from(s.channels),
-          count: s.count,
-          last_contact: s.last_contact,
-          active_channels: Array.from(s.channelNames.entries()).map(([key, name]) => ({
-            channel: key.split(':')[0],
-            name,
-          })),
-        }));
       }
+
+      // Email送信先処理（to_listから宛先を展開）
+      if (rawSentEmails) {
+        for (const msg of rawSentEmails) {
+          const toList = msg.to_list || [];
+          for (const recipient of toList) {
+            // to_listの要素: { name: string, address: string } または文字列
+            let toAddress = '';
+            let toName = '';
+            if (typeof recipient === 'string') {
+              toAddress = recipient.toLowerCase().trim();
+              toName = recipient;
+            } else if (recipient && typeof recipient === 'object') {
+              toAddress = (recipient.address || '').toLowerCase().trim();
+              toName = recipient.name || recipient.address || '';
+            }
+            if (!toAddress) continue;
+            // 自分自身を除外
+            if (userEmailLower && toAddress === userEmailLower) continue;
+
+            const existing = senderMap.get(toAddress);
+            if (existing) {
+              existing.count++;
+              existing.channels.add('email');
+              if (!existing.channelNames.has('email:main')) {
+                existing.channelNames.set('email:main', 'メール');
+              }
+              if (msg.timestamp > existing.last_contact) {
+                existing.last_contact = msg.timestamp;
+                if (toName) existing.from_name = toName;
+              }
+            } else {
+              const channelNames = new Map<string, string>();
+              channelNames.set('email:main', 'メール');
+              senderMap.set(toAddress, {
+                from_name: toName,
+                from_address: toAddress,
+                channels: new Set(['email']),
+                count: 1,
+                last_contact: msg.timestamp,
+                channelNames,
+              });
+            }
+          }
+        }
+      }
+
+      senders = Array.from(senderMap.values()).map((s) => ({
+        from_name: s.from_name,
+        from_address: s.from_address,
+        channel: Array.from(s.channels)[0],
+        channels: Array.from(s.channels),
+        count: s.count,
+        last_contact: s.last_contact,
+        active_channels: Array.from(s.channelNames.entries()).map(([key, name]) => ({
+          channel: key.split(':')[0],
+          name,
+        })),
+      }));
     } else {
       senders = senderStats;
     }
