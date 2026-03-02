@@ -85,6 +85,7 @@ type Intent =
   | 'create_business_event' // ビジネスイベント登録
   | 'knowledge_structuring' // ナレッジ構造化提案
   | 'create_calendar_event' // カレンダー予定作成
+  | 'create_drive_folder'   // Driveフォルダ/ドキュメント作成
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -146,6 +147,10 @@ function classifyIntent(message: string): Intent {
   if (m.includes('受け取った') && (m.includes('ファイル') || m.includes('書類'))) return 'file_intake';
   if (m.includes('未確認') && (m.includes('ファイル') || m.includes('書類'))) return 'file_intake';
   if (m.includes('取り込み') || m.includes('インテーク')) return 'file_intake';
+
+  // Driveフォルダ/ドキュメント作成（documentsより先に判定）
+  if ((m.includes('フォルダ') || m.includes('ドライブ') || m.includes('drive')) && (m.includes('作成') || m.includes('作って') || m.includes('作りたい') || m.includes('新規') || m.includes('追加'))) return 'create_drive_folder';
+  if (m.includes('ドキュメント') && (m.includes('作成') || m.includes('作って') || m.includes('新規'))) return 'create_drive_folder';
 
   // ドキュメント・ファイル（Drive）
   if (m.includes('共有') && (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('ドライブ'))) return 'share_file';
@@ -858,6 +863,71 @@ async function fetchDataAndBuildCards(
       }
     }
 
+    // Driveフォルダ/ドキュメント作成
+    if (intent === 'create_drive_folder') {
+      try {
+        const { isDriveConnected, createFolder: driveCreateFolder } = await import('@/services/drive/driveClient.service');
+        const driveConnected = await isDriveConnected(userId);
+        if (!driveConnected) {
+          parts.push('\n\n【Google Drive】\nGoogle Drive が未連携です。設定画面からGmailを再連携し、Driveスコープを有効にしてください。');
+          cards.push({
+            type: 'navigate',
+            data: { href: '/settings', label: '設定画面を開く', description: 'Gmail再連携でDrive機能を有効化' },
+          });
+        } else {
+          // メッセージからフォルダ名を抽出
+          const folderNameMatch = userMessage.match(/[「『](.+?)[」』]/);
+          let folderName = folderNameMatch ? folderNameMatch[1] : '';
+
+          if (!folderName) {
+            // AIで抽出
+            const apiKey = process.env.ANTHROPIC_API_KEY;
+            if (apiKey) {
+              try {
+                const parseRes = await fetch('https://api.anthropic.com/v1/messages', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01',
+                  },
+                  body: JSON.stringify({
+                    model: 'claude-sonnet-4-5-20250929',
+                    max_tokens: 100,
+                    messages: [{ role: 'user', content: `ユーザーが作りたいフォルダまたはドキュメントの名前を抽出してください。名前だけを返してください。\n\nメッセージ: "${userMessage}"` }],
+                  }),
+                });
+                const parseData = await parseRes.json();
+                folderName = (parseData?.content?.[0]?.text || '').trim().replace(/[「」『』"']/g, '');
+              } catch { /* ignore */ }
+            }
+          }
+
+          if (!folderName) {
+            folderName = `新規フォルダ_${new Date().toISOString().slice(0, 10)}`;
+          }
+
+          const folder = await driveCreateFolder(userId, folderName);
+          if (folder) {
+            parts.push(`\n\n【Google Drive フォルダ作成完了】\n- フォルダ名: ${folder.name}\n- リンク: ${folder.webViewLink}`);
+            cards.push({
+              type: 'action_result',
+              data: { success: true, message: `フォルダ「${folder.name}」を作成しました` },
+            });
+          } else {
+            parts.push('\n\n【Google Drive】\nフォルダの作成に失敗しました。Driveの権限を確認してください。');
+            cards.push({
+              type: 'action_result',
+              data: { success: false, message: 'フォルダの作成に失敗しました' },
+            });
+          }
+        }
+      } catch (driveErr) {
+        console.error('[Agent] Drive create error:', driveErr);
+        parts.push('\n\nDriveフォルダの作成中にエラーが発生しました。');
+      }
+    }
+
     // カレンダー → 今日の予定 or 空き時間
     if (intent === 'calendar' || intent === 'schedule' || intent === 'briefing') {
       try {
@@ -1537,6 +1607,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'カレンダーに予定を登録しました。'
         : '予定の作成に失敗しました。日時とタイトルを含めてもう一度お伝えください。';
+    case 'create_drive_folder':
+      return hasCards
+        ? 'Google Driveにフォルダを作成しました。'
+        : 'フォルダの作成に失敗しました。フォルダ名を指定してもう一度お伝えください。';
     case 'projects':
       return hasCards
         ? 'プロジェクト一覧を確認しました。ビジネスログ画面で詳細を管理できます。'
