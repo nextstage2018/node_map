@@ -1,4 +1,4 @@
-// Phase A-2: 秘書AI会話API（意図分類 + コンテキスト拡充）
+// Phase B: 秘書AI会話API（意図分類 + インラインカード生成）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
@@ -6,116 +6,356 @@ import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 export const dynamic = 'force-dynamic';
 
 // ========================================
-// コンテキスト構築
+// 型定義
 // ========================================
-async function buildContext(userId: string): Promise<string> {
-  const supabase = createServerClient();
-  if (!supabase || !isSupabaseConfigured()) return '';
+interface CardData {
+  type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any;
+}
 
+// DB行の型
+interface MessageRow {
+  id: string;
+  channel: string;
+  from_name: string;
+  from_address: string;
+  subject: string | null;
+  body: string;
+  is_read: boolean;
+  direction: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+interface TaskRow {
+  id: string;
+  title: string;
+  status: string;
+  priority: string;
+  phase: string;
+  due_date: string | null;
+  updated_at: string;
+  project_id: string | null;
+}
+
+interface JobRow {
+  id: string;
+  title: string;
+  status: string;
+  type: string | null;
+  due_date: string | null;
+  description: string | null;
+  ai_draft: string | null;
+  created_at: string;
+}
+
+// ========================================
+// 意図分類（キーワードベース — 高速）
+// ========================================
+type Intent =
+  | 'briefing'       // 今日の状況
+  | 'inbox'          // メッセージ一覧
+  | 'message_detail' // 特定メッセージ
+  | 'tasks'          // タスク状況
+  | 'jobs'           // ジョブ・対応必要
+  | 'thought_map'    // 思考マップ
+  | 'business_log'   // ビジネスログ
+  | 'general';       // その他
+
+function classifyIntent(message: string): Intent {
+  const m = message.toLowerCase();
+
+  // ブリーフィング
+  if (m.includes('今日') && (m.includes('状況') || m.includes('教えて') || m.includes('予定'))) return 'briefing';
+  if (m.includes('おはよう') || m.includes('ブリーフィング') || m.includes('報告')) return 'briefing';
+
+  // メッセージ
+  if (m.includes('メッセージ') || m.includes('メール') || m.includes('新着') || m.includes('受信')) return 'inbox';
+  if (m.includes('誰から') || m.includes('連絡')) return 'inbox';
+
+  // タスク
+  if (m.includes('タスク') || m.includes('進行') || m.includes('やること') || m.includes('期限')) return 'tasks';
+
+  // ジョブ
+  if (m.includes('ジョブ') || m.includes('対応') && m.includes('必要')) return 'jobs';
+  if (m.includes('対応が必要') || m.includes('やるべき')) return 'jobs';
+
+  // 思考マップ
+  if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
+
+  // ビジネスログ
+  if (m.includes('ログ') || m.includes('ビジネス') || m.includes('活動')) return 'business_log';
+
+  return 'general';
+}
+
+// ========================================
+// 実データ取得 + カード生成
+// ========================================
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SupabaseClient = any;
+
+interface ContextAndCards {
+  contextText: string;
+  cards: CardData[];
+  rawData: {
+    messages: MessageRow[];
+    tasks: TaskRow[];
+    jobs: JobRow[];
+  };
+}
+
+async function fetchDataAndBuildCards(
+  supabase: SupabaseClient,
+  userId: string,
+  intent: Intent
+): Promise<ContextAndCards> {
+  const cards: CardData[] = [];
   const parts: string[] = [];
+  let messages: MessageRow[] = [];
+  let tasks: TaskRow[] = [];
+  let jobs: JobRow[] = [];
 
   try {
-    // 並列でデータ取得
-    const [messagesRes, tasksRes, jobsRes, knowledgeRes] = await Promise.all([
-      // 新着メッセージ（未読 + 直近）
-      supabase
-        .from('inbox_messages')
-        .select('id, channel, from_name, from_address, subject, body, is_read, direction, created_at, metadata')
-        .eq('direction', 'received')
-        .order('created_at', { ascending: false })
-        .limit(15),
-      // タスク
-      supabase
-        .from('tasks')
-        .select('id, title, status, priority, phase, due_date, updated_at')
-        .eq('user_id', userId)
-        .order('updated_at', { ascending: false })
-        .limit(20),
-      // ジョブ
-      supabase
-        .from('jobs')
-        .select('id, title, status, type, due_date, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(10),
-      // ナレッジノード
-      supabase
-        .from('knowledge_master_entries')
-        .select('id, label, category')
-        .order('created_at', { ascending: false })
-        .limit(20),
-    ]);
+    // 全意図で基本データは取得（コンテキスト用）
+    const fetches: Promise<void>[] = [];
 
-    // メッセージ一覧
-    const messages = messagesRes.data || [];
-    if (messages.length > 0) {
-      const unreadCount = messages.filter((m: { is_read: boolean }) => !m.is_read).length;
-      const msgLines = messages.slice(0, 10).map(
-        (m: { is_read: boolean; from_name: string; channel: string; subject?: string; body: string; created_at: string }) => {
-          const status = m.is_read ? '既読' : '未読';
-          const preview = (m.body || '').replace(/\n/g, ' ').slice(0, 60);
-          return `- [${status}][${m.channel}] ${m.from_name}: ${m.subject || preview}（${new Date(m.created_at).toLocaleString('ja-JP')}）`;
-        }
+    // メッセージ取得
+    if (['briefing', 'inbox', 'message_detail', 'general'].includes(intent)) {
+      fetches.push(
+        supabase
+          .from('inbox_messages')
+          .select('id, channel, from_name, from_address, subject, body, is_read, direction, created_at, metadata')
+          .eq('direction', 'received')
+          .order('created_at', { ascending: false })
+          .limit(20)
+          .then((res: { data: MessageRow[] | null }) => { messages = res.data || []; })
       );
-      parts.push(`\n\n【メッセージ（最新${messages.length}件、未読${unreadCount}件）】\n${msgLines.join('\n')}`);
     }
 
-    // タスク一覧
-    const tasks = tasksRes.data || [];
-    if (tasks.length > 0) {
-      const activeTasks = tasks.filter((t: { status: string }) => t.status !== 'done');
-      const taskLines = activeTasks.slice(0, 10).map(
-        (t: { title: string; status: string; priority: string; phase: string; due_date?: string }) =>
-          `- [${t.status}/${t.phase}] ${t.title}（優先度: ${t.priority}${t.due_date ? ', 期限: ' + t.due_date : ''}）`
+    // タスク取得
+    if (['briefing', 'tasks', 'jobs', 'general'].includes(intent)) {
+      fetches.push(
+        supabase
+          .from('tasks')
+          .select('id, title, status, priority, phase, due_date, updated_at, project_id')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false })
+          .limit(20)
+          .then((res: { data: TaskRow[] | null }) => { tasks = res.data || []; })
       );
-      const doneCount = tasks.filter((t: { status: string }) => t.status === 'done').length;
-      parts.push(`\n\n【タスク（進行中${activeTasks.length}件、完了${doneCount}件）】\n${taskLines.join('\n')}`);
     }
 
-    // ジョブ一覧
-    const jobs = jobsRes.data || [];
-    if (jobs.length > 0) {
-      const pendingJobs = jobs.filter((j: { status: string }) => j.status === 'pending');
-      if (pendingJobs.length > 0) {
-        const jobLines = pendingJobs.map(
-          (j: { title: string; type: string; due_date?: string }) =>
-            `- [${j.type || 'その他'}] ${j.title}${j.due_date ? '（期限: ' + j.due_date + '）' : ''}`
-        );
-        parts.push(`\n\n【未処理ジョブ（${pendingJobs.length}件）】\n${jobLines.join('\n')}`);
+    // ジョブ取得
+    if (['briefing', 'jobs', 'general'].includes(intent)) {
+      fetches.push(
+        supabase
+          .from('jobs')
+          .select('id, title, status, type, due_date, description, ai_draft, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(15)
+          .then((res: { data: JobRow[] | null }) => { jobs = res.data || []; })
+      );
+    }
+
+    await Promise.all(fetches);
+
+    // ---- カード生成 ----
+
+    // ブリーフィング or メッセージ一覧 → InboxSummaryCard
+    if ((intent === 'briefing' || intent === 'inbox') && messages.length > 0) {
+      const unreadMessages = messages.filter(m => !m.is_read);
+      const targetMessages = intent === 'inbox' ? messages.slice(0, 10) : unreadMessages.slice(0, 8);
+
+      if (targetMessages.length > 0) {
+        cards.push({
+          type: 'inbox_summary',
+          data: {
+            items: targetMessages.map(m => ({
+              id: m.id,
+              channel: m.channel,
+              from: m.from_name || m.from_address || '不明',
+              subject: m.subject || undefined,
+              preview: (m.body || '').replace(/\n/g, ' ').slice(0, 80),
+              urgency: determineUrgency(m),
+              timestamp: formatRelativeTime(m.created_at),
+            })),
+          },
+        });
       }
     }
 
-    // ナレッジ
-    const knowledge = knowledgeRes.data || [];
-    if (knowledge.length > 0) {
-      const knowledgeLines = knowledge.slice(0, 10).map(
-        (k: { label: string; category?: string }) =>
-          `- ${k.label}${k.category ? '（' + k.category + '）' : ''}`
+    // ブリーフィング or タスク → TaskResumeCard（進行中タスク）
+    if ((intent === 'briefing' || intent === 'tasks') && tasks.length > 0) {
+      const activeTasks = tasks.filter(t => t.status !== 'done');
+      const urgentTasks = activeTasks
+        .sort((a, b) => {
+          // 優先度: high > medium > low
+          const prio = { high: 0, medium: 1, low: 2 };
+          return (prio[a.priority as keyof typeof prio] ?? 2) - (prio[b.priority as keyof typeof prio] ?? 2);
+        })
+        .slice(0, intent === 'briefing' ? 3 : 6);
+
+      for (const t of urgentTasks) {
+        cards.push({
+          type: 'task_resume',
+          data: {
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            lastActivity: formatRelativeTime(t.updated_at),
+            remainingItems: t.due_date
+              ? [`期限: ${t.due_date}`, `フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`]
+              : [`フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`],
+          },
+        });
+      }
+    }
+
+    // ジョブ → 未処理ジョブの承認カード or 一覧
+    if ((intent === 'briefing' || intent === 'jobs') && jobs.length > 0) {
+      const pendingJobs = jobs.filter(j => j.status === 'pending');
+      for (const j of pendingJobs.slice(0, intent === 'briefing' ? 2 : 5)) {
+        cards.push({
+          type: 'job_approval',
+          data: {
+            id: j.id,
+            title: j.title,
+            type: j.type || 'other',
+            draft: j.ai_draft || j.description || '（詳細なし）',
+            targetName: undefined,
+          },
+        });
+      }
+    }
+
+    // 思考マップ → NavigateCard
+    if (intent === 'thought_map') {
+      cards.push({
+        type: 'navigate',
+        data: {
+          href: '/thought-map',
+          label: '思考マップを開く',
+          description: 'ナレッジノードの全体地図と思考の流れを可視化',
+        },
+      });
+    }
+
+    // ビジネスログ → NavigateCard
+    if (intent === 'business_log') {
+      cards.push({
+        type: 'navigate',
+        data: {
+          href: '/business-log',
+          label: 'ビジネスログを開く',
+          description: 'プロジェクトごとの活動履歴を閲覧',
+        },
+      });
+    }
+
+    // コンテキスト文（AIプロンプト用）
+    if (messages.length > 0) {
+      const unreadCount = messages.filter(m => !m.is_read).length;
+      const msgLines = messages.slice(0, 8).map(m => {
+        const status = m.is_read ? '既読' : '未読';
+        const preview = (m.body || '').replace(/\n/g, ' ').slice(0, 60);
+        return `- [${status}][${m.channel}] ${m.from_name}: ${m.subject || preview}`;
+      });
+      parts.push(`\n\n【メッセージ（${messages.length}件、未読${unreadCount}件）】\n${msgLines.join('\n')}`);
+    }
+
+    if (tasks.length > 0) {
+      const active = tasks.filter(t => t.status !== 'done');
+      const taskLines = active.slice(0, 8).map(t =>
+        `- [${t.status}/${t.phase}] ${t.title}（${t.priority}${t.due_date ? ', ' + t.due_date : ''}）`
       );
-      parts.push(`\n\n【ナレッジノード（最新${knowledge.length}件）】\n${knowledgeLines.join('\n')}`);
+      parts.push(`\n\n【タスク（進行中${active.length}件）】\n${taskLines.join('\n')}`);
+    }
+
+    if (jobs.length > 0) {
+      const pending = jobs.filter(j => j.status === 'pending');
+      if (pending.length > 0) {
+        const jobLines = pending.map(j => `- [${j.type || 'その他'}] ${j.title}`);
+        parts.push(`\n\n【未処理ジョブ（${pending.length}件）】\n${jobLines.join('\n')}`);
+      }
     }
   } catch (error) {
-    console.error('[Secretary API] コンテキスト構築エラー:', error);
+    console.error('[Secretary API] データ取得エラー:', error);
   }
 
-  return parts.join('');
+  return { contextText: parts.join(''), cards, rawData: { messages, tasks, jobs } };
+}
+
+// ========================================
+// ヘルパー関数
+// ========================================
+function determineUrgency(msg: MessageRow): 'high' | 'medium' | 'low' {
+  const body = (msg.body || '').toLowerCase();
+  const subject = (msg.subject || '').toLowerCase();
+  const text = body + ' ' + subject;
+
+  // 高（至急/緊急/ASAP）
+  if (text.includes('至急') || text.includes('緊急') || text.includes('urgent') || text.includes('asap')) return 'high';
+  // 高（未読で古い → 対応漏れ）
+  if (!msg.is_read) {
+    const age = Date.now() - new Date(msg.created_at).getTime();
+    if (age > 24 * 60 * 60 * 1000) return 'high'; // 24時間以上未読
+    if (age > 4 * 60 * 60 * 1000) return 'medium'; // 4時間以上未読
+  }
+  // 中（見積もり/期限/確認）
+  if (text.includes('見積') || text.includes('期限') || text.includes('確認') || text.includes('ご連絡')) return 'medium';
+
+  return msg.is_read ? 'low' : 'medium';
+}
+
+function formatRelativeTime(isoString: string): string {
+  const date = new Date(isoString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1) return 'たった今';
+  if (diffMin < 60) return `${diffMin}分前`;
+  if (diffHour < 24) return `${diffHour}時間前`;
+  if (diffDay < 7) return `${diffDay}日前`;
+
+  return date.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+}
+
+function phaseLabel(phase: string): string {
+  const labels: Record<string, string> = { ideation: '構想', progress: '進行', result: '結果' };
+  return labels[phase] || phase;
+}
+
+function priorityLabel(priority: string): string {
+  const labels: Record<string, string> = { high: '高', medium: '中', low: '低' };
+  return labels[priority] || priority;
 }
 
 // ========================================
 // システムプロンプト
 // ========================================
-function buildSystemPrompt(contextSummary: string): string {
+function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boolean): string {
   const today = new Date().toLocaleDateString('ja-JP', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
 
+  const cardNote = hasCards
+    ? '\n\n重要: 画面にはデータカード（メッセージ一覧・タスクカード等）が同時に表示されています。テキスト回答ではカードの内容を繰り返さず、要約・分析・提案に集中してください。カードに表示されているデータの詳細を改めて列挙する必要はありません。'
+    : '';
+
   return `あなたはNodeMapのパーソナル秘書です。ユーザーの仕事全体を把握し、的確なサポートを提供します。
 
 ## 基本ルール
-- 日本語で簡潔に回答する（1応答300文字以内を目安）
+- 日本語で簡潔に回答する（1応答200文字以内を目安）
 - 具体的なデータに基づいてアドバイスする
 - 緊急度が高い事項を先に報告する
-- 提案は具体的に（「〇〇したほうがいいです」ではなく「〇〇の返信を先にしましょう。下書きを作りますか？」）
+- 提案は具体的に（「〇〇の返信を先にしましょう。下書きを作りますか？」）
+- カードが表示される場合は、データの羅列ではなく要点と次のアクション提案に集中${cardNote}
 
 ## あなたの能力
 - メッセージの要約・返信下書き
@@ -125,16 +365,15 @@ function buildSystemPrompt(contextSummary: string): string {
 - 思考マップ・ナレッジの参照
 
 ## 朝のブリーフィング
-「今日の状況を教えて」等と聞かれた場合は、以下の形式で簡潔に報告してください:
-1. 未読メッセージの要約（誰から何件、緊急なもの）
-2. 対応が必要なタスク・ジョブ
-3. 今日の提案（優先順位）
+${intent === 'briefing'
+    ? '今日の状況報告です。未読メッセージ・対応必要なタスク・ジョブの要点を1〜2文で簡潔にまとめてください。データはカードで表示されるので、テキストでは全体像と「何から始めるべきか」の提案だけしてください。'
+    : ''}
 
 ## 今日の日付
 ${today}
 
 ## ユーザーのデータ
-${contextSummary || '（データなし — Supabase未接続の可能性があります）'}`;
+${contextSummary || '（データなし）'}`;
 }
 
 // ========================================
@@ -160,17 +399,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // コンテキスト構築
-    const contextSummary = await buildContext(userId);
+    // 意図分類
+    const intent = classifyIntent(message);
+
+    // データ取得 + カード生成
+    let contextText = '';
+    let cards: CardData[] = [];
+    const supabase = createServerClient();
+    if (supabase && isSupabaseConfigured()) {
+      const result = await fetchDataAndBuildCards(supabase, userId, intent);
+      contextText = result.contextText;
+      cards = result.cards;
+    }
 
     // Claude APIキーの確認
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      // デモモード
       return NextResponse.json({
         success: true,
         data: {
-          reply: generateDemoResponse(message, contextSummary),
+          reply: generateDemoResponse(message, intent, cards),
+          cards: cards.length > 0 ? cards : undefined,
         },
       });
     }
@@ -185,14 +434,14 @@ export async function POST(request: NextRequest) {
     conversationHistory.push({ role: 'user' as const, content: message });
 
     // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(contextSummary);
+    const systemPrompt = buildSystemPrompt(contextText, intent, cards.length > 0);
 
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1200,
+      max_tokens: 800,
       system: systemPrompt,
       messages: conversationHistory,
     });
@@ -204,7 +453,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { reply },
+      data: {
+        reply,
+        cards: cards.length > 0 ? cards : undefined,
+      },
     });
   } catch (error) {
     console.error('[Secretary Chat API] エラー:', error);
@@ -218,42 +470,31 @@ export async function POST(request: NextRequest) {
 // ========================================
 // デモ応答生成（APIキーなし時）
 // ========================================
-function generateDemoResponse(message: string, context: string): string {
-  const lowerMsg = message.toLowerCase();
+function generateDemoResponse(message: string, intent: Intent, cards: CardData[]): string {
+  const hasCards = cards.length > 0;
 
-  // ブリーフィング系
-  if (lowerMsg.includes('今日') || lowerMsg.includes('状況') || lowerMsg.includes('おはよう')) {
-    if (context) {
-      return `おはようございます。今日の状況をお伝えします。\n\n${context.includes('未読') ? 'メッセージが届いています。' : '新着メッセージはありません。'}\n\n${context.includes('タスク') ? '進行中のタスクがあります。' : 'タスクは落ち着いています。'}\n\n何から始めますか？`;
-    }
-    return 'おはようございます。\n\n【デモモード】ANTHROPIC_API_KEYを設定すると、メッセージ・タスク・ジョブの状況を踏まえた秘書応答が利用できます。\n\nサジェストチップを押して試してみてください。';
+  switch (intent) {
+    case 'briefing':
+      return hasCards
+        ? 'おはようございます。今日の状況です。\n\n上のカードに新着メッセージとタスクを表示しています。緊急度の高いものから確認してみてください。'
+        : 'おはようございます。\n\n現在データがないようです。メッセージの受信やタスクの登録を始めると、ここに状況報告が表示されます。';
+    case 'inbox':
+      return hasCards
+        ? 'メッセージ一覧です。カードから確認したいメッセージをクリックしてください。'
+        : '現在受信メッセージはありません。';
+    case 'tasks':
+      return hasCards
+        ? 'タスクの状況です。優先度順に表示しています。「続ける」で対話を再開できます。'
+        : '進行中のタスクはありません。新しいタスクを作成しますか？';
+    case 'jobs':
+      return hasCards
+        ? '対応が必要な項目です。各カードから承認・修正・却下を選択できます。'
+        : '未処理のジョブはありません。';
+    case 'thought_map':
+      return '思考マップへのリンクを表示しました。クリックして開いてください。';
+    case 'business_log':
+      return 'ビジネスログへのリンクを表示しました。クリックして開いてください。';
+    default:
+      return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }
-
-  // メッセージ系
-  if (lowerMsg.includes('メッセージ') || lowerMsg.includes('メール') || lowerMsg.includes('新着')) {
-    return '【デモ応答】メッセージ一覧を表示します。\n\n本番環境ではインボックスの実データを参照し、緊急度に応じて整理して表示します。';
-  }
-
-  // タスク系
-  if (lowerMsg.includes('タスク') || lowerMsg.includes('進行')) {
-    return '【デモ応答】タスクの状況を確認します。\n\n本番環境ではタスクの進行状況・優先度・期限を踏まえた報告と提案を行います。';
-  }
-
-  // ジョブ系
-  if (lowerMsg.includes('対応') || lowerMsg.includes('ジョブ') || lowerMsg.includes('必要')) {
-    return '【デモ応答】対応が必要な項目を確認します。\n\n本番環境では未処理ジョブと期限が迫ったタスクを優先度順に提示します。';
-  }
-
-  // 思考マップ
-  if (lowerMsg.includes('思考') || lowerMsg.includes('マップ')) {
-    return '思考マップを表示するには、左のナビゲーションから「思考マップ」を選んでください。\n\nどのユーザーの思考マップを見たいですか？';
-  }
-
-  // ビジネスログ
-  if (lowerMsg.includes('ログ') || lowerMsg.includes('ビジネス')) {
-    return 'ビジネスログを表示するには、左のナビゲーションから「ビジネスログ」を選んでください。\n\n特定のプロジェクトや組織のログを探していますか？';
-  }
-
-  // デフォルト
-  return `「${message}」について確認しました。\n\n【デモモード】ANTHROPIC_API_KEYを設定すると、コンテキストを踏まえた秘書応答が利用できます。`;
 }

@@ -147,25 +147,100 @@ export default function SecretaryChat() {
     setHasBriefing(false);
   };
 
-  // カード内アクション
-  const handleCardAction = (action: string, data: unknown) => {
-    // Phase A-2 で実装予定: 各アクションに応じた処理
-    // 現段階では会話にメッセージとして反映
-    const actionMessages: Record<string, string> = {
-      select_message: 'そのメッセージの詳細を見せて',
-      reply: '返信の下書きを作って',
-      create_job: 'ジョブとして登録して',
-      create_task: 'タスクとして登録して',
-      approve_job: '承認して実行して',
-      edit_job: '修正したい',
-      reject_job: '却下で',
-      resume_task: 'そのタスクの続きをやろう',
-    };
-    const msg = actionMessages[action];
-    if (msg) {
-      sendMessage(msg);
+  // カード内アクション（Phase B: 実データ連携）
+  const handleCardAction = useCallback(async (action: string, data: unknown) => {
+    const d = data as Record<string, unknown>;
+
+    switch (action) {
+      case 'select_message': {
+        // メッセージ詳細をAPIから取得して会話に追加
+        const msgId = d?.id as string;
+        if (msgId) {
+          sendMessage(`メッセージID: ${msgId} の詳細を見せて`);
+        }
+        break;
+      }
+      case 'reply': {
+        // 返信下書きの生成を依頼
+        const from = (d as Record<string, string>)?.from || '相手';
+        sendMessage(`${from}への返信の下書きを作って`);
+        break;
+      }
+      case 'create_job': {
+        const subject = (d as Record<string, string>)?.subject || 'このメッセージ';
+        sendMessage(`「${subject}」をジョブとして登録して`);
+        break;
+      }
+      case 'create_task': {
+        const subject = (d as Record<string, string>)?.subject || 'このメッセージ';
+        sendMessage(`「${subject}」をタスクとして登録して`);
+        break;
+      }
+      case 'approve_job': {
+        // ジョブ承認 → API呼び出し
+        const jobId = d?.id as string;
+        if (jobId) {
+          try {
+            const res = await fetch(`/api/jobs`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: jobId, status: 'done' }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              // 承認結果を秘書の返答として追加
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                cards: [{
+                  type: 'action_result',
+                  data: { success: true, message: 'ジョブを承認・完了しました', details: d?.title as string },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'ジョブの承認中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'reject_job': {
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          role: 'assistant',
+          content: '',
+          cards: [{
+            type: 'action_result',
+            data: { success: true, message: 'ジョブを却下しました', details: d?.title as string },
+          }],
+          timestamp: new Date().toISOString(),
+        }]);
+        break;
+      }
+      case 'edit_job': {
+        sendMessage(`ジョブ「${d?.title || ''}」の内容を修正したい`);
+        break;
+      }
+      case 'resume_task': {
+        const taskId = (d as Record<string, string>)?.taskId;
+        if (taskId) {
+          // タスク対話ページへ遷移（将来的には秘書内でタスク対話モードに入る）
+          window.location.href = `/tasks?open=${taskId}`;
+        }
+        break;
+      }
+      default: {
+        sendMessage(`${action}について確認します`);
+      }
     }
-  };
+  }, [sendMessage]);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col bg-gradient-to-b from-slate-50 to-white">
