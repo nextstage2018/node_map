@@ -42,6 +42,38 @@ function generateId(): string {
 }
 
 // ========================================
+// テキスト内のURLをクリック可能なリンクに変換
+// ========================================
+function linkifyText(text: string, isUser: boolean): React.ReactNode {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  if (parts.length === 1) return text; // URLなし
+
+  return parts.map((part, i) => {
+    if (urlRegex.test(part)) {
+      // URLの末尾の記号を除去（。、）など）
+      urlRegex.lastIndex = 0;
+      const cleaned = part.replace(/[。、）」』\]]+$/, '');
+      const trailing = part.slice(cleaned.length);
+      return (
+        <span key={i}>
+          <a
+            href={cleaned}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={isUser ? 'underline text-blue-100 hover:text-white' : 'underline text-blue-600 hover:text-blue-800'}
+          >
+            {cleaned}
+          </a>
+          {trailing}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
+// ========================================
 // 秘書AIチャット メインコンポーネント
 // ========================================
 export default function SecretaryChat() {
@@ -637,7 +669,7 @@ export default function SecretaryChat() {
                           : 'bg-white text-slate-800 border border-slate-200 rounded-bl-md'
                       )}
                     >
-                      {msg.content}
+                      {linkifyText(msg.content, msg.role === 'user')}
                     </div>
                   )}
                 </div>
