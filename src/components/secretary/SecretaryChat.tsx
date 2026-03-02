@@ -6,6 +6,7 @@ import {
   Bot, Send, Loader2, Trash2,
   Inbox, CheckSquare, Zap, GitBranch,
   ClipboardList, Sun, Sparkles, Calendar, FolderInput,
+  Paperclip, Upload, X, FileText, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
@@ -39,6 +40,261 @@ const SUGGEST_CHIPS: SuggestChip[] = [
 // ========================================
 function generateId(): string {
   return `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ========================================
+// 書類種別の定数
+// ========================================
+const DOCUMENT_TYPES = [
+  '提案書', '見積書', '契約書', '請求書', '発注書',
+  '納品書', '仕様書', '議事録', '報告書', '企画書', 'その他',
+];
+
+// ========================================
+// ファイルアップロードパネル
+// ========================================
+interface UploadProject {
+  id: string;
+  name: string;
+  organizationId: string | null;
+  organizationName: string | null;
+}
+
+interface FileUploadPanelProps {
+  onClose: () => void;
+  onUploadComplete: (result: { fileName: string; driveUrl: string; projectName: string; documentType: string }) => void;
+}
+
+function FileUploadPanel({ onClose, onUploadComplete }: FileUploadPanelProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [projects, setProjects] = useState<UploadProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [documentType, setDocumentType] = useState('その他');
+  const [direction, setDirection] = useState<'submitted' | 'received'>('submitted');
+  const [memo, setMemo] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // プロジェクト一覧取得
+  useEffect(() => {
+    fetch('/api/drive/upload')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.data?.projects) {
+          setProjects(data.data.projects);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleFileSelect = (selectedFile: File) => {
+    setFile(selectedFile);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) handleFileSelect(droppedFile);
+  };
+
+  const handleUpload = async () => {
+    if (!file || !selectedProjectId) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('projectId', selectedProjectId);
+      formData.append('documentType', documentType);
+      formData.append('direction', direction);
+      formData.append('memo', memo);
+
+      const res = await fetch('/api/drive/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await res.json();
+      if (result.success) {
+        onUploadComplete({
+          fileName: result.data.fileName,
+          driveUrl: result.data.driveUrl,
+          projectName: result.data.projectName,
+          documentType: result.data.documentType,
+        });
+        onClose();
+      } else {
+        alert(result.error || 'アップロードに失敗しました');
+      }
+    } catch {
+      alert('アップロード中にエラーが発生しました');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl shadow-lg mx-4 mb-3 overflow-hidden">
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <div className="flex items-center gap-2">
+          <Upload className="w-4 h-4 text-blue-600" />
+          <span className="text-sm font-semibold text-slate-700">ファイルをアップロード</span>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* ドラッグ&ドロップ / ファイル選択 */}
+        {!file ? (
+          <div
+            onDrop={handleDrop}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              'border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors',
+              dragOver
+                ? 'border-blue-400 bg-blue-50'
+                : 'border-slate-300 hover:border-blue-400 hover:bg-blue-50/50'
+            )}
+          >
+            <Upload className="w-8 h-8 mx-auto mb-2 text-slate-400" />
+            <p className="text-sm text-slate-600">ファイルをドラッグ&ドロップ</p>
+            <p className="text-xs text-slate-400 mt-1">またはクリックして選択</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-3">
+            <FileText className="w-8 h-8 text-blue-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-slate-700 truncate">{file.name}</p>
+              <p className="text-xs text-slate-400">{formatFileSize(file.size)}</p>
+            </div>
+            <button
+              onClick={() => setFile(null)}
+              className="text-slate-400 hover:text-red-500 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFileSelect(f);
+          }}
+        />
+
+        {/* プロジェクト選択 */}
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">プロジェクト</label>
+          <div className="relative">
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none pr-8"
+            >
+              <option value="">プロジェクトを選択</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.organizationName ? `${p.organizationName} / ${p.name}` : p.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+        </div>
+
+        {/* 書類種別 + 方向 */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-slate-500 mb-1">書類種別</label>
+            <div className="relative">
+              <select
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none pr-8"
+              >
+                {DOCUMENT_TYPES.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+          <div className="w-28">
+            <label className="block text-xs font-medium text-slate-500 mb-1">方向</label>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                onClick={() => setDirection('submitted')}
+                className={cn(
+                  'flex-1 py-2 text-xs font-medium transition-colors',
+                  direction === 'submitted'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
+                )}
+              >
+                提出
+              </button>
+              <button
+                onClick={() => setDirection('received')}
+                className={cn(
+                  'flex-1 py-2 text-xs font-medium transition-colors',
+                  direction === 'received'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white text-slate-500 hover:bg-slate-50'
+                )}
+              >
+                受領
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* メモ */}
+        <div>
+          <label className="block text-xs font-medium text-slate-500 mb-1">メモ（任意）</label>
+          <input
+            type="text"
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            placeholder="例: A社向け初回提案"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* アップロードボタン */}
+        <button
+          onClick={handleUpload}
+          disabled={!file || !selectedProjectId || uploading}
+          className="w-full py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+        >
+          {uploading ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              アップロード中...
+            </>
+          ) : (
+            <>
+              <Upload className="w-4 h-4" />
+              Google Driveにアップロード
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ========================================
@@ -100,6 +356,7 @@ export default function SecretaryChat() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasBriefing, setHasBriefing] = useState(false);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -197,6 +454,24 @@ export default function SecretaryChat() {
     setMessages([]);
     setHasBriefing(false);
   };
+
+  // ファイルアップロード完了
+  const handleUploadComplete = useCallback((result: { fileName: string; driveUrl: string; projectName: string; documentType: string }) => {
+    setMessages(prev => [...prev, {
+      id: generateId(),
+      role: 'assistant',
+      content: `ファイルをアップロードしました。\n\n${result.documentType}: ${result.fileName}\nプロジェクト: ${result.projectName}\nDrive: ${result.driveUrl}`,
+      cards: [{
+        type: 'action_result',
+        data: {
+          success: true,
+          message: `${result.documentType}をアップロードしました`,
+          details: `${result.projectName} - ${result.fileName}`,
+        },
+      }],
+      timestamp: new Date().toISOString(),
+    }]);
+  }, []);
 
   // カード内アクション（Phase B: 実データ連携）
   const handleCardAction = useCallback(async (action: string, data: unknown) => {
@@ -743,9 +1018,29 @@ export default function SecretaryChat() {
         </div>
       )}
 
+      {/* ファイルアップロードパネル */}
+      {showUploadPanel && (
+        <FileUploadPanel
+          onClose={() => setShowUploadPanel(false)}
+          onUploadComplete={handleUploadComplete}
+        />
+      )}
+
       {/* 入力エリア */}
       <div className="border-t border-slate-200 bg-white px-4 py-3 shrink-0">
-        <div className="max-w-3xl mx-auto flex items-end gap-3">
+        <div className="max-w-3xl mx-auto flex items-end gap-2">
+          <button
+            onClick={() => setShowUploadPanel(!showUploadPanel)}
+            className={cn(
+              'shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
+              showUploadPanel
+                ? 'bg-blue-100 text-blue-600'
+                : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'
+            )}
+            title="ファイルをアップロード"
+          >
+            <Paperclip className="w-4 h-4" />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
