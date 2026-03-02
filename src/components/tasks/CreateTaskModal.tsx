@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TaskPriority, CreateTaskRequest } from '@/lib/types';
 import { TASK_PRIORITY_CONFIG } from '@/lib/constants';
 import Button from '@/components/ui/Button';
+
+interface Project {
+  id: string;
+  name: string;
+  organizationName?: string;
+}
 
 interface CreateTaskModalProps {
   onClose: () => void;
@@ -15,11 +21,31 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('medium');
   const [tags, setTags] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // プロジェクト一覧を取得
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/projects?status=active');
+        const data = await res.json();
+        if (data.success) {
+          setProjects(data.data || []);
+        }
+      } catch {
+        // サイレント
+      } finally {
+        setIsLoadingProjects(false);
+      }
+    })();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !projectId) return;
 
     setIsSubmitting(true);
     try {
@@ -27,6 +53,7 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
         title: title.trim(),
         description: description.trim(),
         priority,
+        projectId,
         tags: tags
           .split(',')
           .map((t) => t.trim())
@@ -48,6 +75,33 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* プロジェクト（必須） */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              プロジェクト <span className="text-red-500">*</span>
+            </label>
+            {isLoadingProjects ? (
+              <div className="text-sm text-slate-400 py-2">読み込み中...</div>
+            ) : projects.length === 0 ? (
+              <div className="text-sm text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                プロジェクトがありません。先にビジネスログからプロジェクトを作成してください。
+              </div>
+            ) : (
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+              >
+                <option value="">プロジェクトを選択</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.organizationName ? `${p.organizationName} / ${p.name}` : p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
           {/* タイトル */}
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -129,7 +183,7 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
             </Button>
             <Button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!title.trim() || !projectId || isSubmitting}
               className="flex-1"
             >
               {isSubmitting ? '作成中...' : '作成'}

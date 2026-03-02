@@ -6,19 +6,15 @@ import {
   TaskStatus,
   CreateTaskRequest,
   UpdateTaskRequest,
-  TaskSuggestion,
   Job,
   JobStatus,
-  Seed,
 } from '@/lib/types';
 
 export function useTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [seeds, setSeeds] = useState<Seed[]>([]);
 
   const fetchTasks = useCallback(async () => {
     setIsLoading(true);
@@ -38,18 +34,6 @@ export function useTasks() {
     }
   }, []);
 
-  const fetchSuggestions = useCallback(async () => {
-    try {
-      const res = await fetch('/api/tasks/suggestions');
-      const data = await res.json();
-      if (data.success) {
-        setSuggestions(data.data);
-      }
-    } catch {
-      // サイレントに無視
-    }
-  }, []);
-
   const fetchJobs = useCallback(async () => {
     try {
       const res = await fetch('/api/jobs');
@@ -62,24 +46,10 @@ export function useTasks() {
     }
   }, []);
 
-  const fetchSeeds = useCallback(async () => {
-    try {
-      const res = await fetch('/api/seeds');
-      const data = await res.json();
-      if (data.success) {
-        setSeeds(data.data);
-      }
-    } catch {
-      // サイレントに無視
-    }
-  }, []);
-
   useEffect(() => {
     fetchTasks();
-    fetchSuggestions();
     fetchJobs();
-    fetchSeeds();
-  }, [fetchTasks, fetchSuggestions, fetchJobs, fetchSeeds]);
+  }, [fetchTasks, fetchJobs]);
 
   const createTask = useCallback(async (req: CreateTaskRequest) => {
     try {
@@ -141,44 +111,6 @@ export function useTasks() {
     }
   }, []);
 
-  // ===== 種ボックス操作 =====
-
-  const createSeed = useCallback(async (content: string) => {
-    try {
-      const res = await fetch('/api/seeds', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setSeeds((prev) => [data.data, ...prev]);
-        return data.data as Seed;
-      }
-      throw new Error(data.error);
-    } catch (e) {
-      throw e;
-    }
-  }, []);
-
-  const confirmSeed = useCallback(async (seedId: string) => {
-    try {
-      const res = await fetch(`/api/seeds/${seedId}/confirm`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (data.success) {
-        // 種をリストから削除し、新しいタスクを追加
-        setSeeds((prev) => prev.filter((s) => s.id !== seedId));
-        setTasks((prev) => [data.data, ...prev]);
-        return data.data as Task;
-      }
-      throw new Error(data.error);
-    } catch (e) {
-      throw e;
-    }
-  }, []);
-
   // ステータス別カウント
   const statusCounts: Record<TaskStatus, number> = {
     todo: tasks.filter((t) => t.status === 'todo').length,
@@ -195,19 +127,14 @@ export function useTasks() {
     tasks,
     isLoading,
     error,
-    suggestions,
     statusCounts,
     refresh: fetchTasks,
     createTask,
     updateTask,
     // Phase 7
     jobs,
-    seeds,
     activeJobCount,
     updateJobStatus,
-    createSeed,
-    confirmSeed,
     refreshJobs: fetchJobs,
-    refreshSeeds: fetchSeeds,
   };
 }

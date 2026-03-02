@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -11,17 +11,14 @@ import {
   useSensors,
   closestCorners,
 } from '@dnd-kit/core';
-import type { Task, TaskStatus, CreateTaskRequest, TaskSuggestion, TaskBoardViewMode } from '@/lib/types';
+import type { Task, TaskStatus, CreateTaskRequest, TaskBoardViewMode } from '@/lib/types';
 import { useTasks } from '@/hooks/useTasks';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import TaskColumn from '@/components/tasks/TaskColumn';
 import TaskDetail from '@/components/tasks/TaskDetail';
 import CreateTaskModal from '@/components/tasks/CreateTaskModal';
-import TaskSuggestions from '@/components/tasks/TaskSuggestions';
-import SeedBox from '@/components/seeds/SeedBox';
 import TimelineView from '@/components/timeline/TimelineView';
-import WeeklyNodeBanner from '@/components/weekly/WeeklyNodeBanner';
 import Button from '@/components/ui/Button';
 import { TASK_PRIORITY_CONFIG, TASK_PHASE_CONFIG, VIEW_MODE_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, cn } from '@/lib/utils';
@@ -31,27 +28,16 @@ export default function TasksPage() {
     tasks,
     isLoading,
     error,
-    suggestions,
     statusCounts,
     refresh,
     createTask,
     updateTask,
-    seeds,
-    createSeed,
-    confirmSeed,
   } = useTasks();
 
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [visibleSuggestions, setVisibleSuggestions] = useState<TaskSuggestion[]>([]);
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [viewMode, setViewMode] = useState<TaskBoardViewMode>('status');
-  const [seedBoxExpanded, setSeedBoxExpanded] = useState(false);
-
-  // suggestionsが変わったらvisibleに反映
-  useEffect(() => {
-    setVisibleSuggestions(suggestions);
-  }, [suggestions]);
 
   // ドラッグ&ドロップ設定
   const sensors = useSensors(
@@ -110,10 +96,6 @@ export default function TasksPage() {
     [createTask]
   );
 
-  const handleDismissSuggestion = useCallback((index: number) => {
-    setVisibleSuggestions((prev) => prev.filter((_, i) => i !== index));
-  }, []);
-
   const handleRefresh = useCallback(() => {
     refresh().then(() => {
       if (selectedTask) {
@@ -144,8 +126,6 @@ export default function TasksPage() {
   }, [tasks, refresh]);
 
   const statusColumns: TaskStatus[] = ['todo', 'in_progress', 'done'];
-  const activeSuggestions =
-    visibleSuggestions.length > 0 ? visibleSuggestions : suggestions;
 
   return (
     <AppLayout>
@@ -154,20 +134,6 @@ export default function TasksPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* 左：メインコンテンツ */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Phase 20: 週次ノードバナー */}
-          <WeeklyNodeBanner userId="demo-user" />
-
-          {/* 種ボックス */}
-          <div className="px-4 pt-3">
-            <SeedBox
-              seeds={seeds}
-              onCreateSeed={createSeed}
-              onConfirmSeed={confirmSeed}
-              isExpanded={seedBoxExpanded}
-              onToggle={() => setSeedBoxExpanded(!seedBoxExpanded)}
-            />
-          </div>
-
           {/* ツールバー */}
           <div className="px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
@@ -228,13 +194,6 @@ export default function TasksPage() {
             >
               <div className="flex-1 overflow-x-auto p-4">
                 <div className="flex gap-4 h-full min-w-0">
-                  {activeSuggestions.length > 0 && (
-                    <TaskSuggestions
-                      suggestions={activeSuggestions}
-                      onAccept={handleCreateTask}
-                      onDismiss={handleDismissSuggestion}
-                    />
-                  )}
                   {statusColumns.map((status) => (
                     <TaskColumn
                       key={status}
