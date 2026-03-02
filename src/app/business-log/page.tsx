@@ -279,7 +279,7 @@ export default function BusinessLogPage() {
               {selectedProject && (
                 <Button
                   onClick={() => setShowChannelSettings(!showChannelSettings)}
-                  icon={Link2}
+                  icon={<Link2 className="w-4 h-4" />}
                   size="sm"
                   variant={showChannelSettings ? 'primary' : 'outline'}
                   title="チャネル設定"

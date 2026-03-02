@@ -1,5 +1,4 @@
 // ビジネスログ共有型定義
-import { ReactNode } from 'react';
 
 export interface Organization {
   id: string;

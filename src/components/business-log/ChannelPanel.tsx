@@ -32,7 +32,7 @@ export function ChannelSettings({
     <Card variant="default" padding="md" className="mx-6 mt-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700">チャネル紐づけ設定</h3>
-        <Button onClick={onClose} icon={X} variant="ghost" size="sm" />
+        <Button onClick={onClose} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
       </div>
 
       {projectChannels.length > 0 && (
@@ -46,7 +46,7 @@ export function ChannelSettings({
                   <span className="text-xs text-slate-700">{ch.channel_label || ch.channel_identifier}</span>
                   <span className="text-[10px] text-slate-400">{ch.service_name}</span>
                 </div>
-                <Button onClick={() => onRemove(ch.id)} icon={X} variant="ghost" size="xs" />
+                <Button onClick={() => onRemove(ch.id)} icon={<X className="w-3.5 h-3.5" />} variant="ghost" size="xs" />
               </div>
             ))}
           </div>

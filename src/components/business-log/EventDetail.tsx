@@ -53,7 +53,7 @@ export default function EventDetail({
         <div className="p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-900">イベント編集</h3>
-            <Button onClick={() => setIsEditing(false)} icon={X} variant="ghost" size="sm" />
+            <Button onClick={() => setIsEditing(false)} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
           </div>
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1.5">
@@ -114,8 +114,8 @@ export default function EventDetail({
             {!event.ai_generated && (
               <Button onClick={startEditing} icon={<Pencil className="w-4 h-4" />} variant="ghost" size="sm" title="編集" />
             )}
-            <Button onClick={() => setShowDeleteConfirm(true)} icon={Trash2} variant="ghost" size="sm" title="削除" />
-            <Button onClick={onClose} icon={X} variant="ghost" size="sm" />
+            <Button onClick={() => setShowDeleteConfirm(true)} icon={<Trash2 className="w-4 h-4" />} variant="ghost" size="sm" title="削除" />
+            <Button onClick={onClose} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
           </div>
         </div>
 

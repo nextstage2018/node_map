@@ -150,7 +150,7 @@ export default function EventTimeline({
 
       {/* タイムライン本体 */}
       {isLoading ? (
-        <LoadingState message="読み込み中..." />
+        <LoadingState />
       ) : regularEvents.length === 0 ? (
         <div className="flex items-center justify-center h-48 text-slate-400">
           <div className="text-center">

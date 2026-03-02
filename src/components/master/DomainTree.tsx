@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, Pencil, Trash2, X, Check, Loader2, ExternalLink } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import type { KnowledgeHierarchy } from '@/lib/types';
@@ -484,7 +484,7 @@ function EntryDetailPanel({ entry, onUpdate, onClose }: {
   const [isSaving, setIsSaving] = useState(false);
 
   // 関連タスク取得
-  useState(() => {
+  useEffect(() => {
     fetch(`/api/nodes/thought?entryId=${entry.id}`)
       .then(r => r.json())
       .then(d => {
@@ -492,7 +492,7 @@ function EntryDetailPanel({ entry, onUpdate, onClose }: {
       })
       .catch(() => {})
       .finally(() => setIsLoadingTasks(false));
-  });
+  }, [entry.id]);
 
   const handleSave = async () => {
     setIsSaving(true);

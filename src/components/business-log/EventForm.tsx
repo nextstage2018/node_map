@@ -52,7 +52,7 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
     <Card variant="default" padding="md" className="mx-6 mt-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700">新しいイベントを記録</h3>
-        <Button onClick={onClose} icon={X} variant="ghost" size="sm" />
+        <Button onClick={onClose} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
       </div>
       <div className="space-y-3">
         {/* イベント種別 */}
