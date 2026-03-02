@@ -176,7 +176,7 @@ export function MessageDetailCard({
 }
 
 // ========================================
-// ジョブ承認カード
+// ジョブ承認カード（Phase B拡張: 編集対応 + 実行状態表示）
 // ========================================
 interface JobApprovalData {
   id: string;
@@ -184,6 +184,11 @@ interface JobApprovalData {
   type: string;
   draft: string;        // AI下書き（送信文面など）
   targetName?: string;  // 送信先名
+  // Phase B拡張: 実行に必要な情報
+  channel?: string;
+  replyToMessageId?: string;
+  targetAddress?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export function JobApprovalCard({
@@ -193,17 +198,27 @@ export function JobApprovalCard({
   onReject,
 }: {
   job: JobApprovalData;
-  onApprove?: () => void;
+  onApprove?: (editedDraft?: string) => void;
   onEdit?: () => void;
   onReject?: () => void;
 }) {
-  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [status, setStatus] = useState<'pending' | 'executing' | 'done' | 'failed' | 'rejected'>('pending');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editedDraft, setEditedDraft] = useState(job.draft);
+  const [resultMessage, setResultMessage] = useState('');
 
   const handleApprove = async () => {
     setIsProcessing(true);
-    await onApprove?.();
-    setStatus('approved');
+    setStatus('executing');
+    try {
+      await onApprove?.(editedDraft);
+      setStatus('done');
+      setResultMessage('実行完了しました');
+    } catch {
+      setStatus('failed');
+      setResultMessage('実行に失敗しました');
+    }
     setIsProcessing(false);
   };
 
@@ -214,19 +229,40 @@ export function JobApprovalCard({
     setIsProcessing(false);
   };
 
+  const typeLabel = {
+    reply: '返信',
+    schedule: '日程調整',
+    check: '確認',
+    other: 'その他',
+  };
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
       <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
         <Zap className="w-4 h-4 text-amber-600" />
         <span className="text-xs font-semibold text-amber-800">{job.title}</span>
+        {job.type && (
+          <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+            {typeLabel[job.type as keyof typeof typeLabel] || job.type}
+          </span>
+        )}
         {job.targetName && (
-          <span className="text-[10px] text-amber-600">→ {job.targetName}</span>
+          <span className="text-[10px] text-amber-600 ml-auto">→ {job.targetName}</span>
         )}
       </div>
       <div className="px-4 py-3">
-        <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg p-3 border border-slate-100">
-          {job.draft}
-        </p>
+        {editMode ? (
+          <textarea
+            value={editedDraft}
+            onChange={(e) => setEditedDraft(e.target.value)}
+            className="w-full text-sm text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 resize-none"
+            rows={6}
+          />
+        ) : (
+          <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg p-3 border border-slate-100">
+            {editedDraft}
+          </p>
+        )}
       </div>
       <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex items-center gap-2">
         {status === 'pending' ? (
@@ -240,11 +276,11 @@ export function JobApprovalCard({
               承認して実行
             </button>
             <button
-              onClick={onEdit}
+              onClick={() => setEditMode(!editMode)}
               disabled={isProcessing}
               className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors flex items-center gap-1.5"
             >
-              <Edit3 className="w-3 h-3" /> 修正する
+              <Edit3 className="w-3 h-3" /> {editMode ? '完了' : '修正する'}
             </button>
             <button
               onClick={handleReject}
@@ -254,10 +290,26 @@ export function JobApprovalCard({
               <XCircle className="w-3 h-3" /> 却下
             </button>
           </>
-        ) : status === 'approved' ? (
-          <span className="text-xs text-green-600 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" /> 承認済み — 実行中
+        ) : status === 'executing' ? (
+          <span className="text-xs text-blue-600 flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> 実行中...
           </span>
+        ) : status === 'done' ? (
+          <span className="text-xs text-green-600 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" /> {resultMessage || '実行完了'}
+          </span>
+        ) : status === 'failed' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-red-600 flex items-center gap-1.5">
+              <AlertCircle className="w-3.5 h-3.5" /> {resultMessage || '実行失敗'}
+            </span>
+            <button
+              onClick={() => { setStatus('pending'); setResultMessage(''); }}
+              className="px-2 py-1 text-[10px] font-medium text-slate-600 border border-slate-200 rounded hover:bg-slate-100"
+            >
+              再試行
+            </button>
+          </div>
         ) : (
           <span className="text-xs text-slate-400 flex items-center gap-1.5">
             <XCircle className="w-3.5 h-3.5" /> 却下しました
@@ -561,7 +613,7 @@ export function CardRenderer({
       return (
         <JobApprovalCard
           job={card.data}
-          onApprove={() => onAction?.('approve_job', card.data)}
+          onApprove={(editedDraft?: string) => onAction?.('approve_job', { ...card.data, editedDraft })}
           onEdit={() => onAction?.('edit_job', card.data)}
           onReject={() => onAction?.('reject_job', card.data)}
         />

@@ -177,25 +177,47 @@ export default function SecretaryChat() {
         break;
       }
       case 'approve_job': {
-        // ジョブ承認 → API呼び出し
+        // Phase B拡張: ジョブ承認 → 実行API呼び出し
         const jobId = d?.id as string;
         if (jobId) {
           try {
-            const res = await fetch(`/api/jobs`, {
-              method: 'PUT',
+            // 実行APIを呼び出し（修正済みの下書きがあれば送る）
+            const res = await fetch(`/api/jobs/${jobId}/execute`, {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: jobId, status: 'done' }),
+              body: JSON.stringify({
+                editedDraft: d?.editedDraft || undefined,
+              }),
             });
             const result = await res.json();
             if (result.success) {
-              // 承認結果を秘書の返答として追加
               setMessages(prev => [...prev, {
                 id: generateId(),
                 role: 'assistant',
                 content: '',
                 cards: [{
                   type: 'action_result',
-                  data: { success: true, message: 'ジョブを承認・完了しました', details: d?.title as string },
+                  data: {
+                    success: true,
+                    message: result.data?.message || 'ジョブを実行完了しました',
+                    details: `${d?.targetName || ''}${d?.channel ? ` (${d.channel})` : ''}`,
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              // 実行失敗
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                cards: [{
+                  type: 'action_result',
+                  data: {
+                    success: false,
+                    message: 'ジョブの実行に失敗しました',
+                    details: result.error || '再試行してください',
+                  },
                 }],
                 timestamp: new Date().toISOString(),
               }]);
@@ -204,7 +226,7 @@ export default function SecretaryChat() {
             setMessages(prev => [...prev, {
               id: generateId(),
               role: 'assistant',
-              content: 'ジョブの承認中にエラーが発生しました。',
+              content: 'ジョブの実行中にエラーが発生しました。',
               timestamp: new Date().toISOString(),
             }]);
           }

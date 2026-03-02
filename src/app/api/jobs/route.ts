@@ -1,5 +1,6 @@
 // ジョブ CRUD API
 // Phase Restructure: AIに委ねる日常の簡易作業リスト
+// Phase B拡張: ステータス拡張（draft→approved→executing→done/failed）+ 実行メタデータ
 // ジョブからはナレッジ抽出しない（思考マップのノイズ防止）
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -20,6 +21,15 @@ function mapJobFromDb(row: Record<string, unknown>) {
     dueDate: row.due_date,
     createdAt: row.created_at,
     completedAt: row.completed_at,
+    // Phase B拡張
+    approvedAt: row.approved_at,
+    executedAt: row.executed_at,
+    executionLog: row.execution_log,
+    replyToMessageId: row.reply_to_message_id,
+    targetContactId: row.target_contact_id,
+    targetAddress: row.target_address,
+    targetName: row.target_name,
+    executionMetadata: row.execution_metadata,
   };
 }
 
@@ -60,7 +70,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, type, sourceMessageId, sourceChannel, dueDate } = body;
+    const {
+      title, description, type, sourceMessageId, sourceChannel,
+      dueDate, aiDraft, status,
+      // Phase B拡張
+      replyToMessageId, targetContactId, targetAddress, targetName,
+      executionMetadata,
+    } = body;
 
     if (!title) {
       return NextResponse.json({ error: 'title is required' }, { status: 400 });
@@ -71,13 +87,20 @@ export async function POST(request: NextRequest) {
       user_id: userId,
       title,
       type: type || 'other',
-      status: 'pending',
+      status: status || 'pending',
     };
 
     if (description) insertData.description = description;
     if (sourceMessageId) insertData.source_message_id = sourceMessageId;
     if (sourceChannel) insertData.source_channel = sourceChannel;
     if (dueDate) insertData.due_date = dueDate;
+    if (aiDraft) insertData.ai_draft = aiDraft;
+    // Phase B拡張
+    if (replyToMessageId) insertData.reply_to_message_id = replyToMessageId;
+    if (targetContactId) insertData.target_contact_id = targetContactId;
+    if (targetAddress) insertData.target_address = targetAddress;
+    if (targetName) insertData.target_name = targetName;
+    if (executionMetadata) insertData.execution_metadata = executionMetadata;
 
     const { data, error } = await sb
       .from('jobs')
@@ -122,9 +145,18 @@ export async function PUT(request: NextRequest) {
       if (status === 'done') {
         updateData.completed_at = new Date().toISOString();
       }
+      if (status === 'approved') {
+        updateData.approved_at = new Date().toISOString();
+      }
+      if (status === 'failed') {
+        updateData.executed_at = new Date().toISOString();
+      }
     }
     if (dueDate !== undefined) updateData.due_date = dueDate;
     if (aiDraft !== undefined) updateData.ai_draft = aiDraft;
+
+    // Phase B: execution_log更新
+    if (body.executionLog !== undefined) updateData.execution_log = body.executionLog;
 
     const { data, error } = await sb
       .from('jobs')
