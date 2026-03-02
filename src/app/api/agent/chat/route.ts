@@ -145,11 +145,19 @@ function classifyIntent(message: string): Intent {
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
 
-  // ビジネスイベント登録（「打ち合わせを記録して」「会議を登録」「イベント追加」）
+  // ビジネスイベント登録（自然言語で幅広くマッチ）
+  // 「打ち合わせを記録して」「会議を登録」「ビジネスメモを追加」「活動を残したい」等
   if ((m.includes('記録') || m.includes('登録') || m.includes('追加')) && (m.includes('打ち合わせ') || m.includes('会議') || m.includes('電話') || m.includes('商談'))) return 'create_business_event';
   if (m.includes('イベント') && (m.includes('記録') || m.includes('追加') || m.includes('登録') || m.includes('作成'))) return 'create_business_event';
-  if ((m.includes('記録') || m.includes('登録')) && (m.includes('活動') || m.includes('ビジネス'))) return 'create_business_event';
-  if (m.includes('ログ') && (m.includes('残') || m.includes('追加') || m.includes('記録'))) return 'create_business_event';
+  if ((m.includes('記録') || m.includes('登録') || m.includes('追加') || m.includes('残')) && (m.includes('活動') || m.includes('ビジネス'))) return 'create_business_event';
+  if (m.includes('ログ') && (m.includes('残') || m.includes('追加') || m.includes('記録') || m.includes('書'))) return 'create_business_event';
+  // 「ビジネスメモ」「活動メモ」「メモを追加」等のパターン
+  if ((m.includes('ビジネス') || m.includes('活動') || m.includes('業務')) && (m.includes('メモ') || m.includes('ノート'))) return 'create_business_event';
+  if (m.includes('メモ') && (m.includes('追加') || m.includes('記録') || m.includes('登録') || m.includes('残'))) return 'create_business_event';
+  // 「〜したい」「〜を残す」系の自然な表現
+  if ((m.includes('記録したい') || m.includes('残したい') || m.includes('追加したい') || m.includes('登録したい')) && !m.includes('タスク') && !m.includes('ジョブ')) return 'create_business_event';
+  // 「打ち合わせがあった」「会議した」「電話した」等の報告系
+  if ((m.includes('打ち合わせ') || m.includes('会議') || m.includes('商談')) && (m.includes('あった') || m.includes('した') || m.includes('終わった') || m.includes('だった'))) return 'create_business_event';
 
   // ビジネス活動要約
   if (m.includes('活動') && (m.includes('要約') || m.includes('まとめ') || m.includes('サマリー'))) return 'business_summary';
