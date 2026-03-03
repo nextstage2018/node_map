@@ -124,7 +124,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, content, eventType, projectId, groupId, contactId, fromAddress, fromName } = body;
+    const { title, content, eventType, projectId, groupId, contactId, fromAddress, fromName,
+      sourceCalendarEventId, meetingNotesUrl, eventStart, eventEnd } = body;
 
     if (!title || !title.trim()) {
       return NextResponse.json(
@@ -153,6 +154,10 @@ export async function POST(request: NextRequest) {
         group_id: groupId || null,
         contact_id: resolvedContactId,
         user_id: userId,
+        source_calendar_event_id: sourceCalendarEventId || null,
+        meeting_notes_url: meetingNotesUrl || null,
+        event_start: eventStart || null,
+        event_end: eventEnd || null,
       })
       .select()
       .single();

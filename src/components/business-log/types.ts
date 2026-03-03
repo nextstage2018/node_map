@@ -77,6 +77,9 @@ export const EVENT_TYPE_CONFIG: Record<string, { label: string; icon: string; co
   document_received: { label: '書類受領', icon: 'FileText', color: 'bg-teal-100 text-teal-700' },
   document_submitted: { label: '書類提出', icon: 'FileText', color: 'bg-cyan-100 text-cyan-700' },
   summary: { label: 'AI要約', icon: 'FileText', color: 'bg-indigo-100 text-indigo-700' },
+  // Phase 55: カレンダー・タスク連携
+  task_completed: { label: 'タスク完了', icon: 'FileText', color: 'bg-emerald-100 text-emerald-700' },
+  calendar_meeting: { label: 'カレンダー会議', icon: 'Handshake', color: 'bg-sky-100 text-sky-700' },
 };
 
 export const PROJECT_STATUS_LABELS: Record<string, { label: string; color: string }> = {

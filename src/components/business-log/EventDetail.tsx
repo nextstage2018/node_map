@@ -4,6 +4,7 @@ import { useState } from 'react';
 import {
   FolderOpen, FileText, Phone, Mail, MessageSquare,
   Handshake, X, Pencil, Trash2, AlertTriangle, Bookmark, Bot,
+  Sparkles, Loader2, CheckCircle2, Plus, Link2,
 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -13,6 +14,12 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   FileText, Phone, Mail, MessageSquare, Handshake, Bookmark,
 };
 
+interface TaskSuggestion {
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
 interface EventDetailProps {
   event: BusinessEvent;
   project: Project | null;
@@ -20,6 +27,12 @@ interface EventDetailProps {
   onUpdate: (data: { title: string; content: string; eventType: string }) => Promise<void>;
   onDelete: () => Promise<void>;
 }
+
+const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
+  high: { label: '高', color: 'bg-red-100 text-red-700' },
+  medium: { label: '中', color: 'bg-yellow-100 text-yellow-700' },
+  low: { label: '低', color: 'bg-green-100 text-green-700' },
+};
 
 export default function EventDetail({
   event,
@@ -34,6 +47,13 @@ export default function EventDetail({
   const [editContent, setEditContent] = useState(event.content || '');
   const [editEventType, setEditEventType] = useState(event.event_type);
 
+  // タスク提案
+  const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [createdTasks, setCreatedTasks] = useState<Set<number>>(new Set());
+  const [creatingTask, setCreatingTask] = useState<number | null>(null);
+
   const startEditing = () => {
     setEditTitle(event.title);
     setEditContent(event.content || '');
@@ -47,6 +67,50 @@ export default function EventDetail({
     setIsEditing(false);
   };
 
+  const handleSuggestTasks = async () => {
+    setIsLoadingSuggestions(true);
+    setShowSuggestions(true);
+    try {
+      const res = await fetch(`/api/business-events/${event.id}/suggest-tasks`);
+      const data = await res.json();
+      if (data.success && data.data?.suggestions) {
+        setSuggestions(data.data.suggestions);
+      }
+    } catch (error) {
+      console.error('タスク提案取得エラー:', error);
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
+  const handleCreateTask = async (index: number, suggestion: TaskSuggestion) => {
+    setCreatingTask(index);
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: suggestion.title,
+          description: suggestion.description,
+          priority: suggestion.priority,
+          projectId: event.project_id || null,
+          taskType: 'personal',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCreatedTasks((prev) => new Set([...prev, index]));
+      }
+    } catch (error) {
+      console.error('タスク作成エラー:', error);
+    } finally {
+      setCreatingTask(null);
+    }
+  };
+
+  // 会議関連のイベントタイプか判定
+  const isMeetingType = ['meeting', 'call', 'calendar_meeting'].includes(event.event_type);
+
   if (isEditing) {
     return (
       <Card variant="flat" className="w-80 overflow-y-auto bg-slate-50 shrink-0">
@@ -58,7 +122,7 @@ export default function EventDetail({
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(EVENT_TYPE_CONFIG)
-                .filter(([key]) => !['document_received', 'document_submitted', 'summary'].includes(key))
+                .filter(([key]) => !['document_received', 'document_submitted', 'summary', 'task_completed', 'calendar_meeting'].includes(key))
                 .map(([key, config]) => {
                   const Icon = ICON_MAP[config.icon] || FileText;
                   return (
@@ -157,6 +221,24 @@ export default function EventDetail({
           <p className="text-sm text-slate-700 mt-0.5">{formatDateTime(event.created_at)}</p>
         </div>
 
+        {/* 議事録URL */}
+        {(event as Record<string, unknown>).meeting_notes_url && (
+          <div className="mb-4">
+            <label className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <Link2 className="w-3 h-3" />
+              議事録
+            </label>
+            <a
+              href={(event as Record<string, unknown>).meeting_notes_url as string}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 hover:underline mt-0.5 block truncate"
+            >
+              {(event as Record<string, unknown>).meeting_notes_url as string}
+            </a>
+          </div>
+        )}
+
         {/* コンタクト */}
         {event.contact_persons && (
           <div className="mb-4">
@@ -194,6 +276,74 @@ export default function EventDetail({
               <FolderOpen className="w-4 h-4 text-blue-500" />
               <span className="text-sm text-slate-700">{project.name}</span>
             </div>
+          </div>
+        )}
+
+        {/* タスク提案ボタン（会議タイプのみ） */}
+        {isMeetingType && event.content && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            {!showSuggestions ? (
+              <Button
+                onClick={handleSuggestTasks}
+                icon={<Sparkles className="w-4 h-4" />}
+                variant="outline"
+                size="sm"
+                className="w-full"
+              >
+                AIタスク提案
+              </Button>
+            ) : (
+              <div>
+                <div className="flex items-center gap-1.5 mb-3">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-xs font-semibold text-slate-700">タスク提案</span>
+                </div>
+                {isLoadingSuggestions ? (
+                  <div className="flex items-center gap-2 text-xs text-slate-400 py-4 justify-center">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    AI分析中...
+                  </div>
+                ) : suggestions.length === 0 ? (
+                  <p className="text-xs text-slate-400 py-2">提案するタスクが見つかりませんでした</p>
+                ) : (
+                  <div className="space-y-2">
+                    {suggestions.map((s, i) => (
+                      <div key={i} className="bg-white rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_LABELS[s.priority]?.color || ''}`}>
+                                {PRIORITY_LABELS[s.priority]?.label || s.priority}
+                              </span>
+                              <span className="text-xs font-medium text-slate-800 truncate">{s.title}</span>
+                            </div>
+                            {s.description && (
+                              <p className="text-[11px] text-slate-500 line-clamp-2">{s.description}</p>
+                            )}
+                          </div>
+                          {createdTasks.has(i) ? (
+                            <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                          ) : (
+                            <button
+                              onClick={() => handleCreateTask(i, s)}
+                              disabled={creatingTask === i}
+                              className="shrink-0 p-1 rounded hover:bg-blue-50 text-blue-600 disabled:opacity-50"
+                              title="タスク作成"
+                            >
+                              {creatingTask === i ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Plus className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -41,6 +41,10 @@
     {
       "path": "/api/cron/compute-patterns",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/sync-calendar-events",
+      "schedule": "0 6 * * *"
     }
   ]
 }

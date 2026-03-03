@@ -172,15 +172,18 @@ export default function BusinessLogPage() {
 
   const handleCreateEvent = async (formData: {
     title: string; content: string; eventType: string;
-    minutes: string; decision: string; participants: string[];
+    participants: string[];
+    calendarEventId?: string; meetingNotesUrl?: string;
+    eventStart?: string; eventEnd?: string;
   }) => {
     let fullContent = formData.content.trim();
     if (formData.participants.length > 0) {
       const names = formData.participants.map((id) => contacts.find((c) => c.id === id)?.name || id).join(', ');
       fullContent = `【参加者】${names}\n\n${fullContent}`;
     }
-    if (formData.minutes.trim()) fullContent += `\n\n【議事録】\n${formData.minutes.trim()}`;
-    if (formData.decision.trim()) fullContent += `\n\n【意思決定】\n${formData.decision.trim()}`;
+    if (formData.meetingNotesUrl) {
+      fullContent += `\n\n【議事録】\n${formData.meetingNotesUrl}`;
+    }
 
     try {
       const res = await fetch('/api/business-events', {
@@ -191,6 +194,10 @@ export default function BusinessLogPage() {
           content: fullContent || null,
           eventType: formData.eventType,
           projectId: selectedProjectId || null,
+          sourceCalendarEventId: formData.calendarEventId || null,
+          meetingNotesUrl: formData.meetingNotesUrl || null,
+          eventStart: formData.eventStart || null,
+          eventEnd: formData.eventEnd || null,
         }),
       });
       const data = await res.json();
@@ -385,6 +392,7 @@ export default function BusinessLogPage() {
                 {showNewEvent && (
                   <EventForm
                     contacts={contacts}
+                    projectId={selectedProjectId}
                     onSubmit={handleCreateEvent}
                     onClose={() => setShowNewEvent(false)}
                   />

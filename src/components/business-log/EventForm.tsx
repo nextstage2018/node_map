@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FileText, Phone, Mail, MessageSquare,
-  Handshake, X, Users, Bookmark,
+  Handshake, X, Users, Calendar, Link2, Loader2,
 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -11,29 +11,134 @@ import { EVENT_TYPE_CONFIG, ContactOption } from './types';
 
 // アイコンマッピング
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
-  FileText, Phone, Mail, MessageSquare, Handshake, Bookmark,
+  FileText, Phone, Mail, MessageSquare, Handshake,
 };
+
+interface CalendarEventOption {
+  id: string;
+  summary: string;
+  start: string;
+  end: string;
+  attendees?: { email: string; displayName?: string }[];
+}
 
 interface EventFormProps {
   contacts: ContactOption[];
+  projectId: string | null;
   onSubmit: (data: {
     title: string;
     content: string;
     eventType: string;
-    minutes: string;
-    decision: string;
     participants: string[];
+    calendarEventId?: string;
+    meetingNotesUrl?: string;
+    eventStart?: string;
+    eventEnd?: string;
   }) => Promise<void>;
   onClose: () => void;
 }
 
-export default function EventForm({ contacts, onSubmit, onClose }: EventFormProps) {
+export default function EventForm({ contacts, projectId, onSubmit, onClose }: EventFormProps) {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [eventType, setEventType] = useState('note');
-  const [minutes, setMinutes] = useState('');
-  const [decision, setDecision] = useState('');
   const [participants, setParticipants] = useState<string[]>([]);
+  const [meetingNotesUrl, setMeetingNotesUrl] = useState('');
+  const [selectedCalendarEventId, setSelectedCalendarEventId] = useState('');
+  const [selectedEventStart, setSelectedEventStart] = useState('');
+  const [selectedEventEnd, setSelectedEventEnd] = useState('');
+
+  // カレンダーイベント一覧
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEventOption[]>([]);
+  const [meetingNotesMap, setMeetingNotesMap] = useState<Record<string, string>>({});
+  const [isLoadingCalendar, setIsLoadingCalendar] = useState(false);
+  const [calendarLoaded, setCalendarLoaded] = useState(false);
+
+  // プロジェクトメンバー
+  const [projectMembers, setProjectMembers] = useState<ContactOption[]>([]);
+
+  // meeting/call 選択時にカレンダーイベントをフェッチ
+  useEffect(() => {
+    if ((eventType === 'meeting' || eventType === 'call') && !calendarLoaded) {
+      fetchCalendarEvents();
+    }
+  }, [eventType, calendarLoaded]);
+
+  // プロジェクトメンバーをフェッチ
+  useEffect(() => {
+    if (projectId && (eventType === 'meeting' || eventType === 'call')) {
+      fetchProjectMembers();
+    }
+  }, [projectId, eventType]);
+
+  const fetchCalendarEvents = async () => {
+    setIsLoadingCalendar(true);
+    try {
+      const res = await fetch('/api/calendar/past-events?days=14');
+      const data = await res.json();
+      if (data.success) {
+        setCalendarEvents(data.data.events || []);
+        setMeetingNotesMap(data.data.meetingNotesUrls || {});
+        setCalendarLoaded(true);
+      }
+    } catch (error) {
+      console.error('カレンダーイベント取得エラー:', error);
+    } finally {
+      setIsLoadingCalendar(false);
+    }
+  };
+
+  const fetchProjectMembers = async () => {
+    try {
+      const res = await fetch(`/api/project-members?project_id=${projectId}`);
+      const data = await res.json();
+      if (data.success && data.data) {
+        const members: ContactOption[] = data.data
+          .filter((m: Record<string, unknown>) => m.contact_persons)
+          .map((m: Record<string, unknown>) => {
+            const cp = m.contact_persons as { id: string; display_name?: string; email?: string };
+            return { id: cp.id, name: cp.display_name || cp.email || '不明' };
+          });
+        setProjectMembers(members);
+      }
+    } catch (error) {
+      console.error('プロジェクトメンバー取得エラー:', error);
+    }
+  };
+
+  const handleCalendarEventSelect = (eventId: string) => {
+    setSelectedCalendarEventId(eventId);
+    const event = calendarEvents.find((e) => e.id === eventId);
+    if (event) {
+      setTitle(event.summary);
+      setSelectedEventStart(event.start);
+      setSelectedEventEnd(event.end);
+
+      // 議事録URL自動入力
+      if (meetingNotesMap[eventId]) {
+        setMeetingNotesUrl(meetingNotesMap[eventId]);
+      }
+
+      // attendees からコンタクトをマッチして参加者に自動設定
+      if (event.attendees && event.attendees.length > 0) {
+        const availableContacts = displayContacts;
+        const matched: string[] = [];
+        for (const attendee of event.attendees) {
+          const emailLower = attendee.email?.toLowerCase();
+          const nameLower = attendee.displayName?.toLowerCase();
+          const found = availableContacts.find(
+            (c) => c.name.toLowerCase() === nameLower || c.name.toLowerCase() === emailLower
+          );
+          if (found) {
+            matched.push(found.id);
+          }
+        }
+        if (matched.length > 0) {
+          setParticipants(matched);
+        }
+      }
+    }
+  };
 
   const toggleParticipant = (contactId: string) => {
     setParticipants((prev) =>
@@ -45,7 +150,28 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
 
   const handleSubmit = async () => {
     if (!title.trim()) return;
-    await onSubmit({ title, content, eventType, minutes, decision, participants });
+    await onSubmit({
+      title,
+      content,
+      eventType,
+      participants,
+      calendarEventId: selectedCalendarEventId || undefined,
+      meetingNotesUrl: meetingNotesUrl || undefined,
+      eventStart: selectedEventStart || undefined,
+      eventEnd: selectedEventEnd || undefined,
+    });
+  };
+
+  // 参加者候補: プロジェクトメンバー優先、なければ全コンタクト
+  const displayContacts = (projectId && projectMembers.length > 0) ? projectMembers : contacts;
+
+  const formatCalendarTime = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return iso;
+    }
   };
 
   return (
@@ -58,7 +184,7 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
         {/* イベント種別 */}
         <div className="flex flex-wrap gap-2">
           {Object.entries(EVENT_TYPE_CONFIG)
-            .filter(([key]) => !['document_received', 'document_submitted', 'summary'].includes(key))
+            .filter(([key]) => !['document_received', 'document_submitted', 'summary', 'task_completed', 'calendar_meeting'].includes(key))
             .map(([key, config]) => {
               const Icon = ICON_MAP[config.icon] || FileText;
               return (
@@ -76,6 +202,38 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
             })}
         </div>
 
+        {/* カレンダーイベント選択（meeting/call時のみ） */}
+        {(eventType === 'meeting' || eventType === 'call') && (
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+              <Calendar className="w-3.5 h-3.5" />
+              カレンダーから選択（任意）
+            </label>
+            {isLoadingCalendar ? (
+              <div className="flex items-center gap-2 text-xs text-slate-400 py-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                カレンダーを読み込み中...
+              </div>
+            ) : calendarEvents.length > 0 ? (
+              <select
+                value={selectedCalendarEventId}
+                onChange={(e) => handleCalendarEventSelect(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">選択してください</option>
+                {calendarEvents.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {formatCalendarTime(event.start)} - {event.summary}
+                    {meetingNotesMap[event.id] ? ' 📝' : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <p className="text-xs text-slate-400 py-1">直近のカレンダー予定がありません</p>
+            )}
+          </div>
+        )}
+
         <input
           type="text"
           value={title}
@@ -88,20 +246,40 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="詳細（任意）"
-          rows={2}
+          placeholder="メモ（議事録・決定事項など）"
+          rows={4}
           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
         />
 
+        {/* 議事録URL（meeting/call時のみ） */}
+        {(eventType === 'meeting' || eventType === 'call') && (
+          <div>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
+              <Link2 className="w-3.5 h-3.5" />
+              議事録URL（任意）
+            </label>
+            <input
+              type="url"
+              value={meetingNotesUrl}
+              onChange={(e) => setMeetingNotesUrl(e.target.value)}
+              placeholder="https://docs.google.com/document/d/..."
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
+
         {/* 参加者選択 */}
-        {(eventType === 'meeting' || eventType === 'call') && contacts.length > 0 && (
+        {(eventType === 'meeting' || eventType === 'call') && displayContacts.length > 0 && (
           <div>
             <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
               <Users className="w-3.5 h-3.5" />
               参加者
+              {projectId && projectMembers.length > 0 && (
+                <span className="text-slate-400 font-normal">（プロジェクトメンバー）</span>
+              )}
             </label>
             <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-              {contacts.map((c) => (
+              {displayContacts.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => toggleParticipant(c.id)}
@@ -117,38 +295,6 @@ export default function EventForm({ contacts, onSubmit, onClose }: EventFormProp
             </div>
           </div>
         )}
-
-        {/* 議事録 */}
-        {eventType === 'meeting' && (
-          <div>
-            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
-              <FileText className="w-3.5 h-3.5" />
-              議事録
-            </label>
-            <textarea
-              value={minutes}
-              onChange={(e) => setMinutes(e.target.value)}
-              placeholder="議事の内容を記録..."
-              rows={4}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-          </div>
-        )}
-
-        {/* 意思決定ログ */}
-        <div>
-          <label className="flex items-center gap-1.5 text-xs font-medium text-slate-600 mb-1.5">
-            <Bookmark className="w-3.5 h-3.5" />
-            意思決定ログ（任意）
-          </label>
-          <textarea
-            value={decision}
-            onChange={(e) => setDecision(e.target.value)}
-            placeholder="決定事項があれば記録..."
-            rows={2}
-            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-          />
-        </div>
 
         <div className="flex justify-end gap-2">
           <Button onClick={onClose} variant="outline" size="sm">
