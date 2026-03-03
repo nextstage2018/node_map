@@ -184,6 +184,8 @@ export interface Task {
   dueDate?: string;      // 期限日（タイムラインビュー用、ISO日付）
   // Phase 40c: プロジェクト紐づけ
   projectId?: string;
+  projectName?: string;              // プロジェクト名（表示用）
+  organizationName?: string;         // 組織名（表示用）
   // Calendar統合: スケジュール時刻 + カレンダーイベントID
   scheduledStart?: string;
   scheduledEnd?: string;

@@ -86,6 +86,8 @@ type Intent =
   | 'knowledge_structuring' // ナレッジ構造化提案
   | 'create_calendar_event' // カレンダー予定作成
   | 'create_drive_folder'   // Driveフォルダ/ドキュメント作成
+  | 'create_task'           // タスク作成
+  | 'task_progress'         // タスク進行（AIに相談）
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -128,8 +130,13 @@ function classifyIntent(message: string): Intent {
   // プロジェクト一覧
   if (m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('リスト') || m.includes('確認') || m.includes('見せて') || m.includes('見たい'))) return 'projects';
 
-  // タスク
-  if (m.includes('タスク') || m.includes('進行') || m.includes('やること') || m.includes('期限')) return 'tasks';
+  // タスク作成（「タスクを作成」「タスクを追加」「新しいタスク」「タスクとして登録」）
+  if (m.includes('タスク') && (m.includes('作成') || m.includes('追加') || m.includes('作って') || m.includes('登録') || m.includes('新規') || m.includes('新しい'))) return 'create_task';
+  // タスク進行（「タスクを進める」「タスクに取り組む」「タスクについて相談」）
+  if (m.includes('タスク') && (m.includes('進め') || m.includes('取り組') || m.includes('相談') || m.includes('について') || m.includes('続き'))) return 'task_progress';
+
+  // タスク一覧
+  if (m.includes('タスク') || m.includes('やること') || m.includes('期限') || m.includes('進行中')) return 'tasks';
 
   // ジョブ一覧
   if (m.includes('ジョブ') || (m.includes('対応') && m.includes('必要'))) return 'jobs';
@@ -238,7 +245,7 @@ async function fetchDataAndBuildCards(
     }
 
     // タスク取得
-    if (['briefing', 'tasks', 'jobs', 'general'].includes(intent)) {
+    if (['briefing', 'tasks', 'jobs', 'general', 'create_task', 'task_progress'].includes(intent)) {
       fetches.push(
         supabase
           .from('tasks')
@@ -1071,6 +1078,24 @@ async function fetchDataAndBuildCards(
       }
     }
 
+    // タスク作成 → フォームカード生成
+    if (intent === 'create_task') {
+      try {
+        await handleCreateTaskIntent(supabase, userId, userMessage, cards, parts);
+      } catch (taskError) {
+        console.error('[Secretary API] タスク作成エラー:', taskError);
+      }
+    }
+
+    // タスク進行 → タスク選択 + AI相談
+    if (intent === 'task_progress') {
+      try {
+        await handleTaskProgressIntent(supabase, userId, userMessage, tasks, cards, parts);
+      } catch (taskError) {
+        console.error('[Secretary API] タスク進行エラー:', taskError);
+      }
+    }
+
     // ビジネスイベント登録 → プロジェクト・コンタクトを取得してフォームカード生成
     if (intent === 'create_business_event') {
       try {
@@ -1417,6 +1442,216 @@ async function handleCreateBusinessEventIntent(
 }
 
 // ========================================
+// タスク作成ハンドラー
+// ========================================
+async function handleCreateTaskIntent(
+  supabase: SupabaseClient,
+  userId: string,
+  userMessage: string,
+  cards: CardData[],
+  parts: string[]
+): Promise<void> {
+  // プロジェクト一覧を取得
+  const { data: projects } = await supabase
+    .from('projects')
+    .select('id, name, organization_id, organizations(name)')
+    .eq('user_id', userId)
+    .eq('status', 'active')
+    .order('name');
+
+  // AIでメッセージからタスク情報を推定
+  let suggestedTitle = '';
+  let suggestedDescription = '';
+  let suggestedPriority = 'medium';
+  let suggestedProjectId = '';
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (apiKey) {
+    try {
+      const projectNames = (projects || []).map((p: { id: string; name: string }) => `${p.id}:${p.name}`).join(', ');
+      const parseRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 300,
+          messages: [{ role: 'user', content: `ユーザーのメッセージからタスク情報を抽出してください。
+
+メッセージ: "${userMessage}"
+
+プロジェクト一覧（id:名前）: ${projectNames || 'なし'}
+
+以下のJSON形式で返してください（他のテキストは不要）:
+{"title":"タスクのタイトル","description":"タスクの説明（あれば）","priority":"high/medium/low","projectId":"該当プロジェクトのID（なければ空文字）","dueDate":"YYYY-MM-DD（あれば、なければ空文字）"}
+
+ルール:
+- タイトルは簡潔に（「タスクを作成して」等の指示部分は除く）
+- 優先度は文脈から判断（デフォルトはmedium）
+- プロジェクトは名前が含まれていれば対応IDを設定` }],
+        }),
+      });
+      const parseData = await parseRes.json();
+      const parseText = parseData?.content?.[0]?.text || '';
+      const jsonMatch = parseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        suggestedTitle = parsed.title || '';
+        suggestedDescription = parsed.description || '';
+        suggestedPriority = parsed.priority || 'medium';
+        suggestedProjectId = parsed.projectId || '';
+      }
+    } catch (parseErr) {
+      console.error('[Agent] Task parse error:', parseErr);
+    }
+  }
+
+  // タイトルがAIで取得できなかった場合のフォールバック
+  if (!suggestedTitle) {
+    const titleMatch = userMessage.match(/[「『](.+?)[」』]/);
+    if (titleMatch) {
+      suggestedTitle = titleMatch[1];
+    } else {
+      // 「〇〇をタスクに」パターン
+      const actionMatch = userMessage.match(/(.+?)[をの](タスク|作成|追加|登録)/);
+      if (actionMatch) {
+        suggestedTitle = actionMatch[1].replace(/^(新しい|新規)\s*/, '').trim();
+      }
+    }
+  }
+
+  cards.push({
+    type: 'task_form',
+    data: {
+      suggestedTitle,
+      suggestedDescription,
+      suggestedPriority,
+      suggestedProjectId,
+      suggestedDueDate: '',
+      projects: (projects || []).map((p: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null }) => ({
+        id: p.id,
+        name: p.name,
+        organizationName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
+      })),
+    },
+  });
+
+  parts.push('\n\n【タスク作成】\nタスク作成フォームを表示しました。');
+}
+
+// ========================================
+// タスク進行ハンドラー
+// ========================================
+async function handleTaskProgressIntent(
+  supabase: SupabaseClient,
+  userId: string,
+  userMessage: string,
+  tasks: TaskRow[],
+  cards: CardData[],
+  parts: string[]
+): Promise<void> {
+  const activeTasks = tasks.filter(t => t.status !== 'done');
+
+  if (activeTasks.length === 0) {
+    parts.push('\n\n【タスク】\n進行中のタスクはありません。新しいタスクを作成しますか？');
+    return;
+  }
+
+  // メッセージからタスクを特定
+  let matchedTask: TaskRow | null = null;
+  for (const t of activeTasks) {
+    if (userMessage.includes(t.title) || userMessage.includes(t.title.slice(0, 10))) {
+      matchedTask = t;
+      break;
+    }
+  }
+
+  // AIでタスクを推定（マッチしなかった場合）
+  if (!matchedTask && activeTasks.length > 0) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (apiKey) {
+      try {
+        const taskNames = activeTasks.map(t => `${t.id}:${t.title}`).join(', ');
+        const parseRes = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-5-20250929',
+            max_tokens: 100,
+            messages: [{ role: 'user', content: `ユーザーのメッセージに最も関連するタスクを以下から1つ選んでください。関連がなければ "none" と返してください。タスクIDだけを返してください。\n\nタスク一覧: ${taskNames}\n\nメッセージ: "${userMessage}"` }],
+          }),
+        });
+        const parseData = await parseRes.json();
+        const guessedId = (parseData?.content?.[0]?.text || '').trim();
+        if (guessedId && guessedId !== 'none') {
+          matchedTask = activeTasks.find(t => t.id === guessedId) || null;
+        }
+      } catch { /* ignore */ }
+    }
+  }
+
+  if (matchedTask) {
+    // 特定のタスクの会話履歴を取得
+    let conversations: Array<{ role: string; content: string; timestamp: string }> = [];
+    try {
+      const { data: convData } = await supabase
+        .from('task_conversations')
+        .select('role, content, created_at')
+        .eq('task_id', matchedTask.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      if (convData) {
+        conversations = convData.map((c: { role: string; content: string; created_at: string }) => ({
+          role: c.role,
+          content: c.content.slice(0, 200),
+          timestamp: c.created_at,
+        }));
+      }
+    } catch { /* ignore */ }
+
+    // タスク進行カード
+    cards.push({
+      type: 'task_progress',
+      data: {
+        id: matchedTask.id,
+        title: matchedTask.title,
+        status: matchedTask.status,
+        phase: matchedTask.phase,
+        priority: matchedTask.priority,
+        dueDate: matchedTask.due_date,
+        recentConversations: conversations.reverse(),
+      },
+    });
+
+    parts.push(`\n\n【タスク進行】\n「${matchedTask.title}」のタスク進行カードを表示しました。`);
+  } else {
+    // タスクが特定できない → 一覧から選択
+    for (const t of activeTasks.slice(0, 5)) {
+      cards.push({
+        type: 'task_resume',
+        data: {
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          lastActivity: formatRelativeTime(t.updated_at),
+          remainingItems: t.due_date
+            ? [`期限: ${t.due_date}`, `フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`]
+            : [`フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`],
+        },
+      });
+    }
+    parts.push(`\n\n【タスク一覧】\n進行中のタスクが${activeTasks.length}件あります。どのタスクを進めますか？`);
+  }
+}
+
+// ========================================
 // ヘルパー関数
 // ========================================
 function determineUrgency(msg: MessageRow): 'high' | 'medium' | 'low' {
@@ -1493,6 +1728,8 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 
 ## あなたの能力
 - メッセージの要約・返信下書き
+- タスクの作成（「○○のタスクを作成して」で作成フォーム表示）
+- タスクの進行支援（「タスクを進めたい」で対話・相談）
 - タスクの状況確認・優先度の提案
 - ジョブ（簡易作業）の作成と自動実行（返信、日程調整、確認連絡など）
 - 承認されたジョブはAIが自動で実行する
@@ -1504,6 +1741,12 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - ビジネスイベント自動蓄積（メッセージ・ドキュメント・会議が時系列で自動記録）
 - 週間活動要約（AI生成の週次レポート）
 - 思考マップ・ナレッジの参照
+
+## タスクの流れ
+ユーザーが「タスクを作成して」「○○のタスクを追加」と言ったら:
+1. タスク作成フォームカードを表示（タイトル・説明・優先度・プロジェクト・期限）
+2. ユーザーが内容を入力して「作成する」を押すとタスクが登録される
+3. 「タスクを進めたい」と言えば、進行中のタスクの一覧から選んでAIと対話できる
 
 ## ジョブの流れ
 ユーザーが「〇〇しておいて」「任せて」と言ったら:
@@ -1706,6 +1949,14 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
         : 'プロジェクトはまだ登録されていません。ビジネスログ画面から新規作成できます。';
     case 'business_log':
       return 'ビジネスログへのリンクを表示しました。クリックして開いてください。';
+    case 'create_task':
+      return hasCards
+        ? 'タスク作成フォームを表示しました。内容を入力して「作成する」を押してください。'
+        : 'タスク作成の準備に失敗しました。もう一度お試しください。';
+    case 'task_progress':
+      return hasCards
+        ? 'タスクの詳細を表示しました。このまま相談を続けることもできますし、「続ける」でタスクページに移動もできます。'
+        : '進行中のタスクが見つかりませんでした。新しいタスクを作成しますか？';
     default:
       return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }

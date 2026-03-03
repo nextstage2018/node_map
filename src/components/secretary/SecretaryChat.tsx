@@ -24,7 +24,8 @@ interface SuggestChip {
 const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '今日やること', icon: <Sun className="w-3.5 h-3.5" />, message: '今日の状況を教えて', category: 'general' },
   { label: 'プロジェクトを確認', icon: <ClipboardList className="w-3.5 h-3.5" />, message: 'プロジェクト一覧を見せて', category: 'log' },
-  { label: 'タスクを進める', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '進行中のタスクを見せて', category: 'task' },
+  { label: 'タスクを作成', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '新しいタスクを作成したい', category: 'task' },
+  { label: 'タスクを進める', icon: <CheckSquare className="w-3.5 h-3.5" />, message: 'タスクを進めたい', category: 'task' },
   { label: '新着メッセージ', icon: <Inbox className="w-3.5 h-3.5" />, message: '新着メッセージを見せて', category: 'inbox' },
   { label: '対応が必要なこと', icon: <Zap className="w-3.5 h-3.5" />, message: '対応が必要なことは？', category: 'job' },
   { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
@@ -632,8 +633,104 @@ export default function SecretaryChat() {
       case 'resume_task': {
         const taskId = (d as Record<string, string>)?.taskId;
         if (taskId) {
-          // タスク対話ページへ遷移（将来的には秘書内でタスク対話モードに入る）
           window.location.href = `/tasks?open=${taskId}`;
+        }
+        break;
+      }
+      case 'submit_task_form': {
+        // タスク作成フォーム送信 → /api/tasks POST
+        const taskData = d as Record<string, string>;
+        try {
+          const res = await fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: taskData.title,
+              description: taskData.description || '',
+              priority: taskData.priority || 'medium',
+              projectId: taskData.projectId || undefined,
+              dueDate: taskData.dueDate || undefined,
+            }),
+          });
+          const result = await res.json();
+          if (result.success) {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{
+                type: 'task_created',
+                data: {
+                  id: result.data?.id,
+                  title: taskData.title,
+                  priority: taskData.priority || 'medium',
+                  dueDate: taskData.dueDate || undefined,
+                },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{
+                type: 'action_result',
+                data: { success: false, message: 'タスクの作成に失敗しました', details: result.error || '' },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'タスクの作成中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      case 'task_chat': {
+        // タスクのAI会話 → /api/tasks/chat POST
+        const chatData = d as Record<string, string>;
+        const chatTaskId = chatData.taskId;
+        const chatMsg = chatData.message;
+        if (chatTaskId && chatMsg) {
+          try {
+            const res = await fetch('/api/tasks/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                taskId: chatTaskId,
+                message: chatMsg,
+                phase: chatData.phase || 'ideation',
+              }),
+            });
+            const result = await res.json();
+            if (result.success && result.data?.reply) {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `💬 AI回答:\n${result.data.reply}`,
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: 'タスクAIからの応答を取得できませんでした。',
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'タスクAIとの通信中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
         }
         break;
       }

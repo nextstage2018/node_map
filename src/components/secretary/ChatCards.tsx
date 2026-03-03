@@ -33,7 +33,9 @@ export type CardType =
   | 'storage_confirmation' // ファイル格納確認
   | 'business_summary'    // ビジネス活動要約
   | 'business_event_form' // ビジネスイベント登録フォーム
-  | 'knowledge_proposal'; // ナレッジ構造化提案
+  | 'knowledge_proposal' // ナレッジ構造化提案
+  | 'task_form'          // タスク作成フォーム
+  | 'task_progress';     // タスク進行カード
 
 // カードデータ共通
 export interface CardData {
@@ -422,6 +424,293 @@ export function TaskResumeCard({
           className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shrink-0"
         >
           <ArrowRight className="w-3 h-3" /> 続ける
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// タスク作成フォームカード
+// ========================================
+interface TaskFormProject {
+  id: string;
+  name: string;
+  organizationName?: string;
+}
+
+interface TaskFormData {
+  suggestedTitle: string;
+  suggestedDescription: string;
+  suggestedPriority: string;
+  suggestedProjectId: string;
+  suggestedDueDate: string;
+  projects: TaskFormProject[];
+}
+
+export function TaskFormCard({
+  data,
+  onSubmit,
+}: {
+  data: TaskFormData;
+  onSubmit?: (taskData: {
+    title: string;
+    description: string;
+    priority: string;
+    projectId: string;
+    dueDate: string;
+  }) => void;
+}) {
+  const [title, setTitle] = useState(data.suggestedTitle || '');
+  const [description, setDescription] = useState(data.suggestedDescription || '');
+  const [priority, setPriority] = useState(data.suggestedPriority || 'medium');
+  const [projectId, setProjectId] = useState(data.suggestedProjectId || '');
+  const [dueDate, setDueDate] = useState(data.suggestedDueDate || '');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      onSubmit?.({ title: title.trim(), description: description.trim(), priority, projectId, dueDate });
+      setSubmitted(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="bg-white rounded-xl border border-green-200 overflow-hidden shadow-sm my-2">
+        <div className="px-4 py-3 flex items-center gap-2">
+          <CheckCircle2 className="w-5 h-5 text-green-600" />
+          <span className="text-sm font-medium text-green-800">タスク「{title}」を作成しました</span>
+        </div>
+      </div>
+    );
+  }
+
+  const priorityOptions = [
+    { value: 'high', label: '高', color: 'text-red-600 bg-red-50 border-red-200' },
+    { value: 'medium', label: '中', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+    { value: 'low', label: '低', color: 'text-green-600 bg-green-50 border-green-200' },
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+        <CheckSquare className="w-4 h-4 text-blue-600" />
+        <span className="text-xs font-semibold text-blue-800">タスク作成</span>
+      </div>
+      <div className="p-4 space-y-3">
+        {/* タイトル */}
+        <div>
+          <label className="text-[11px] font-medium text-slate-500 mb-1 block">タイトル *</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="タスクのタイトルを入力"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* 説明 */}
+        <div>
+          <label className="text-[11px] font-medium text-slate-500 mb-1 block">説明</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="タスクの説明（任意）"
+            rows={2}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+          />
+        </div>
+
+        {/* 優先度 */}
+        <div>
+          <label className="text-[11px] font-medium text-slate-500 mb-1 block">優先度</label>
+          <div className="flex gap-2">
+            {priorityOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setPriority(opt.value)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-lg border transition-all',
+                  priority === opt.value
+                    ? opt.color + ' ring-1 ring-current'
+                    : 'text-slate-400 bg-white border-slate-200 hover:bg-slate-50'
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* プロジェクト */}
+        {data.projects.length > 0 && (
+          <div>
+            <label className="text-[11px] font-medium text-slate-500 mb-1 block">プロジェクト</label>
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+            >
+              <option value="">プロジェクトなし</option>
+              {data.projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.organizationName ? `${p.organizationName} / ${p.name}` : p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 期限 */}
+        <div>
+          <label className="text-[11px] font-medium text-slate-500 mb-1 block">期限</label>
+          <input
+            type="date"
+            value={dueDate}
+            onChange={(e) => setDueDate(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+
+        {/* 送信ボタン */}
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={handleSubmit}
+            disabled={!title.trim() || submitting}
+            className="flex-1 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:bg-slate-200 disabled:text-slate-400 transition-colors flex items-center justify-center gap-1.5"
+          >
+            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            作成する
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// タスク進行カード
+// ========================================
+interface TaskProgressData {
+  id: string;
+  title: string;
+  status: string;
+  phase: string;
+  priority: string;
+  dueDate?: string | null;
+  recentConversations?: Array<{ role: string; content: string; timestamp: string }>;
+}
+
+export function TaskProgressCard({
+  data,
+  onResume,
+  onSendMessage,
+}: {
+  data: TaskProgressData;
+  onResume?: (taskId: string) => void;
+  onSendMessage?: (taskId: string, message: string) => void;
+}) {
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const phaseLabels: Record<string, { label: string; icon: string; color: string }> = {
+    ideation: { label: '構想', icon: '💡', color: 'bg-amber-50 text-amber-700' },
+    progress: { label: '進行', icon: '🔧', color: 'bg-blue-50 text-blue-700' },
+    result: { label: '結果', icon: '📊', color: 'bg-purple-50 text-purple-700' },
+  };
+  const priorityLabels: Record<string, { label: string; color: string }> = {
+    high: { label: '高', color: 'text-red-600 bg-red-50' },
+    medium: { label: '中', color: 'text-amber-600 bg-amber-50' },
+    low: { label: '低', color: 'text-green-600 bg-green-50' },
+  };
+
+  const phase = phaseLabels[data.phase] || { label: data.phase, icon: '📋', color: 'bg-slate-50 text-slate-700' };
+  const prio = priorityLabels[data.priority] || { label: data.priority, color: 'text-slate-600 bg-slate-50' };
+
+  const handleSend = async () => {
+    if (!message.trim() || sending) return;
+    setSending(true);
+    try {
+      onSendMessage?.(data.id, message.trim());
+      setMessage('');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-indigo-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CheckSquare className="w-4 h-4 text-indigo-600" />
+          <span className="text-xs font-semibold text-indigo-800">タスク進行</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-md font-medium', phase.color)}>
+            {phase.icon} {phase.label}
+          </span>
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-md font-bold', prio.color)}>
+            {prio.label}
+          </span>
+        </div>
+      </div>
+
+      <div className="px-4 py-3">
+        <h4 className="text-sm font-semibold text-slate-800 mb-1">{data.title}</h4>
+        {data.dueDate && (
+          <p className="text-[11px] text-slate-500 flex items-center gap-1 mb-2">
+            <Clock className="w-3 h-3" /> 期限: {data.dueDate}
+          </p>
+        )}
+
+        {/* 最近の会話 */}
+        {data.recentConversations && data.recentConversations.length > 0 && (
+          <div className="mt-2 space-y-1.5 mb-3">
+            <p className="text-[10px] text-slate-400 font-medium">最近の会話:</p>
+            {data.recentConversations.slice(-3).map((conv, i) => (
+              <div key={i} className={cn(
+                'text-[11px] px-2.5 py-1.5 rounded-lg',
+                conv.role === 'assistant' ? 'bg-slate-50 text-slate-600' : 'bg-blue-50 text-blue-700'
+              )}>
+                <span className="text-[9px] text-slate-400">{conv.role === 'assistant' ? 'AI' : 'あなた'}: </span>
+                {conv.content}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* メッセージ入力 */}
+        <div className="flex gap-1.5 mt-2">
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+            placeholder="AIに相談..."
+            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-300"
+          />
+          <button
+            onClick={handleSend}
+            disabled={!message.trim() || sending}
+            className="px-3 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:bg-slate-200 disabled:text-slate-400 transition-colors shrink-0"
+          >
+            {sending ? '...' : '送信'}
+          </button>
+        </div>
+
+        {/* タスクページへ */}
+        <button
+          onClick={() => onResume?.(data.id)}
+          className="mt-2 w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+        >
+          <ArrowRight className="w-3 h-3" /> タスクページで詳しく見る
         </button>
       </div>
     </div>
@@ -1248,6 +1537,21 @@ export function CardRenderer({
         <TaskResumeCard
           task={card.data}
           onResume={(taskId) => onAction?.('resume_task', { taskId })}
+        />
+      );
+    case 'task_form':
+      return (
+        <TaskFormCard
+          data={card.data}
+          onSubmit={(taskData) => onAction?.('submit_task_form', taskData)}
+        />
+      );
+    case 'task_progress':
+      return (
+        <TaskProgressCard
+          data={card.data}
+          onResume={(taskId) => onAction?.('resume_task', { taskId })}
+          onSendMessage={(taskId, message) => onAction?.('task_chat', { taskId, message, phase: card.data.phase || 'ideation' })}
         />
       );
     case 'navigate':

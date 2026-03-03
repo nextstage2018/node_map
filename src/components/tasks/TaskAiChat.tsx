@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Task, TaskPhase, AiConversationMessage, ConversationTag } from '@/lib/types';
 import {
   TASK_PHASE_CONFIG,
@@ -103,12 +103,22 @@ export default function TaskAiChat({
     setInput('');
   };
 
+  // Ctrl+Enter / Cmd+Enter で送信（Enterのみは改行）
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
     }
   };
+
+  // textarea 自動リサイズ
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const autoResize = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }, []);
 
   // === 構想メモ保存 ===
   const handleIdeationSubmit = async (sendToAi: boolean = true) => {
@@ -547,10 +557,11 @@ export default function TaskAiChat({
 
       {/* 入力エリア */}
       <div className="px-4 py-3 border-t border-slate-100 bg-white">
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-end">
           <textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => { setInput(e.target.value); autoResize(); }}
             onKeyDown={handleKeyDown}
             placeholder={
               phase === 'ideation'
@@ -559,17 +570,18 @@ export default function TaskAiChat({
                 ? '進捗や気づきを入力...'
                 : '結果や学びを入力...'
             }
-            rows={1}
-            className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-slate-300"
+            rows={2}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-slate-300 min-h-[40px] max-h-[160px]"
           />
           <button
             onClick={handleSend}
             disabled={!input.trim() || isSending}
-            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
+            className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl disabled:bg-slate-200 disabled:text-slate-400 transition-colors shrink-0"
           >
             送信
           </button>
         </div>
+        <p className="text-[10px] text-slate-300 mt-1">Ctrl+Enter で送信</p>
       </div>
     </div>
   );
