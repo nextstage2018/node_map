@@ -100,19 +100,19 @@ export const TASK_PHASE_CONFIG = {
   ideation: {
     label: '構想',
     description: 'ゴールイメージと関連要素を整理',
-    icon: '/icons/phase-ideation.svg',
+    icon: '💡',
     color: 'bg-amber-100 text-amber-700',
   },
   progress: {
     label: '進行',
     description: '自由に作業・AIと会話',
-    icon: '/icons/phase-progress.svg',
+    icon: '🔧',
     color: 'bg-blue-100 text-blue-700',
   },
   result: {
     label: '結果',
     description: 'アウトプットをまとめて完了',
-    icon: '/icons/phase-result.svg',
+    icon: '📊',
     color: 'bg-green-100 text-green-700',
   },
 } as const;
@@ -123,12 +123,12 @@ export const IDEATION_PROMPTS = [
   '関連しそうな要素や、気になるポイントはありますか？',
 ] as const;
 
-// 構想メモのテンプレートフィールド（アイコンをSVGパスに変更）
+// 構想メモのテンプレートフィールド
 export const IDEATION_MEMO_FIELDS = [
-  { key: 'goal', label: 'ゴール', placeholder: '完了条件・達成イメージ', icon: '/icons/memo-goal.svg' },
-  { key: 'content', label: '主な内容', placeholder: 'やるべきこと・作業の範囲', icon: '/icons/memo-content.svg' },
-  { key: 'concerns', label: '気になる点', placeholder: 'リスク・不明点・依存事項', icon: '/icons/memo-concerns.svg' },
-  { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '/icons/memo-deadline.svg' },
+  { key: 'goal', label: 'ゴール', placeholder: '完了条件・達成イメージ', icon: '🎯' },
+  { key: 'content', label: '主な内容', placeholder: 'やるべきこと・作業の範囲', icon: '📝' },
+  { key: 'concerns', label: '気になる点', placeholder: 'リスク・不明点・依存事項', icon: '⚠️' },
+  { key: 'deadline', label: '期限日', placeholder: 'YYYY-MM-DD', icon: '📅' },
 ] as const;
 
 // ===== Phase 3: 設定関連定数 =====

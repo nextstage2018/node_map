@@ -49,6 +49,9 @@ function mapTaskFromDb(dbRow: any): Task {
     // Phase 40c: 種・プロジェクト紐づけ
     seedId: dbRow.seed_id,
     projectId: dbRow.project_id,
+    projectName: dbRow.projects?.name || undefined,
+    organizationName: dbRow.projects?.organizations?.name || undefined,
+    dueDate: dbRow.due_date || undefined,
     // Calendar統合
     scheduledStart: dbRow.scheduled_start,
     scheduledEnd: dbRow.scheduled_end,
@@ -126,7 +129,7 @@ export class TaskService {
       // Query tasks ordered by updated_at DESC
       let query = sb
         .from('tasks')
-        .select('*')
+        .select('*, projects(name, organization_id, organizations(name))')
         .order('updated_at', { ascending: false });
 
       // Phase 22: userIdが指定されていればフィルタリング
@@ -796,6 +799,68 @@ export class TaskService {
       return true;
     } catch (error) {
       console.error('Error deleting seed:', error);
+      return false;
+    }
+  }
+
+  // タスクの削除
+  static async deleteTask(taskId: string): Promise<boolean> {
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return false;
+
+    try {
+      // FK CASCADE で関連テーブル（task_conversations, thought_task_nodes,
+      // thought_edges, thought_snapshots, task_members）は自動削除される
+      const { error } = await sb
+        .from('tasks')
+        .delete()
+        .eq('id', taskId);
+
+      if (error) {
+        console.error('Error deleting task in Supabase:', error);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      return false;
+    }
+  }
+
+  // タスク完了時にビジネスイベントに記録（アーカイブ）
+  static async archiveTaskToBusinessLog(taskId: string, userId: string): Promise<boolean> {
+    const sb = getServerSupabase() || getSupabase();
+    if (!sb) return false;
+
+    try {
+      const { data: task } = await sb
+        .from('tasks')
+        .select('title, result_summary, project_id, description')
+        .eq('id', taskId)
+        .single();
+
+      if (!task) return false;
+
+      const { error: eventError } = await sb
+        .from('business_events')
+        .insert({
+          title: `タスク完了: ${task.title}`,
+          content: task.result_summary || task.description || '',
+          event_type: 'task_completed',
+          project_id: task.project_id,
+          user_id: userId,
+          source_message_id: taskId,
+          source_channel: 'nodemap',
+          ai_generated: false,
+          event_date: new Date().toISOString(),
+        });
+
+      if (eventError) {
+        console.error('Error creating archive event:', eventError);
+      }
+      return true;
+    } catch (error) {
+      console.error('Error archiving task:', error);
       return false;
     }
   }

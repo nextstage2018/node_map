@@ -185,9 +185,25 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // タスク完了時: ビジネスログにアーカイブ → タスクを削除
+    if (body.status === 'done') {
+      try {
+        await TaskService.archiveTaskToBusinessLog(body.id, userId);
+      } catch (archErr) {
+        console.error('[Tasks API] アーカイブエラー（タスク完了は成功）:', archErr);
+      }
+      // アーカイブ後にタスクを削除（カンバンから消える）
+      try {
+        await TaskService.deleteTask(body.id);
+      } catch (delErr) {
+        console.error('[Tasks API] タスク削除エラー（アーカイブ済み）:', delErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: task,
+      archived: body.status === 'done',
       knowledge: knowledgeResult ? {
         keywords: knowledgeResult.keywords,
         newKeywords: knowledgeResult.newKeywords,
@@ -198,6 +214,65 @@ export async function PUT(request: NextRequest) {
     console.error('[Tasks API] タスク更新エラー:', message);
     return NextResponse.json(
       { success: false, error: 'タスクの更新に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
+
+// タスク削除
+export async function DELETE(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
+
+    const { searchParams } = request.nextUrl;
+    const taskId = searchParams.get('id');
+
+    if (!taskId) {
+      return NextResponse.json(
+        { success: false, error: 'IDは必須です' },
+        { status: 400 }
+      );
+    }
+
+    // カレンダーイベントがあれば先に削除
+    try {
+      const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+      const sb = getServerSupabase() || getSupabase();
+      if (sb) {
+        const { data: taskData } = await sb
+          .from('tasks')
+          .select('calendar_event_id')
+          .eq('id', taskId)
+          .single();
+        if (taskData?.calendar_event_id) {
+          const { deleteCalendarEvent } = await import('@/services/calendar/calendarSync.service');
+          await deleteCalendarEvent(taskData.calendar_event_id, userId);
+        }
+      }
+    } catch (calErr) {
+      console.error('[Tasks API] カレンダー削除エラー（続行）:', calErr);
+    }
+
+    const success = await TaskService.deleteTask(taskId);
+    if (!success) {
+      return NextResponse.json(
+        { success: false, error: 'タスク削除に失敗しました' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '不明なエラー';
+    console.error('[Tasks API] タスク削除エラー:', message);
+    return NextResponse.json(
+      { success: false, error: 'タスクの削除に失敗しました' },
       { status: 500 }
     );
   }
