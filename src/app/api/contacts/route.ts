@@ -457,6 +457,104 @@ export async function GET(request: NextRequest) {
 }
 
 // ========================================
+// POST: コンタクト新規作成（Phase 53c: 秘書チャットのContactFormCardから呼ばれる）
+// ========================================
+export async function POST(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const { id, name, company_name, department, relationship_type, email, phone } = body;
+
+    if (!name) {
+      return NextResponse.json({ success: false, error: '名前は必須です' }, { status: 400 });
+    }
+
+    // contact_persons.id は TEXT型（自動生成なし）→ クライアントから渡されたIDを使うか手動生成
+    const contactId = id || `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // メールアドレスからorganization_idを自動マッチング
+    let autoOrganizationId = null;
+    let autoRelationshipType = relationship_type || 'unknown';
+    if (email && email.includes('@')) {
+      const domain = email.toLowerCase().split('@')[1];
+      if (domain) {
+        const { data: orgMatch } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('domain', domain)
+          .eq('user_id', userId)
+          .limit(1)
+          .single();
+        if (orgMatch) {
+          autoOrganizationId = orgMatch.id;
+          if (autoRelationshipType === 'unknown') {
+            autoRelationshipType = 'internal';
+          }
+        }
+      }
+    }
+
+    // 1. コンタクト本体を作成
+    const { error: contactError } = await supabase
+      .from('contact_persons')
+      .insert({
+        id: contactId,
+        name,
+        company_name: company_name || null,
+        department: department || null,
+        relationship_type: autoRelationshipType,
+        confirmed: true,
+        main_channel: email ? 'email' : 'other',
+        visibility: 'shared',
+        owner_user_id: userId,
+        organization_id: autoOrganizationId,
+      });
+
+    if (contactError) {
+      console.error('[Contacts API] POST contact error:', contactError);
+      return NextResponse.json({ success: false, error: contactError.message }, { status: 500 });
+    }
+
+    // 2. チャネル（メール/電話）を登録
+    const channels: { contact_id: string; channel: string; address: string }[] = [];
+    if (email) {
+      channels.push({ contact_id: contactId, channel: 'email', address: email });
+    }
+    if (phone) {
+      channels.push({ contact_id: contactId, channel: 'phone', address: phone });
+    }
+
+    if (channels.length > 0) {
+      const { error: channelError } = await supabase
+        .from('contact_channels')
+        .insert(channels);
+
+      if (channelError) {
+        console.error('[Contacts API] POST channel error:', channelError);
+        return NextResponse.json({
+          success: true,
+          data: { id: contactId },
+          warning: `コンタクトは作成しましたが、チャンネル登録に失敗しました: ${channelError.message}`,
+        });
+      }
+    }
+
+    return NextResponse.json({ success: true, data: { id: contactId } });
+  } catch (error) {
+    console.error('[Contacts API] POST Error:', error);
+    return NextResponse.json({ success: false, error: 'コンタクトの作成に失敗しました' }, { status: 500 });
+  }
+}
+
+// ========================================
 // PUT: コンタクト情報を更新（コンテキストフィールド対応）
 // ========================================
 export async function PUT(request: NextRequest) {

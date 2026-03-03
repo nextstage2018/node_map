@@ -7,6 +7,7 @@ import {
   Inbox, CheckSquare, Zap, GitBranch,
   ClipboardList, Sun, Sparkles, Calendar, FolderInput,
   Paperclip, Upload, X, FileText, ChevronDown, Building2,
+  UserPlus, FolderPlus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
@@ -35,6 +36,8 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
   { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
   { label: '組織を整理', icon: <Building2 className="w-3.5 h-3.5" />, message: '未登録の組織を確認して', category: 'general' },
+  { label: 'コンタクト追加', icon: <UserPlus className="w-3.5 h-3.5" />, message: '新しいコンタクトを登録したい', category: 'general' },
+  { label: 'プロジェクト作成', icon: <FolderPlus className="w-3.5 h-3.5" />, message: '新しいプロジェクトを作成したい', category: 'log' },
 ];
 
 // ========================================
@@ -404,7 +407,36 @@ function linkifyText(text: string, isUser: boolean): React.ReactNode {
 }
 
 // ========================================
+// Phase 53b: スマート履歴切り詰め（古いメッセージを要約）
+// ========================================
+function smartTruncateHistory(
+  history: Array<{ role: string; content: string }>,
+  maxMessages: number
+): Array<{ role: string; content: string }> {
+  if (history.length <= maxMessages) return history;
+
+  // 古い部分を要約、最新のメッセージは維持
+  const keepRecent = Math.min(20, maxMessages);
+  const oldPart = history.slice(0, history.length - keepRecent);
+  const recentPart = history.slice(-keepRecent);
+
+  // 古い会話を要約テキストに変換（トークン節約）
+  const summaryLines = oldPart.map(m => {
+    const prefix = m.role === 'user' ? 'U' : 'A';
+    return `${prefix}: ${m.content.slice(0, 60)}`;
+  });
+
+  const summaryMsg = {
+    role: 'user' as string,
+    content: `[以前の会話の要約]\n${summaryLines.join('\n')}\n[要約ここまで]`,
+  };
+
+  return [summaryMsg, ...recentPart];
+}
+
+// ========================================
 // 秘書AIチャット メインコンポーネント
+// Phase 53: 会話永続化 + コンテキスト拡張 + インライン操作強化
 // ========================================
 export default function SecretaryChat() {
   const [messages, setMessages] = useState<SecretaryMessage[]>([]);
@@ -412,24 +444,79 @@ export default function SecretaryChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasBriefing, setHasBriefing] = useState(false);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [isRestoringHistory, setIsRestoringHistory] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // メッセージ末尾にスクロール
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 初回のブリーフィング（アプリ起動時に自動送信）
+  // Phase 53a: 会話履歴をDBから復元
   useEffect(() => {
-    if (!hasBriefing) {
+    const restoreHistory = async () => {
+      try {
+        const res = await fetch('/api/agent/conversations?limit=50');
+        const data = await res.json();
+        if (data.success && data.data?.messages?.length > 0) {
+          const restored: SecretaryMessage[] = data.data.messages.map((m: {
+            id: string; role: string; content: string; cards?: CardData[]; timestamp: string;
+          }) => ({
+            id: m.id,
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+            cards: m.cards || undefined,
+            timestamp: m.timestamp,
+          }));
+          setMessages(restored);
+          setHasBriefing(true);
+          setIsRestoringHistory(false);
+          return;
+        }
+      } catch {
+        // 復元失敗時はブリーフィングから開始
+      }
+      setIsRestoringHistory(false);
+    };
+    restoreHistory();
+  }, []);
+
+  // 初回のブリーフィング（履歴がない場合のみ）
+  useEffect(() => {
+    if (!isRestoringHistory && !hasBriefing && messages.length === 0) {
       setHasBriefing(true);
       sendMessage('今日の状況を教えて', true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isRestoringHistory]);
 
-  // メッセージ送信
+  // Phase 53a: メッセージ変更時にDBに自動保存（デバウンス付き）
+  useEffect(() => {
+    if (messages.length === 0 || isRestoringHistory) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      // 最新の2メッセージだけ保存（user + assistant のペア）
+      const unsaved = messages.slice(-2);
+      if (unsaved.length > 0) {
+        fetch('/api/agent/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: unsaved.map(m => ({
+              role: m.role,
+              content: m.content,
+              cards: m.cards || undefined,
+            })),
+          }),
+        }).catch(() => { /* 保存失敗は静かに無視 */ });
+      }
+    }, 1000);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [messages, isRestoringHistory]);
+
+  // メッセージ送信（Phase 53b: コンテキスト30メッセージに拡張）
   const sendMessage = useCallback(async (text: string, isBriefing = false) => {
     const trimmed = text.trim();
     if (!trimmed || isLoading) return;
@@ -454,12 +541,16 @@ export default function SecretaryChat() {
         history.push({ role: 'user', content: trimmed });
       }
 
+      // Phase 53b: コンテキストウィンドウを30メッセージに拡張
+      // 古いメッセージは要約してトークン節約
+      const contextMessages = isBriefing ? [] : smartTruncateHistory(history, 30);
+
       const res = await fetch('/api/agent/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: trimmed,
-          history: isBriefing ? [] : history.slice(-15),
+          history: contextMessages,
         }),
       });
 
@@ -504,10 +595,13 @@ export default function SecretaryChat() {
   // Enterキーは改行のみ（送信はボタンで行う）
   // IME変換確定のEnterで誤送信されるのを防ぐため、Enterでの送信を無効化
 
-  // 会話クリア
-  const handleClear = () => {
+  // 会話クリア（DBからも削除）
+  const handleClear = async () => {
     setMessages([]);
     setHasBriefing(false);
+    try {
+      await fetch('/api/agent/conversations', { method: 'DELETE' });
+    } catch { /* 削除失敗は無視 */ }
   };
 
   // ファイルアップロード完了
@@ -1037,6 +1131,136 @@ export default function SecretaryChat() {
               timestamp: new Date().toISOString(),
             }]);
           }
+        }
+        break;
+      }
+      // Phase 53c: コンタクト作成
+      case 'submit_contact_form': {
+        const contactData = d as Record<string, string>;
+        try {
+          const contactId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const res = await fetch('/api/contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: contactId,
+              name: contactData.name,
+              company_name: contactData.companyName || '',
+              department: contactData.department || '',
+              relationship_type: contactData.relationshipType || 'client',
+              email: contactData.email || '',
+              phone: contactData.phone || '',
+            }),
+          });
+          const result = await res.json();
+          if (result.success) {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: `コンタクト「${contactData.name}」を登録しました！${contactData.companyName ? `（${contactData.companyName}）` : ''}`,
+              cards: [{ type: 'action_result', data: { success: true, message: `コンタクト「${contactData.name}」を登録しました` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{ type: 'action_result', data: { success: false, message: `コンタクトの登録に失敗: ${result.error || ''}` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'コンタクトの登録中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      // Phase 53c: プロジェクト作成
+      case 'submit_project_form': {
+        const projData = d as Record<string, string>;
+        try {
+          const res = await fetch('/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: projData.name,
+              organizationId: projData.organizationId || undefined,
+              status: 'active',
+            }),
+          });
+          const result = await res.json();
+          if (result.success) {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: `プロジェクト「${projData.name}」を作成しました！`,
+              cards: [{ type: 'action_result', data: { success: true, message: `プロジェクト「${projData.name}」を作成しました` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{ type: 'action_result', data: { success: false, message: `プロジェクトの作成に失敗: ${result.error || ''}` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'プロジェクトの作成中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      // Phase 53c: 組織作成（手動フォームから）
+      case 'submit_org_form': {
+        const orgData = d as Record<string, string>;
+        try {
+          const res = await fetch('/api/organizations/auto-setup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: orgData.name,
+              domain: orgData.domain || '',
+              relationshipType: orgData.relationshipType || 'client',
+              contactIds: [],
+              channels: [],
+            }),
+          });
+          const result = await res.json();
+          if (result.success) {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: `組織「${orgData.name}」を作成しました！`,
+              cards: [{ type: 'action_result', data: { success: true, message: `組織「${orgData.name}」を作成しました` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } else {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{ type: 'action_result', data: { success: false, message: `組織の作成に失敗: ${result.error || ''}` } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '組織の作成中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
         }
         break;
       }

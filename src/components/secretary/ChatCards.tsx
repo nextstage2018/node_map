@@ -35,7 +35,13 @@ export type CardType =
   | 'business_event_form' // ビジネスイベント登録フォーム
   | 'knowledge_proposal' // ナレッジ構造化提案
   | 'task_form'          // タスク作成フォーム
-  | 'task_progress';     // タスク進行カード
+  | 'task_progress'      // タスク進行カード
+  | 'org_recommendation' // Phase 52: 組織レコメンド
+  | 'pattern_insights'   // Phase 51c: パターンインサイト
+  | 'contact_form'       // Phase 53c: コンタクト登録フォーム
+  | 'contact_search_result' // Phase 53c: コンタクト検索結果
+  | 'org_form'           // Phase 53c: 組織作成フォーム
+  | 'project_form';      // Phase 53c: プロジェクト作成フォーム
 
 // カードデータ共通
 export interface CardData {
@@ -1624,6 +1630,33 @@ export function CardRenderer({
           onSkip={(domain) => onAction?.('skip_org', { domain })}
         />
       );
+    case 'contact_form':
+      return (
+        <ContactFormCard
+          data={card.data}
+          onSubmit={(contactData) => onAction?.('submit_contact_form', contactData)}
+        />
+      );
+    case 'contact_search_result':
+      return (
+        <ContactSearchResultCard
+          data={card.data}
+        />
+      );
+    case 'org_form':
+      return (
+        <OrgFormCard
+          data={card.data}
+          onSubmit={(orgData) => onAction?.('submit_org_form', orgData)}
+        />
+      );
+    case 'project_form':
+      return (
+        <ProjectFormCard
+          data={card.data}
+          onSubmit={(projData) => onAction?.('submit_project_form', projData)}
+        />
+      );
     default:
       return null;
   }
@@ -2420,6 +2453,293 @@ export function OrgRecommendationCard({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ========================================
+// Phase 53c: コンタクト登録フォームカード
+// ========================================
+export function ContactFormCard({
+  data,
+  onSubmit,
+}: {
+  data: { suggestedName: string; organizations: Array<{ id: string; name: string }> };
+  onSubmit: (contactData: Record<string, string>) => void;
+}) {
+  const [name, setName] = useState(data.suggestedName || '');
+  const [companyName, setCompanyName] = useState('');
+  const [department, setDepartment] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [relationshipType, setRelationshipType] = useState('client');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = () => {
+    if (!name.trim()) return;
+    setIsSubmitting(true);
+    onSubmit({ name, companyName, department, email, phone, relationshipType });
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">👤</span>
+        <h4 className="text-sm font-bold text-slate-800">コンタクト登録</h4>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">名前 *</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="山田太郎" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-0.5">会社名</label>
+            <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="株式会社ABC" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-0.5">部署</label>
+            <input type="text" value={department} onChange={e => setDepartment(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="営業部" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-0.5">メール</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="taro@abc.co.jp" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-0.5">電話</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              placeholder="03-1234-5678" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">関係性</label>
+          <select value={relationshipType} onChange={e => setRelationshipType(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="client">取引先</option>
+            <option value="partner">パートナー</option>
+            <option value="internal">社内</option>
+            <option value="prospect">見込み客</option>
+          </select>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim() || isSubmitting}
+          className={cn(
+            'px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
+            !name.trim() || isSubmitting
+              ? 'bg-slate-200 text-slate-400'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          )}
+        >
+          {isSubmitting ? '登録中...' : '✅ 登録する'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Phase 53c: コンタクト検索結果カード
+// ========================================
+export function ContactSearchResultCard({
+  data,
+}: {
+  data: {
+    contacts: Array<{
+      id: string; name: string; companyName: string; department: string;
+      relationshipType: string; channels: Array<{ channel: string; address: string }>;
+    }>;
+  };
+}) {
+  const relLabels: Record<string, string> = { client: '取引先', partner: 'パートナー', internal: '社内', prospect: '見込み客' };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🔍</span>
+        <h4 className="text-sm font-bold text-slate-800">コンタクト検索結果</h4>
+      </div>
+      <div className="space-y-3">
+        {data.contacts.map(c => (
+          <div key={c.id} className="p-3 bg-slate-50 rounded-lg">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-sm text-slate-800">{c.name}</span>
+              {c.companyName && <span className="text-xs text-slate-500">{c.companyName}</span>}
+              {c.department && <span className="text-xs text-slate-400">{c.department}</span>}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={cn(
+                'text-[10px] px-1.5 py-0.5 rounded',
+                c.relationshipType === 'client' ? 'bg-blue-100 text-blue-700' :
+                c.relationshipType === 'partner' ? 'bg-green-100 text-green-700' :
+                c.relationshipType === 'internal' ? 'bg-purple-100 text-purple-700' :
+                'bg-slate-100 text-slate-600'
+              )}>
+                {relLabels[c.relationshipType] || c.relationshipType}
+              </span>
+            </div>
+            {c.channels.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {c.channels.map((ch, i) => (
+                  <span key={i} className="text-[11px] text-slate-500 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                    {ch.channel === 'email' ? '📧' : ch.channel === 'slack' ? '💬' : '💭'} {ch.address}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Phase 53c: 組織作成フォームカード
+// ========================================
+export function OrgFormCard({
+  data,
+  onSubmit,
+}: {
+  data: { suggestedName: string; suggestedDomain: string };
+  onSubmit: (orgData: Record<string, string>) => void;
+}) {
+  const [name, setName] = useState(data.suggestedName || '');
+  const [domain, setDomain] = useState(data.suggestedDomain || '');
+  const [relationshipType, setRelationshipType] = useState('client');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = () => {
+    if (!name.trim()) return;
+    setIsSubmitting(true);
+    onSubmit({ name, domain, relationshipType });
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">🏢</span>
+        <h4 className="text-sm font-bold text-slate-800">組織作成</h4>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">組織名 *</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="株式会社ABC" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">ドメイン</label>
+          <input type="text" value={domain} onChange={e => setDomain(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="abc.co.jp" />
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">関係性</label>
+          <select value={relationshipType} onChange={e => setRelationshipType(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+            <option value="client">取引先</option>
+            <option value="partner">パートナー</option>
+            <option value="vendor">仕入先</option>
+            <option value="prospect">見込み客</option>
+            <option value="internal">自社</option>
+          </select>
+        </div>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim() || isSubmitting}
+          className={cn(
+            'px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
+            !name.trim() || isSubmitting
+              ? 'bg-slate-200 text-slate-400'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          )}
+        >
+          {isSubmitting ? '作成中...' : '✅ 作成する'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Phase 53c: プロジェクト作成フォームカード
+// ========================================
+export function ProjectFormCard({
+  data,
+  onSubmit,
+}: {
+  data: {
+    suggestedName: string;
+    organizations: Array<{ id: string; name: string }>;
+  };
+  onSubmit: (projData: Record<string, string>) => void;
+}) {
+  const [name, setName] = useState(data.suggestedName || '');
+  const [organizationId, setOrganizationId] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = () => {
+    if (!name.trim()) return;
+    setIsSubmitting(true);
+    onSubmit({ name, organizationId });
+  };
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-lg">📂</span>
+        <h4 className="text-sm font-bold text-slate-800">プロジェクト作成</h4>
+      </div>
+      <div className="space-y-2">
+        <div>
+          <label className="block text-xs text-slate-500 mb-0.5">プロジェクト名 *</label>
+          <input type="text" value={name} onChange={e => setName(e.target.value)}
+            className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            placeholder="新規プロジェクト" />
+        </div>
+        {data.organizations.length > 0 && (
+          <div>
+            <label className="block text-xs text-slate-500 mb-0.5">組織（任意）</label>
+            <select value={organizationId} onChange={e => setOrganizationId(e.target.value)}
+              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">組織を選択...</option>
+              {data.organizations.map(org => (
+                <option key={org.id} value={org.id}>{org.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={!name.trim() || isSubmitting}
+          className={cn(
+            'px-4 py-1.5 rounded-lg text-sm font-medium transition-colors',
+            !name.trim() || isSubmitting
+              ? 'bg-slate-200 text-slate-400'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          )}
+        >
+          {isSubmitting ? '作成中...' : '✅ 作成する'}
+        </button>
+      </div>
     </div>
   );
 }

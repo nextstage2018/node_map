@@ -91,6 +91,10 @@ type Intent =
   | 'pattern_analysis'      // Phase 51b: 傾向分析
   | 'knowledge_reuse'       // Phase 51b: 過去知見の再利用
   | 'setup_organization'    // Phase 52: 組織セットアップ
+  | 'create_contact'        // Phase 53c: コンタクト作成
+  | 'create_organization'   // Phase 53c: 組織作成（手動）
+  | 'create_project'        // Phase 53c: プロジェクト作成
+  | 'search_contact'        // Phase 53c: コンタクト検索
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -208,11 +212,26 @@ function classifyIntent(message: string): Intent {
   if (m.includes('前回') || m.includes('この前') || m.includes('以前') || m.includes('あの時')) return 'knowledge_reuse';
   if (m.includes('同じよう') || m.includes('似たような')) return 'knowledge_reuse';
 
+  // Phase 53c: コンタクト作成（「コンタクトを登録」「連絡先を追加」「〇〇さんを登録」）
+  if (m.includes('コンタクト') && (m.includes('登録') || m.includes('追加') || m.includes('作成') || m.includes('新規') || m.includes('新しい'))) return 'create_contact';
+  if (m.includes('連絡先') && (m.includes('登録') || m.includes('追加') || m.includes('作成'))) return 'create_contact';
+  if (m.match(/(.+?)(さん|様)(を|の)(登録|追加|コンタクト)/)) return 'create_contact';
+
+  // Phase 53c: コンタクト検索（「〇〇さんの情報」「コンタクト情報」）
+  if (m.includes('コンタクト') && (m.includes('検索') || m.includes('探し') || m.includes('情報') || m.includes('見せて') || m.includes('教えて'))) return 'search_contact';
+  if (m.match(/(.+?)(さん|様)(の|について)(情報|連絡先|メール|教えて)/)) return 'search_contact';
+
+  // Phase 53c: 組織作成（手動）
+  if (m.includes('組織') && (m.includes('新規') || m.includes('新しい'))) return 'create_organization';
+
   // Phase 52: 組織セットアップ（「組織を登録」「取引先を追加」「会社を設定」）
   if (m.includes('組織') && (m.includes('設定') || m.includes('作成') || m.includes('追加') || m.includes('登録') || m.includes('整理') || m.includes('確認'))) return 'setup_organization';
   if (m.includes('取引先') && (m.includes('追加') || m.includes('登録') || m.includes('設定'))) return 'setup_organization';
   if (m.includes('会社') && (m.includes('登録') || m.includes('追加') || m.includes('設定'))) return 'setup_organization';
   if (m.includes('未登録') && (m.includes('組織') || m.includes('会社'))) return 'setup_organization';
+
+  // Phase 53c: プロジェクト作成
+  if (m.includes('プロジェクト') && (m.includes('作成') || m.includes('追加') || m.includes('新規') || m.includes('新しい') || m.includes('作って') || m.includes('立ち上げ'))) return 'create_project';
 
   return 'general';
 }
@@ -1442,6 +1461,154 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     }
 
     // ========================================
+    // Phase 53c: コンタクト作成 → インラインフォームカード
+    // ========================================
+    if (intent === 'create_contact') {
+      try {
+        // 組織一覧を取得（コンタクト紐づけ用）
+        const { data: orgs } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .eq('user_id', userId)
+          .order('name');
+
+        // ユーザーメッセージから名前を推定
+        let suggestedName = '';
+        const nameMatch = userMessage.match(/[「『](.+?)[」』]/);
+        if (nameMatch) {
+          suggestedName = nameMatch[1];
+        } else {
+          const personMatch = userMessage.match(/(.+?)(さん|様)(を|の)(登録|追加|コンタクト)/);
+          if (personMatch) suggestedName = personMatch[1].trim();
+        }
+
+        cards.push({
+          type: 'contact_form',
+          data: {
+            suggestedName,
+            organizations: (orgs || []).map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })),
+          },
+        });
+        parts.push('\n\n【コンタクト登録】\nコンタクト登録フォームを表示しました。');
+      } catch (err) {
+        console.error('[Agent] Contact form error:', err);
+        parts.push('\n\nコンタクト登録の準備に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // Phase 53c: コンタクト検索 → 情報表示カード
+    // ========================================
+    if (intent === 'search_contact') {
+      try {
+        // ユーザーメッセージから検索キーワードを抽出
+        let searchTerm = '';
+        const personMatch = userMessage.match(/(.+?)(さん|様)(の|について)/);
+        if (personMatch) {
+          searchTerm = personMatch[1].trim();
+        } else {
+          searchTerm = userMessage.replace(/(コンタクト|連絡先|情報|検索|探し|見せて|教えて|の|を)/g, '').trim();
+        }
+
+        if (searchTerm.length >= 1) {
+          const { data: foundContacts } = await supabase
+            .from('contact_persons')
+            .select('id, name, company_name, department, relationship_type, notes, email')
+            .or(`name.ilike.%${searchTerm}%,company_name.ilike.%${searchTerm}%`)
+            .limit(5);
+
+          if (foundContacts && foundContacts.length > 0) {
+            // チャネル情報も取得
+            const contactIds = foundContacts.map((c: { id: string }) => c.id);
+            const { data: channels } = await supabase
+              .from('contact_channels')
+              .select('contact_id, channel, address')
+              .in('contact_id', contactIds);
+
+            const contactLines = foundContacts.map((c: { id: string; name: string; company_name: string | null; department: string | null; relationship_type: string | null }) => {
+              const chs = (channels || []).filter((ch: { contact_id: string }) => ch.contact_id === c.id);
+              const chStr = chs.map((ch: { channel: string; address: string }) => `${ch.channel}:${ch.address}`).join(', ');
+              return `- ${c.name}${c.company_name ? `（${c.company_name}）` : ''}${c.department ? ` ${c.department}` : ''}${chStr ? ` [${chStr}]` : ''}`;
+            });
+            parts.push(`\n\n【コンタクト検索結果（${foundContacts.length}件）】\n${contactLines.join('\n')}`);
+
+            // コンタクト詳細カードを追加
+            cards.push({
+              type: 'contact_search_result',
+              data: {
+                contacts: foundContacts.map((c: { id: string; name: string; company_name: string | null; department: string | null; relationship_type: string | null; notes: string | null }) => ({
+                  id: c.id,
+                  name: c.name,
+                  companyName: c.company_name || '',
+                  department: c.department || '',
+                  relationshipType: c.relationship_type || '',
+                  channels: (channels || []).filter((ch: { contact_id: string }) => ch.contact_id === c.id)
+                    .map((ch: { channel: string; address: string }) => ({ channel: ch.channel, address: ch.address })),
+                })),
+              },
+            });
+          } else {
+            parts.push(`\n\n【コンタクト検索】\n「${searchTerm}」に該当するコンタクトが見つかりませんでした。新しく登録しますか？`);
+          }
+        }
+      } catch (err) {
+        console.error('[Agent] Contact search error:', err);
+        parts.push('\n\nコンタクト検索に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // Phase 53c: 組織作成（手動）→ インラインフォームカード
+    // ========================================
+    if (intent === 'create_organization') {
+      try {
+        cards.push({
+          type: 'org_form',
+          data: {
+            suggestedName: '',
+            suggestedDomain: '',
+          },
+        });
+        parts.push('\n\n【組織作成】\n組織作成フォームを表示しました。');
+      } catch (err) {
+        console.error('[Agent] Org form error:', err);
+        parts.push('\n\n組織作成の準備に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // Phase 53c: プロジェクト作成 → インラインフォームカード
+    // ========================================
+    if (intent === 'create_project') {
+      try {
+        const { data: orgs } = await supabase
+          .from('organizations')
+          .select('id, name')
+          .eq('user_id', userId)
+          .order('name');
+
+        // メッセージからプロジェクト名を推定
+        let suggestedName = '';
+        const projNameMatch = userMessage.match(/[「『](.+?)[」』]/);
+        if (projNameMatch) {
+          suggestedName = projNameMatch[1];
+        }
+
+        cards.push({
+          type: 'project_form',
+          data: {
+            suggestedName,
+            organizations: (orgs || []).map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })),
+          },
+        });
+        parts.push('\n\n【プロジェクト作成】\nプロジェクト作成フォームを表示しました。');
+      } catch (err) {
+        console.error('[Agent] Project form error:', err);
+        parts.push('\n\nプロジェクト作成の準備に失敗しました。');
+      }
+    }
+
+    // ========================================
     // Phase 52: 組織レコメンド
     // ========================================
     if (intent === 'setup_organization' || intent === 'briefing') {
@@ -2002,6 +2169,9 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - タスクの状況確認・優先度の提案
 - ジョブ（簡易作業）の作成と自動実行（返信、日程調整、確認連絡など）
 - 承認されたジョブはAIが自動で実行する
+- コンタクトの登録（「コンタクトを登録」でフォーム表示）・検索（「○○さんの情報」で検索）
+- 組織の作成（「新しい組織を作成」でフォーム表示）・自動検出（「組織を整理」で未登録候補表示）
+- プロジェクトの作成（「プロジェクトを作成して」でフォーム表示）
 - Google Calendar連携（今日の予定表示・空き時間検索・予定作成）
 - Google Drive連携（ドキュメント一覧表示・ファイル検索・共有リンク生成）
 - ファイル取り込み管理（受領ファイルのAI自動分類→確認→承認→最終保管フロー）
@@ -2010,6 +2180,17 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - ビジネスイベント自動蓄積（メッセージ・ドキュメント・会議が時系列で自動記録）
 - 週間活動要約（AI生成の週次レポート）
 - 思考マップ・ナレッジの参照
+
+## コンタクト・組織・プロジェクトの管理
+ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:
+1. コンタクト登録フォームカードを表示
+2. ユーザーが情報を入力して「登録する」を押すとコンタクトが作成される
+
+ユーザーが「○○さんの情報を教えて」と言ったら:
+1. コンタクトを検索して結果カードを表示
+
+ユーザーが「新しい組織を作成」「プロジェクトを作成して」と言ったら:
+1. 該当するフォームカードを表示して入力→作成の流れ
 
 ## タスクの流れ
 ユーザーが「タスクを作成して」「○○のタスクを追加」と言ったら:
@@ -2096,8 +2277,8 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 会話履歴を構築（最新15件まで）
-    const conversationHistory = (history || []).slice(-15).map(
+    // Phase 53b: 会話履歴を構築（最新30件まで — クライアント側でスマート要約済み）
+    const conversationHistory = (history || []).slice(-30).map(
       (msg: { role: string; content: string }) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
@@ -2226,6 +2407,22 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'タスクの詳細を表示しました。このまま相談を続けることもできますし、「続ける」でタスクページに移動もできます。'
         : '進行中のタスクが見つかりませんでした。新しいタスクを作成しますか？';
+    case 'create_contact':
+      return hasCards
+        ? 'コンタクト登録フォームを表示しました。情報を入力して「登録する」を押してください。'
+        : 'コンタクト登録の準備に失敗しました。もう一度お試しください。';
+    case 'search_contact':
+      return hasCards
+        ? 'コンタクト情報を検索しました。'
+        : 'お探しのコンタクトが見つかりませんでした。新しく登録しますか？';
+    case 'create_organization':
+      return hasCards
+        ? '組織作成フォームを表示しました。情報を入力して「作成する」を押してください。'
+        : '組織作成の準備に失敗しました。もう一度お試しください。';
+    case 'create_project':
+      return hasCards
+        ? 'プロジェクト作成フォームを表示しました。情報を入力して「作成する」を押してください。'
+        : 'プロジェクト作成の準備に失敗しました。もう一度お試しください。';
     default:
       return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }
