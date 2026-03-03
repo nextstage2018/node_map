@@ -4,11 +4,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Task, TaskPhase, AiConversationMessage, ConversationTag } from '@/lib/types';
 import {
   TASK_PHASE_CONFIG,
-  IDEATION_MEMO_FIELDS,
   PROGRESS_QUICK_ACTIONS,
 } from '@/lib/constants';
 import { cn, formatRelativeTime } from '@/lib/utils';
-import Button from '@/components/ui/Button';
 
 // Phase 17: 会話タグのスタイル設定
 const CONVERSATION_TAG_STYLE: Record<ConversationTag, { bg: string; text: string; icon: string }> = {
@@ -20,6 +18,14 @@ const CONVERSATION_TAG_STYLE: Record<ConversationTag, { bg: string; text: string
   '整理・構造化':   { bg: 'bg-indigo-100',  text: 'text-indigo-700', icon: '📐' },
   'その他':         { bg: 'bg-slate-100',   text: 'text-slate-500',  icon: '💬' },
 };
+
+// 構想フェーズのサジェストチップ
+const IDEATION_CHIPS = [
+  { label: '🎯 ゴールを整理', message: 'このタスクのゴールを一緒に整理してほしい。何を達成すれば完了と言えるか考えたい。' },
+  { label: '📝 やることを洗い出す', message: 'このタスクでやるべきことを洗い出してほしい。何から手をつけるべきか一緒に考えたい。' },
+  { label: '⚠️ リスクを確認', message: 'このタスクの懸念点やリスクを一緒に確認したい。見落としがないかチェックしたい。' },
+  { label: '📅 スケジュールを考える', message: 'このタスクのスケジュール感を考えたい。いつまでに何を終わらせるべきか整理したい。' },
+];
 
 interface TaskAiChatProps {
   task: Task;
@@ -37,49 +43,36 @@ export default function TaskAiChat({
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 構想メモフォーム — ideationSummary から初期値を復元
-  const [ideationForm, setIdeationForm] = useState<Record<string, string>>(() => {
-    const defaults: Record<string, string> = { goal: '', content: '', concerns: '', deadline: '' };
-    if (task.ideationSummary) {
-      const lines = task.ideationSummary.split('\n');
-      for (const line of lines) {
-        const match = line.match(/^【(.+?)】(.+)$/);
-        if (match) {
-          const label = match[1];
-          const value = match[2].trim();
-          if (label === 'ゴール') defaults.goal = value;
-          else if (label === '主な内容') defaults.content = value;
-          else if (label === '気になる点') defaults.concerns = value;
-          else if (label === '期限' || label === '期限日') defaults.deadline = value;
-        }
-      }
-    }
-    if ((task as any).dueDate) defaults.deadline = (task as any).dueDate;
-    return defaults;
-  });
-  const [showIdeationForm, setShowIdeationForm] = useState(true);
-  const [isEditingIdeation, setIsEditingIdeation] = useState(false);
+  // ローカル会話状態（楽観的更新用）
+  const [localConversations, setLocalConversations] = useState<AiConversationMessage[]>(
+    task.conversations || []
+  );
+  const prevTaskIdRef = useRef(task.id);
+  const prevConvLenRef = useRef((task.conversations || []).length);
 
-  // Calendar統合: 作業予定時刻
-  const [scheduledStart, setScheduledStart] = useState(
-    (task as any).scheduledStart
-      ? new Date((task as any).scheduledStart).toISOString().slice(0, 16)
-      : ''
-  );
-  const [scheduledEnd, setScheduledEnd] = useState(
-    (task as any).scheduledEnd
-      ? new Date((task as any).scheduledEnd).toISOString().slice(0, 16)
-      : ''
-  );
+  // タスク切り替え or サーバーからの会話更新を検知して同期
+  useEffect(() => {
+    const taskConvs = task.conversations || [];
+    if (task.id !== prevTaskIdRef.current) {
+      // タスクが切り替わった
+      setLocalConversations(taskConvs);
+      prevTaskIdRef.current = task.id;
+      prevConvLenRef.current = taskConvs.length;
+    } else if (taskConvs.length !== prevConvLenRef.current) {
+      // 同じタスクだが、サーバーから新しい会話データが来た
+      setLocalConversations(taskConvs);
+      prevConvLenRef.current = taskConvs.length;
+    }
+  }, [task.id, task.conversations]);
 
   const phase = task.phase;
-  const conversations = task.conversations;
+  const conversations = localConversations;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversations.length]);
 
-  // === 送信処理 ===
+  // === 送信処理（楽観的更新付き） ===
   const sendMessage = async (message: string) => {
     if (!message.trim() || isSending) return;
     setIsSending(true);
@@ -90,7 +83,30 @@ export default function TaskAiChat({
         body: JSON.stringify({ taskId: task.id, message, phase }),
       });
       const data = await res.json();
-      if (data.success) onTaskUpdate();
+      if (data.success) {
+        // 楽観的更新: API応答をローカルに即反映
+        const now = new Date().toISOString();
+        setLocalConversations(prev => [
+          ...prev,
+          {
+            id: `opt-u-${Date.now()}`,
+            role: 'user' as const,
+            content: message,
+            phase,
+            timestamp: now,
+            conversationTag: data.data.conversationTag,
+          },
+          {
+            id: `opt-a-${Date.now()}`,
+            role: 'assistant' as const,
+            content: data.data.reply,
+            phase,
+            timestamp: now,
+          },
+        ]);
+        // バックグラウンドで全体リフレッシュ（DB同期）
+        onTaskUpdate();
+      }
     } catch {
       // エラー処理
     } finally {
@@ -99,8 +115,13 @@ export default function TaskAiChat({
   };
 
   const handleSend = async () => {
-    await sendMessage(input);
+    const msg = input;
     setInput('');
+    // テキストエリアをリセット
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+    await sendMessage(msg);
   };
 
   // Ctrl+Enter / Cmd+Enter で送信（Enterのみは改行）
@@ -119,40 +140,6 @@ export default function TaskAiChat({
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 160) + 'px';
   }, []);
-
-  // === 構想メモ保存 ===
-  const handleIdeationSubmit = async (sendToAi: boolean = true) => {
-    const parts: string[] = [];
-    if (ideationForm.goal) parts.push(`【ゴール】${ideationForm.goal}`);
-    if (ideationForm.content) parts.push(`【主な内容】${ideationForm.content}`);
-    if (ideationForm.concerns) parts.push(`【気になる点】${ideationForm.concerns}`);
-    if (ideationForm.deadline) parts.push(`【期限日】${ideationForm.deadline}`);
-
-    if (parts.length === 0) return;
-
-    const message = parts.join('\n');
-    setShowIdeationForm(false);
-    setIsEditingIdeation(false);
-
-    try {
-      const updateBody: any = { id: task.id, ideationSummary: message };
-      if (ideationForm.deadline) updateBody.dueDate = ideationForm.deadline;
-      if (scheduledStart) updateBody.scheduledStart = new Date(scheduledStart).toISOString();
-      if (scheduledEnd) updateBody.scheduledEnd = new Date(scheduledEnd).toISOString();
-      await fetch('/api/tasks', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updateBody),
-      });
-    } catch {
-      // エラー処理
-    }
-
-    if (sendToAi) {
-      await sendMessage(message);
-    }
-    onTaskUpdate();
-  };
 
   // === フェーズ遷移 ===
   const handlePhaseTransition = async (nextPhase: TaskPhase) => {
@@ -202,20 +189,13 @@ export default function TaskAiChat({
     await sendMessage(prompt);
   };
 
-  const hasIdeationData = !!(ideationForm.goal || ideationForm.content || ideationForm.concerns || ideationForm.deadline);
-  const showIdeationFormUI =
-    phase === 'ideation' && (
-      isEditingIdeation ||
-      (conversations.length === 0 && showIdeationForm)
-    );
-
   const phaseMessages = (p: TaskPhase) =>
     conversations.filter((c) => c.phase === p);
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* フェーズインジケータ */}
-      <div className="px-4 py-3 border-b border-slate-100 bg-white">
+      <div className="px-4 py-3 border-b border-slate-100 bg-white shrink-0">
         <div className="flex items-center gap-1">
           {(Object.keys(TASK_PHASE_CONFIG) as TaskPhase[]).map((p, idx) => {
             const config = TASK_PHASE_CONFIG[p];
@@ -261,30 +241,20 @@ export default function TaskAiChat({
         </div>
       </div>
 
-      {/* 構想メモ（表示＋編集ボタン） */}
-      {task.ideationSummary && !isEditingIdeation && (
-        <div className="mx-4 mt-3 p-3 bg-gradient-to-br from-amber-50 to-amber-50/30 rounded-xl border border-amber-200">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] font-semibold text-amber-600">
-              💡 構想メモ
-            </span>
-            {phase === 'ideation' && (
-              <button
-                onClick={() => setIsEditingIdeation(true)}
-                className="text-[10px] text-amber-500 hover:text-amber-700 transition-colors"
-              >
-                ✏️ 編集
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-amber-800 whitespace-pre-wrap leading-relaxed">
+      {/* 構想メモ（既存データがあれば表示） */}
+      {task.ideationSummary && (
+        <div className="mx-4 mt-3 p-3 bg-gradient-to-br from-amber-50 to-amber-50/30 rounded-xl border border-amber-200 shrink-0">
+          <span className="text-[10px] font-semibold text-amber-600">
+            💡 構想メモ
+          </span>
+          <p className="text-xs text-amber-800 whitespace-pre-wrap leading-relaxed mt-1">
             {task.ideationSummary}
           </p>
         </div>
       )}
 
       {task.resultSummary && (
-        <div className="mx-4 mt-3 p-3 bg-gradient-to-br from-green-50 to-green-50/30 rounded-xl border border-green-200">
+        <div className="mx-4 mt-3 p-3 bg-gradient-to-br from-green-50 to-green-50/30 rounded-xl border border-green-200 shrink-0">
           <div className="text-[10px] font-semibold text-green-600 mb-1">
             ✅ 結果要約
           </div>
@@ -296,109 +266,32 @@ export default function TaskAiChat({
 
       {/* 会話エリア */}
       <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3 bg-gradient-to-b from-slate-50/30 to-white">
-        {/* ===== 構想フェーズ：構造化フォーム ===== */}
-        {showIdeationFormUI && (
-          <div className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="text-sm">💡</span>
-              <h3 className="text-sm font-bold text-slate-800">構想メモを入力</h3>
-            </div>
-            <p className="text-xs text-slate-500 mb-4">
-              各項目を埋めると、AIがタスクの進め方を一緒に考えます。
-            </p>
-            <div className="space-y-3">
-              {IDEATION_MEMO_FIELDS.map((field) => (
-                <div key={field.key}>
-                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-1">
-                    <span>{field.icon}</span>
-                    {field.label}
-                  </label>
-                  {field.key === 'deadline' ? (
-                    <input
-                      type="date"
-                      value={ideationForm[field.key]}
-                      onChange={(e) =>
-                        setIdeationForm((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent"
-                    />
-                  ) : (
-                    <textarea
-                      value={ideationForm[field.key]}
-                      onChange={(e) =>
-                        setIdeationForm((prev) => ({
-                          ...prev,
-                          [field.key]: e.target.value,
-                        }))
-                      }
-                      placeholder={field.placeholder}
-                      rows={field.key === 'goal' ? 2 : 1}
-                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none"
-                    />
-                  )}
+        {/* ===== 構想フェーズ：AIウェルカム＋サジェストチップ ===== */}
+        {phase === 'ideation' && conversations.length === 0 && (
+          <div className="space-y-3">
+            {/* AIウェルカムメッセージ */}
+            <div className="flex justify-start">
+              <div className="max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 bg-white border border-slate-200 text-slate-800 shadow-sm">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-semibold text-slate-400">🤖 AI</span>
                 </div>
-              ))}
-            </div>
-
-            {/* Calendar統合: 作業予定時刻 */}
-            <div className="mt-4 pt-3 border-t border-amber-100">
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 mb-2">
-                <span>📅</span>
-                作業予定（カレンダー登録）
-              </label>
-              <div className="flex gap-2 items-center">
-                <input
-                  type="datetime-local"
-                  value={scheduledStart}
-                  onChange={(e) => {
-                    setScheduledStart(e.target.value);
-                    if (!scheduledEnd && e.target.value) {
-                      const start = new Date(e.target.value);
-                      start.setHours(start.getHours() + 1);
-                      setScheduledEnd(start.toISOString().slice(0, 16));
-                    }
-                  }}
-                  className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
-                <span className="text-xs text-slate-400">〜</span>
-                <input
-                  type="datetime-local"
-                  value={scheduledEnd}
-                  onChange={(e) => setScheduledEnd(e.target.value)}
-                  className="flex-1 px-2 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
-                />
+                <p className="text-[13px] whitespace-pre-wrap leading-relaxed">
+                  このタスクの構想を一緒に練りましょう！{'\n\n'}ゴールイメージ、やるべきこと、気になる点など、{'\n'}思いつくことを自由に話しかけてください。{'\n'}AIが質問しながら一緒に整理していきます。
+                </p>
               </div>
-              <p className="text-[10px] text-slate-400 mt-1">
-                設定するとGoogleカレンダーに作業ブロックが自動登録されます
-              </p>
             </div>
-
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => { setShowIdeationForm(false); setIsEditingIdeation(false); }}
-                className="text-xs text-slate-400 hover:text-slate-600 transition-colors"
-              >
-                {isEditingIdeation ? '閉じる' : 'フリー入力にする'}
-              </button>
-              <div className="flex-1" />
-              {(hasIdeationData || isEditingIdeation) && (
+            {/* サジェストチップ */}
+            <div className="flex flex-wrap gap-1.5 px-1">
+              {IDEATION_CHIPS.map(chip => (
                 <button
-                  onClick={() => handleIdeationSubmit(false)}
-                  className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  key={chip.label}
+                  onClick={() => sendMessage(chip.message)}
+                  disabled={isSending}
+                  className="text-[11px] px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
                 >
-                  保存のみ
+                  {chip.label}
                 </button>
-              )}
-              <button
-                onClick={() => handleIdeationSubmit(true)}
-                disabled={!ideationForm.goal.trim()}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:bg-slate-200 disabled:text-slate-400 transition-colors"
-              >
-                AIに送信
-              </button>
+              ))}
             </div>
           </div>
         )}
@@ -478,7 +371,7 @@ export default function TaskAiChat({
 
       {/* ===== 進行フェーズ：クイックアクション ===== */}
       {phase === 'progress' && conversations.length > 0 && (
-        <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/50">
+        <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/50 shrink-0">
           <div className="flex items-center gap-1.5 overflow-x-auto">
             <span className="text-[10px] text-slate-400 shrink-0">AI補助:</span>
             {PROGRESS_QUICK_ACTIONS.map((action) => (
@@ -497,7 +390,7 @@ export default function TaskAiChat({
 
       {/* フェーズ遷移ボタン */}
       {phase === 'ideation' && conversations.length >= 2 && (
-        <div className="px-4 py-2.5 bg-gradient-to-r from-amber-50 to-amber-50/50 border-t border-amber-200">
+        <div className="px-4 py-2.5 bg-gradient-to-r from-amber-50 to-amber-50/50 border-t border-amber-200 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-xs text-amber-700">
               構想がまとまったら、進行フェーズに移りましょう
@@ -513,7 +406,7 @@ export default function TaskAiChat({
       )}
 
       {phase === 'progress' && conversations.length >= 2 && (
-        <div className="px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/50 border-t border-blue-200">
+        <div className="px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/50 border-t border-blue-200 shrink-0">
           <div className="flex items-center justify-between">
             <span className="text-xs text-blue-700">
               作業が完了したら、結果をまとめましょう
@@ -529,7 +422,7 @@ export default function TaskAiChat({
       )}
 
       {phase === 'result' && (
-        <div className="px-4 py-2.5 bg-gradient-to-r from-green-50 to-green-50/50 border-t border-green-200">
+        <div className="px-4 py-2.5 bg-gradient-to-r from-green-50 to-green-50/50 border-t border-green-200 shrink-0">
           <div className="flex items-center gap-2 justify-between">
             <span className="text-xs text-green-700">
               結果をまとめて完了にしましょう
@@ -555,7 +448,7 @@ export default function TaskAiChat({
         </div>
       )}
 
-      {/* 入力エリア（下部固定・テキストエリアは上方向に拡張） */}
+      {/* 入力エリア（下部固定） */}
       <div className="px-4 py-3 border-t border-slate-100 bg-white shrink-0">
         <p className="text-[10px] text-slate-300 mb-1">Ctrl+Enter で送信</p>
         <div className="flex gap-2 items-end">
@@ -566,7 +459,7 @@ export default function TaskAiChat({
             onKeyDown={handleKeyDown}
             placeholder={
               phase === 'ideation'
-                ? 'ゴールイメージや関連要素を入力...'
+                ? 'ゴールや考えていることを自由に入力...'
                 : phase === 'progress'
                 ? '進捗や気づきを入力...'
                 : '結果や学びを入力...'
