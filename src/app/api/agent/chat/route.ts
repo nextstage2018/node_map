@@ -88,6 +88,8 @@ type Intent =
   | 'create_drive_folder'   // Driveフォルダ/ドキュメント作成
   | 'create_task'           // タスク作成
   | 'task_progress'         // タスク進行（AIに相談）
+  | 'pattern_analysis'      // Phase 51b: 傾向分析
+  | 'knowledge_reuse'       // Phase 51b: 過去知見の再利用
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -196,6 +198,15 @@ function classifyIntent(message: string): Intent {
   // ビジネスログ
   if (m.includes('ログ') || m.includes('ビジネス') || m.includes('活動')) return 'business_log';
 
+  // Phase 51b: 傾向分析（「傾向」「パターン」「最近どう」「振り返り」）
+  if (m.includes('傾向') || m.includes('パターン') || m.includes('振り返')) return 'pattern_analysis';
+  if (m.includes('最近') && (m.includes('どう') || m.includes('傾向') || m.includes('状況'))) return 'pattern_analysis';
+  if (m.includes('分析') && (m.includes('仕事') || m.includes('活動') || m.includes('作業'))) return 'pattern_analysis';
+
+  // Phase 51b: 過去知見の再利用（「前回の」「この前の方法」「以前の」）
+  if (m.includes('前回') || m.includes('この前') || m.includes('以前') || m.includes('あの時')) return 'knowledge_reuse';
+  if (m.includes('同じよう') || m.includes('似たような')) return 'knowledge_reuse';
+
   return 'general';
 }
 
@@ -245,7 +256,7 @@ async function fetchDataAndBuildCards(
     }
 
     // タスク取得
-    if (['briefing', 'tasks', 'jobs', 'general', 'create_task', 'task_progress'].includes(intent)) {
+    if (['briefing', 'tasks', 'jobs', 'general', 'create_task', 'task_progress', 'pattern_analysis', 'knowledge_reuse'].includes(intent)) {
       fetches.push(
         supabase
           .from('tasks')
@@ -258,7 +269,7 @@ async function fetchDataAndBuildCards(
     }
 
     // ジョブ取得
-    if (['briefing', 'jobs', 'create_job', 'general'].includes(intent)) {
+    if (['briefing', 'jobs', 'create_job', 'general', 'pattern_analysis'].includes(intent)) {
       fetches.push(
         supabase
           .from('jobs')
@@ -1096,6 +1107,111 @@ async function fetchDataAndBuildCards(
       }
     }
 
+    // Phase 51b: 傾向分析 → 過去7日の活動サマリーをコンテキストに追加
+    if (intent === 'pattern_analysis') {
+      try {
+        const sevenDaysAgo51 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        // 完了タスク数
+        const { count: doneCount } = await supabase
+          .from('business_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('event_type', 'task_archive')
+          .gte('created_at', sevenDaysAgo51);
+
+        // ビジネスイベント数
+        const { count: eventCount } = await supabase
+          .from('business_events')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gte('created_at', sevenDaysAgo51);
+
+        // 受信メッセージ数
+        const { count: msgCount } = await supabase
+          .from('inbox_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('direction', 'received')
+          .gte('created_at', sevenDaysAgo51);
+
+        // 頻出キーワード（最近のthought_task_nodes）
+        let topKeywords: string[] = [];
+        try {
+          const { data: recentNodes } = await supabase
+            .from('thought_task_nodes')
+            .select('node_id, knowledge_master_entries!inner(label)')
+            .eq('user_id', userId)
+            .gte('created_at', sevenDaysAgo51)
+            .limit(50);
+          if (recentNodes && recentNodes.length > 0) {
+            const kwCounts: Record<string, number> = {};
+            for (const n of recentNodes) {
+              const label = (n as any).knowledge_master_entries?.label || '';
+              if (label) kwCounts[label] = (kwCounts[label] || 0) + 1;
+            }
+            topKeywords = Object.entries(kwCounts)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 8)
+              .map(([k, v]) => `${k}(${v}回)`);
+          }
+        } catch { /* ignore */ }
+
+        parts.push(`\n\n【過去7日間の活動サマリー】
+- 完了タスク: ${doneCount || 0}件
+- ビジネスイベント: ${eventCount || 0}件
+- 受信メッセージ: ${msgCount || 0}件
+- 進行中タスク: ${tasks.filter(t => t.status !== 'done').length}件
+- 未処理ジョブ: ${jobs.filter(j => j.status === 'pending').length}件
+${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` : ''}`);
+      } catch (patErr) {
+        console.error('[Secretary API] 傾向分析エラー:', patErr);
+      }
+    }
+
+    // Phase 51b: 過去知見の再利用 → ナレッジノードから関連タスク検索
+    if (intent === 'knowledge_reuse') {
+      try {
+        // ユーザーメッセージからキーワードを抽出して検索
+        const searchTerms = userMessage
+          .replace(/[前回この前以前あの時の方法で同じように似たような]/g, '')
+          .trim()
+          .slice(0, 50);
+
+        if (searchTerms.length > 2) {
+          // ナレッジマスタでラベル部分一致検索
+          const { data: matchedEntries } = await supabase
+            .from('knowledge_master_entries')
+            .select('id, label')
+            .ilike('label', `%${searchTerms.slice(0, 20)}%`)
+            .limit(5);
+
+          if (matchedEntries && matchedEntries.length > 0) {
+            const entryIds = matchedEntries.map((e: { id: string }) => e.id);
+            const { data: linkedTasks } = await supabase
+              .from('thought_task_nodes')
+              .select('task_id, tasks!inner(id, title, status, phase)')
+              .in('node_id', entryIds)
+              .eq('user_id', userId)
+              .limit(10);
+
+            if (linkedTasks && linkedTasks.length > 0) {
+              const uniqueTasks = new Map();
+              for (const lt of linkedTasks) {
+                const t = (lt as any).tasks;
+                if (t && !uniqueTasks.has(t.id)) uniqueTasks.set(t.id, t);
+              }
+              const taskLines = Array.from(uniqueTasks.values()).map((t: any) =>
+                `- ${t.title}（${t.status}/${t.phase}）`
+              );
+              parts.push(`\n\n【関連する過去の知見】\nキーワード「${matchedEntries.map((e: { label: string }) => e.label).join('、')}」に関連:\n${taskLines.join('\n')}`);
+            }
+          }
+        }
+      } catch (krErr) {
+        console.error('[Secretary API] 知見再利用エラー:', krErr);
+      }
+    }
+
     // ビジネスイベント登録 → プロジェクト・コンタクトを取得してフォームカード生成
     if (intent === 'create_business_event') {
       try {
@@ -1218,6 +1334,103 @@ async function fetchDataAndBuildCards(
       if (pending.length > 0) {
         const jobLines = pending.map(j => `- [${j.type || 'その他'}] ${j.title}`);
         parts.push(`\n\n【未処理ジョブ（${pending.length}件）】\n${jobLines.join('\n')}`);
+      }
+    }
+    // ========================================
+    // Phase 51b: 秘書AIコンテキスト拡張（ブリーフィング時に追加データ）
+    // ========================================
+    if (intent === 'briefing' || intent === 'general') {
+      try {
+        const extendedParts: string[] = [];
+        const now51 = new Date();
+        const threeDaysAgo = new Date(now51.getTime() - 3 * 24 * 60 * 60 * 1000).toISOString();
+        const sevenDaysAgo = new Date(now51.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+        // 1. 停滞タスク（3日以上更新なし、未完了）
+        const stagnantTasks = tasks.filter(t =>
+          t.status !== 'done' && t.updated_at && t.updated_at < threeDaysAgo
+        );
+        if (stagnantTasks.length > 0) {
+          const stagnantLines = stagnantTasks.slice(0, 5).map(t => {
+            const daysSince = Math.floor((now51.getTime() - new Date(t.updated_at).getTime()) / 86400000);
+            return `- ${t.title}（${daysSince}日間更新なし）`;
+          });
+          extendedParts.push(`\n\n【⚠️ 停滞タスク（${stagnantTasks.length}件）】\n${stagnantLines.join('\n')}`);
+        }
+
+        // 2. 最近完了タスク（7日以内にbusiness_eventsに記録されたもの）
+        try {
+          const { data: recentArchived } = await supabase
+            .from('business_events')
+            .select('title, created_at, project_id')
+            .eq('user_id', userId)
+            .eq('event_type', 'task_archive')
+            .gte('created_at', sevenDaysAgo)
+            .order('created_at', { ascending: false })
+            .limit(5);
+          if (recentArchived && recentArchived.length > 0) {
+            const lines = recentArchived.map((e: { title: string; created_at: string }) =>
+              `- ${e.title}（${new Date(e.created_at).toLocaleDateString('ja-JP')}完了）`
+            );
+            extendedParts.push(`\n\n【✅ 最近の完了（${recentArchived.length}件/7日間）】\n${lines.join('\n')}`);
+          }
+        } catch { /* ignore */ }
+
+        // 3. 未返信メッセージ（2日以上前の未読メッセージ）
+        const twoDaysAgo = new Date(now51.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString();
+        const unrepliedMessages = messages.filter(m =>
+          !m.is_read && m.created_at < twoDaysAgo
+        );
+        if (unrepliedMessages.length > 0) {
+          const unrepliedLines = unrepliedMessages.slice(0, 5).map(m => {
+            const daysSince = Math.floor((now51.getTime() - new Date(m.created_at).getTime()) / 86400000);
+            return `- ${m.from_name || m.from_address}さんから（${daysSince}日前）: ${(m.subject || m.body || '').slice(0, 40)}`;
+          });
+          extendedParts.push(`\n\n【📨 未返信（${unrepliedMessages.length}件、2日超）】\n${unrepliedLines.join('\n')}`);
+        }
+
+        // 4. プロジェクト勢い（7日間のビジネスイベント数）
+        try {
+          const { data: projectActivity } = await supabase
+            .from('business_events')
+            .select('project_id, projects!inner(name)')
+            .eq('user_id', userId)
+            .gte('created_at', sevenDaysAgo)
+            .not('project_id', 'is', null);
+
+          if (projectActivity && projectActivity.length > 0) {
+            const counts: Record<string, { name: string; count: number }> = {};
+            for (const ev of projectActivity) {
+              const pid = ev.project_id;
+              const pname = (ev as any).projects?.name || pid;
+              if (!counts[pid]) counts[pid] = { name: pname, count: 0 };
+              counts[pid].count++;
+            }
+            const sorted = Object.values(counts).sort((a, b) => b.count - a.count);
+            if (sorted.length > 0) {
+              const actLines = sorted.slice(0, 5).map(p =>
+                `- ${p.name}: ${p.count}件${p.count >= 5 ? '（活発）' : p.count <= 1 ? '（停滞気味）' : ''}`
+              );
+              extendedParts.push(`\n\n【📊 プロジェクト活動（7日間）】\n${actLines.join('\n')}`);
+            }
+          }
+        } catch { /* ignore */ }
+
+        // 5. 失敗ジョブ（7日以内）
+        const failedJobs = jobs.filter(j =>
+          j.status === 'failed' && j.created_at && j.created_at > sevenDaysAgo
+        );
+        if (failedJobs.length > 0) {
+          const failLines = failedJobs.slice(0, 3).map(j => `- ${j.title}`);
+          extendedParts.push(`\n\n【❌ 失敗ジョブ（${failedJobs.length}件）】\n${failLines.join('\n')}`);
+        }
+
+        if (extendedParts.length > 0) {
+          parts.push('\n\n--- あなたが気づくべき文脈 ---');
+          parts.push(...extendedParts);
+        }
+      } catch (extErr) {
+        console.error('[Secretary API] Phase 51b コンテキスト拡張エラー:', extErr);
       }
     }
   } catch (error) {
@@ -1725,6 +1938,15 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - 緊急度が高い事項を先に報告する
 - 提案は具体的に（「〇〇の返信を先にしましょう。下書きを作りますか？」）
 - カードが表示される場合は、データの羅列ではなく要点と次のアクション提案に集中${cardNote}${jobNote}
+
+## あなたの知恵（Phase 51b: 蓄積データの活用）
+- データの「気づくべき文脈」セクションがある場合、以下を自然に織り込むこと:
+  - 停滞タスク: 「○○が3日間止まっています。何かブロッカーがありますか？」
+  - 未返信メッセージ: 「○○さんに2日返信していません。返信の下書きを作りましょうか？」
+  - プロジェクト勢い: 活発なプロジェクトは継続を促し、停滞プロジェクトは状況確認を促す
+  - 最近の完了: 「先週○○を完了しましたね。その知見を今のタスクにも活かせそうです」
+  - 失敗ジョブ: 「送信失敗のジョブがあります。再実行しますか？」
+- ブリーフィング以外でも、会話中に関連データがあれば自然に触れること
 
 ## あなたの能力
 - メッセージの要約・返信下書き

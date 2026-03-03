@@ -10,9 +10,9 @@ import { triggerKnowledgePipeline } from '@/lib/knowledgePipeline';
 export const dynamic = 'force-dynamic';
 
 // タスク一覧取得
-export async function GET() {
+// Phase 51a: sourceMessageId フィルタ追加（メッセージ→タスクバックリンク）
+export async function GET(request: NextRequest) {
   try {
-    // Phase 29: 認証チェック強化
     const userId = await getServerUserId();
     if (!userId) {
       return NextResponse.json(
@@ -20,10 +20,68 @@ export async function GET() {
         { status: 401 }
       );
     }
+
+    // Phase 51a: sourceMessageId でフィルタ
+    const { searchParams } = new URL(request.url);
+    const sourceMessageId = searchParams.get('sourceMessageId');
+
+    if (sourceMessageId) {
+      const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+      const sb = getServerSupabase() || getSupabase();
+      const { data, error } = await sb
+        .from('tasks')
+        .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
+        .eq('user_id', userId)
+        .eq('source_message_id', sourceMessageId)
+        .limit(5);
+
+      if (error) {
+        // source_message_id カラムがない場合はフォールバック（seeds経由で検索）
+        const { data: seedData } = await sb
+          .from('seeds')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('source_message_id', sourceMessageId)
+          .limit(1);
+
+        if (seedData && seedData.length > 0) {
+          const { data: taskData } = await sb
+            .from('tasks')
+            .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
+            .eq('user_id', userId)
+            .eq('seed_id', seedData[0].id)
+            .limit(5);
+          return NextResponse.json({ success: true, data: taskData || [] });
+        }
+        return NextResponse.json({ success: true, data: [] });
+      }
+
+      // 直接マッチがなければ seeds 経由でも検索
+      if (!data || data.length === 0) {
+        const { data: seedData } = await sb
+          .from('seeds')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('source_message_id', sourceMessageId)
+          .limit(1);
+
+        if (seedData && seedData.length > 0) {
+          const { data: taskData } = await sb
+            .from('tasks')
+            .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
+            .eq('user_id', userId)
+            .eq('seed_id', seedData[0].id)
+            .limit(5);
+          return NextResponse.json({ success: true, data: taskData || [] });
+        }
+      }
+
+      return NextResponse.json({ success: true, data: data || [] });
+    }
+
     const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
   } catch (error) {
-    // Phase 29: 統一エラーハンドリング
     const message = error instanceof Error ? error.message : '不明なエラー';
     console.error('[Tasks API] タスク取得エラー:', message);
     return NextResponse.json(

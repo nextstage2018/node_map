@@ -74,6 +74,17 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
 
+  // Phase 51a: 関連ビジネスイベント
+  const [relatedEvents, setRelatedEvents] = useState<{ id: string; title: string; event_type: string; event_date: string }[]>([]);
+
+  useEffect(() => {
+    if (!task?.id) { setRelatedEvents([]); return; }
+    fetch(`/api/tasks/${task.id}/business-events`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setRelatedEvents(d.data || []); })
+      .catch(() => {});
+  }, [task?.id]);
+
   useEffect(() => {
     if (!task?.id) return;
     setSnapshots({ initialGoal: null, finalLanding: null });
@@ -439,6 +450,25 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
               <p className="text-[10px] text-slate-300">プロジェクトを設定するとファイルを添付できます</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Phase 51a: 関連ビジネスイベント */}
+      {relatedEvents.length > 0 && (
+        <div className="border-t border-slate-200 bg-slate-50">
+          <div className="px-4 py-2">
+            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+              📊 ビジネスログ ({relatedEvents.length})
+            </h3>
+            <div className="space-y-1">
+              {relatedEvents.slice(0, 3).map(ev => (
+                <a key={ev.id} href="/business-log" className="flex items-center gap-2 text-xs text-slate-600 hover:text-blue-600">
+                  <span className="text-[10px] text-slate-400">{ev.event_date ? new Date(ev.event_date).toLocaleDateString('ja-JP') : ''}</span>
+                  <span className="truncate">{ev.title}</span>
+                </a>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

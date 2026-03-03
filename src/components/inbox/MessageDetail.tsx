@@ -10,6 +10,47 @@ import Button from '@/components/ui/Button';
 import ReplyForm from '@/components/inbox/ReplyForm';
 import ChatworkBody from '@/components/inbox/ChatworkBody';
 
+/**
+ * Phase 51a: メッセージからタスク化された場合のバックリンクバッジ
+ */
+function TaskLinkedBadge({ messageId }: { messageId: string }) {
+  const [linkedTask, setLinkedTask] = useState<{ id: string; title: string; status: string } | null>(null);
+
+  useEffect(() => {
+    const fetchLinkedTask = async () => {
+      try {
+        const res = await fetch(`/api/tasks?sourceMessageId=${messageId}`);
+        const json = await res.json();
+        if (json.success && json.data && json.data.length > 0) {
+          setLinkedTask(json.data[0]);
+        }
+      } catch { /* ignore */ }
+    };
+    if (messageId) fetchLinkedTask();
+  }, [messageId]);
+
+  if (!linkedTask) return null;
+
+  const statusLabel = linkedTask.status === 'done' ? '完了' : linkedTask.status === 'in_progress' ? '進行中' : '未着手';
+  const statusColor = linkedTask.status === 'done' ? 'bg-green-50 text-green-700 border-green-200'
+    : linkedTask.status === 'in_progress' ? 'bg-blue-50 text-blue-700 border-blue-200'
+    : 'bg-slate-50 text-slate-700 border-slate-200';
+
+  return (
+    <div className="mx-6 mt-2 shrink-0">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+        <span className="text-xs">✅</span>
+        <span className="text-xs font-medium text-emerald-700">タスク化済み</span>
+        <a href="/tasks" className="text-xs text-emerald-600 hover:underline truncate max-w-[200px]">
+          {linkedTask.title}
+        </a>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded border ${statusColor}`}>
+          {statusLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 // リアクション用の絵文字リスト
 const REACTION_EMOJIS = [
@@ -1395,6 +1436,9 @@ function SingleMessageDetail({
       {/* Phase 26: スパム警告バナー */}
       {onBlock && <SpamWarningBanner message={message} onBlock={onBlock} />}
       {blockBanner}
+
+      {/* Phase 51a: タスク化済みバックリンク */}
+      <TaskLinkedBadge messageId={message.id} />
 
       {/* AIタスク化提案 */}
       <AiTaskSuggestionBanner message={message} />

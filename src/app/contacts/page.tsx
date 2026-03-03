@@ -237,6 +237,10 @@ export default function ContactsPage() {
   const [aiContext, setAiContext] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+  // --- Phase 51a: 関連タスク ---
+  const [contactTasks, setContactTasks] = useState<{ id: string; title: string; status: string; priority: string; created_at: string }[]>([]);
+  const [isLoadingContactTasks, setIsLoadingContactTasks] = useState(false);
+
   // --- ブロックリスト関連state ---
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
   const [blocklistLoading, setBlocklistLoading] = useState(false);
@@ -506,12 +510,20 @@ export default function ContactsPage() {
     } catch { setContactProjects([]); }
   }, []);
 
-  // コンタクト選択時にプロジェクト一覧を取得
+  // コンタクト選択時にプロジェクト一覧 + 関連タスクを取得
   useEffect(() => {
     if (selectedContact) {
       loadContactProjects(selectedContact.id);
+      // Phase 51a: 関連タスク取得
+      setIsLoadingContactTasks(true);
+      fetch(`/api/contacts/${selectedContact.id}/tasks`)
+        .then(r => r.json())
+        .then(d => { if (d.success) setContactTasks(d.data || []); })
+        .catch(() => setContactTasks([]))
+        .finally(() => setIsLoadingContactTasks(false));
     } else {
       setContactProjects([]);
+      setContactTasks([]);
     }
   }, [selectedContact, loadContactProjects]);
 
@@ -1298,6 +1310,35 @@ export default function ContactsPage() {
                               </div>
                             );
                           })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Phase 51a: 関連タスク */}
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <p className="text-xs font-semibold text-slate-500 mb-2">📋 関連タスク</p>
+                      {isLoadingContactTasks ? (
+                        <p className="text-[10px] text-slate-400">読み込み中...</p>
+                      ) : contactTasks.length === 0 ? (
+                        <p className="text-[10px] text-slate-400">関連タスクなし</p>
+                      ) : (
+                        <div className="space-y-1">
+                          {contactTasks.map(task => (
+                            <a
+                              key={task.id}
+                              href="/tasks"
+                              className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-slate-50 group"
+                            >
+                              <span className="text-[11px] text-slate-700 truncate flex-1">{task.title}</span>
+                              <span className={`text-[9px] px-1.5 py-0.5 rounded-full ml-2 ${
+                                task.status === 'done' ? 'bg-emerald-100 text-emerald-700'
+                                  : task.status === 'in_progress' ? 'bg-blue-100 text-blue-700'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {task.status === 'done' ? '完了' : task.status === 'in_progress' ? '進行中' : '未着手'}
+                              </span>
+                            </a>
+                          ))}
                         </div>
                       )}
                     </div>

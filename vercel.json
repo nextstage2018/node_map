@@ -37,6 +37,10 @@
     {
       "path": "/api/cron/cluster-knowledge-weekly",
       "schedule": "30 2 * * 1"
+    },
+    {
+      "path": "/api/cron/compute-patterns",
+      "schedule": "0 3 * * *"
     }
   ]
 }
