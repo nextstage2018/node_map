@@ -41,7 +41,8 @@ export type CardType =
   | 'contact_form'       // Phase 53c: コンタクト登録フォーム
   | 'contact_search_result' // Phase 53c: コンタクト検索結果
   | 'org_form'           // Phase 53c: 組織作成フォーム
-  | 'project_form';      // Phase 53c: プロジェクト作成フォーム
+  | 'project_form'       // Phase 53c: プロジェクト作成フォーム
+  | 'task_negotiation';  // Phase 56c: タスク修正提案・調整
 
 // カードデータ共通
 export interface CardData {
@@ -926,6 +927,7 @@ interface BriefingSummaryData {
   pendingFileCount?: number;  // 未確認ファイル数
   pendingKnowledgeProposals?: number; // ナレッジ提案数
   pendingTaskSuggestions?: number; // Phase 56: タスク提案数
+  pendingNegotiations?: number;   // Phase 56c: 調整待ちタスク数
   nextEvent?: {           // 次の予定
     title: string;
     time: string;         // "10:00〜11:00"
@@ -1005,6 +1007,15 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <div>
               <span className="text-lg font-bold text-teal-700">{summary.pendingTaskSuggestions}</span>
               <span className="text-[10px] text-teal-600 ml-1">タスク提案</span>
+            </div>
+          </div>
+        )}
+        {(summary.pendingNegotiations ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <Edit3 className="w-4 h-4 text-orange-500" />
+            <div>
+              <span className="text-lg font-bold text-orange-700">{summary.pendingNegotiations}</span>
+              <span className="text-[10px] text-orange-600 ml-1">調整待ちタスク</span>
             </div>
           </div>
         )}
@@ -1536,6 +1547,169 @@ export function FileIntakeCard({
 }
 
 // ========================================
+// Phase 56c: タスク修正提案・調整カード
+// ========================================
+const CHANGE_TYPE_LABELS: Record<string, string> = {
+  deadline: '納期変更',
+  priority: '優先度変更',
+  content: '内容変更',
+  reassign: '担当者変更',
+  other: 'その他',
+};
+
+interface NegotiationRequestItem {
+  id: string;
+  requesterName: string;
+  changeType: string;
+  proposedValue: string;
+  reason: string | null;
+  currentValue: string | null;
+}
+
+interface TaskNegotiationData {
+  taskId: string;
+  taskTitle: string;
+  taskPriority: string;
+  taskDueDate: string | null;
+  pendingRequests: NegotiationRequestItem[];
+  pendingCount: number;
+  adjustment?: {
+    adjustedTitle?: string;
+    adjustedDeadline?: string;
+    adjustedPriority?: string;
+    adjustedDescription?: string;
+    adjustedAssigneeName?: string;
+    reasoning: string;
+  };
+}
+
+function TaskNegotiationCard({
+  data,
+  onGenerateAdjustment,
+  onApplyAdjustment,
+  onDismiss,
+}: {
+  data: TaskNegotiationData;
+  onGenerateAdjustment?: (taskId: string) => void;
+  onApplyAdjustment?: (taskId: string, adjustment: TaskNegotiationData['adjustment']) => void;
+  onDismiss?: (taskId: string) => void;
+}) {
+  const [showAdjustment, setShowAdjustment] = useState(false);
+
+  return (
+    <div className="bg-white rounded-xl border border-orange-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-2.5 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
+        <Edit3 className="w-4 h-4 text-orange-600" />
+        <span className="text-xs font-semibold text-orange-800">タスク修正提案</span>
+        <span className="text-[10px] text-orange-500 ml-auto">{data.pendingCount}件の修正希望</span>
+      </div>
+
+      {/* タスク情報 */}
+      <div className="px-4 py-2 border-b border-orange-50">
+        <p className="text-sm font-medium text-slate-800">{data.taskTitle}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-[10px] text-slate-500">優先度: {data.taskPriority}</span>
+          {data.taskDueDate && (
+            <span className="text-[10px] text-slate-500">期限: {data.taskDueDate}</span>
+          )}
+        </div>
+      </div>
+
+      {/* 修正リクエスト一覧 */}
+      <div className="px-4 py-2 space-y-2">
+        {data.pendingRequests.map((req) => (
+          <div key={req.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-100 text-orange-700 font-medium shrink-0">
+              {CHANGE_TYPE_LABELS[req.changeType] || req.changeType}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-slate-700">
+                <span className="font-medium">{req.requesterName}</span>: {req.proposedValue}
+              </p>
+              {req.reason && (
+                <p className="text-[10px] text-slate-400 mt-0.5">理由: {req.reason}</p>
+              )}
+              {req.currentValue && (
+                <p className="text-[10px] text-slate-400">現在: {req.currentValue}</p>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* AI調整案 */}
+      {data.adjustment && showAdjustment && (
+        <div className="mx-4 mb-2 p-3 rounded-lg bg-blue-50 border border-blue-200">
+          <div className="flex items-center gap-1 mb-2">
+            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <span className="text-xs font-semibold text-blue-800">AI調整案</span>
+          </div>
+          <div className="space-y-1">
+            {data.adjustment.adjustedTitle && (
+              <p className="text-xs text-slate-700">タイトル → <span className="font-medium">{data.adjustment.adjustedTitle}</span></p>
+            )}
+            {data.adjustment.adjustedDeadline && (
+              <p className="text-xs text-slate-700">期限 → <span className="font-medium">{data.adjustment.adjustedDeadline}</span></p>
+            )}
+            {data.adjustment.adjustedPriority && (
+              <p className="text-xs text-slate-700">優先度 → <span className="font-medium">{data.adjustment.adjustedPriority}</span></p>
+            )}
+            {data.adjustment.adjustedDescription && (
+              <p className="text-xs text-slate-700">内容 → <span className="font-medium line-clamp-2">{data.adjustment.adjustedDescription}</span></p>
+            )}
+            {data.adjustment.adjustedAssigneeName && (
+              <p className="text-xs text-slate-700">担当者 → <span className="font-medium">{data.adjustment.adjustedAssigneeName}</span></p>
+            )}
+          </div>
+          <p className="text-[10px] text-blue-600 mt-2">{data.adjustment.reasoning}</p>
+          <div className="flex gap-1.5 mt-2">
+            <button
+              onClick={() => onApplyAdjustment?.(data.taskId, data.adjustment)}
+              className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+            >
+              承認して反映
+            </button>
+            <button
+              onClick={() => setShowAdjustment(false)}
+              className="py-1.5 px-3 text-[11px] font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* アクションボタン */}
+      <div className="px-4 pb-3 flex gap-1.5">
+        {data.pendingCount > 0 && !data.adjustment && (
+          <button
+            onClick={() => onGenerateAdjustment?.(data.taskId)}
+            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors flex items-center justify-center gap-1"
+          >
+            <Sparkles className="w-3 h-3" />
+            AI調整案を生成
+          </button>
+        )}
+        {data.adjustment && !showAdjustment && (
+          <button
+            onClick={() => setShowAdjustment(true)}
+            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+          >
+            AI調整案を表示
+          </button>
+        )}
+        <button
+          onClick={() => onDismiss?.(data.taskId)}
+          className="py-1.5 px-3 text-[11px] font-semibold rounded-lg bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200 transition-colors"
+        >
+          却下
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
 export function CardRenderer({
@@ -1702,6 +1876,15 @@ export function CardRenderer({
         <ProjectFormCard
           data={card.data}
           onSubmit={(projData) => onAction?.('submit_project_form', projData)}
+        />
+      );
+    case 'task_negotiation':
+      return (
+        <TaskNegotiationCard
+          data={card.data}
+          onGenerateAdjustment={(taskId) => onAction?.('generate_task_adjustment', { taskId })}
+          onApplyAdjustment={(taskId, adjustment) => onAction?.('approve_task_adjustment', { taskId, adjustment })}
+          onDismiss={(taskId) => onAction?.('dismiss_task_negotiation', { taskId })}
         />
       );
     default:

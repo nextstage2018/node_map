@@ -68,6 +68,18 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
+  // Phase 56c: 修正提案
+  const [showNegotiationModal, setShowNegotiationModal] = useState(false);
+  const [negoChangeType, setNegoChangeType] = useState('deadline');
+  const [negoRequesterName, setNegoRequesterName] = useState('');
+  const [negoProposedValue, setNegoProposedValue] = useState('');
+  const [negoReason, setNegoReason] = useState('');
+  const [isSubmittingNego, setIsSubmittingNego] = useState(false);
+  const [negotiationCount, setNegotiationCount] = useState(0);
+  const [showAdjustment, setShowAdjustment] = useState(false);
+  const [adjustment, setAdjustment] = useState<Record<string, unknown> | null>(null);
+  const [isLoadingAdjustment, setIsLoadingAdjustment] = useState(false);
+  const [isApplyingAdjustment, setIsApplyingAdjustment] = useState(false);
   const [snapshots, setSnapshots] = useState<{
     initialGoal: Snapshot | null;
     finalLanding: Snapshot | null;
@@ -77,6 +89,15 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
 
   // Phase 51a: 関連ビジネスイベント
   const [relatedEvents, setRelatedEvents] = useState<{ id: string; title: string; event_type: string; event_date: string }[]>([]);
+
+  // Phase 56c: 修正提案数を取得
+  useEffect(() => {
+    if (!task?.id || task.status !== 'proposed') { setNegotiationCount(0); return; }
+    fetch(`/api/tasks/${task.id}/negotiations`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setNegotiationCount(d.data?.pendingCount || 0); })
+      .catch(() => {});
+  }, [task?.id, task?.status]);
 
   useEffect(() => {
     if (!task?.id) { setRelatedEvents([]); return; }
@@ -150,6 +171,65 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
         if (onDelete) onDelete();
       }
     } finally { setIsApproving(false); }
+  };
+
+  // Phase 56c: 修正リクエスト送信
+  const handleSubmitNegotiation = async () => {
+    if (!task || !negoRequesterName.trim() || !negoProposedValue.trim()) return;
+    setIsSubmittingNego(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/negotiations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requesterName: negoRequesterName.trim(),
+          changeType: negoChangeType,
+          proposedValue: negoProposedValue.trim(),
+          reason: negoReason.trim() || undefined,
+        }),
+      });
+      if (res.ok) {
+        setShowNegotiationModal(false);
+        setNegoRequesterName('');
+        setNegoProposedValue('');
+        setNegoReason('');
+        setNegotiationCount(prev => prev + 1);
+      }
+    } catch { /* error */ }
+    finally { setIsSubmittingNego(false); }
+  };
+
+  // Phase 56c: AI調整案を生成
+  const handleGenerateAdjustment = async () => {
+    if (!task) return;
+    setIsLoadingAdjustment(true);
+    setShowAdjustment(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/negotiations/adjust`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success) setAdjustment(data.data);
+    } catch { /* error */ }
+    finally { setIsLoadingAdjustment(false); }
+  };
+
+  // Phase 56c: 調整案を承認して反映
+  const handleApplyAdjustment = async () => {
+    if (!task || !adjustment) return;
+    setIsApplyingAdjustment(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/negotiations/adjust`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adjustment }),
+      });
+      if (res.ok) {
+        setShowAdjustment(false);
+        setAdjustment(null);
+        setNegotiationCount(0);
+        onRefresh();
+      }
+    } catch { /* error */ }
+    finally { setIsApplyingAdjustment(false); }
   };
 
   const handleStatusChange = async () => {
@@ -368,10 +448,147 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
 
         {/* 提案中バナー */}
         {task.status === 'proposed' && (
-          <div className="p-2 mb-2 rounded-lg bg-amber-50 border border-amber-200">
-            <p className="text-[11px] text-amber-700 font-medium">
-              💡 AIが提案したタスクです。内容を確認し、承認すると「未着手」に移動します。
-            </p>
+          <div className="p-2.5 mb-2 rounded-lg bg-amber-50 border border-amber-200">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] text-amber-700 font-medium">
+                💡 AIが提案したタスクです。承認すると「未着手」に移動します。
+              </p>
+              <button
+                onClick={() => setShowNegotiationModal(true)}
+                className="shrink-0 ml-2 px-2.5 py-1 text-[10px] font-semibold rounded-md bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300 transition-colors"
+              >
+                📝 修正提案
+                {negotiationCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 bg-amber-600 text-white rounded-full text-[9px]">
+                    {negotiationCount}
+                  </span>
+                )}
+              </button>
+            </div>
+            {/* 調整待ち表示 */}
+            {negotiationCount > 0 && !showAdjustment && (
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[10px] text-amber-600">{negotiationCount}件の修正希望あり</span>
+                <button
+                  onClick={handleGenerateAdjustment}
+                  className="text-[10px] px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md hover:bg-blue-200 font-medium transition-colors"
+                >
+                  🤖 AI調整案を見る
+                </button>
+              </div>
+            )}
+            {/* AI調整案表示 */}
+            {showAdjustment && (
+              <div className="mt-2 p-2 rounded-md bg-white border border-amber-200">
+                {isLoadingAdjustment ? (
+                  <p className="text-[11px] text-slate-400 text-center py-2">AI分析中...</p>
+                ) : adjustment ? (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-semibold text-slate-600">🤖 AI調整案</p>
+                    {(adjustment as Record<string, unknown>).adjustedDeadline && (
+                      <p className="text-[11px] text-slate-600">📅 納期: <span className="font-medium">{(adjustment as Record<string, unknown>).adjustedDeadline as string}</span></p>
+                    )}
+                    {(adjustment as Record<string, unknown>).adjustedPriority && (
+                      <p className="text-[11px] text-slate-600">⚡ 優先度: <span className="font-medium">{(adjustment as Record<string, unknown>).adjustedPriority as string}</span></p>
+                    )}
+                    {(adjustment as Record<string, unknown>).adjustedDescription && (
+                      <p className="text-[11px] text-slate-600">📝 内容: <span className="font-medium line-clamp-2">{(adjustment as Record<string, unknown>).adjustedDescription as string}</span></p>
+                    )}
+                    {(adjustment as Record<string, unknown>).adjustedAssigneeName && (
+                      <p className="text-[11px] text-slate-600">👤 担当: <span className="font-medium">{(adjustment as Record<string, unknown>).adjustedAssigneeName as string}</span></p>
+                    )}
+                    <p className="text-[10px] text-slate-500 mt-1">{(adjustment as Record<string, unknown>).reasoning as string}</p>
+                    <div className="flex gap-1.5 mt-2">
+                      <button
+                        onClick={handleApplyAdjustment}
+                        disabled={isApplyingAdjustment}
+                        className="flex-1 py-1.5 text-[11px] font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        {isApplyingAdjustment ? '反映中...' : '✓ 承認して反映'}
+                      </button>
+                      <button
+                        onClick={() => { setShowAdjustment(false); setAdjustment(null); }}
+                        className="px-3 py-1.5 text-[11px] font-medium rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                      >
+                        閉じる
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 text-center py-2">調整案を生成できませんでした</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 修正提案モーダル */}
+        {showNegotiationModal && (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+            <div className="bg-white rounded-2xl p-5 max-w-sm mx-4 shadow-xl w-full">
+              <h3 className="text-base font-bold text-slate-900 mb-3">修正提案</h3>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-500 block mb-1">提案者（誰からの希望か）</label>
+                  <input
+                    type="text"
+                    value={negoRequesterName}
+                    onChange={(e) => setNegoRequesterName(e.target.value)}
+                    placeholder="例: 田中さん"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-500 block mb-1">変更の種類</label>
+                  <select
+                    value={negoChangeType}
+                    onChange={(e) => setNegoChangeType(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  >
+                    <option value="deadline">納期変更</option>
+                    <option value="priority">優先度変更</option>
+                    <option value="content">内容変更</option>
+                    <option value="reassign">担当者変更</option>
+                    <option value="other">その他</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-500 block mb-1">希望する変更内容</label>
+                  <input
+                    type="text"
+                    value={negoProposedValue}
+                    onChange={(e) => setNegoProposedValue(e.target.value)}
+                    placeholder={negoChangeType === 'deadline' ? '例: 2026-03-15' : negoChangeType === 'priority' ? '例: low' : '変更内容を入力'}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-500 block mb-1">理由（任意）</label>
+                  <textarea
+                    value={negoReason}
+                    onChange={(e) => setNegoReason(e.target.value)}
+                    rows={2}
+                    placeholder="変更の理由があれば"
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-3 mt-4 justify-end">
+                <button
+                  onClick={() => setShowNegotiationModal(false)}
+                  className="px-4 py-2 text-sm rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSubmitNegotiation}
+                  disabled={!negoRequesterName.trim() || !negoProposedValue.trim() || isSubmittingNego}
+                  className="px-4 py-2 text-sm font-semibold rounded-xl bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                >
+                  {isSubmittingNego ? '送信中...' : '提案を送信'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

@@ -205,7 +205,7 @@ export default function TaskCard({ task, isSelected, onClick, onQuickChat, onApp
         </div>
       </div>
 
-      {/* 提案中: 承認/却下ボタン */}
+      {/* 提案中: 承認/修正/却下ボタン */}
       {task.status === 'proposed' && onApprove && onReject && (
         <div
           className="mx-3 mb-2 flex gap-1.5"
@@ -224,15 +224,24 @@ export default function TaskCard({ task, isSelected, onClick, onQuickChat, onApp
             ✓ 承認
           </button>
           <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onClick(); // タスク詳細を開く（修正モーダルはTaskDetailで）
+            }}
+            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 transition-colors"
+          >
+            📝 修正
+          </button>
+          <button
             onClick={async (e) => {
               e.stopPropagation();
               setIsApproving(true);
               try { await onReject(task.id); } finally { setIsApproving(false); }
             }}
             disabled={isApproving}
-            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors disabled:opacity-50"
+            className="py-1.5 px-2.5 text-[11px] font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors disabled:opacity-50"
           >
-            ✕ 却下
+            ✕
           </button>
         </div>
       )}

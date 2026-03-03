@@ -35,6 +35,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
   { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
   { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
+  { label: 'タスク修正を調整', icon: <CheckSquare className="w-3.5 h-3.5" />, message: 'タスクの修正提案を確認して', category: 'task' },
   { label: '組織を整理', icon: <Building2 className="w-3.5 h-3.5" />, message: '未登録の組織を確認して', category: 'general' },
   { label: 'コンタクト追加', icon: <UserPlus className="w-3.5 h-3.5" />, message: '新しいコンタクトを登録したい', category: 'general' },
   { label: 'プロジェクト作成', icon: <FolderPlus className="w-3.5 h-3.5" />, message: '新しいプロジェクトを作成したい', category: 'log' },
@@ -1329,6 +1330,132 @@ export default function SecretaryChat() {
       }
       case 'skip_org': {
         // スキップは特にDB操作不要（カード上の表示のみ）
+        break;
+      }
+      // Phase 56c: タスク修正提案・調整
+      case 'generate_task_adjustment': {
+        const taskId = d?.taskId as string;
+        if (taskId) {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'AI調整案を生成しています...',
+            timestamp: new Date().toISOString(),
+          }]);
+          try {
+            const res = await fetch(`/api/tasks/${taskId}/negotiations/adjust`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+            });
+            const result = await res.json();
+            if (result.success && result.data) {
+              // 調整案付きのカードを表示
+              const statusRes = await fetch(`/api/tasks/${taskId}/negotiations`);
+              const statusResult = await statusRes.json();
+              const negoData = statusResult.success ? statusResult.data : { pendingRequests: [], pendingCount: 0 };
+
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: 'AI調整案を生成しました。内容を確認してください。',
+                cards: [{
+                  type: 'task_negotiation',
+                  data: {
+                    taskId,
+                    taskTitle: negoData.taskTitle || 'タスク',
+                    taskPriority: negoData.taskPriority || 'medium',
+                    taskDueDate: negoData.taskDueDate || null,
+                    pendingRequests: (negoData.pendingRequests || []).map((r: Record<string, unknown>) => ({
+                      id: r.id,
+                      requesterName: r.requesterName,
+                      changeType: r.changeType,
+                      proposedValue: r.proposedValue,
+                      reason: r.reason,
+                      currentValue: r.currentValue,
+                    })),
+                    pendingCount: negoData.pendingCount || 0,
+                    adjustment: result.data,
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                cards: [{ type: 'action_result', data: { success: false, message: 'AI調整案の生成に失敗しました', details: result.error || '' } }],
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'AI調整案の生成中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'approve_task_adjustment': {
+        const taskId = d?.taskId as string;
+        const adjustment = d?.adjustment as Record<string, unknown>;
+        if (taskId && adjustment) {
+          try {
+            const res = await fetch(`/api/tasks/${taskId}/negotiations/adjust`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adjustment }),
+            });
+            const result = await res.json();
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{
+                type: 'action_result',
+                data: result.success
+                  ? { success: true, message: 'タスクの修正を反映しました。タスクページで確認できます。' }
+                  : { success: false, message: '修正の反映に失敗しました', details: result.error || '' },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '修正反映中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'dismiss_task_negotiation': {
+        const taskId = d?.taskId as string;
+        if (taskId) {
+          try {
+            await fetch(`/api/tasks/${taskId}/negotiations/adjust`, {
+              method: 'DELETE',
+            });
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '',
+              cards: [{ type: 'action_result', data: { success: true, message: '修正提案を却下しました' } }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '修正提案の却下中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
         break;
       }
       default: {

@@ -95,6 +95,7 @@ type Intent =
   | 'create_organization'   // Phase 53c: 組織作成（手動）
   | 'create_project'        // Phase 53c: プロジェクト作成
   | 'search_contact'        // Phase 53c: コンタクト検索
+  | 'task_negotiation'      // Phase 56c: タスク修正提案・調整
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -140,6 +141,12 @@ function classifyIntent(message: string): Intent {
 
   // プロジェクト一覧
   if (m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('リスト') || m.includes('確認') || m.includes('見せて') || m.includes('見たい'))) return 'projects';
+
+  // Phase 56c: タスク修正提案・調整（「タスクの修正」「納期を変更」「優先度を上げ」「タスクを調整」）
+  if (m.includes('タスク') && (m.includes('修正') || m.includes('変更') || m.includes('調整'))) return 'task_negotiation';
+  if ((m.includes('納期') || m.includes('期限') || m.includes('締め切り')) && (m.includes('変更') || m.includes('延') || m.includes('前倒') || m.includes('ずらし'))) return 'task_negotiation';
+  if (m.includes('優先度') && (m.includes('変更') || m.includes('上げ') || m.includes('下げ') || m.includes('変え'))) return 'task_negotiation';
+  if (m.includes('担当') && (m.includes('変更') || m.includes('変え') || m.includes('替え'))) return 'task_negotiation';
 
   // タスク作成（「タスクを作成」「タスクを追加」「新しいタスク」「タスクとして登録」）
   if (m.includes('タスク') && (m.includes('作成') || m.includes('追加') || m.includes('作って') || m.includes('登録') || m.includes('新規') || m.includes('新しい'))) return 'create_task';
@@ -375,6 +382,15 @@ async function fetchDataAndBuildCards(
         // エラー時は0のまま
       }
 
+      // Phase 56c: 調整待ちタスク数を取得
+      let pendingNegotiations = 0;
+      try {
+        const { TaskNegotiationService } = await import('@/services/task/taskNegotiation.service');
+        pendingNegotiations = await TaskNegotiationService.getPendingNegotiationCount(userId);
+      } catch {
+        // エラー時は0のまま
+      }
+
       // 次の予定を計算
       let nextEvent: { title: string; time: string; minutesUntil?: number } | undefined;
       const now = new Date();
@@ -406,6 +422,7 @@ async function fetchDataAndBuildCards(
           pendingFileCount,
           pendingKnowledgeProposals,
           pendingTaskSuggestions,
+          pendingNegotiations,
           nextEvent,
         },
       });
@@ -1238,6 +1255,142 @@ async function fetchDataAndBuildCards(
         await handleTaskProgressIntent(supabase, userId, userMessage, tasks, cards, parts);
       } catch (taskError) {
         console.error('[Secretary API] タスク進行エラー:', taskError);
+      }
+    }
+
+    // Phase 56c: タスク修正提案・調整
+    if (intent === 'task_negotiation') {
+      try {
+        // 提案中タスク一覧を取得
+        const proposedTasks = tasks.filter(t => t.status === 'proposed');
+
+        if (proposedTasks.length === 0) {
+          parts.push('\n\n【情報】現在、提案中（修正可能）のタスクはありません。');
+        } else {
+          // Claude APIでユーザーメッセージからタスクを特定＋修正内容を抽出
+          const taskListForAI = proposedTasks.map((t, i) => `${i + 1}. [${t.id}] ${t.title}（優先度: ${t.priority}${t.due_date ? `, 期限: ${t.due_date}` : ''}）`).join('\n');
+
+          let matchedTask: TaskRow | null = null;
+          let changeType = 'other';
+          let proposedValue = '';
+          let reason = '';
+          let requesterName = '';
+
+          const apiKey = process.env.ANTHROPIC_API_KEY;
+          if (apiKey) {
+            try {
+              const Anthropic = (await import('@anthropic-ai/sdk')).default;
+              const anthropic = new Anthropic({ apiKey });
+              const aiResp = await anthropic.messages.create({
+                model: 'claude-sonnet-4-5-20250929',
+                max_tokens: 512,
+                messages: [{
+                  role: 'user',
+                  content: `以下のタスク一覧とユーザーメッセージから、修正対象タスクと修正内容を特定してください。
+
+【提案中タスク一覧】
+${taskListForAI}
+
+【ユーザーメッセージ】
+${userMessage}
+
+JSON形式で回答:
+{
+  "taskIndex": 1から始まるインデックス（特定できない場合は0）,
+  "changeType": "deadline" | "priority" | "content" | "reassign" | "other",
+  "proposedValue": "具体的な変更希望値（例: 2026-03-15, high, 新しい説明文 等）",
+  "reason": "変更理由（推定）",
+  "requesterName": "メッセージ中で誰からの希望か特定できれば名前、不明なら空文字"
+}`,
+                }],
+              });
+
+              const aiText = aiResp.content[0].type === 'text' ? aiResp.content[0].text : '';
+              const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const idx = (parsed.taskIndex || 0) - 1;
+                if (idx >= 0 && idx < proposedTasks.length) {
+                  matchedTask = proposedTasks[idx];
+                }
+                changeType = parsed.changeType || 'other';
+                proposedValue = parsed.proposedValue || '';
+                reason = parsed.reason || '';
+                requesterName = parsed.requesterName || '';
+              }
+            } catch (aiErr) {
+              console.error('[Secretary API] タスク修正AI解析エラー:', aiErr);
+            }
+          }
+
+          // タスクが特定できなかった場合、1件ならそれを使う
+          if (!matchedTask && proposedTasks.length === 1) {
+            matchedTask = proposedTasks[0];
+          }
+
+          if (matchedTask && proposedValue) {
+            // 修正リクエストを登録
+            const { TaskNegotiationService } = await import('@/services/task/taskNegotiation.service');
+            const request = await TaskNegotiationService.createRequest(matchedTask.id, userId, {
+              requesterName: requesterName || 'ユーザー',
+              changeType: changeType as 'deadline' | 'priority' | 'content' | 'reassign' | 'other',
+              proposedValue,
+              reason: reason || undefined,
+            });
+
+            if (request) {
+              // 交渉状態を取得してカード生成
+              const status = await TaskNegotiationService.getNegotiationStatus(matchedTask.id);
+              cards.push({
+                type: 'task_negotiation',
+                data: {
+                  taskId: matchedTask.id,
+                  taskTitle: matchedTask.title,
+                  taskPriority: matchedTask.priority,
+                  taskDueDate: matchedTask.due_date,
+                  pendingRequests: status.pendingRequests.map(r => ({
+                    id: r.id,
+                    requesterName: r.requesterName,
+                    changeType: r.changeType,
+                    proposedValue: r.proposedValue,
+                    reason: r.reason,
+                    currentValue: r.currentValue,
+                  })),
+                  pendingCount: status.pendingCount,
+                },
+              });
+              parts.push(`\n\n修正提案を記録しました（タスク: ${matchedTask.title}）。現在${status.pendingCount}件の修正希望があります。AI調整案を生成できます。`);
+            }
+          } else if (matchedTask) {
+            // タスクは特定できたが修正値が不明 → 修正希望の入力を促すカード
+            const { TaskNegotiationService } = await import('@/services/task/taskNegotiation.service');
+            const status = await TaskNegotiationService.getNegotiationStatus(matchedTask.id);
+            cards.push({
+              type: 'task_negotiation',
+              data: {
+                taskId: matchedTask.id,
+                taskTitle: matchedTask.title,
+                taskPriority: matchedTask.priority,
+                taskDueDate: matchedTask.due_date,
+                pendingRequests: status.pendingRequests.map(r => ({
+                  id: r.id,
+                  requesterName: r.requesterName,
+                  changeType: r.changeType,
+                  proposedValue: r.proposedValue,
+                  reason: r.reason,
+                  currentValue: r.currentValue,
+                })),
+                pendingCount: status.pendingCount,
+              },
+            });
+            parts.push(`\n\nタスク「${matchedTask.title}」の修正提案状況です。${status.pendingCount > 0 ? `${status.pendingCount}件の修正希望があります。AI調整案を生成できます。` : '修正希望を追加するには、具体的な変更内容を教えてください。'}`);
+          } else {
+            // タスク特定できず
+            parts.push(`\n\n修正対象のタスクを特定できませんでした。提案中のタスクは以下です:\n${taskListForAI}\n\n具体的なタスク名と修正内容を教えてください。`);
+          }
+        }
+      } catch (negoError) {
+        console.error('[Secretary API] タスク修正提案エラー:', negoError);
       }
     }
 
@@ -2288,6 +2441,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - ビジネスイベント自動蓄積（メッセージ・ドキュメント・会議が時系列で自動記録）
 - 週間活動要約（AI生成の週次レポート）
 - 思考マップ・ナレッジの参照
+- タスク修正提案・調整（「○○のタスクの納期を変更したい」→修正リクエスト記録→AI調整案生成→承認→タスク自動修正）
 
 ## コンタクト・組織・プロジェクトの管理
 ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:
