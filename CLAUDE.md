@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）まで反映）
+最終更新: 2026-03-04（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）+ ナレッジページ改善（Phase 57）まで反映）
 
 ---
 
@@ -147,6 +147,67 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 51 | データ連携強化: contact_patternsテーブル＋ContactPatternService（連絡頻度・推奨アクション）＋日次Cron compute-patterns＋メモ→種変換＋コンタクトタスク表示 | mainにマージ済み |
 | Phase 52 | 組織自動レコメンド: OrgRecommendationService（ドメイン集計→未登録組織候補検出）＋auto-setup API＋OrgRecommendationCard＋ブリーフィング連携 | mainにマージ済み |
 | Phase 53 | 秘書AI総合改善: secretary_conversations永続化＋コンテキスト15→30拡大＋新規intent（create_contact/search_contact/create_organization/create_project）＋インラインCRUDカード＋/api/contacts POST＋ダッシュボード初期画面＋カレンダー終日除外＋メッセージ詳細DB直接取得＋MessageDetailCard折りたたみ | mainにマージ済み |
+| Phase 57 | ナレッジページ改善（個人知識地図＋自動整理）: 今週のタグクラウド＋マイナレッジパネル＋/api/nodes/this-week＋/api/nodes/my-keywords＋ビジネスイベントキーワード抽出＋統計カード解説文 | mainにマージ済み |
+
+---
+
+## Phase 57 実装内容（ナレッジページ改善）
+
+### 概要
+ナレッジページ（/master）を「管理用CRUDページ」から「個人の知識地図」に改善。タスク・メッセージ・ビジネスイベントから自動抽出されたキーワードを、今週のタグクラウド＋カテゴリ別マイナレッジとして表示。蓄積は全ユーザー共有、表示は個人フィルタ。
+
+### 設計思想
+- **蓄積は共有**: `knowledge_master_entries` は全ユーザー共通。同じキーワードは1レコード
+- **表示は個人**: `thought_task_nodes.user_id` でフィルタし、個人の知識地図として表示
+- **構造化は半自動**: キーワード50個超で週次AIクラスタリング提案 → 秘書から承認するだけ
+
+### DBマイグレーション（Supabase実行済み）
+```sql
+-- 058_business_events_keywords.sql
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS keywords_extracted BOOLEAN DEFAULT false;
+```
+
+### 新規ファイル
+- `src/app/api/nodes/this-week/route.ts` — 今週のキーワードAPI（月曜起算、frequency・category・color付き）
+- `src/app/api/nodes/my-keywords/route.ts` — マイナレッジAPI（period=week/month/all、domain/field階層集計）
+- `src/components/master/ThisWeekTagCloud.tsx` — 今週のタグクラウドUI（頻度ベースフォントサイズ、クリックで詳細表示）
+- `src/components/master/MyKnowledgePanel.tsx` — マイナレッジパネルUI（ドメイン別折りたたみツリー、NodeChipにタスク/メッセージバッジ）
+- `supabase/migrations/058_business_events_keywords.sql` — business_events.keywords_extracted追加
+
+### 変更ファイル
+- `src/app/master/page.tsx` — ThisWeekTagCloud＋MyKnowledgePanelを既存タブの上に配置、subtitleを「個人の知識地図」に変更
+- `src/components/master/MasterStats.tsx` — 4つの統計カードに解説文追加
+- `src/app/api/cron/sync-business-events/route.ts` — イベント作成後にキーワード抽出追加＋既存未抽出イベントのバッチ処理（最大20件/回）
+
+### ページ構成（上から順に）
+```
+/master ページ
+  → 今週のタグクラウド（ThisWeekTagCloud）
+    - 頻度ベースのフォントサイズ（11px〜25px）
+    - ドメインカラーで色分け
+    - クリックで出現回数・関連タスク/種数を表示
+  → マイナレッジ（MyKnowledgePanel）
+    - 週間/月間/全期間の期間フィルタ
+    - ドメイン別折りたたみツリー → フィールド → キーワードチップ
+    - チップにタスク数（青）/メッセージ数（緑）バッジ
+  → 未確認ノードパネル（既存）
+  → 階層構造（管理）タブ / AI提案履歴タブ（既存）
+    - 統計カード4枚に解説文追加
+```
+
+### APIエンドポイント
+```
+GET /api/nodes/this-week
+→ { weekStart, weekEnd, nodes: [{id, label, frequency, relatedTaskIds, relatedSeedIds, category, color}] }
+
+GET /api/nodes/my-keywords?period=week|month|all
+→ { nodes: [{id, label, domainId, domainName, domainColor, fieldId, fieldName, relatedTaskCount, relatedMessageCount}], domainStats: [{domainId, domainName, domainColor, nodeCount, fields}], totalNodes, period }
+```
+
+### 重要な実装ノート
+- **getUserOverviewMapパターン再利用**: my-keywords APIはthought-map APIの `nodeMap` + `nodeTaskMap` パターンでノード重複排除＋集計
+- **ビジネスイベントキーワード抽出**: `ThoughtNodeService.extractAndLinkFromMessage()` を再利用。新規イベント作成時＋既存未抽出イベント（20件/回）の両方を処理
+- **keywords_extracted フラグ**: 再処理防止。NULLまたはfalseのイベントのみ抽出対象
 
 ---
 
