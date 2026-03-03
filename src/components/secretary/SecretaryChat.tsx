@@ -359,7 +359,8 @@ function FileUploadPanel({ onClose, onUploadComplete }: FileUploadPanelProps) {
 // テキスト内のURLをクリック可能なリンクに変換
 // Markdown形式 [text](url) と 生URL の両方に対応
 // ========================================
-function linkifyText(text: string, isUser: boolean): React.ReactNode {
+function linkifyText(text: string | undefined | null, isUser: boolean): React.ReactNode {
+  if (!text) return null;
   // Markdown形式のリンク [text](url) と 生URL を同時に検出
   const combinedRegex = /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s)]+)/g;
   const result: React.ReactNode[] = [];
@@ -461,15 +462,17 @@ export default function SecretaryChat() {
         const res = await fetch('/api/agent/conversations?limit=50');
         const data = await res.json();
         if (data.success && data.data?.messages?.length > 0) {
-          const restored: SecretaryMessage[] = data.data.messages.map((m: {
-            id: string; role: string; content: string; cards?: CardData[]; timestamp: string;
-          }) => ({
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content: m.content,
-            cards: m.cards || undefined,
-            timestamp: m.timestamp,
-          }));
+          const restored: SecretaryMessage[] = data.data.messages
+            .filter((m: { content?: string }) => m.content) // contentがないメッセージは除外
+            .map((m: {
+              id: string; role: string; content: string; cards?: CardData[]; timestamp: string;
+            }) => ({
+              id: m.id || generateId(),
+              role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
+              content: m.content || '',
+              cards: Array.isArray(m.cards) ? m.cards.filter((c: CardData) => c && c.type && c.data) : undefined,
+              timestamp: m.timestamp || new Date().toISOString(),
+            }));
           setMessages(restored);
           setHasBriefing(true);
           setIsRestoringHistory(false);

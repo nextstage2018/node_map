@@ -1525,6 +1525,9 @@ export function CardRenderer({
   card: CardData;
   onAction?: (action: string, data: unknown) => void;
 }) {
+  // 防御: card.dataがnull/undefinedの場合は描画しない
+  if (!card || !card.type || !card.data) return null;
+
   switch (card.type) {
     case 'inbox_summary':
       return (
