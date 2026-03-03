@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）まで反映）
+最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）まで反映）
 
 ---
 
@@ -141,6 +141,69 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | caa30d6 |
 | Phase 48 | バグ修正・機能強化: セットアップウィザード修正＋秘書サジェスト改善＋Drive/Calendarスコープチェック＋カレンダー予定作成intent＋Driveフォルダ作成intent（プロジェクト紐付け＋命名規則＋drive_folders登録）＋URLリンク化＋プロジェクトメンバー表示＋コンタクトプロジェクト表示＋秘書ファイルアップロード（resumable upload方式＋CORS対応サーバー検索） | mainにマージ済み |
 | Phase 49 | タスクページ改善（削除・完了アーカイブ・2カラムカンバン・アイコン修正・AI会話入力改善）＋秘書チャットからタスク作成・進行（create_task/task_progress intent＋TaskFormCard/TaskProgressCard） | mainにマージ済み |
+| Phase 50 | タスクファイル添付（Resumable Upload）＋ビジネスログにドキュメントURL記載＋AI構想会話の進行状況検出＋プロンプト改善＋構想→進行フェーズ移行時status自動変更＋タスク完了アーカイブに会話ログ保全 | mainにマージ済み |
+
+---
+
+## Phase 50 実装内容（タスクファイル添付・AI構想会話改善）
+
+### 概要
+タスク詳細画面からファイルをアップロードしてプロジェクトのGoogleDriveフォルダに格納する機能を追加。タスク完了時のビジネスログアーカイブにドキュメントURLも記載。また、AI構想会話の品質向上（進行状況検出・プロンプト改善）とフェーズ遷移時のステータス自動変更を実装。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 040_task_file_linking.sql
+ALTER TABLE drive_documents
+  ADD COLUMN IF NOT EXISTS task_id UUID REFERENCES tasks(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_drive_docs_task ON drive_documents(task_id);
+```
+
+### 新規ファイル
+- `supabase/migrations/040_task_file_linking.sql` — drive_documentsにtask_idカラム追加
+- `src/app/api/tasks/[id]/files/route.ts` — タスクファイル一覧(GET) + 切り離し(PATCH)
+- `src/components/tasks/TaskFileUploadPanel.tsx` — タスク用コンパクトファイルアップロードUI（Resumable Upload方式）
+
+### 変更ファイル
+- `src/app/api/drive/upload/complete/route.ts` — taskIdパラメータ対応（drive_documents登録時にtask_id設定）
+- `src/components/tasks/TaskDetail.tsx` — 📎ドキュメントセクション追加（ファイル一覧・アップロードパネル・ファイル切り離し）
+- `src/services/task/taskClient.service.ts` — archiveTaskToBusinessLogにドキュメントURL記載追加＋会話ログ保全
+- `src/services/ai/aiClient.service.ts` — AI構想会話プロンプト改善（coveredItems検出・進行状況注入・繰り返し防止）
+- `src/components/tasks/TaskAiChat.tsx` — 構想進捗トラッカーUI（4項目検出＋プログレスバー）＋フェーズ遷移時status='in_progress'自動設定
+- `src/app/api/tasks/chat/route.ts` — プロジェクト/組織コンテキスト取得をAI会話に渡す
+
+### タスクファイルアップロードのフロー
+```
+TaskDetail 📎セクション → 「+ 追加」ボタン
+  → TaskFileUploadPanel表示（ドラッグ&ドロップ / クリック選択）
+  → 書類種別選択（提案書・見積書・契約書 etc.）
+  → Step1: POST /api/drive/upload（taskId付き、resumable URL生成）
+  → Step2: ブラウザ → Google Drive API に直接PUT
+  → Step3: POST /api/drive/upload/complete（task_id付きでdrive_documents登録）
+  → ファイル一覧に表示（名前・種別・Driveリンク・切り離しボタン）
+```
+
+### ビジネスログアーカイブの強化
+```
+タスク完了時 → archiveTaskToBusinessLog()
+  → 構想メモ（ideation_summary）
+  → 結果要約（result_summary）
+  → 📎 関連ドキュメント（drive_documentsからtask_id一致のファイル名+URL）
+  → 📝 会話ログ（task_conversationsの全会話をフェーズ付きで記録）
+  → business_events に一括保存
+  → タスク削除（FK CASCADEで関連データも削除、ドキュメントはON DELETE SET NULLで残存）
+```
+
+### AI構想会話の改善
+- **進行状況検出**: 会話履歴からキーワードマッチで議論済み項目（ゴール/内容/気になる点/期限）を自動検出
+- **プロンプト注入**: 「会話の進行状況」セクションをシステムプロンプトに動的追加。既に議論した項目を繰り返さない指示
+- **プログレスバーUI**: 4項目の達成状況を視覚的に表示。全項目完了で「進行フェーズへ」ボタン表示
+- **フェーズ遷移時status変更**: 構想→進行フェーズ移行時にstatus='in_progress'を自動設定（カンバンの「進行中」列に移動）
+
+### 重要な実装ノート
+- **ON DELETE SET NULL**: drive_documents.task_idはタスク削除時にNULLになる（ファイル自体はDriveに残存）
+- **プロジェクト必須**: ファイルアップロードはproject_idが設定されているタスクのみ可能（Driveフォルダ構造がプロジェクト基盤のため）
+- **Resumable Upload再利用**: 秘書チャットの既存アップロード基盤（3段階方式）をそのまま活用
+- **coveredItems検出**: 正規表現ベースの軽量検出。AIのJSON解析ではなくキーワードマッチで高速・確実
 
 ---
 
