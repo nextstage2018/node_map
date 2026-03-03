@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）まで反映）
+最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）まで反映）
 
 ---
 
@@ -140,6 +140,65 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 46 | ビジネスログページ改善（コンポーネント分割・AI区別・フィルタ・ダッシュボード）＋ナレッジページ改善（CRUD UI・未確認ノード管理・キーワード詳細） | mainにマージ済み |
 | Phase 47 | ナレッジ自動構造化（AIクラスタリング提案＋秘書KnowledgeProposalCard＋提案履歴タブ＋週次Cron） | caa30d6 |
 | Phase 48 | バグ修正・機能強化: セットアップウィザード修正＋秘書サジェスト改善＋Drive/Calendarスコープチェック＋カレンダー予定作成intent＋Driveフォルダ作成intent（プロジェクト紐付け＋命名規則＋drive_folders登録）＋URLリンク化＋プロジェクトメンバー表示＋コンタクトプロジェクト表示＋秘書ファイルアップロード（resumable upload方式＋CORS対応サーバー検索） | mainにマージ済み |
+| Phase 49 | タスクページ改善（削除・完了アーカイブ・2カラムカンバン・アイコン修正・AI会話入力改善）＋秘書チャットからタスク作成・進行（create_task/task_progress intent＋TaskFormCard/TaskProgressCard） | mainにマージ済み |
+
+---
+
+## Phase 49 実装内容（タスクページ改善・秘書タスク連携）
+
+### 概要
+タスクページのUX改善（削除機能・完了アーカイブ・カンバン2カラム化・アイコン修正・AI会話入力欄改善）と、秘書チャットからのタスク作成・進行機能を実装。
+
+### タスクページ改善
+
+**タスク削除機能**:
+- `TaskService.deleteTask()` メソッド追加（FK CASCADE で関連データも削除）
+- `DELETE /api/tasks` エンドポイント追加
+- TaskDetail に削除ボタン＋確認モーダル
+
+**完了時アーカイブ**:
+- `TaskService.archiveTaskToBusinessLog()` メソッド追加（business_eventsに記録）
+- タスク完了（status='done'）時にビジネスログへアーカイブ → タスク削除
+- カンバンから「完了」列を除去（2カラム: todo / in_progress）
+
+**アイコン修正**:
+- `TASK_PHASE_CONFIG` アイコン: SVGパス → 絵文字（💡構想 / 🔧進行 / 📊結果）
+- `IDEATION_MEMO_FIELDS` アイコン: SVGパス → 絵文字（🎯ゴール / 📝内容 / ⚠️懸念 / 📅期限）
+
+**AI会話入力欄改善（TaskAiChat.tsx）**:
+- Enter送信を無効化 → 送信ボタンのみで送信（IME変換確定の誤送信防止）
+- テキストエリア自動リサイズ（scrollHeight連動、最大160px）
+
+### 秘書チャットからタスク作成・進行
+
+**新規intent（agent/chat/route.ts）**:
+- `create_task`: 「タスクを作成して」「新しいタスクを追加」等。AIがメッセージからタイトル・優先度・プロジェクトを自動推定
+- `task_progress`: 「タスクを進めたい」「タスクについて相談」等。AIがタスクを特定して進行カードを表示
+
+**新規カード（ChatCards.tsx）**:
+- `TaskFormCard`: タイトル・説明・優先度・プロジェクト・期限の入力フォーム。作成ボタンで `/api/tasks` POST
+- `TaskProgressCard`: タスク状態表示・最近の会話履歴・AIへの相談入力欄。タスクページへの遷移ボタン
+
+**アクション（SecretaryChat.tsx）**:
+- `submit_task_form`: フォーム送信 → `/api/tasks` POST → TaskCreatedCard表示
+- `task_chat`: AIに相談 → `/api/tasks/chat` POST → 回答をチャットに表示
+- サジェストチップに「タスクを作成」「タスクを進める」追加
+
+### 変更ファイル
+- `src/lib/constants.ts` — SVGパスアイコン → 絵文字に変更
+- `src/services/task/taskClient.service.ts` — deleteTask / archiveTaskToBusinessLog 追加
+- `src/app/api/tasks/route.ts` — DELETE ハンドラー追加、PUT で完了時アーカイブ＋削除
+- `src/components/tasks/TaskDetail.tsx` — 削除ボタン＋確認モーダル＋完了ボタン
+- `src/components/tasks/TaskAiChat.tsx` — Enter送信無効化＋自動リサイズ
+- `src/app/tasks/page.tsx` — 2カラムカンバン（done列除去）＋onDelete
+- `src/app/api/agent/chat/route.ts` — create_task / task_progress intent＋ハンドラー追加
+- `src/components/secretary/ChatCards.tsx` — TaskFormCard / TaskProgressCard＋CardRenderer登録
+- `src/components/secretary/SecretaryChat.tsx` — submit_task_form / task_chat アクション＋サジェストチップ
+
+### 重要な実装ノート
+- **アーカイブ→削除**: 完了時はまずbusiness_eventsに記録してからtasksを削除。FK CASCADEで関連テーブル（task_conversations, thought_task_nodes等）も自動削除
+- **IME対策**: Enter送信を完全無効化し、送信ボタンのみで送信。日本語入力の変換確定でメッセージが誤送信される問題を解消
+- **タスク進行のAI推定**: ユーザーメッセージにタスク名が含まれていない場合、Claude APIでタスク一覧から最も関連するものを推定
 
 ---
 
