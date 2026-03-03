@@ -27,18 +27,30 @@ export default function MasterStats({
       <div className="p-4 bg-white rounded-xl border border-slate-200">
         <p className="text-xs text-slate-400 mb-1">マスタキーワード数</p>
         <p className="text-2xl font-bold text-slate-900">{totalEntries}</p>
+        <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+          AI会話やメッセージから自動抽出された全キーワードの総数
+        </p>
       </div>
       <div className="p-4 bg-white rounded-xl border border-slate-200">
         <p className="text-xs text-slate-400 mb-1">分類済みノード</p>
         <p className="text-2xl font-bold text-slate-900">{totalNodes}</p>
+        <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+          領域・分野に振り分け済みのキーワード数
+        </p>
       </div>
       <div className="p-4 bg-white rounded-xl border border-slate-200">
         <p className="text-xs text-slate-400 mb-1">未分類ノード</p>
         <p className="text-2xl font-bold text-slate-900">{unclassifiedCount}</p>
+        <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+          確認済みだが領域が未設定のキーワード数
+        </p>
       </div>
       <div className="p-4 bg-white rounded-xl border border-slate-200">
         <p className="text-xs text-slate-400 mb-1">領域数</p>
         <p className="text-2xl font-bold text-slate-900">{stats.length}</p>
+        <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
+          AI提案の承認または手動で作成された分類カテゴリ数
+        </p>
       </div>
 
       {/* 領域別バー */}
