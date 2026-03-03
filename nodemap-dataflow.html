@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NodeMap - システム全体データフロー図</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', sans-serif; background: #0f172a; color: #e2e8f0; overflow: hidden; }
+
+/* ===== Top Bar ===== */
+.topbar { position: fixed; top: 0; left: 0; right: 0; height: 48px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; padding: 0 16px; z-index: 100; gap: 16px; }
+.topbar h1 { font-size: 15px; font-weight: 600; color: #f8fafc; white-space: nowrap; }
+.topbar .sep { color: #475569; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: #94a3b8; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+.zoom-controls { margin-left: auto; display: flex; gap: 4px; }
+.zoom-controls button { background: #334155; border: 1px solid #475569; color: #e2e8f0; width: 28px; height: 28px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.zoom-controls button:hover { background: #475569; }
+
+/* ===== Canvas ===== */
+.canvas-wrap { position: fixed; top: 48px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; }
+.canvas-wrap.grabbing { cursor: grabbing; }
+.canvas { position: absolute; transform-origin: 0 0; }
+
+/* ===== Nodes ===== */
+.node { position: absolute; border-radius: 10px; padding: 10px 14px; cursor: pointer; transition: box-shadow 0.2s, transform 0.15s; user-select: none; min-width: 120px; }
+.node:hover { transform: scale(1.04); z-index: 10; }
+.node-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; display: flex; align-items: center; gap: 5px; }
+.node-sub { font-size: 10px; opacity: 0.8; line-height: 1.4; }
+.node-badge { font-size: 9px; background: rgba(255,255,255,0.15); padding: 1px 6px; border-radius: 8px; margin-top: 4px; display: inline-block; }
+
+/* Node types */
+.node-external { background: linear-gradient(135deg, #1e3a5f, #1e293b); border: 1.5px solid #3b82f6; }
+.node-page { background: linear-gradient(135deg, #1a2e1a, #1e293b); border: 1.5px solid #22c55e; }
+.node-page:hover { box-shadow: 0 0 20px rgba(34,197,94,0.3); }
+.node-store { background: linear-gradient(135deg, #2d1b4e, #1e293b); border: 1.5px solid #a855f7; }
+.node-store:hover { box-shadow: 0 0 20px rgba(168,85,247,0.3); }
+.node-cron { background: linear-gradient(135deg, #3b2a1a, #1e293b); border: 1.5px solid #f59e0b; }
+.node-cron:hover { box-shadow: 0 0 20px rgba(245,158,11,0.3); }
+.node-ai { background: linear-gradient(135deg, #1a2a3b, #1e293b); border: 1.5px solid #06b6d4; }
+.node-ai:hover { box-shadow: 0 0 20px rgba(6,182,212,0.3); }
+.node-google { background: linear-gradient(135deg, #2a1a1a, #1e293b); border: 1.5px solid #ef4444; }
+.node-google:hover { box-shadow: 0 0 20px rgba(239,68,68,0.3); }
+
+/* ===== SVG Arrows ===== */
+svg.arrows { position: absolute; top: 0; left: 0; pointer-events: none; }
+svg.arrows path { fill: none; stroke-width: 1.8; }
+svg.arrows .arrow-user { stroke: #22c55e; opacity: 0.5; }
+.arrow-user-label { fill: #22c55e; font-size: 9px; }
+svg.arrows .arrow-auto { stroke: #f59e0b; opacity: 0.5; stroke-dasharray: 6 3; }
+.arrow-auto-label { fill: #f59e0b; font-size: 9px; }
+svg.arrows .arrow-ai { stroke: #06b6d4; opacity: 0.5; stroke-dasharray: 3 3; }
+.arrow-ai-label { fill: #06b6d4; font-size: 9px; }
+svg.arrows .arrow-sync { stroke: #a855f7; opacity: 0.5; }
+.arrow-sync-label { fill: #a855f7; font-size: 9px; }
+svg.arrows marker path { stroke: none; }
+
+/* ===== Detail Panel ===== */
+.panel { position: fixed; top: 48px; right: -420px; width: 420px; bottom: 0; background: #1e293b; border-left: 1px solid #334155; transition: right 0.3s; z-index: 50; overflow-y: auto; padding: 20px; }
+.panel.open { right: 0; }
+.panel-close { position: absolute; top: 12px; right: 12px; background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; }
+.panel h2 { font-size: 16px; font-weight: 700; margin-bottom: 12px; padding-right: 30px; }
+.panel h3 { font-size: 13px; font-weight: 600; color: #94a3b8; margin: 14px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+.panel p, .panel li { font-size: 13px; line-height: 1.6; color: #cbd5e1; }
+.panel ul { padding-left: 18px; }
+.panel .tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 6px; margin: 2px 2px 2px 0; }
+.tag-table { background: #3b1f6e; color: #c4b5fd; }
+.tag-api { background: #1e3a5f; color: #93c5fd; }
+.tag-page { background: #14532d; color: #86efac; }
+
+/* ===== Zone Labels ===== */
+.zone-label { position: absolute; font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.08); letter-spacing: 2px; text-transform: uppercase; pointer-events: none; }
+
+/* ===== Filter ===== */
+.filter-bar { display: flex; gap: 6px; }
+.filter-btn { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid #475569; background: transparent; color: #94a3b8; cursor: pointer; }
+.filter-btn.active { background: #334155; color: #f8fafc; border-color: #64748b; }
+
+/* ===== Minimap ===== */
+.minimap { position: fixed; bottom: 12px; right: 12px; width: 200px; height: 130px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; z-index: 60; overflow: hidden; }
+.minimap-viewport { position: absolute; border: 1.5px solid #3b82f6; background: rgba(59,130,246,0.1); pointer-events: none; }
+.minimap canvas { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1>NodeMap データフロー図</h1>
+  <span class="sep">|</span>
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">すべて</button>
+    <button class="filter-btn" data-filter="node-page">画面</button>
+    <button class="filter-btn" data-filter="node-store">DB</button>
+    <button class="filter-btn" data-filter="node-cron">Cron</button>
+    <button class="filter-btn" data-filter="node-ai">AI</button>
+    <button class="filter-btn" data-filter="node-external">外部</button>
+    <button class="filter-btn" data-filter="node-google">Google</button>
+  </div>
+  <span class="sep">|</span>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>ユーザー操作</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div>自動/Cron</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div>AI処理</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#a855f7"></div>同期</div>
+  </div>
+  <div class="zoom-controls">
+    <button id="zoomIn">+</button>
+    <button id="zoomReset">⌂</button>
+    <button id="zoomOut">−</button>
+  </div>
+</div>
+
+<div class="canvas-wrap" id="canvasWrap">
+  <div class="canvas" id="canvas">
+    <svg class="arrows" id="arrows" width="3600" height="2800"></svg>
+  </div>
+</div>
+
+<div class="panel" id="panel">
+  <button class="panel-close" id="panelClose">&times;</button>
+  <div id="panelContent"></div>
+</div>
+
+<div class="minimap" id="minimap">
+  <canvas id="minimapCanvas" width="200" height="130"></canvas>
+  <div class="minimap-viewport" id="minimapViewport"></div>
+</div>
+
+<script>
+// ========== DATA ==========
+const NODES = [
+  // ---- 外部サービス (左端) ----
+  { id: 'gmail', x: 40, y: 120, type: 'external', icon: '📧', title: 'Gmail', sub: 'メール送受信', detail: { desc: 'Google Gmail API経由でメール送受信。OAuth2認証。', tables: [], apis: ['/api/auth/gmail'], flows: ['受信メール → inbox_messages', '送信 → Gmail API → inbox_messages(sent)'] } },
+  { id: 'slack', x: 40, y: 260, type: 'external', icon: '💬', title: 'Slack', sub: 'メッセージ送受信', detail: { desc: 'Slack API経由。チャネル/DM対応。', tables: [], apis: ['/api/auth/slack'], flows: ['受信 → inbox_messages', '送信 → Slack API'] } },
+  { id: 'chatwork', x: 40, y: 400, type: 'external', icon: '💭', title: 'Chatwork', sub: 'メッセージ送受信', detail: { desc: 'Chatwork API経由。ルーム/DM対応。', tables: [], apis: [], flows: ['受信 → inbox_messages', '送信 → Chatwork API'] } },
+
+  // ---- インボックス ----
+  { id: 'inbox_page', x: 280, y: 200, type: 'page', icon: '📥', title: 'インボックス', sub: '/inbox\nメッセージ一覧・返信・アクション', detail: { desc: '全チャネル（Gmail/Slack/Chatwork）のメッセージを統合表示。未読/既読管理、スレッド表示、返信AI下書き、ジョブ化、タスク化のアクションボタン。', tables: ['inbox_messages'], apis: ['/api/messages (GET/POST)', '/api/messages/send', '/api/messages/reply', '/api/messages/read'], flows: ['返信 → AI下書き生成 → 送信', 'ジョブ化 → jobs テーブル', 'タスク化 → seeds テーブル（種化）', '種化時 → project_channels からプロジェクト自動検出'] } },
+
+  // ---- DB: inbox_messages ----
+  { id: 'db_inbox', x: 280, y: 60, type: 'store', icon: '🗄️', title: 'inbox_messages', sub: 'メッセージDB\ndirection: received/sent', detail: { desc: '全チャネルのメッセージを格納。user_idカラムなし。directionで送受信区別。drive_syncedでDrive同期状態管理。', tables: ['inbox_messages'], apis: [], flows: ['← Gmail/Slack/Chatwork受信', '← 送信メッセージ保存', '→ コンタクト自動生成', '→ Cron: ノード抽出', '→ Cron: ビジネスイベント生成', '→ Cron: Drive添付同期'] } },
+
+  // ---- コンタクト ----
+  { id: 'contacts_page', x: 520, y: 120, type: 'page', icon: '👤', title: 'コンタクト', sub: '/contacts\n連絡先管理・マージ・AI分析', detail: { desc: 'from_addressで集約されたコンタクト一覧。重複検出・マージ、AIコミュニケーション分析（notes自動生成）、チャネル統合。', tables: ['contact_persons', 'contact_channels'], apis: ['/api/contacts (CRUD)', '/api/contacts/duplicates', '/api/contacts/merge', '/api/contacts/enrich', '/api/contacts/suggest'], flows: ['inbox_messagesから自動生成', 'AI分析 → notes更新', '重複マージ → チャネル統合', '→ 組織にメンバー追加'] } },
+
+  // ---- DB: contacts ----
+  { id: 'db_contacts', x: 520, y: 290, type: 'store', icon: '🗄️', title: 'contact_persons', sub: 'コンタクトDB\nid: TEXT型（手動生成必須）', detail: { desc: 'コンタクト本体。idはTEXT型で自動生成なし。team_${Date.now()}_${random}等で生成。contact_channelsでメール/Slack/CW連絡先を管理。', tables: ['contact_persons', 'contact_channels'], apis: [], flows: ['← inbox_messagesから自動生成', '← 手動作成', '→ 組織メンバー', '→ ジョブの送信先', '→ 返信下書きのコンテキスト'] } },
+
+  // ---- 組織 ----
+  { id: 'org_page', x: 760, y: 120, type: 'page', icon: '🏢', title: '組織', sub: '/organizations\n組織管理・メンバー・チャネル', detail: { desc: '自社・取引先の組織管理。ドメインで重複防止。メンバー（コンタクト）追加、チャネル連携、関係性管理。', tables: ['organizations', 'organization_channels'], apis: ['/api/organizations (CRUD)', '/api/organizations/[id]/members', '/api/organizations/[id]/channels', '/api/organizations/[id]/detect-members'], flows: ['コンタクトをメンバーとして追加', 'チャネル(Slack/CW/Email)を紐づけ', '→ プロジェクトの親組織'] } },
+
+  // ---- DB: organizations ----
+  { id: 'db_orgs', x: 760, y: 290, type: 'store', icon: '🗄️', title: 'organizations', sub: '組織DB\ndomain重複チェック', detail: { desc: '組織本体。domain/relationship_type/address/phone/memo。organization_channelsでSlack/CW/Emailチャネル管理。', tables: ['organizations', 'organization_channels'], apis: [], flows: ['← 手動作成（SetupWizard/組織ページ）', '→ プロジェクトに紐づく', '→ Driveフォルダの第1階層'] } },
+
+  // ---- ビジネスログ ----
+  { id: 'bizlog_page', x: 1000, y: 120, type: 'page', icon: '📊', title: 'ビジネスログ', sub: '/business-log\nプロジェクト・イベント・ドキュメント', detail: { desc: 'プロジェクト管理＋ビジネスイベントタイムライン。AI自動イベント/週間要約カード表示。チャネル設定・メッセージ一覧・ドキュメント一覧。全体ダッシュボード。', tables: ['projects', 'business_events', 'project_channels'], apis: ['/api/projects (CRUD)', '/api/business-events (CRUD)', '/api/projects/[id]/channels', '/api/projects/[id]/messages'], flows: ['プロジェクト作成（組織紐づけ）', 'イベント手動作成（議事録・参加者）', '← Cron: メッセージ→自動イベント', '← Cron: AI週間要約', '← タスク完了アーカイブ'] } },
+
+  // ---- DB: projects + business_events ----
+  { id: 'db_projects', x: 1000, y: 290, type: 'store', icon: '🗄️', title: 'projects / events', sub: 'プロジェクト＋ビジネスイベントDB', detail: { desc: 'projects: organization_id紐づけ。business_events: ai_generated/summary_period/source_message_id等。project_channels: チャネルマッピング。', tables: ['projects', 'business_events', 'project_channels'], apis: [], flows: ['← 手動作成', '← Cron自動生成（ai_generated=true）', '← タスク完了アーカイブ', '← ファイル承認時イベント', '→ Driveフォルダの第2階層'] } },
+
+  // ---- 秘書AI ----
+  { id: 'secretary_page', x: 520, y: 500, type: 'page', icon: '🤖', title: '秘書AI', sub: '/agent\nメインチャットUI・全機能ハブ', detail: { desc: 'NodeMapのメインUI。自然言語で全機能にアクセス。Intent分類→データ取得→カード生成→AI応答。ブリーフィング・返信下書き・ジョブ承認・タスク作成/進行・ファイル確認・カレンダー・Drive操作・ナレッジ提案。', tables: ['（読み取り専用ハブ）'], apis: ['/api/agent/chat (POST)'], flows: ['ブリーフィング → 数値ダッシュボード+予定+アラート', '返信下書き → AI生成→承認→送信', 'ジョブ作成 → AI下書き→承認→自動実行', 'タスク作成/進行 → フォーム→DB保存', 'ファイル確認 → staging一覧→承認/却下', 'カレンダー予定作成 → 自然言語→日時パース', 'Driveフォルダ作成 → プロジェクト紐づけ', 'URL格納指示 → Drive登録', 'ナレッジ提案 → 承認/却下', '活動要約 → AI週間サマリー'] } },
+
+  // ---- 種ボックス ----
+  { id: 'seeds_page', x: 280, y: 500, type: 'page', icon: '🌱', title: '種ボックス', sub: '/seeds（段階的廃止予定）\nアイデア→タスク変換', detail: { desc: 'インボックスからの種化、またはAI会話での構想。AI構造化タスク変換。プロジェクト自動検出。', tables: ['seeds', 'seed_conversations'], apis: ['/api/seeds (CRUD)', '/api/seeds/chat', '/api/seeds/[id]/confirm', '/api/seeds/convert'], flows: ['← インボックスから種化', '← 秘書チャットから思考マップ飛地→種化', 'AI会話 → キーワード抽出 → ナレッジ', 'AI会話 → 思考動線（edges）記録', '確定 → AI構造化 → タスクに変換', '会話履歴 → タスクに引き継ぎ'] } },
+
+  // ---- DB: seeds ----
+  { id: 'db_seeds', x: 280, y: 660, type: 'store', icon: '🗄️', title: 'seeds', sub: '種DB\nproject_id / source_from', detail: { desc: '種ボックス本体。project_id/source_from/source_date。seed_conversationsでAI会話管理。', tables: ['seeds', 'seed_conversations'], apis: [], flows: ['← インボックスから種化（チャネルでプロジェクト自動検出）', '← 思考マップから種化', '→ タスクに変換（AI構造化）', '→ 思考ノード/エッジ生成'] } },
+
+  // ---- タスク ----
+  { id: 'tasks_page', x: 520, y: 660, type: 'page', icon: '✅', title: 'タスク', sub: '/tasks\n2カラムカンバン（todo/進行中）', detail: { desc: 'タスク管理。構想→進行→結果の3フェーズ。AI伴走会話。構想メモ（ゴール/内容/懸念/期限）。完了→ビジネスログアーカイブ→削除。ファイル添付（Resumable Upload）。', tables: ['tasks', 'task_conversations'], apis: ['/api/tasks (CRUD)', '/api/tasks/chat', '/api/tasks/[id]/members', '/api/tasks/[id]/files'], flows: ['← 種から変換（AI構造化）', '← 秘書から直接作成', 'AI会話 → キーワード抽出 → ナレッジ', 'AI会話 → 思考動線（edges）記録', 'スケジュール設定 → Googleカレンダー同期', 'ファイル添付 → Google Drive', '完了 → ビジネスログアーカイブ → 削除'] } },
+
+  // ---- DB: tasks ----
+  { id: 'db_tasks', x: 520, y: 840, type: 'store', icon: '🗄️', title: 'tasks', sub: 'タスクDB\nid: UUID / seed_id / project_id', detail: { desc: 'タスク本体。UUID（gen_random_uuid）。task_conversations/task_members/thought_task_nodes/thought_edges。scheduled_start/end/calendar_event_id。', tables: ['tasks', 'task_conversations', 'task_members'], apis: [], flows: ['← 種から変換', '← 秘書から作成', '→ 完了時: business_events + 削除(CASCADE)', '→ Googleカレンダー同期', '→ 思考ノード/エッジ', '→ スナップショット(initial_goal/final_landing)'] } },
+
+  // ---- ジョブ ----
+  { id: 'jobs_page', x: 760, y: 500, type: 'page', icon: '⚡', title: 'ジョブ', sub: '/jobs\nAI委任の日常簡易作業', detail: { desc: '返信/日程調整/確認/その他の4種別。pending→approved→executing→done/failed。秘書チャットから承認・実行。', tables: ['jobs'], apis: ['/api/jobs (CRUD)', '/api/jobs/[id]/execute'], flows: ['← 秘書「〜しておいて」で作成', '← インボックスからジョブ化', 'AI下書き生成 → 承認 → 自動実行', '返信ジョブ → Email/Slack/CW送信', '日程調整ジョブ → カレンダー予定作成', 'スケジュール設定 → Googleカレンダー同期'] } },
+
+  // ---- DB: jobs ----
+  { id: 'db_jobs', x: 760, y: 660, type: 'store', icon: '🗄️', title: 'jobs', sub: 'ジョブDB\ntype: reply/schedule/check/other', detail: { desc: 'ジョブ本体。reply_to_message_id/target_contact_id/target_address。execution_log/execution_metadata。approved_at/executed_at。', tables: ['jobs'], apis: [], flows: ['← 秘書/インボックスから作成', '→ 実行時: 送信サービス呼び出し', '→ 実行時: inbox_messages(sent)保存', '→ カレンダー同期'] } },
+
+  // ---- アイデアメモ ----
+  { id: 'memos_page', x: 760, y: 840, type: 'page', icon: '💡', title: 'アイデアメモ', sub: '/memos\n断片的な思いつきを記録', detail: { desc: '断片的なアイデアを記録。タグ(TEXT[])管理。AI会話（memo_conversations）でアイデアを深掘り。タスク変換機能なし。', tables: ['idea_memos', 'memo_conversations'], apis: ['/api/memos (CRUD)', '/api/memos/chat'], flows: ['手動作成', 'AI会話で深掘り', 'タグで分類'] } },
+
+  // ---- 思考マップ ----
+  { id: 'thoughtmap_page', x: 280, y: 900, type: 'page', icon: '🗺️', title: '思考マップ', sub: '/thought-map\n知識の地形ビュー', detail: { desc: '個人の知識の全体地図。全体マップ/個別トレース/比較/リプレイの4モード。力学シミュレーション＋パン＆ズーム＋タイムスライダー。ノードクリック→会話ジャンプ/種化。', tables: ['thought_task_nodes', 'thought_edges', 'knowledge_master_entries', 'thought_snapshots'], apis: ['/api/nodes/thought-map', '/api/nodes/thought-map/compare', '/api/thought-map/replay', '/api/nodes/snapshots', '/api/conversations'], flows: ['ノード: AI会話から自動抽出', 'エッジ: 思考の流れを自動記録', 'スナップショット: 初期ゴール↔着地点', '会話ジャンプ: ノード→元の会話', '飛地→種化: 孤立ノードを種に', '比較: 2人の思考動線重ね合わせ', 'リプレイ: 完了タスクのAI対話'] } },
+
+  // ---- DB: ナレッジ ----
+  { id: 'db_knowledge', x: 280, y: 1100, type: 'store', icon: '🗄️', title: 'knowledge系', sub: 'ナレッジマスタ＋思考ノード＋エッジ', detail: { desc: 'knowledge_master_entries: キーワード本体（category/source_type/is_confirmed）。thought_task_nodes: タスク/種とノードの紐づけ。thought_edges: from→toの順序付きエッジ。thought_snapshots: 初期ゴール/着地点。', tables: ['knowledge_master_entries', 'knowledge_domains', 'knowledge_fields', 'thought_task_nodes', 'thought_edges', 'thought_snapshots'], apis: [], flows: ['← AI会話キーワード自動抽出', '← メッセージCronバッチ抽出', '← 手動登録', '→ 思考マップ可視化', '→ ナレッジクラスタリング提案'] } },
+
+  // ---- ナレッジページ ----
+  { id: 'master_page', x: 40, y: 1100, type: 'page', icon: '📚', title: 'ナレッジ', sub: '/master\n領域・分野・キーワード管理', detail: { desc: '領域(domain)→分野(field)→キーワード(entry)のツリー管理。CRUD UI。未確認ノード管理。AI提案履歴タブ。', tables: ['knowledge_domains', 'knowledge_fields', 'knowledge_master_entries', 'knowledge_clustering_proposals'], apis: ['/api/master/domains', '/api/master/fields', '/api/master/entries', '/api/knowledge/proposals'], flows: ['領域/分野/キーワードのCRUD', '未確認ノードの承認/削除', 'AI提案の承認 → 領域/分野自動作成', '手動登録: is_confirmed=true'] } },
+
+  // ---- Cron: メッセージノード抽出 ----
+  { id: 'cron_nodes', x: 40, y: 900, type: 'cron', icon: '⏰', title: 'ノード抽出Cron', sub: '日次: メッセージからキーワード抽出', detail: { desc: '/api/cron/extract-message-nodes。inbox_messagesの本文からAIキーワード抽出→knowledge_master_entries登録→thought_task_nodesにmessage_id追加。', tables: ['inbox_messages', 'knowledge_master_entries', 'thought_task_nodes'], apis: ['/api/cron/extract-message-nodes'], flows: ['inbox_messages → AIキーワード抽出', '→ knowledge_master_entries登録', '→ thought_task_nodes紐づけ'] } },
+
+  // ---- Cron: Drive同期 ----
+  { id: 'cron_drive', x: 1240, y: 120, type: 'cron', icon: '⏰', title: 'Drive同期Cron', sub: '毎日23:00\n添付→ステージング→AI分類', detail: { desc: '/api/cron/sync-drive-documents。Email/Slack/CW添付ファイルDL→一時保管フォルダ→AI分類→drive_file_staging登録。URL検出も実施。', tables: ['inbox_messages', 'drive_file_staging'], apis: ['/api/cron/sync-drive-documents'], flows: ['drive_synced=false のメッセージ取得', '添付ファイルDL → 一時保管フォルダ', 'AI分類（種別/方向/年月/リネーム）', 'drive_file_staging登録(pending_review)', '本文URL検出 → drive_documents(link)'] } },
+
+  // ---- Cron: ビジネスイベント ----
+  { id: 'cron_bizevents', x: 1240, y: 290, type: 'cron', icon: '⏰', title: 'ビジネスイベントCron', sub: '毎日1:00 + 毎週月曜2:00', detail: { desc: 'sync-business-events: 過去24時間のメッセージ→イベント自動生成。summarize-business-log: プロジェクトごとAI週間要約。', tables: ['inbox_messages', 'business_events'], apis: ['/api/cron/sync-business-events', '/api/cron/summarize-business-log'], flows: ['メッセージ → ビジネスイベント自動生成', 'チャネル→プロジェクト→コンタクト推定', 'AI週間要約 → summary_periodイベント'] } },
+
+  // ---- Cron: ナレッジクラスタリング ----
+  { id: 'cron_cluster', x: 40, y: 1280, type: 'cron', icon: '⏰', title: 'クラスタリングCron', sub: '毎週月曜2:30\nAI自動構造化提案', detail: { desc: '/api/cron/cluster-knowledge-weekly。未確認キーワード50個以上→Claude Sonnetでクラスタリング→提案保存。ISO週番号で重複防止。', tables: ['knowledge_master_entries', 'knowledge_clustering_proposals'], apis: ['/api/cron/cluster-knowledge-weekly'], flows: ['未確認キーワード収集', 'AIクラスタリング（既存構造参照）', '提案保存 → 秘書/ナレッジページで確認'] } },
+
+  // ---- Cron: コンタクトエンリッチ ----
+  { id: 'cron_contacts', x: 40, y: 550, type: 'cron', icon: '⏰', title: 'コンタクトCron', sub: '日次: AI分析・エンリッチ', detail: { desc: 'enrich-contacts: company_name/relationship自動設定。analyze-contacts: コミュニケーションパターン分析→notes。', tables: ['contact_persons', 'inbox_messages'], apis: ['/api/cron/enrich-contacts', '/api/cron/analyze-contacts'], flows: ['コンタクトのAI分析', 'notes自動生成', 'company_name/relationship推定'] } },
+
+  // ---- Cron: Driveステージングクリーンアップ ----
+  { id: 'cron_staging', x: 1240, y: 500, type: 'cron', icon: '⏰', title: 'ステージングCron', sub: '毎日0:30\n期限切れファイル削除', detail: { desc: '/api/cron/clean-drive-staging。14日放置→expired、30日超→Driveファイル削除+DB削除。', tables: ['drive_file_staging'], apis: ['/api/cron/clean-drive-staging'], flows: ['14日放置 → expired', '30日超 rejected/expired → Drive削除+DB削除'] } },
+
+  // ---- Google Calendar ----
+  { id: 'gcal', x: 1000, y: 500, type: 'google', icon: '📅', title: 'Google Calendar', sub: 'カレンダーAPI\n予定取得/作成/削除', detail: { desc: 'calendar.readonly + calendar.events スコープ。Gmail OAuthトークン再利用。extendedPropertiesでnodeMapType/nodeMapId管理。', tables: [], apis: ['/api/calendar (GET/POST)'], flows: ['タスク/ジョブ作成時 → 予定自動作成', 'タスク/ジョブ更新時 → 予定更新', 'タスク/ジョブ完了時 → 予定削除', '秘書 → 予定一覧/空き時間検索', '日程調整ジョブ → 予定作成'] } },
+
+  // ---- Google Drive ----
+  { id: 'gdrive', x: 1240, y: 660, type: 'google', icon: '📁', title: 'Google Drive', sub: 'drive.fileスコープ\n4階層フォルダ構造', detail: { desc: 'フォルダ: [NodeMap]組織/プロジェクト/方向(受領/提出)/年月(YYYY-MM)。Resumable Upload方式（Vercel制限回避）。', tables: ['drive_folders', 'drive_documents', 'drive_file_staging'], apis: ['/api/drive/folders', '/api/drive/documents', '/api/drive/upload', '/api/drive/upload/complete', '/api/drive/search', '/api/drive/store-file', '/api/drive/files/intake/*'], flows: ['Cron: 添付→一時保管→AI分類→staging', '秘書: staging確認→承認→最終配置', 'タスク: ファイル添付→Drive保存', '秘書: URL格納指示→登録', '秘書: フォルダ作成→プロジェクト紐づけ'] } },
+
+  // ---- AI Engine ----
+  { id: 'ai_engine', x: 520, y: 1100, type: 'ai', icon: '🧠', title: 'Claude AI', sub: 'claude-sonnet-4-5-20250929\n意図分類・構造化・抽出', detail: { desc: 'Claude Sonnet。秘書チャット応答、種→タスクAI構造化、伴走支援AI会話、キーワード抽出、ファイルAI分類、ビジネスイベント要約、ナレッジクラスタリング、返信下書き、コミュニケーション分析。', tables: [], apis: ['Anthropic API'], flows: ['秘書: Intent分類 + カード生成 + 応答', '種/タスク: 伴走AI会話', '種→タスク: AI構造化変換', 'AI会話: キーワード自動抽出', 'Cron: メッセージからノード抽出', 'Cron: ファイルAI分類', 'Cron: ビジネスイベント要約', 'Cron: ナレッジクラスタリング', '返信: AI下書き生成', 'コンタクト: AI分析→notes'] } },
+
+  // ---- 設定 ----
+  { id: 'settings_page', x: 1000, y: 840, type: 'page', icon: '⚙️', title: '設定', sub: '/settings\nOAuth・チャネル・プロフィール', detail: { desc: 'Gmail/Slack/Chatwork OAuth連携。カレンダー/Driveスコープ再認証バナー。プロフィール設定。', tables: ['user_service_tokens'], apis: ['/api/settings/*', '/api/auth/*'], flows: ['Gmail OAuth → calendar+driveスコープ', 'Slack OAuth → チャネル取得', 'Chatwork API設定', 'Drive再認証バナー'] } },
+];
+
+// ========== EDGES ==========
+const EDGES = [
+  // 外部 → inbox_messages
+  { from: 'gmail', to: 'db_inbox', type: 'auto', label: '受信同期' },
+  { from: 'slack', to: 'db_inbox', type: 'auto', label: '受信同期' },
+  { from: 'chatwork', to: 'db_inbox', type: 'auto', label: '受信同期' },
+
+  // inbox_messages ↔ inbox_page
+  { from: 'db_inbox', to: 'inbox_page', type: 'user', label: '一覧表示' },
+
+  // inbox → contacts (自動生成)
+  { from: 'db_inbox', to: 'db_contacts', type: 'auto', label: 'コンタクト自動生成' },
+
+  // inbox → seeds (種化)
+  { from: 'inbox_page', to: 'seeds_page', type: 'user', label: '種化' },
+
+  // inbox → jobs (ジョブ化)
+  { from: 'inbox_page', to: 'jobs_page', type: 'user', label: 'ジョブ化' },
+
+  // contacts ↔ db
+  { from: 'contacts_page', to: 'db_contacts', type: 'user', label: 'CRUD' },
+
+  // contacts → organizations
+  { from: 'db_contacts', to: 'org_page', type: 'user', label: 'メンバー追加' },
+
+  // organizations ↔ db
+  { from: 'org_page', to: 'db_orgs', type: 'user', label: 'CRUD' },
+
+  // organizations → projects
+  { from: 'db_orgs', to: 'db_projects', type: 'user', label: '組織→プロジェクト' },
+
+  // bizlog ↔ projects
+  { from: 'bizlog_page', to: 'db_projects', type: 'user', label: 'CRUD' },
+
+  // seeds ↔ db
+  { from: 'seeds_page', to: 'db_seeds', type: 'user', label: 'CRUD+AI会話' },
+
+  // seeds → tasks (変換)
+  { from: 'db_seeds', to: 'db_tasks', type: 'ai', label: 'AI構造化変換' },
+
+  // tasks ↔ page
+  { from: 'tasks_page', to: 'db_tasks', type: 'user', label: 'CRUD+AI会話' },
+
+  // tasks → bizlog (完了アーカイブ)
+  { from: 'db_tasks', to: 'db_projects', type: 'auto', label: '完了→アーカイブ' },
+
+  // tasks → calendar
+  { from: 'db_tasks', to: 'gcal', type: 'sync', label: 'スケジュール同期' },
+
+  // tasks → drive (ファイル添付)
+  { from: 'tasks_page', to: 'gdrive', type: 'user', label: 'ファイル添付' },
+
+  // jobs ↔ page
+  { from: 'jobs_page', to: 'db_jobs', type: 'user', label: 'CRUD' },
+
+  // jobs → 外部送信
+  { from: 'db_jobs', to: 'gmail', type: 'auto', label: '自動送信' },
+  { from: 'db_jobs', to: 'slack', type: 'auto', label: '自動送信' },
+  { from: 'db_jobs', to: 'chatwork', type: 'auto', label: '自動送信' },
+
+  // jobs → calendar
+  { from: 'db_jobs', to: 'gcal', type: 'sync', label: 'スケジュール同期' },
+
+  // secretary → various
+  { from: 'secretary_page', to: 'inbox_page', type: 'ai', label: 'ブリーフィング' },
+  { from: 'secretary_page', to: 'tasks_page', type: 'ai', label: 'タスク作成/進行' },
+  { from: 'secretary_page', to: 'jobs_page', type: 'ai', label: 'ジョブ作成/承認' },
+  { from: 'secretary_page', to: 'gdrive', type: 'ai', label: 'ファイル確認/格納' },
+  { from: 'secretary_page', to: 'gcal', type: 'ai', label: '予定作成/照会' },
+
+  // AI engine connections
+  { from: 'ai_engine', to: 'secretary_page', type: 'ai', label: '応答生成' },
+  { from: 'ai_engine', to: 'db_knowledge', type: 'ai', label: 'キーワード抽出' },
+
+  // AI会話 → knowledge
+  { from: 'db_seeds', to: 'db_knowledge', type: 'ai', label: 'ノード自動抽出' },
+  { from: 'db_tasks', to: 'db_knowledge', type: 'ai', label: 'ノード自動抽出' },
+
+  // thought map ↔ knowledge
+  { from: 'thoughtmap_page', to: 'db_knowledge', type: 'user', label: '可視化' },
+
+  // master page ↔ knowledge
+  { from: 'master_page', to: 'db_knowledge', type: 'user', label: 'CRUD' },
+
+  // Cron connections
+  { from: 'cron_nodes', to: 'db_knowledge', type: 'auto', label: 'ノード抽出' },
+  { from: 'cron_nodes', to: 'db_inbox', type: 'auto', label: 'メッセージ読取' },
+  { from: 'cron_drive', to: 'gdrive', type: 'auto', label: 'ファイル取込' },
+  { from: 'cron_drive', to: 'db_inbox', type: 'auto', label: '添付取得' },
+  { from: 'cron_bizevents', to: 'db_projects', type: 'auto', label: 'イベント自動生成' },
+  { from: 'cron_bizevents', to: 'db_inbox', type: 'auto', label: 'メッセージ読取' },
+  { from: 'cron_cluster', to: 'db_knowledge', type: 'auto', label: 'クラスタリング' },
+  { from: 'cron_contacts', to: 'db_contacts', type: 'auto', label: 'AI分析' },
+  { from: 'cron_staging', to: 'gdrive', type: 'auto', label: 'クリーンアップ' },
+
+  // memos
+  { from: 'memos_page', to: 'ai_engine', type: 'ai', label: 'AI会話' },
+
+  // settings → external
+  { from: 'settings_page', to: 'gmail', type: 'user', label: 'OAuth設定' },
+  { from: 'settings_page', to: 'slack', type: 'user', label: 'OAuth設定' },
+  { from: 'settings_page', to: 'gcal', type: 'user', label: 'スコープ認証' },
+  { from: 'settings_page', to: 'gdrive', type: 'user', label: 'スコープ認証' },
+];
+
+// ========== RENDER ==========
+const canvas = document.getElementById('canvas');
+const svgEl = document.getElementById('arrows');
+const wrap = document.getElementById('canvasWrap');
+const panel = document.getElementById('panel');
+const panelContent = document.getElementById('panelContent');
+
+const CW = 3600, CH = 2800;
+const SCALE_NODE = 2.2;
+
+// Create nodes
+NODES.forEach(n => {
+  const el = document.createElement('div');
+  el.className = `node node-${n.type}`;
+  el.id = `node-${n.id}`;
+  el.style.left = (n.x * SCALE_NODE) + 'px';
+  el.style.top = (n.y * SCALE_NODE) + 'px';
+  el.innerHTML = `
+    <div class="node-title">${n.icon} ${n.title}</div>
+    <div class="node-sub">${n.sub.replace(/\n/g, '<br>')}</div>
+  `;
+  el.addEventListener('click', (e) => { e.stopPropagation(); showPanel(n); });
+  canvas.appendChild(el);
+});
+
+// Draw arrows
+function getNodeCenter(id) {
+  const el = document.getElementById(`node-${id}`);
+  if (!el) return { x: 0, y: 0 };
+  const r = el.getBoundingClientRect();
+  const cx = parseFloat(el.style.left) + el.offsetWidth / 2;
+  const cy = parseFloat(el.style.top) + el.offsetHeight / 2;
+  return { x: cx, y: cy };
+}
+
+function getNodeEdge(fromId, toId) {
+  const fromEl = document.getElementById(`node-${fromId}`);
+  const toEl = document.getElementById(`node-${toId}`);
+  if (!fromEl || !toEl) return { fx: 0, fy: 0, tx: 0, ty: 0 };
+
+  const f = { x: parseFloat(fromEl.style.left), y: parseFloat(fromEl.style.top), w: fromEl.offsetWidth, h: fromEl.offsetHeight };
+  const t = { x: parseFloat(toEl.style.left), y: parseFloat(toEl.style.top), w: toEl.offsetWidth, h: toEl.offsetHeight };
+
+  const fcx = f.x + f.w / 2, fcy = f.y + f.h / 2;
+  const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+
+  const dx = tcx - fcx, dy = tcy - fcy;
+  const angle = Math.atan2(dy, dx);
+
+  // from edge
+  let fx, fy;
+  if (Math.abs(Math.cos(angle)) * f.h > Math.abs(Math.sin(angle)) * f.w) {
+    fx = fcx + (Math.cos(angle) > 0 ? f.w / 2 : -f.w / 2);
+    fy = fcy + Math.tan(angle) * (Math.cos(angle) > 0 ? f.w / 2 : -f.w / 2);
+  } else {
+    fy = fcy + (Math.sin(angle) > 0 ? f.h / 2 : -f.h / 2);
+    fx = fcx + (1 / Math.tan(angle)) * (Math.sin(angle) > 0 ? f.h / 2 : -f.h / 2);
+  }
+
+  // to edge
+  let tx, ty;
+  const angle2 = angle + Math.PI;
+  if (Math.abs(Math.cos(angle2)) * t.h > Math.abs(Math.sin(angle2)) * t.w) {
+    tx = tcx + (Math.cos(angle2) > 0 ? t.w / 2 : -t.w / 2);
+    ty = tcy + Math.tan(angle2) * (Math.cos(angle2) > 0 ? t.w / 2 : -t.w / 2);
+  } else {
+    ty = tcy + (Math.sin(angle2) > 0 ? t.h / 2 : -t.h / 2);
+    tx = tcx + (1 / Math.tan(angle2)) * (Math.sin(angle2) > 0 ? t.h / 2 : -t.h / 2);
+  }
+
+  return { fx, fy, tx, ty };
+}
+
+function drawEdges() {
+  // markers
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  ['#22c55e', '#f59e0b', '#06b6d4', '#a855f7'].forEach((color, i) => {
+    const names = ['user', 'auto', 'ai', 'sync'];
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+    marker.setAttribute('id', `arrow-${names[i]}`);
+    marker.setAttribute('viewBox', '0 0 10 6');
+    marker.setAttribute('refX', '10');
+    marker.setAttribute('refY', '3');
+    marker.setAttribute('markerWidth', '8');
+    marker.setAttribute('markerHeight', '6');
+    marker.setAttribute('orient', 'auto');
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', 'M0,0 L10,3 L0,6 Z');
+    p.setAttribute('fill', color);
+    marker.appendChild(p);
+    defs.appendChild(marker);
+  });
+  svgEl.appendChild(defs);
+
+  EDGES.forEach(e => {
+    const { fx, fy, tx, ty } = getNodeEdge(e.from, e.to);
+    const mx = (fx + tx) / 2, my = (fy + ty) / 2;
+    const dx = tx - fx, dy = ty - fy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    // curve offset
+    const offx = -dy * 0.15, offy = dx * 0.15;
+    const cx1 = mx + offx, cy1 = my + offy;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${fx},${fy} Q${cx1},${cy1} ${tx},${ty}`);
+    path.setAttribute('class', `arrow-${e.type}`);
+    path.setAttribute('marker-end', `url(#arrow-${e.type})`);
+    path.setAttribute('data-from', e.from);
+    path.setAttribute('data-to', e.to);
+    svgEl.appendChild(path);
+
+    // label
+    if (e.label && dist > 80) {
+      const lx = fx * 0.25 + cx1 * 0.5 + tx * 0.25;
+      const ly = fy * 0.25 + cy1 * 0.5 + ty * 0.25;
+      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', lx);
+      text.setAttribute('y', ly - 4);
+      text.setAttribute('class', `arrow-${e.type}-label`);
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = e.label;
+      svgEl.appendChild(text);
+    }
+  });
+}
+
+// Delay to let nodes render
+requestAnimationFrame(() => { requestAnimationFrame(drawEdges); });
+
+// ========== Panel ==========
+function showPanel(node) {
+  const d = node.detail;
+  let html = `<h2>${node.icon} ${node.title}</h2>`;
+  html += `<p>${d.desc}</p>`;
+
+  if (d.tables && d.tables.length) {
+    html += `<h3>テーブル</h3>`;
+    html += d.tables.map(t => `<span class="tag tag-table">${t}</span>`).join(' ');
+  }
+  if (d.apis && d.apis.length) {
+    html += `<h3>API</h3>`;
+    html += d.apis.map(a => `<span class="tag tag-api">${a}</span>`).join(' ');
+  }
+  if (d.flows && d.flows.length) {
+    html += `<h3>データフロー</h3><ul>`;
+    html += d.flows.map(f => `<li>${f}</li>`).join('');
+    html += `</ul>`;
+  }
+
+  // Find related edges
+  const related = EDGES.filter(e => e.from === node.id || e.to === node.id);
+  if (related.length) {
+    html += `<h3>接続 (${related.length})</h3><ul>`;
+    related.forEach(e => {
+      const dir = e.from === node.id ? '→' : '←';
+      const other = e.from === node.id ? e.to : e.from;
+      const otherNode = NODES.find(n => n.id === other);
+      const typeLabel = { user: '操作', auto: '自動', ai: 'AI', sync: '同期' }[e.type];
+      html += `<li>${dir} ${otherNode ? otherNode.icon + ' ' + otherNode.title : other} <span class="tag tag-api">${typeLabel}: ${e.label || ''}</span></li>`;
+    });
+    html += `</ul>`;
+  }
+
+  panelContent.innerHTML = html;
+  panel.classList.add('open');
+
+  // Highlight edges
+  svgEl.querySelectorAll('path').forEach(p => p.style.opacity = '');
+  svgEl.querySelectorAll('path').forEach(p => {
+    const f = p.getAttribute('data-from'), t = p.getAttribute('data-to');
+    if (f === node.id || t === node.id) {
+      p.style.opacity = '1';
+      p.style.strokeWidth = '3';
+    } else if (f && t) {
+      p.style.opacity = '0.1';
+      p.style.strokeWidth = '';
+    }
+  });
+}
+
+document.getElementById('panelClose').addEventListener('click', () => {
+  panel.classList.remove('open');
+  svgEl.querySelectorAll('path').forEach(p => { p.style.opacity = ''; p.style.strokeWidth = ''; });
+});
+
+// ========== Pan & Zoom ==========
+let scale = 0.45, panX = 50, panY = 20;
+let isPanning = false, startX, startY;
+
+function applyTransform() {
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+  updateMinimap();
+}
+applyTransform();
+
+wrap.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.node')) return;
+  isPanning = true;
+  startX = e.clientX - panX;
+  startY = e.clientY - panY;
+  wrap.classList.add('grabbing');
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isPanning) return;
+  panX = e.clientX - startX;
+  panY = e.clientY - startY;
+  applyTransform();
+});
+window.addEventListener('mouseup', () => { isPanning = false; wrap.classList.remove('grabbing'); });
+
+wrap.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const rect = wrap.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const wx = (mx - panX) / scale, wy = (my - panY) / scale;
+  const delta = e.deltaY > 0 ? 0.9 : 1.1;
+  scale = Math.max(0.15, Math.min(2.5, scale * delta));
+  panX = mx - wx * scale;
+  panY = my - wy * scale;
+  applyTransform();
+}, { passive: false });
+
+document.getElementById('zoomIn').addEventListener('click', () => { scale = Math.min(2.5, scale * 1.2); applyTransform(); });
+document.getElementById('zoomOut').addEventListener('click', () => { scale = Math.max(0.15, scale / 1.2); applyTransform(); });
+document.getElementById('zoomReset').addEventListener('click', () => { scale = 0.45; panX = 50; panY = 20; applyTransform(); });
+
+// ========== Filter ==========
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const filter = btn.dataset.filter;
+    document.querySelectorAll('.node').forEach(n => {
+      if (filter === 'all' || n.classList.contains(filter)) {
+        n.style.opacity = '1';
+        n.style.pointerEvents = '';
+      } else {
+        n.style.opacity = '0.15';
+        n.style.pointerEvents = 'none';
+      }
+    });
+    // Dim edges
+    svgEl.querySelectorAll('path[data-from]').forEach(p => {
+      if (filter === 'all') { p.style.opacity = ''; return; }
+      const fromEl = document.getElementById(`node-${p.getAttribute('data-from')}`);
+      const toEl = document.getElementById(`node-${p.getAttribute('data-to')}`);
+      if ((fromEl && fromEl.classList.contains(filter)) || (toEl && toEl.classList.contains(filter))) {
+        p.style.opacity = '0.6';
+      } else {
+        p.style.opacity = '0.05';
+      }
+    });
+  });
+});
+
+// ========== Minimap ==========
+function updateMinimap() {
+  const mc = document.getElementById('minimapCanvas');
+  const ctx = mc.getContext('2d');
+  const mw = 200, mh = 130;
+  const totalW = CW * SCALE_NODE, totalH = CH * SCALE_NODE;
+  const sx = mw / totalW, sy = mh / totalH;
+  const s = Math.min(sx, sy);
+
+  ctx.clearRect(0, 0, mw, mh);
+
+  // Draw nodes
+  const colors = { external: '#3b82f6', page: '#22c55e', store: '#a855f7', cron: '#f59e0b', ai: '#06b6d4', google: '#ef4444' };
+  NODES.forEach(n => {
+    ctx.fillStyle = colors[n.type] || '#888';
+    ctx.fillRect(n.x * SCALE_NODE * s, n.y * SCALE_NODE * s, 8, 5);
+  });
+
+  // Viewport
+  const vp = document.getElementById('minimapViewport');
+  const wrapRect = wrap.getBoundingClientRect();
+  const vpLeft = (-panX / scale) * s;
+  const vpTop = (-panY / scale) * s;
+  const vpW = (wrapRect.width / scale) * s;
+  const vpH = (wrapRect.height / scale) * s;
+  vp.style.left = Math.max(0, vpLeft) + 'px';
+  vp.style.top = Math.max(0, vpTop) + 'px';
+  vp.style.width = Math.min(mw, vpW) + 'px';
+  vp.style.height = Math.min(mh, vpH) + 'px';
+}
+
+// Close panel on canvas click
+wrap.addEventListener('click', (e) => {
+  if (!e.target.closest('.node')) {
+    panel.classList.remove('open');
+    svgEl.querySelectorAll('path').forEach(p => { p.style.opacity = ''; p.style.strokeWidth = ''; });
+  }
+});
+</script>
+</body>
+</html>

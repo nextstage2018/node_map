@@ -6,7 +6,7 @@ import type { IdeaMemo } from '@/lib/types';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import Button from '@/components/ui/Button';
-import { Plus, Trash2, MessageSquare, Send, X } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Send, X, Sprout } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -25,6 +25,53 @@ export default function MemosPage() {
   const [chatInput, setChatInput] = useState('');
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // 種化モーダル
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertMemoId, setConvertMemoId] = useState<string | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      const res = await fetch('/api/projects');
+      const json = await res.json();
+      if (json.success) setProjects(json.data || []);
+    } catch (e) { /* ignore */ }
+  }, []);
+
+  const handleConvertToSeed = async () => {
+    if (!convertMemoId || isConverting) return;
+    setIsConverting(true);
+    try {
+      const res = await fetch(`/api/memos/${convertMemoId}/convert`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: selectedProjectId || null }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        alert('種に変換しました！種ボックスで確認できます。');
+        setShowConvertModal(false);
+        setConvertMemoId(null);
+      } else {
+        alert('変換に失敗しました: ' + (json.error || ''));
+      }
+    } catch (e) {
+      console.error('種化エラー:', e);
+      alert('変換に失敗しました');
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  const openConvertModal = (memoId: string) => {
+    setConvertMemoId(memoId);
+    setSelectedProjectId('');
+    setShowConvertModal(true);
+    fetchProjects();
+  };
 
   const fetchMemos = useCallback(async () => {
     try {
@@ -189,6 +236,13 @@ export default function MemosPage() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={(e) => { e.stopPropagation(); openConvertModal(memo.id); }}
+                        className="text-gray-400 hover:text-green-500"
+                        title="種にする"
+                      >
+                        <Sprout className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={(e) => { e.stopPropagation(); openChat(memo); }}
                         className="text-gray-400 hover:text-blue-500"
                         title="AIと深掘り"
@@ -274,6 +328,45 @@ export default function MemosPage() {
           </div>
         )}
       </div>
+      {/* 種化確認モーダル */}
+      {showConvertModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowConvertModal(false)}>
+          <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-3">🌱 種に変換</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              このメモとAI会話の内容を種ボックスに変換します。
+            </p>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">プロジェクト（任意）</label>
+              <select
+                value={selectedProjectId}
+                onChange={e => setSelectedProjectId(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg text-sm"
+              >
+                <option value="">未指定</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowConvertModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={handleConvertToSeed}
+                disabled={isConverting}
+                className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {isConverting ? '変換中...' : '🌱 種にする'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }
