@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）まで反映）
+最終更新: 2026-03-03（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）まで反映）
 
 ---
 
@@ -42,6 +42,8 @@
 | `drive_documents` | DriveドキュメントPhase 44拡張: direction/document_type/year_month/original_file_name カラム追加 |
 | `thought_snapshots` | Phase 42e: タスクのスナップショット。snapshot_type = 'initial_goal' / 'final_landing'。node_ids TEXT[] |
 | `task_members` | グループタスクのメンバー管理。UNIQUE(task_id, user_id)。role='owner'/'member'。calendar_event_idでメンバーごとのカレンダー予定を追跡 |
+| `contact_patterns` | Phase 51: コンタクトパターン分析。連絡頻度・最終連絡・推奨アクション。日次Cron compute-patterns で自動計算 |
+| `secretary_conversations` | Phase 53: 秘書チャット会話永続化。role='user'/'assistant'。cards JSONB。AIコンテキスト用（UI復元はしない） |
 
 ---
 
@@ -142,6 +144,131 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 48 | バグ修正・機能強化: セットアップウィザード修正＋秘書サジェスト改善＋Drive/Calendarスコープチェック＋カレンダー予定作成intent＋Driveフォルダ作成intent（プロジェクト紐付け＋命名規則＋drive_folders登録）＋URLリンク化＋プロジェクトメンバー表示＋コンタクトプロジェクト表示＋秘書ファイルアップロード（resumable upload方式＋CORS対応サーバー検索） | mainにマージ済み |
 | Phase 49 | タスクページ改善（削除・完了アーカイブ・2カラムカンバン・アイコン修正・AI会話入力改善）＋秘書チャットからタスク作成・進行（create_task/task_progress intent＋TaskFormCard/TaskProgressCard） | mainにマージ済み |
 | Phase 50 | タスクファイル添付（Resumable Upload）＋ビジネスログにドキュメントURL記載＋AI構想会話の進行状況検出＋プロンプト改善＋構想→進行フェーズ移行時status自動変更＋タスク完了アーカイブに会話ログ保全 | mainにマージ済み |
+| Phase 51 | データ連携強化: contact_patternsテーブル＋ContactPatternService（連絡頻度・推奨アクション）＋日次Cron compute-patterns＋メモ→種変換＋コンタクトタスク表示 | mainにマージ済み |
+| Phase 52 | 組織自動レコメンド: OrgRecommendationService（ドメイン集計→未登録組織候補検出）＋auto-setup API＋OrgRecommendationCard＋ブリーフィング連携 | mainにマージ済み |
+| Phase 53 | 秘書AI総合改善: secretary_conversations永続化＋コンテキスト15→30拡大＋新規intent（create_contact/search_contact/create_organization/create_project）＋インラインCRUDカード＋/api/contacts POST＋ダッシュボード初期画面＋カレンダー終日除外＋メッセージ詳細DB直接取得＋MessageDetailCard折りたたみ | mainにマージ済み |
+
+---
+
+## Phase 53 実装内容（秘書AI総合改善）
+
+### 概要
+秘書AIを「自然会話で全操作が完結する」主要インターフェースに強化。会話永続化・コンテキスト拡張・CRUD操作のインライン化・UI改善を実施。
+
+### DBマイグレーション（Supabase実行済み）
+```sql
+-- 042_secretary_conversations.sql
+CREATE TABLE IF NOT EXISTS secretary_conversations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+  content TEXT NOT NULL DEFAULT '',
+  cards JSONB,
+  session_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### 新規ファイル
+- `supabase/migrations/042_secretary_conversations.sql` — 秘書チャット会話永続化テーブル
+- `src/app/api/agent/conversations/route.ts` — 会話保存/読込/クリアAPI（GET/POST/DELETE）
+- `src/services/analytics/contactPattern.service.ts` — Phase 51: コンタクトパターン分析サービス
+- `src/services/analytics/orgRecommendation.service.ts` — Phase 52: 組織自動レコメンドサービス
+- `src/app/api/cron/compute-patterns/route.ts` — Phase 51: パターン計算日次Cron
+- `src/app/api/organizations/auto-setup/route.ts` — Phase 52: 組織候補取得＋ワンクリック作成API
+
+### 変更ファイル
+- `src/app/api/agent/chat/route.ts` — 新規intent追加（create_contact/search_contact/create_organization/create_project/message_detail/pattern_analysis/knowledge_reuse/setup_organization）＋コンテキスト15→30拡大＋カレンダー終日予定除外＋message_detail DBハンドラー
+- `src/app/api/contacts/route.ts` — POST ハンドラー追加（秘書からのコンタクト新規作成＋組織自動マッチング＋チャネル登録）
+- `src/app/api/messages/route.ts` — ID指定の単一メッセージ取得追加（DB直接参照）
+- `src/components/secretary/ChatCards.tsx` — 新カード: ContactFormCard/ContactSearchResultCard/OrgFormCard/ProjectFormCard/OrgRecommendationCard＋CardRenderer防御強化（null/undefinedガード）＋MessageDetailCard折りたたみUI
+- `src/components/secretary/SecretaryChat.tsx` — ダッシュボード初期画面（自動ブリーフィング廃止）＋会話DB保存（AIコンテキスト用）＋smartTruncateHistory＋select_message DB直接取得＋linkifyText防御＋新アクション（submit_contact_form/submit_project_form/submit_org_form）
+- `vercel.json` — compute-patterns Cron追加
+
+### 秘書ダッシュボード（初期画面）
+```
+/agent ページ読込時
+  → ダッシュボード表示（自動ブリーフィングしない）
+  → メインアクション4つ（大きめカード: 今日やること/プロジェクト確認/タスク作成/タスク進める）
+  → その他アクション（小チップ: メッセージ/ジョブ/予定/ファイル/ナレッジ等）
+  → ユーザーがチップ選択 or 自由入力で会話開始
+```
+
+### メッセージ詳細の表示フロー
+```
+InboxSummaryCard でメッセージをクリック
+  → select_message アクション発火
+  → GET /api/messages?id=xxx でDB直接取得
+  → MessageDetailCard をチャットに追加（返信/ジョブ化/タスク化ボタン付き）
+  → 長文は折りたたみ表示（200文字/6行以上で省略＋「全文を表示」ボタン）
+  → 既読マーク自動付与
+```
+
+### カレンダー終日予定の除外
+- ブリーフィングのcalendar_eventsカード: 終日予定を除外（時刻付き予定のみ表示）
+- todayEventCount: 終日予定を除外してカウント
+- nextEvent計算: 既に終日予定は除外済み（変更なし）
+- findFreeSlots: 既に終日予定は除外済み（変更なし）
+
+### 新規intent一覧（Phase 51-53追加分）
+| Intent | トリガーキーワード | 生成されるカード/動作 |
+|---|---|---|
+| create_contact | コンタクト+登録/追加、連絡先+登録 | contact_form カード |
+| search_contact | コンタクト+検索/情報、○○さんの情報 | contact_search_result カード |
+| create_organization | 組織+新規/新しい | org_form カード |
+| create_project | プロジェクト+作成/追加/新規 | project_form カード |
+| message_detail | メッセージID:xxx、詳細+見せて | message_detail カード（DB直接取得） |
+| pattern_analysis | 傾向/パターン/振り返り | テキスト応答 |
+| knowledge_reuse | 前回/この前/以前/似たような | テキスト応答 |
+| setup_organization | 組織+設定/登録/整理 | org_recommendation カード |
+
+### 重要な実装ノート
+- **会話永続化はAIコンテキスト用**: DBに保存するがUI復元はしない。毎回ダッシュボードからスタート
+- **smartTruncateHistory**: 30メッセージ超の場合、古い会話を1行要約に圧縮してトークン節約
+- **CardRenderer防御**: card/type/dataがnullの場合にnullを返す（クラッシュ防止）
+- **/api/contacts POST**: contact_persons.idはTEXT型→手動生成必須。メールドメインから組織自動マッチング
+
+---
+
+## Phase 52 実装内容（組織自動レコメンド）
+
+### 概要
+メッセージ履歴のメールドメインを集計し、未登録の組織候補を自動検出。秘書ブリーフィングまたは「組織を整理」で候補を表示し、ワンクリックで組織セットアップ。
+
+### 新規ファイル
+- `src/services/analytics/orgRecommendation.service.ts` — ドメイン集計→未登録組織候補検出→候補スコアリング
+- `src/app/api/organizations/auto-setup/route.ts` — GET: 候補一覧、POST: ワンクリック組織作成（organizations + organization_channels + コンタクト紐づけ）
+
+### 変更ファイル
+- `src/app/api/agent/chat/route.ts` — setup_organization intent＋ブリーフィングにorgRecommendations追加
+- `src/components/secretary/ChatCards.tsx` — OrgRecommendationCard（候補一覧＋関係性選択＋セットアップボタン）
+- `src/components/secretary/SecretaryChat.tsx` — create_org/skip_org アクション
+
+---
+
+## Phase 51 実装内容（データ連携強化）
+
+### 概要
+使うほど賢くなるシステムの基盤。コンタクトパターン分析（連絡頻度・推奨アクション）、メモ→種変換、コンタクト関連タスク表示。
+
+### DBマイグレーション（Supabase実行済み）
+```sql
+-- 051a_data_connectivity.sql
+-- contact_patterns テーブル（連絡頻度・パターン分析結果）
+```
+
+### 新規ファイル
+- `src/services/analytics/contactPattern.service.ts` — パターン計算（メッセージ頻度・最終連絡・推奨アクション生成）
+- `src/app/api/cron/compute-patterns/route.ts` — 日次Cron（毎日3:00）
+- `src/app/api/contacts/[id]/tasks/route.ts` — コンタクト関連タスク取得
+- `src/app/api/memos/[id]/convert/route.ts` — メモ→種変換API
+
+### 変更ファイル
+- `src/app/contacts/page.tsx` — タスク一覧表示追加
+- `src/app/memos/page.tsx` — 種変換ボタン追加
+- `src/components/inbox/MessageDetail.tsx` — パターン情報表示
+- `src/app/api/tasks/route.ts` — contact_id対応
+- `vercel.json` — compute-patterns Cron追加
 
 ---
 
