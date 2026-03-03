@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Clock, FolderOpen, Plus, GitMerge, AlertTriangle, Link2, Sparkles } from 'lucide-react';
+import { Users, Search, Mail, Shield, ShieldOff, Check, X, Edit2, Building2, MessageSquare, Save, UserPlus, Plus, GitMerge, AlertTriangle } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import QuickAddContactModal from '@/components/contacts/QuickAddContactModal';
@@ -41,29 +41,10 @@ interface Contact {
   // Phase 34: 組織・チームメンバー
   organization_id?: string;
   is_team_member?: boolean;
-  // Phase 36: AIコンテキスト
-  ai_context?: string;
-  ai_analyzed_at?: string;
-}
-
-// Phase 34: 活動履歴の型
-interface Activity {
-  id: string;
-  type: 'event' | 'message';
-  title: string;
-  content: string | null;
-  eventType: string;
-  timestamp: string;
 }
 
 // Phase 34: 組織の型
 interface OrgOption {
-  id: string;
-  name: string;
-}
-
-// Phase 34: プロジェクトの型
-interface ProjectOption {
   id: string;
   name: string;
 }
@@ -206,16 +187,9 @@ export default function ContactsPage() {
   // --- Phase 30b: コンタクト追加モーダル ---
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // --- Phase 34: 詳細パネルタブ・活動履歴・組織・プロジェクト ---
-  const [detailTab, setDetailTab] = useState<'info' | 'activities' | 'ai'>('info');
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  // --- Phase 34: 詳細パネル・組織 ---
   const [organizations, setOrganizations] = useState<OrgOption[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [orgName, setOrgName] = useState('');
-  const [showProjectAdd, setShowProjectAdd] = useState(false);
-  const [selectedProjectToAdd, setSelectedProjectToAdd] = useState('');
-  const [contactProjects, setContactProjects] = useState<{ id: string; project_id: string; projects?: { id: string; name: string; status: string } | null }[]>([]);
 
   // --- Phase 35: 重複検出・マージ ---
   const [duplicateGroups, setDuplicateGroups] = useState<DuplicateGroup[]>([]);
@@ -227,15 +201,6 @@ export default function ContactsPage() {
   const [newChannelType, setNewChannelType] = useState<'email' | 'slack' | 'chatwork'>('email');
   const [newChannelAddress, setNewChannelAddress] = useState('');
   const [isAddingChannel, setIsAddingChannel] = useState(false);
-
-  // --- Phase 35: 連絡先結合 ---
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [linkSearch, setLinkSearch] = useState('');
-  const [isLinking, setIsLinking] = useState(false);
-
-  // --- Phase 36: AIコンテキスト ---
-  const [aiContext, setAiContext] = useState('');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   // --- Phase 51a: 関連タスク ---
   const [contactTasks, setContactTasks] = useState<{ id: string; title: string; status: string; priority: string; created_at: string }[]>([]);
@@ -306,31 +271,13 @@ export default function ContactsPage() {
   // ========================================
   const fetchOrgAndProjects = useCallback(async () => {
     try {
-      const [orgRes, projRes] = await Promise.all([
-        fetch('/api/organizations'),
-        fetch('/api/projects'),
-      ]);
+      const orgRes = await fetch('/api/organizations');
       const orgData = await orgRes.json();
-      const projData = await projRes.json();
       if (orgData.success) setOrganizations((orgData.data || []).map((o: { id: string; name: string }) => ({ id: o.id, name: o.name })));
-      if (projData.success) setProjects((projData.data || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })));
     } catch { /* エラーは無視 */ }
   }, []);
 
   useEffect(() => { fetchOrgAndProjects(); }, [fetchOrgAndProjects]);
-
-  // ========================================
-  // Phase 34: 活動履歴取得
-  // ========================================
-  const fetchActivities = useCallback(async (contactId: string) => {
-    setIsLoadingActivities(true);
-    try {
-      const res = await fetch(`/api/contacts/${contactId}/activities`);
-      const data = await res.json();
-      if (data.success) setActivities(data.data || []);
-    } catch { setActivities([]); }
-    finally { setIsLoadingActivities(false); }
-  }, []);
 
   // ========================================
   // コンタクト選択時に編集フィールドを初期化
@@ -340,16 +287,11 @@ export default function ContactsPage() {
       setEditCompany(selectedContact.companyName || '');
       setEditDepartment(selectedContact.department || '');
       setEditNotes(selectedContact.notes || '');
-      setDetailTab('info');
-      setActivities([]);
       setShowChannelAdd(false);
       setNewChannelAddress('');
       // Phase 34: 組織名を取得
       const org = organizations.find((o) => o.id === selectedContact.organization_id);
       setOrgName(org?.name || '');
-      // Phase 36: コミュニケーション分析結果を初期化（notesに保存）
-      setAiContext(selectedContact.notes || '');
-      setIsAnalyzing(false);
     }
   }, [selectedContact, organizations]);
 
@@ -497,23 +439,9 @@ export default function ContactsPage() {
     setTimeout(() => setActionResult(null), 5000);
   };
 
-  // ========================================
-  // Phase 34: プロジェクトメンバー追加 + 所属プロジェクト表示
-  // ========================================
-  const loadContactProjects = useCallback(async (contactId: string) => {
-    try {
-      const res = await fetch(`/api/project-members?contact_id=${contactId}`);
-      const data = await res.json();
-      if (data.success) {
-        setContactProjects(data.data || []);
-      }
-    } catch { setContactProjects([]); }
-  }, []);
-
-  // コンタクト選択時にプロジェクト一覧 + 関連タスクを取得
+  // コンタクト選択時に関連タスクを取得
   useEffect(() => {
     if (selectedContact) {
-      loadContactProjects(selectedContact.id);
       // Phase 51a: 関連タスク取得
       setIsLoadingContactTasks(true);
       fetch(`/api/contacts/${selectedContact.id}/tasks`)
@@ -522,44 +450,9 @@ export default function ContactsPage() {
         .catch(() => setContactTasks([]))
         .finally(() => setIsLoadingContactTasks(false));
     } else {
-      setContactProjects([]);
       setContactTasks([]);
     }
-  }, [selectedContact, loadContactProjects]);
-
-  const addToProject = async () => {
-    if (!selectedContact || !selectedProjectToAdd) return;
-    try {
-      const res = await fetch('/api/project-members', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: selectedProjectToAdd, contactId: selectedContact.id, role: 'member' }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActionResult({ type: 'success', text: 'プロジェクトに追加しました' });
-        setShowProjectAdd(false);
-        setSelectedProjectToAdd('');
-        loadContactProjects(selectedContact.id);
-      } else {
-        setActionResult({ type: 'error', text: data.error || '追加に失敗しました' });
-      }
-    } catch { setActionResult({ type: 'error', text: '通信エラー' }); }
-    setTimeout(() => setActionResult(null), 3000);
-  };
-
-  const removeFromProject = async (projectId: string) => {
-    if (!selectedContact) return;
-    try {
-      const res = await fetch(`/api/project-members?project_id=${projectId}&contact_id=${selectedContact.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) {
-        setContactProjects(prev => prev.filter(p => p.project_id !== projectId));
-        setActionResult({ type: 'success', text: 'プロジェクトから外しました' });
-      }
-    } catch { setActionResult({ type: 'error', text: '通信エラー' }); }
-    setTimeout(() => setActionResult(null), 3000);
-  };
+  }, [selectedContact]);
 
   // ========================================
   // Phase 35: 重複候補を取得
@@ -610,63 +503,6 @@ export default function ContactsPage() {
     setTimeout(() => setActionResult(null), 3000);
   };
 
-  // Phase 35: 連絡先結合（詳細パネルから）
-  const executeLinkMerge = async (targetContactId: string) => {
-    if (!selectedContact) return;
-    const targetContact = contacts.find((c) => c.id === targetContactId);
-    const targetName = targetContact?.name || targetContactId;
-    if (!confirm(`「${targetName}」さんを「${selectedContact.name}」に統合します。「${targetName}」さんのレコードは削除されます。よろしいですか？`)) return;
-    setIsLinking(true);
-    try {
-      const res = await fetch('/api/contacts/merge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primaryId: selectedContact.id, mergeIds: [targetContactId] }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setActionResult({ type: 'success', text: `${targetName}さんを統合しました` });
-        setShowLinkModal(false);
-        setLinkSearch('');
-        fetchContacts();
-        fetchDuplicates();
-      } else {
-        setActionResult({ type: 'error', text: data.error || '統合に失敗しました' });
-      }
-    } catch {
-      setActionResult({ type: 'error', text: '通信エラー' });
-    } finally {
-      setIsLinking(false);
-    }
-    setTimeout(() => setActionResult(null), 3000);
-  };
-
-  // Phase 36: AIコンテキスト分析
-  const analyzeContact = async () => {
-    if (!selectedContact || selectedContact.isAutoGenerated) return;
-    setIsAnalyzing(true);
-    try {
-      const res = await fetch(`/api/contacts/${selectedContact.id}/analyze`, {
-        method: 'POST',
-      });
-      const data = await res.json();
-      if (data.success && data.data?.ai_context) {
-        setAiContext(data.data.ai_context);
-        setActionResult({ type: 'success', text: 'コミュニケーション分析が完了しました' });
-        // コンタクトリストのnotesも更新
-        setContacts((prev) =>
-          prev.map((c) => c.id === selectedContact.id ? { ...c, notes: data.data.ai_context, ai_analyzed_at: new Date().toISOString() } : c)
-        );
-      } else {
-        setActionResult({ type: 'error', text: data.error || '分析に失敗しました' });
-      }
-    } catch {
-      setActionResult({ type: 'error', text: '通信エラー' });
-    } finally {
-      setIsAnalyzing(false);
-    }
-    setTimeout(() => setActionResult(null), 3000);
-  };
 
   // Phase 35: マージ実行
   const executeMerge = async (primaryId: string, mergeIds: string[]) => {
@@ -1039,57 +875,8 @@ export default function ContactsPage() {
                   )}
                 </div>
 
-                {/* Phase 34: タブ切り替え + Phase 35: 連絡先結合 */}
-                <div className="flex items-center gap-1 mb-4">
-                  <button
-                    onClick={() => setDetailTab('info')}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      detailTab === 'info' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    <Edit2 className="w-3 h-3" />
-                    基本情報
-                  </button>
-                  <button
-                    onClick={() => {
-                      setDetailTab('activities');
-                      if (activities.length === 0) fetchActivities(selectedContact.id);
-                    }}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      detailTab === 'activities' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    <Clock className="w-3 h-3" />
-                    活動履歴
-                  </button>
-                  {/* Phase 36: コミュニケーション分析タブ */}
-                  <button
-                    onClick={() => {
-                      setDetailTab('ai');
-                      if (!aiContext && selectedContact && !selectedContact.isAutoGenerated) {
-                        setAiContext(selectedContact.notes || '');
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                      detailTab === 'ai' ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    <Sparkles className="w-3 h-3" />
-                    コミュニケーション分析
-                  </button>
-                  {/* Phase 35: 連絡先結合ボタン（タブと同じスタイル） */}
-                  <button
-                    onClick={() => { setShowLinkModal(true); setLinkSearch(''); }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 transition-colors"
-                  >
-                    <Link2 className="w-3 h-3" />
-                    連絡先結合
-                  </button>
-                </div>
 
-                {/* ========== 基本情報タブ ========== */}
-                {detailTab === 'info' && (
-                  <>
+                {/* ========== 基本情報 ========== */}
                     {/* やり取りチャネル一覧 + Phase 35: チャンネル追加 */}
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-2">
@@ -1248,72 +1035,6 @@ export default function ContactsPage() {
                       {isSaving ? '保存中...' : '保存'}
                     </Button>
 
-                    {/* Phase 34: プロジェクト紐付け */}
-                    <div className="mt-4 pt-4 border-t border-slate-200">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-                          <FolderOpen className="w-3.5 h-3.5" />
-                          プロジェクト紐付け
-                        </label>
-                        <button
-                          onClick={() => setShowProjectAdd(!showProjectAdd)}
-                          className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                      {showProjectAdd && projects.length > 0 && (
-                        <div className="flex gap-2 mb-2">
-                          <select
-                            value={selectedProjectToAdd}
-                            onChange={(e) => setSelectedProjectToAdd(e.target.value)}
-                            className="flex-1 px-2 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          >
-                            <option value="">プロジェクトを選択</option>
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                          </select>
-                          <Button
-                            onClick={addToProject}
-                            disabled={!selectedProjectToAdd}
-                            variant="primary"
-                            size="xs"
-                          >
-                            追加
-                          </Button>
-                        </div>
-                      )}
-                      {projects.length === 0 && showProjectAdd && (
-                        <p className="text-xs text-slate-400 mb-2">プロジェクトがありません。ビジネスログから作成してください。</p>
-                      )}
-
-                      {/* 所属プロジェクト一覧 */}
-                      {contactProjects.length > 0 && (
-                        <div className="space-y-1 mt-2">
-                          {contactProjects.map((cp) => {
-                            const proj = cp.projects;
-                            return (
-                              <div key={cp.id} className="flex items-center gap-2 px-2 py-1.5 bg-blue-50 rounded-lg group">
-                                <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                <span className="text-xs text-slate-700 flex-1 truncate">{proj?.name || cp.project_id}</span>
-                                {proj?.status && (
-                                  <span className="text-[10px] text-slate-400">{proj.status}</span>
-                                )}
-                                <button
-                                  onClick={() => removeFromProject(cp.project_id)}
-                                  className="opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-400 transition-all p-0.5"
-                                  title="プロジェクトから外す"
-                                >
-                                  <X className="w-3 h-3" />
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-
                     {/* Phase 51a: 関連タスク */}
                     <div className="mt-4 pt-4 border-t border-slate-200">
                       <p className="text-xs font-semibold text-slate-500 mb-2">📋 関連タスク</p>
@@ -1369,81 +1090,6 @@ export default function ContactsPage() {
                         </div>
                       </div>
                     )}
-                  </>
-                )}
-
-                {/* ========== Phase 34: 活動履歴タブ ========== */}
-                {detailTab === 'activities' && (
-                  <div>
-                    {isLoadingActivities ? (
-                      <div className="flex items-center justify-center h-32">
-                        <LoadingState />
-                      </div>
-                    ) : activities.length === 0 ? (
-                      <div className="flex items-center justify-center h-32 text-slate-400">
-                        <div className="text-center">
-                          <Clock className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="text-xs">活動履歴がありません</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {activities.map((activity) => (
-                          <div key={activity.id} className="p-3 bg-white border border-slate-200 rounded-lg">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                activity.type === 'event'
-                                  ? 'bg-blue-100 text-blue-700'
-                                  : 'bg-slate-100 text-slate-600'
-                              }`}>
-                                {activity.type === 'event' ? activity.eventType : activity.eventType}
-                              </span>
-                              <span className="text-[10px] text-slate-400">{formatDate(activity.timestamp)}</span>
-                            </div>
-                            <p className="text-sm font-medium text-slate-900 truncate">{activity.title}</p>
-                            {activity.content && (
-                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{activity.content}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* ========== Phase 36: コミュニケーション分析タブ ========== */}
-                {detailTab === 'ai' && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs text-slate-500">
-                        {selectedContact?.ai_analyzed_at
-                          ? `最終分析: ${formatDate(selectedContact.ai_analyzed_at)}`
-                          : '未分析'}
-                      </p>
-                      <Button
-                        onClick={analyzeContact}
-                        disabled={isAnalyzing || selectedContact?.isAutoGenerated}
-                        variant="primary"
-                        size="xs"
-                        icon={isAnalyzing ? <div className="animate-spin text-xs">&#8987;</div> : <Sparkles className="w-3.5 h-3.5" />}
-                      >
-                        {isAnalyzing ? '分析中...' : 'コミュニケーション分析を実行'}
-                      </Button>
-                    </div>
-                    {aiContext ? (
-                      <div className="p-4 bg-white border border-slate-200 rounded-lg">
-                        <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{aiContext}</p>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-center h-32 text-slate-400">
-                        <div className="text-center">
-                          <Sparkles className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                          <p className="text-xs">コミュニケーション分析を実行すると、この人物との<br />双方向の関係性やコミュニケーション傾向が表示されます</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
                 </Card>
               </div>
             )}
@@ -1530,86 +1176,6 @@ export default function ContactsPage() {
           setTimeout(() => setActionResult(null), 3000);
         }}
       />
-
-      {/* Phase 35: 連絡先結合モーダル */}
-      {showLinkModal && selectedContact && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 max-h-[70vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <Link2 className="w-5 h-5 text-blue-500" />
-                <h2 className="text-base font-bold text-slate-900">連絡先結合</h2>
-              </div>
-              <button onClick={() => setShowLinkModal(false)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
-              <p className="text-xs text-slate-500 mb-2">
-                「{selectedContact.name}」に統合するコンタクトを検索してください
-              </p>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={linkSearch}
-                  onChange={(e) => setLinkSearch(e.target.value)}
-                  placeholder="名前で検索..."
-                  className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  autoFocus
-                />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto px-5 py-3">
-              {(() => {
-                const q = linkSearch.toLowerCase().trim();
-                if (!q) return <p className="text-xs text-slate-400 text-center py-4">検索キーワードを入力してください</p>;
-                const filtered = contacts.filter(
-                  (c) => c.id !== selectedContact.id && c.name?.toLowerCase().includes(q)
-                );
-                if (filtered.length === 0) return <p className="text-xs text-slate-400 text-center py-4">該当するコンタクトがありません</p>;
-                return (
-                  <div className="space-y-1">
-                    {filtered.slice(0, 20).map((c) => (
-                      <div key={c.id} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold shrink-0 ${getAvatarColor(c.name)}`}>
-                            {getInitials(c.name)}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-sm font-medium text-slate-900 truncate">{c.name}</div>
-                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
-                              {(c.allChannels || [c.mainChannel]).map((ch) => (
-                                CHANNEL_ICONS[ch] ? (
-                                  <Image key={ch} src={CHANNEL_ICONS[ch]} alt={ch} width={12} height={12} />
-                                ) : null
-                              ))}
-                              {c.companyName && <span>{c.companyName}</span>}
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => executeLinkMerge(c.id)}
-                          disabled={isLinking}
-                          className="shrink-0 ml-2 inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                        >
-                          <GitMerge className="w-3 h-3" />
-                          統合
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-lg">
-              <p className="text-[10px] text-slate-400">
-                選択したコンタクトのチャネル・イベント・プロジェクトが「{selectedContact.name}」に移行され、元のレコードは削除されます。
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Phase 35: 重複統合モーダル */}
       {showMergeModal && (

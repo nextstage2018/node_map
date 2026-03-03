@@ -1,8 +1,9 @@
-// Phase 26: コンタクトAPI — 共有化 + コンテキスト強化 + active_channels自動集計
+// Phase 26+54: コンタクトAPI — 共有化 + コンテキスト強化 + active_channels自動集計 + 組織自動リンク
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId, getServerUserEmail } from '@/lib/serverAuth';
 import { getBlocklist } from '@/services/inbox/inboxStorage.service';
+import { findOrCreateOrganization } from '@/services/contact/organizationLinking.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -229,10 +230,10 @@ export async function GET(request: NextRequest) {
       senders = senderStats;
     }
 
-    // 2. 既存のcontact_personsテーブルからデータ取得（1コンタクト=1行、channels=配列）
+    // 2. 既存のcontact_personsテーブルからデータ取得（1コンタクト=1行、channels=配列、組織JOIN）
     const { data: existingContacts } = await supabase
       .from('contact_persons')
-      .select('*, contact_channels(*)')
+      .select('*, contact_channels(*), organizations(relationship_type)')
       .or(`visibility.eq.shared,visibility.is.null,owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     // 3. Phase 35: senderの統計情報をアドレス/名前で引けるマップに変換
@@ -265,7 +266,6 @@ export async function GET(request: NextRequest) {
       companyName: string; department: string; notes: string;
       visibility: string; activeChannels: { channel: string; name: string }[];
       organization_id?: string; is_team_member?: boolean;
-      ai_context?: string; ai_analyzed_at?: string;
     }[] = [];
 
     if (existingContacts) {
@@ -341,7 +341,8 @@ export async function GET(request: NextRequest) {
           address: primaryAddress,
           channels: cChannels,
           allChannels: channelTypes.length > 0 ? channelTypes : [c.main_channel || 'email'],
-          relationshipType: c.relationship_type || 'unknown',
+          // Phase 54: 組織のrelationship_typeを優先参照
+          relationshipType: (c.organizations as { relationship_type?: string } | null)?.relationship_type || 'unknown',
           confidence: c.confidence || 0,
           confirmed: c.confirmed || false,
           mainChannel: c.main_channel || 'email',
@@ -355,9 +356,6 @@ export async function GET(request: NextRequest) {
           activeChannels: mergedActiveChannels,
           organization_id: c.organization_id || undefined,
           is_team_member: c.is_team_member || false,
-          // Phase 36: AIコンテキスト
-          ai_context: c.ai_context || '',
-          ai_analyzed_at: c.ai_analyzed_at || '',
         });
       }
     }
@@ -480,27 +478,9 @@ export async function POST(request: NextRequest) {
     // contact_persons.id は TEXT型（自動生成なし）→ クライアントから渡されたIDを使うか手動生成
     const contactId = id || `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // メールアドレスからorganization_idを自動マッチング
-    let autoOrganizationId = null;
-    let autoRelationshipType = relationship_type || 'unknown';
-    if (email && email.includes('@')) {
-      const domain = email.toLowerCase().split('@')[1];
-      if (domain) {
-        const { data: orgMatch } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('domain', domain)
-          .eq('user_id', userId)
-          .limit(1)
-          .single();
-        if (orgMatch) {
-          autoOrganizationId = orgMatch.id;
-          if (autoRelationshipType === 'unknown') {
-            autoRelationshipType = 'internal';
-          }
-        }
-      }
-    }
+    // Phase 54: company_name + メールドメインから組織を自動検索・作成
+    const emailDomain = email?.includes('@') ? email.toLowerCase().split('@')[1] : null;
+    const autoOrganizationId = await findOrCreateOrganization(supabase, userId, company_name, emailDomain);
 
     // 1. コンタクト本体を作成
     const { error: contactError } = await supabase
@@ -510,7 +490,7 @@ export async function POST(request: NextRequest) {
         name,
         company_name: company_name || null,
         department: department || null,
-        relationship_type: autoRelationshipType,
+        relationship_type: relationship_type || 'unknown',
         confirmed: true,
         main_channel: email ? 'email' : 'other',
         visibility: 'shared',
@@ -598,35 +578,16 @@ export async function PUT(request: NextRequest) {
       // Slack/Chatworkはshared、Emailはprivate
       const visibility = (channel === 'slack' || channel === 'chatwork') ? 'shared' : 'private';
 
-      // Phase 30c: メールアドレスからorganization_idを自動マッチング
-      let autoOrganizationId = body.organizationId || null;
-      let autoRelationshipType = relationshipType || 'unknown';
-      if (!autoOrganizationId && address && address.includes('@')) {
-        const domain = address.toLowerCase().split('@')[1];
-        if (domain) {
-          const { data: orgMatch } = await supabase
-            .from('organizations')
-            .select('id')
-            .eq('domain', domain)
-            .eq('user_id', userId)
-            .limit(1)
-            .single();
-          if (orgMatch) {
-            autoOrganizationId = orgMatch.id;
-            // ドメインマッチした場合、未分類なら自社メンバーに設定
-            if (autoRelationshipType === 'unknown') {
-              autoRelationshipType = 'internal';
-            }
-          }
-        }
-      }
+      // Phase 54: company_name + メールドメインから組織を自動検索・作成
+      const emailDomain = address?.includes('@') ? address.toLowerCase().split('@')[1] : null;
+      const autoOrganizationId = body.organizationId || await findOrCreateOrganization(supabase, userId, companyName, emailDomain);
 
       const { error: insertError } = await supabase
         .from('contact_persons')
         .insert({
           id: newId,
           name: name || '',
-          relationship_type: autoRelationshipType,
+          relationship_type: relationshipType || 'unknown',
           confidence: 1.0,
           confirmed: confirmed ?? true,
           main_channel: channel,
@@ -667,6 +628,26 @@ export async function PUT(request: NextRequest) {
     if (companyName !== undefined) updateData.company_name = companyName;
     if (department !== undefined) updateData.department = department;
     if (notes !== undefined) updateData.notes = notes;
+
+    // Phase 54: company_name変更時に組織を自動リンク
+    if (companyName !== undefined && companyName) {
+      // 現在のコンタクト情報を取得してメールドメインを抽出
+      const { data: currentContact } = await supabase
+        .from('contact_persons')
+        .select('organization_id, contact_channels(address, channel)')
+        .eq('id', id)
+        .single();
+
+      if (currentContact && !currentContact.organization_id) {
+        const emailChannel = ((currentContact.contact_channels || []) as { address: string; channel: string }[])
+          .find((ch) => ch.channel === 'email' && ch.address?.includes('@'));
+        const emailDomain = emailChannel ? emailChannel.address.toLowerCase().split('@')[1] : null;
+        const orgId = await findOrCreateOrganization(supabase, userId, companyName, emailDomain);
+        if (orgId) {
+          updateData.organization_id = orgId;
+        }
+      }
+    }
 
     const { error } = await supabase
       .from('contact_persons')
