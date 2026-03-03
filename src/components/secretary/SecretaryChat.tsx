@@ -628,10 +628,48 @@ export default function SecretaryChat() {
 
     switch (action) {
       case 'select_message': {
-        // メッセージ詳細をAPIから取得して会話に追加
+        // メッセージ詳細をAPIから直接取得してカード表示
         const msgId = d?.id as string;
         if (msgId) {
-          sendMessage(`メッセージID: ${msgId} の詳細を見せて`);
+          try {
+            const res = await fetch(`/api/messages?id=${encodeURIComponent(msgId)}`);
+            const result = await res.json();
+            if (result.success && result.data) {
+              const msg = result.data;
+              const detailMsg: SecretaryMessage = {
+                id: generateId(),
+                role: 'assistant',
+                content: `${msg.from_name || msg.from_address || '不明'}からのメッセージです。`,
+                cards: [{
+                  type: 'message_detail',
+                  data: {
+                    id: msg.id,
+                    channel: msg.channel,
+                    from: msg.from_name || msg.from_address || '不明',
+                    fromAddress: msg.from_address || '',
+                    subject: msg.subject || '',
+                    body: msg.body || '（本文なし）',
+                    timestamp: msg.created_at ? new Date(msg.created_at).toLocaleString('ja-JP') : '',
+                    isRead: msg.is_read,
+                    metadata: msg.metadata || {},
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              };
+              setMessages(prev => [...prev, detailMsg]);
+              // 既読にする
+              fetch('/api/messages/read', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messageIds: [msgId] }),
+              }).catch(() => {});
+            } else {
+              // フォールバック: AIに聞く
+              sendMessage(`メッセージID: ${msgId} の詳細を見せて`);
+            }
+          } catch {
+            sendMessage(`メッセージID: ${msgId} の詳細を見せて`);
+          }
         }
         break;
       }

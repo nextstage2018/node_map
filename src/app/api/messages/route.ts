@@ -184,8 +184,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ページネーションパラメータ
+    // Phase 53: 単一メッセージ取得（id指定時はDBから直接返す）
     const searchParams = request.nextUrl.searchParams;
+    const singleId = searchParams.get('id');
+    if (singleId) {
+      const supabase = createServerClient();
+      if (supabase) {
+        const { data: msgData, error: msgError } = await supabase
+          .from('inbox_messages')
+          .select('*')
+          .eq('id', singleId)
+          .single();
+        if (msgError || !msgData) {
+          return NextResponse.json({ success: false, error: 'メッセージが見つかりません' }, { status: 404 });
+        }
+        return NextResponse.json({ success: true, data: msgData });
+      }
+      return NextResponse.json({ success: false, error: 'DB未設定' }, { status: 500 });
+    }
+
+    // ページネーションパラメータ
     const page = Number(searchParams.get('page')) || 1;
     const limit = Number(searchParams.get('limit')) || 50;
     const forceRefresh = searchParams.get('refresh') === 'true';

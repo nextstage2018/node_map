@@ -130,6 +130,10 @@ function classifyIntent(message: string): Intent {
   if (m.includes('今日') && (m.includes('状況') || m.includes('教えて'))) return 'briefing';
   if (m.includes('おはよう') || m.includes('ブリーフィング') || m.includes('報告')) return 'briefing';
 
+  // メッセージ詳細（特定メッセージの中身を見たい — inboxより先に判定）
+  if (m.includes('メッセージid') || m.includes('メッセージid:') || m.match(/id[:\s]*(email-|slack-|cw-)/i)) return 'message_detail';
+  if (m.includes('詳細') && (m.includes('見せて') || m.includes('教えて') || m.includes('内容') || m.includes('本文'))) return 'message_detail';
+
   // メッセージ
   if (m.includes('メッセージ') || m.includes('メール') || m.includes('新着') || m.includes('受信')) return 'inbox';
   if (m.includes('誰から') || m.includes('連絡')) return 'inbox';
@@ -383,30 +387,31 @@ async function fetchDataAndBuildCards(
           urgentCount,
           activeTaskCount,
           pendingJobCount,
-          todayEventCount: calendarEvents.length,
+          todayEventCount: calendarEvents.filter(e => !e.isAllDay).length,
           pendingFileCount,
           pendingKnowledgeProposals,
           nextEvent,
         },
       });
 
-      // (2) カレンダー予定カード（予定がある場合）
-      if (calendarEvents.length > 0) {
+      // (2) カレンダー予定カード（終日予定を除外して時刻付き予定のみ表示）
+      const timedEvents = calendarEvents.filter(ev => !ev.isAllDay);
+      if (timedEvents.length > 0) {
         cards.push({
           type: 'calendar_events',
           data: {
             date: '今日',
-            events: calendarEvents.map(ev => {
+            events: timedEvents.map(ev => {
               const startDate = new Date(ev.start);
               const endDate = new Date(ev.end);
-              const isNow = !ev.isAllDay && startDate <= now && endDate > now;
+              const isNow = startDate <= now && endDate > now;
               return {
                 id: ev.id,
                 title: ev.summary,
-                startTime: ev.isAllDay ? '' : startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-                endTime: ev.isAllDay ? '' : endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                startTime: startDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                endTime: endDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
                 location: ev.location,
-                isAllDay: ev.isAllDay,
+                isAllDay: false,
                 isNow,
               };
             }),
@@ -487,6 +492,93 @@ async function fetchDataAndBuildCards(
             })),
           },
         });
+      }
+    }
+
+    // メッセージ詳細 → MessageDetailCard（特定メッセージをDB直接取得）
+    if (intent === 'message_detail') {
+      // メッセージIDを抽出
+      const idMatch = userMessage.match(/(?:メッセージID[:\s]*|id[:\s]*)([\w\-<>@.]+)/i)
+        || userMessage.match(/(email-[^\s]+|slack-[^\s]+|cw-[^\s]+)/i);
+      const targetMsgId = idMatch?.[1]?.trim();
+
+      if (targetMsgId) {
+        // DBから直接取得
+        const { data: msgData } = await supabase
+          .from('inbox_messages')
+          .select('id, channel, from_name, from_address, subject, body, is_read, direction, created_at, metadata, to_list')
+          .eq('id', targetMsgId)
+          .single();
+
+        if (msgData) {
+          cards.push({
+            type: 'message_detail',
+            data: {
+              id: msgData.id,
+              channel: msgData.channel,
+              from: msgData.from_name || msgData.from_address || '不明',
+              fromAddress: msgData.from_address || '',
+              subject: msgData.subject || '',
+              body: msgData.body || '（本文なし）',
+              timestamp: formatRelativeTime(msgData.created_at),
+              fullTimestamp: msgData.created_at,
+              isRead: msgData.is_read,
+              metadata: msgData.metadata || {},
+            },
+          });
+          // 既読にする
+          await supabase
+            .from('inbox_messages')
+            .update({ is_read: true })
+            .eq('id', targetMsgId);
+
+          parts.push(`メッセージ詳細（${msgData.from_name || msgData.from_address}）を表示`);
+        } else {
+          // IDマッチなし → メッセージ一覧から名前検索
+          const nameMatch = userMessage.match(/(.+?)(?:さん|様|から|の)(メッセージ|メール|連絡|詳細)/);
+          if (nameMatch && messages.length > 0) {
+            const searchName = nameMatch[1].trim();
+            const found = messages.find(m =>
+              (m.from_name || '').includes(searchName) || (m.from_address || '').includes(searchName)
+            );
+            if (found) {
+              cards.push({
+                type: 'message_detail',
+                data: {
+                  id: found.id,
+                  channel: found.channel,
+                  from: found.from_name || found.from_address || '不明',
+                  fromAddress: found.from_address || '',
+                  subject: found.subject || '',
+                  body: found.body || '（本文なし）',
+                  timestamp: formatRelativeTime(found.created_at),
+                  fullTimestamp: found.created_at,
+                  isRead: found.is_read,
+                  metadata: found.metadata || {},
+                },
+              });
+              parts.push(`${found.from_name || found.from_address}のメッセージ詳細を表示`);
+            }
+          }
+        }
+      } else {
+        // IDなし → 直近メッセージ一覧を表示（フォールバック）
+        if (messages.length > 0) {
+          cards.push({
+            type: 'inbox_summary',
+            data: {
+              items: messages.slice(0, 10).map(m => ({
+                id: m.id,
+                channel: m.channel,
+                from: m.from_name || m.from_address || '不明',
+                subject: m.subject || undefined,
+                preview: (m.body || '').replace(/\n/g, ' ').slice(0, 80),
+                urgency: determineUrgency(m),
+                timestamp: formatRelativeTime(m.created_at),
+              })),
+            },
+          });
+        }
       }
     }
 
