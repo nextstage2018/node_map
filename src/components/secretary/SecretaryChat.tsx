@@ -455,35 +455,9 @@ export default function SecretaryChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Phase 53a: 会話履歴をDBから復元
+  // 初期化: 常にダッシュボードからスタート（会話履歴はDBに保存するがUI復元しない）
   useEffect(() => {
-    const restoreHistory = async () => {
-      try {
-        const res = await fetch('/api/agent/conversations?limit=50');
-        const data = await res.json();
-        if (data.success && data.data?.messages?.length > 0) {
-          const restored: SecretaryMessage[] = data.data.messages
-            .filter((m: { content?: string }) => m.content) // contentがないメッセージは除外
-            .map((m: {
-              id: string; role: string; content: string; cards?: CardData[]; timestamp: string;
-            }) => ({
-              id: m.id || generateId(),
-              role: (m.role === 'user' ? 'user' : 'assistant') as 'user' | 'assistant',
-              content: m.content || '',
-              cards: Array.isArray(m.cards) ? m.cards.filter((c: CardData) => c && c.type && c.data) : undefined,
-              timestamp: m.timestamp || new Date().toISOString(),
-            }));
-          setMessages(restored);
-          setHasBriefing(true);
-          setIsRestoringHistory(false);
-          return;
-        }
-      } catch {
-        // 復元失敗時はブリーフィングから開始
-      }
-      setIsRestoringHistory(false);
-    };
-    restoreHistory();
+    setIsRestoringHistory(false);
   }, []);
 
   // 初回はダッシュボードを表示（自動ブリーフィングしない）
