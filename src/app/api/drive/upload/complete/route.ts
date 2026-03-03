@@ -141,12 +141,16 @@ export async function POST(request: NextRequest) {
     const finalDocId = docId || `dd_upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     const now = new Date();
 
+    // Phase 50: taskIdパラメータ対応（タスクからのファイルアップロード）
+    const taskId = body.taskId || null;
+
     // drive_documents にレコード登録
     await sb.from('drive_documents').insert({
       id: finalDocId,
       user_id: userId,
       organization_id: orgId || null,
       project_id: projectId,
+      task_id: taskId,
       drive_file_id: driveFileId,
       file_name: renamedFileName || originalFileName,
       original_file_name: originalFileName,

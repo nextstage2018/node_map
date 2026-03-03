@@ -10,6 +10,15 @@ import {
 } from '@/lib/constants';
 import { formatRelativeTime, cn } from '@/lib/utils';
 import TaskAiChat from './TaskAiChat';
+import TaskFileUploadPanel, { TaskFileInfo } from './TaskFileUploadPanel';
+
+interface AttachedFile {
+  id: string;
+  file_name: string;
+  drive_url: string;
+  document_type: string;
+  created_at: string;
+}
 
 const CATEGORY_LABEL: Record<string, { label: string; color: string }> = {
   routine: { label: '定型', color: 'text-emerald-600 bg-emerald-50' },
@@ -62,6 +71,8 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
     initialGoal: Snapshot | null;
     finalLanding: Snapshot | null;
   }>({ initialGoal: null, finalLanding: null });
+  const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
+  const [showFileUpload, setShowFileUpload] = useState(false);
 
   useEffect(() => {
     if (!task?.id) return;
@@ -74,6 +85,16 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
       } catch { /* ignore */ }
     };
     fetchSnapshots();
+  }, [task?.id]);
+
+  // Phase 50: タスクのファイル一覧を取得
+  useEffect(() => {
+    if (!task?.id) { setAttachedFiles([]); return; }
+    setShowFileUpload(false);
+    fetch(`/api/tasks/${task.id}/files`)
+      .then(r => r.json())
+      .then(d => { if (d.success) setAttachedFiles(d.data || []); })
+      .catch(() => {});
   }, [task?.id]);
 
   useEffect(() => {
@@ -141,6 +162,31 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Phase 50: ファイルアップロード完了
+  const handleFileUploadComplete = (file: TaskFileInfo) => {
+    setAttachedFiles(prev => [{
+      id: file.docId,
+      file_name: file.fileName,
+      drive_url: file.driveUrl,
+      document_type: file.documentType,
+      created_at: new Date().toISOString(),
+    }, ...prev]);
+    setShowFileUpload(false);
+  };
+
+  // Phase 50: ファイルをタスクから切り離し
+  const handleRemoveFile = async (fileId: string) => {
+    if (!task) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/files`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileId }),
+      });
+      setAttachedFiles(prev => prev.filter(f => f.id !== fileId));
+    } catch { /* ignore */ }
   };
 
   const timelineEvents = PHASE_TIMELINE.map((phase) => {
@@ -332,6 +378,69 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
           📊 変遷
         </button>
       </div>
+
+      {/* Phase 50: ファイルセクション */}
+      {activeTab === 'chat' && (
+        <div className="shrink-0">
+          {/* ファイルヘッダー */}
+          <div className="px-4 py-1.5 flex items-center justify-between border-b border-slate-50">
+            <span className="text-[10px] font-semibold text-slate-400">
+              📎 ドキュメント{attachedFiles.length > 0 && ` (${attachedFiles.length})`}
+            </span>
+            {task.projectId && (
+              <button
+                onClick={() => setShowFileUpload(!showFileUpload)}
+                className="text-[10px] px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+              >
+                {showFileUpload ? '閉じる' : '+ 追加'}
+              </button>
+            )}
+          </div>
+
+          {/* アップロードパネル */}
+          {showFileUpload && task.projectId && (
+            <TaskFileUploadPanel
+              taskId={task.id}
+              projectId={task.projectId}
+              onUploadComplete={handleFileUploadComplete}
+              onClose={() => setShowFileUpload(false)}
+            />
+          )}
+
+          {/* ファイルリスト */}
+          {attachedFiles.length > 0 && (
+            <div className="px-4 py-1.5 space-y-1">
+              {attachedFiles.map(file => (
+                <div key={file.id} className="flex items-center gap-2 p-1.5 bg-slate-50 rounded-lg border border-slate-100 text-xs group">
+                  <a
+                    href={file.drive_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 text-blue-600 hover:underline truncate min-w-0"
+                  >
+                    📄 {file.file_name}
+                  </a>
+                  <span className="text-[9px] text-slate-400 shrink-0">{file.document_type}</span>
+                  <button
+                    onClick={() => handleRemoveFile(file.id)}
+                    className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                    title="タスクから切り離す"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* プロジェクト未設定の場合 */}
+          {!task.projectId && attachedFiles.length === 0 && (
+            <div className="px-4 py-2">
+              <p className="text-[10px] text-slate-300">プロジェクトを設定するとファイルを添付できます</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* コンテンツ */}
       {activeTab === 'chat' ? (

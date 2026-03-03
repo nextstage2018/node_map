@@ -861,10 +861,28 @@ export class TaskService {
         console.error('Error fetching conversations for archive:', convErr);
       }
 
-      // 構想メモ + 結果要約 + 会話ログをまとめて保存
+      // Phase 50: タスクに紐づくドキュメントを取得
+      let documentSection = '';
+      try {
+        const { data: docs } = await sb
+          .from('drive_documents')
+          .select('file_name, document_type, drive_url')
+          .eq('task_id', taskId);
+
+        if (docs && docs.length > 0) {
+          documentSection = '\n\n---\n📎 関連ドキュメント:\n' + docs.map((d: any) => {
+            return `- ${d.file_name} (${d.document_type || 'その他'}) — ${d.drive_url || 'URL不明'}`;
+          }).join('\n');
+        }
+      } catch (docErr) {
+        console.error('Error fetching documents for archive:', docErr);
+      }
+
+      // 構想メモ + 結果要約 + ドキュメント + 会話ログをまとめて保存
       const contentParts: string[] = [];
       if (task.ideation_summary) contentParts.push(`【構想メモ】\n${task.ideation_summary}`);
       if (task.result_summary) contentParts.push(`【結果要約】\n${task.result_summary}`);
+      if (documentSection) contentParts.push(documentSection);
       contentParts.push(conversationLog);
 
       const { error: eventError } = await sb
