@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Phase 56b: proposed ステータスで作成（承認後にtodoへ）
     // 1. 親タスク作成
     const parent = await TaskService.createTask({
       userId,
@@ -38,6 +39,7 @@ export async function POST(request: NextRequest) {
       projectId: parentTask.projectId || null,
       taskType: parentTask.taskType || 'personal',
       phase: 'progress',
+      status: 'proposed',
     });
 
     // 2. 子タスクを親に紐づけて一括作成
@@ -54,6 +56,7 @@ export async function POST(request: NextRequest) {
           assigneeContactId: child.assigneeContactId || null,
           taskType: 'personal',
           phase: 'progress',
+          status: 'proposed',
         });
         createdChildren.push(childTask.id);
       } catch (childErr) {

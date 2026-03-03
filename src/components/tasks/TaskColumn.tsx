@@ -13,6 +13,8 @@ interface TaskColumnProps {
   selectedTaskId: string | null;
   onSelectTask: (task: Task) => void;
   onQuickChat?: (taskId: string, message: string) => Promise<void>;
+  onApprove?: (taskId: string) => Promise<void>;
+  onReject?: (taskId: string) => Promise<void>;
 }
 
 export default function TaskColumn({
@@ -21,6 +23,8 @@ export default function TaskColumn({
   selectedTaskId,
   onSelectTask,
   onQuickChat,
+  onApprove,
+  onReject,
 }: TaskColumnProps) {
   const config = TASK_STATUS_CONFIG[status];
 
@@ -87,6 +91,8 @@ export default function TaskColumn({
                 isSelected={task.id === selectedTaskId}
                 onClick={() => onSelectTask(task)}
                 onQuickChat={handleQuickChat}
+                onApprove={onApprove}
+                onReject={onReject}
               />
             ))
           )}

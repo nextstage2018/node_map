@@ -115,7 +115,7 @@ export interface InboxFilter {
 export type TaskPhase = 'ideation' | 'progress' | 'result';
 
 // タスクのステータス
-export type TaskStatus = 'todo' | 'in_progress' | 'done';
+export type TaskStatus = 'proposed' | 'todo' | 'in_progress' | 'done';
 
 // タスクの優先度
 export type TaskPriority = 'high' | 'medium' | 'low';
@@ -235,6 +235,7 @@ export interface CreateTaskRequest {
   recurrenceType?: RecurrenceType;
   recurrenceDay?: number;
   assigneeContactId?: string;
+  status?: TaskStatus;  // Phase 56b: 提案ステータスでの作成用
 }
 
 // タスク更新リクエスト

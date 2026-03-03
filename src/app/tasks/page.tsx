@@ -115,6 +115,7 @@ export default function TasksPage() {
     return result;
   }, [tasks, filterProjectId, filterCategory, filterOrgId, projects]);
 
+  const proposedCount = filteredTasks.filter(t => t.status === 'proposed').length;
   const todoCount = filteredTasks.filter(t => t.status === 'todo').length;
   const progressCount = filteredTasks.filter(t => t.status === 'in_progress').length;
   const hasFilter = Boolean(filterProjectId || filterCategory || filterOrgId);
@@ -169,6 +170,27 @@ export default function TasksPage() {
     refresh().then(() => { /* selected task auto-refresh */ });
   }, [refresh]);
 
+  // 提案承認: proposed → todo
+  const handleApprove = useCallback(async (taskId: string) => {
+    await updateTask(taskId, { status: 'todo' });
+    refresh();
+  }, [updateTask, refresh]);
+
+  // 提案却下: タスク削除
+  const handleReject = useCallback(async (taskId: string) => {
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskId }),
+      });
+      if (res.ok) {
+        if (selectedTask?.id === taskId) setSelectedTask(null);
+        refresh();
+      }
+    } catch { /* silent */ }
+  }, [refresh, selectedTask]);
+
   const handleQuickChat = useCallback(async (taskId: string, message: string) => {
     const task = tasks.find((t) => t.id === taskId);
     if (!task) return;
@@ -186,8 +208,8 @@ export default function TasksPage() {
     } catch { /* error */ }
   }, [tasks, refresh]);
 
-  // 完了タスクはアーカイブ（ビジネスログ）されるため、カンバンは2列
-  const statusColumns: TaskStatus[] = ['todo', 'in_progress'];
+  // 完了タスクはアーカイブ（ビジネスログ）されるため、カンバンは3列（提案+未着手+進行中）
+  const statusColumns: TaskStatus[] = ['proposed', 'todo', 'in_progress'];
 
   return (
     <AppLayout>
@@ -220,6 +242,12 @@ export default function TasksPage() {
 
                 {/* ステータスカウント */}
                 <div className="flex items-center gap-3">
+                  {proposedCount > 0 && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-2 h-2 rounded-full bg-amber-400" />
+                      <span className="text-xs text-amber-600 font-medium">提案 {proposedCount}</span>
+                    </div>
+                  )}
                   <div className="flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full bg-slate-300" />
                     <span className="text-xs text-slate-500 font-medium">未着手 {todoCount}</span>
@@ -322,6 +350,8 @@ export default function TasksPage() {
                       selectedTaskId={selectedTask?.id || null}
                       onSelectTask={(task) => setSelectedTask(task)}
                       onQuickChat={handleQuickChat}
+                      onApprove={handleApprove}
+                      onReject={handleReject}
                     />
                   ))}
                 </div>

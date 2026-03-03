@@ -400,20 +400,20 @@ export default function EventDetail({
                     {childTasks.length > 0 && (
                       <div className="mt-3">
                         {allCreated ? (
-                          <div className="flex items-center gap-2 justify-center py-2 bg-green-50 rounded-lg border border-green-200">
-                            <CheckCircle2 className="w-4 h-4 text-green-600" />
-                            <span className="text-xs font-medium text-green-700">タスクを作成しました</span>
+                          <div className="flex items-center gap-2 justify-center py-2 bg-amber-50 rounded-lg border border-amber-200">
+                            <CheckCircle2 className="w-4 h-4 text-amber-600" />
+                            <span className="text-xs font-medium text-amber-700">タスクを提案しました。タスクページで確認できます。</span>
                           </div>
                         ) : (
                           <Button
                             onClick={handleCreateAllTasks}
                             disabled={isCreatingAll}
-                            icon={isCreatingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                            icon={isCreatingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                             variant="primary"
                             size="sm"
                             className="w-full"
                           >
-                            {isCreatingAll ? '作成中...' : `全て作成（${childTasks.length}件）`}
+                            {isCreatingAll ? '提案中...' : `タスクとして提案（${childTasks.length}件）`}
                           </Button>
                         )}
                       </div>

@@ -335,7 +335,8 @@ async function fetchDataAndBuildCards(
       // (1) ブリーフィングサマリーカード
       const unreadCount = messages.filter(m => !m.is_read).length;
       const urgentCount = messages.filter(m => !m.is_read && determineUrgency(m) === 'high').length;
-      const activeTaskCount = tasks.filter(t => t.status !== 'done').length;
+      const activeTaskCount = tasks.filter(t => t.status !== 'done' && t.status !== 'proposed').length;
+      const proposedTaskCount = tasks.filter(t => t.status === 'proposed').length;
       const pendingJobCount = jobs.filter(j => j.status === 'pending' || j.status === 'draft').length;
 
       // 未確認ファイル数を取得
@@ -399,6 +400,7 @@ async function fetchDataAndBuildCards(
           unreadCount,
           urgentCount,
           activeTaskCount,
+          proposedTaskCount,
           pendingJobCount,
           todayEventCount: calendarEvents.filter(e => !e.isAllDay).length,
           pendingFileCount,

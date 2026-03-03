@@ -61,6 +61,11 @@ export const ITEMS_PER_PAGE = 50;
 // ===== Phase 2: タスク関連定数 =====
 
 export const TASK_STATUS_CONFIG = {
+  proposed: {
+    label: '提案',
+    color: 'bg-amber-100 text-amber-700',
+    dotColor: 'bg-amber-400',
+  },
   todo: {
     label: '未着手',
     color: 'bg-slate-100 text-slate-700',

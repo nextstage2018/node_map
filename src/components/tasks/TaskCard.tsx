@@ -31,9 +31,12 @@ interface TaskCardProps {
   isSelected: boolean;
   onClick: () => void;
   onQuickChat?: (taskId: string, message: string) => Promise<void>;
+  onApprove?: (taskId: string) => Promise<void>;
+  onReject?: (taskId: string) => Promise<void>;
 }
 
-export default function TaskCard({ task, isSelected, onClick, onQuickChat }: TaskCardProps) {
+export default function TaskCard({ task, isSelected, onClick, onQuickChat, onApprove, onReject }: TaskCardProps) {
+  const [isApproving, setIsApproving] = useState(false);
   const priority = TASK_PRIORITY_CONFIG[task.priority];
   const phase = TASK_PHASE_CONFIG[task.phase];
   const category = CATEGORY_STYLE[task.taskCategory || 'individual'];
@@ -202,8 +205,40 @@ export default function TaskCard({ task, isSelected, onClick, onQuickChat }: Tas
         </div>
       </div>
 
+      {/* 提案中: 承認/却下ボタン */}
+      {task.status === 'proposed' && onApprove && onReject && (
+        <div
+          className="mx-3 mb-2 flex gap-1.5"
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              setIsApproving(true);
+              try { await onApprove(task.id); } finally { setIsApproving(false); }
+            }}
+            disabled={isApproving}
+            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors disabled:opacity-50"
+          >
+            ✓ 承認
+          </button>
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              setIsApproving(true);
+              try { await onReject(task.id); } finally { setIsApproving(false); }
+            }}
+            disabled={isApproving}
+            className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-colors disabled:opacity-50"
+          >
+            ✕ 却下
+          </button>
+        </div>
+      )}
+
       {/* インライン入力 */}
-      {task.status !== 'done' && (
+      {task.status !== 'done' && task.status !== 'proposed' && (
         <form
           onSubmit={handleQuickSend}
           onClick={(e) => e.stopPropagation()}

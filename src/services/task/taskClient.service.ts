@@ -233,7 +233,7 @@ export class TaskService {
       id: crypto.randomUUID(),
       title: req.title,
       description: req.description,
-      status: 'todo',
+      status: req.status || 'todo',
       priority: req.priority || 'medium',
       phase: 'ideation',
       taskType: req.taskType || 'personal', // Phase Restructure: 個人/グループ

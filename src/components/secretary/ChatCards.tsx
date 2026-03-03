@@ -920,6 +920,7 @@ interface BriefingSummaryData {
   unreadCount: number;
   urgentCount: number;
   activeTaskCount: number;
+  proposedTaskCount?: number; // Phase 56b: 提案中タスク数
   pendingJobCount: number;
   todayEventCount: number;
   pendingFileCount?: number;  // 未確認ファイル数
@@ -957,6 +958,15 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <span className="text-[10px] text-slate-500 ml-1">進行中タスク</span>
           </div>
         </div>
+        {(summary.proposedTaskCount ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <ListChecks className="w-4 h-4 text-amber-500" />
+            <div>
+              <span className="text-lg font-bold text-amber-700">{summary.proposedTaskCount}</span>
+              <span className="text-[10px] text-amber-600 ml-1">承認待ちタスク</span>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-slate-500" />
           <div>
