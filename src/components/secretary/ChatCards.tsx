@@ -7,7 +7,7 @@ import {
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
-  FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles,
+  FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles, ListChecks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -924,6 +924,7 @@ interface BriefingSummaryData {
   todayEventCount: number;
   pendingFileCount?: number;  // 未確認ファイル数
   pendingKnowledgeProposals?: number; // ナレッジ提案数
+  pendingTaskSuggestions?: number; // Phase 56: タスク提案数
   nextEvent?: {           // 次の予定
     title: string;
     time: string;         // "10:00〜11:00"
@@ -985,6 +986,15 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <div>
               <span className="text-lg font-bold text-purple-700">{summary.pendingKnowledgeProposals}</span>
               <span className="text-[10px] text-purple-600 ml-1">ナレッジ提案</span>
+            </div>
+          </div>
+        )}
+        {(summary.pendingTaskSuggestions ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <ListChecks className="w-4 h-4 text-teal-500" />
+            <div>
+              <span className="text-lg font-bold text-teal-700">{summary.pendingTaskSuggestions}</span>
+              <span className="text-[10px] text-teal-600 ml-1">タスク提案</span>
             </div>
           </div>
         )}

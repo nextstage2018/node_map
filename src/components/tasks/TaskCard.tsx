@@ -186,6 +186,11 @@ export default function TaskCard({ task, isSelected, onClick, onQuickChat }: Tas
           {task.estimatedHours && (
             <span className="text-[10px] text-slate-400">⏱{task.estimatedHours}h</span>
           )}
+          {task.childTasks && task.childTasks.length > 0 && (
+            <span className="text-[10px] text-slate-500 font-medium" title={`子タスク ${task.childTasks.filter(c => c.status === 'done').length}/${task.childTasks.length} 完了`}>
+              📎 {task.childTasks.filter(c => c.status === 'done').length}/{task.childTasks.length}
+            </span>
+          )}
           {task.conversations.length > 0 && (
             <span className="text-[10px] text-slate-400">
               💬 {task.conversations.length}

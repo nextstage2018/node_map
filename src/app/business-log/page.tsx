@@ -28,6 +28,7 @@ export default function BusinessLogPage() {
   const [events, setEvents] = useState<BusinessEvent[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<BusinessEvent | null>(null);
+  const [autoSuggestEventId, setAutoSuggestEventId] = useState<string | null>(null);
 
   // コンタクト・組織
   const [contacts, setContacts] = useState<ContactOption[]>([]);
@@ -201,7 +202,20 @@ export default function BusinessLogPage() {
         }),
       });
       const data = await res.json();
-      if (data.success) { setShowNewEvent(false); fetchEvents(); showMsg('success', 'イベントを記録しました'); }
+      if (data.success) {
+        setShowNewEvent(false);
+        fetchEvents();
+        showMsg('success', 'イベントを記録しました');
+        // Phase 56: 会議系イベントの場合、自動でタスク提案を取得してEventDetailを表示
+        const meetingTypes = ['meeting', 'call', 'calendar_meeting', 'decision'];
+        if (data.data?.id && meetingTypes.includes(formData.eventType) && formData.content.trim()) {
+          setSelectedEvent(data.data);
+          // 少し遅延してからsuggest-tasks APIを呼び出し（EventDetailに提案自動表示）
+          setTimeout(() => {
+            setAutoSuggestEventId(data.data.id);
+          }, 500);
+        }
+      }
       else showMsg('error', data.error || '作成に失敗しました');
     } catch { showMsg('error', '通信エラー'); }
   };
@@ -423,6 +437,8 @@ export default function BusinessLogPage() {
               onClose={() => setSelectedEvent(null)}
               onUpdate={handleUpdateEvent}
               onDelete={handleDeleteEvent}
+              autoSuggest={autoSuggestEventId === selectedEvent.id}
+              onAutoSuggestDone={() => setAutoSuggestEventId(null)}
             />
           )}
         </div>

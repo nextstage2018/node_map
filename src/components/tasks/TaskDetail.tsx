@@ -472,6 +472,41 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
         </div>
       )}
 
+      {/* Phase 56: 子タスク一覧 */}
+      {task.childTasks && task.childTasks.length > 0 && (
+        <div className="border-t border-slate-200 bg-slate-50">
+          <div className="px-4 py-2">
+            <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+              📎 子タスク ({task.childTasks.filter(c => c.status === 'done').length}/{task.childTasks.length} 完了)
+            </h3>
+            <div className="space-y-1">
+              {task.childTasks.map(child => (
+                <div key={child.id} className="flex items-center gap-2 p-1.5 bg-white rounded-lg border border-slate-100 text-xs">
+                  <span className={cn(
+                    'w-2 h-2 rounded-full shrink-0',
+                    child.status === 'done' ? 'bg-green-400' : child.status === 'in_progress' ? 'bg-blue-400' : 'bg-slate-300'
+                  )} />
+                  <span className={cn(
+                    'truncate flex-1',
+                    child.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'
+                  )}>
+                    {child.title}
+                  </span>
+                  <span className={cn(
+                    'text-[10px] px-1 py-0.5 rounded shrink-0',
+                    child.priority === 'high' ? 'bg-red-50 text-red-600' :
+                    child.priority === 'low' ? 'bg-green-50 text-green-600' :
+                    'bg-yellow-50 text-yellow-600'
+                  )}>
+                    {child.priority === 'high' ? '高' : child.priority === 'low' ? '低' : '中'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* コンテンツ */}
       {activeTab === 'chat' ? (
         <TaskAiChat

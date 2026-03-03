@@ -1,10 +1,11 @@
+// Phase 56: イベント詳細 + 親子タスク提案UI
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FolderOpen, FileText, Phone, Mail, MessageSquare,
   Handshake, X, Pencil, Trash2, AlertTriangle, Bookmark, Bot,
-  Sparkles, Loader2, CheckCircle2, Plus, Link2,
+  Sparkles, Loader2, CheckCircle2, Plus, Link2, Users, ListChecks,
 } from 'lucide-react';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -14,10 +15,17 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
   FileText, Phone, Mail, MessageSquare, Handshake, Bookmark,
 };
 
-interface TaskSuggestion {
+interface ChildTaskSuggestion {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
+  assigneeName?: string;
+  assigneeContactId?: string;
+}
+
+interface ParentTaskSuggestion {
+  title: string;
+  description: string;
 }
 
 interface EventDetailProps {
@@ -26,6 +34,8 @@ interface EventDetailProps {
   onClose: () => void;
   onUpdate: (data: { title: string; content: string; eventType: string }) => Promise<void>;
   onDelete: () => Promise<void>;
+  autoSuggest?: boolean;
+  onAutoSuggestDone?: () => void;
 }
 
 const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
@@ -40,6 +50,8 @@ export default function EventDetail({
   onClose,
   onUpdate,
   onDelete,
+  autoSuggest,
+  onAutoSuggestDone,
 }: EventDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -47,12 +59,14 @@ export default function EventDetail({
   const [editContent, setEditContent] = useState(event.content || '');
   const [editEventType, setEditEventType] = useState(event.event_type);
 
-  // タスク提案
-  const [suggestions, setSuggestions] = useState<TaskSuggestion[]>([]);
+  // Phase 56: 親子タスク提案
+  const [parentTask, setParentTask] = useState<ParentTaskSuggestion | null>(null);
+  const [childTasks, setChildTasks] = useState<ChildTaskSuggestion[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [createdTasks, setCreatedTasks] = useState<Set<number>>(new Set());
-  const [creatingTask, setCreatingTask] = useState<number | null>(null);
+  const [allCreated, setAllCreated] = useState(false);
+  const [isCreatingAll, setIsCreatingAll] = useState(false);
+  const [suggestedProjectId, setSuggestedProjectId] = useState<string | null>(null);
 
   const startEditing = () => {
     setEditTitle(event.title);
@@ -73,8 +87,16 @@ export default function EventDetail({
     try {
       const res = await fetch(`/api/business-events/${event.id}/suggest-tasks`);
       const data = await res.json();
-      if (data.success && data.data?.suggestions) {
-        setSuggestions(data.data.suggestions);
+      if (data.success && data.data) {
+        if (data.data.parentTask) {
+          setParentTask(data.data.parentTask);
+        }
+        if (data.data.childTasks && data.data.childTasks.length > 0) {
+          setChildTasks(data.data.childTasks);
+        }
+        if (data.data.projectId) {
+          setSuggestedProjectId(data.data.projectId);
+        }
       }
     } catch (error) {
       console.error('タスク提案取得エラー:', error);
@@ -83,33 +105,53 @@ export default function EventDetail({
     }
   };
 
-  const handleCreateTask = async (index: number, suggestion: TaskSuggestion) => {
-    setCreatingTask(index);
+  // Phase 56: 自動提案トリガー
+  useEffect(() => {
+    if (autoSuggest && !showSuggestions && !isLoadingSuggestions) {
+      handleSuggestTasks();
+      onAutoSuggestDone?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSuggest]);
+
+  // Phase 56: 親タスク＋子タスク一括作成
+  const handleCreateAllTasks = async () => {
+    if (!parentTask || childTasks.length === 0) return;
+    setIsCreatingAll(true);
     try {
-      const res = await fetch('/api/tasks', {
+      const projectId = suggestedProjectId || event.project_id || null;
+      const res = await fetch('/api/tasks/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: suggestion.title,
-          description: suggestion.description,
-          priority: suggestion.priority,
-          projectId: event.project_id || null,
-          taskType: 'personal',
+          parentTask: {
+            title: parentTask.title,
+            description: parentTask.description,
+            projectId,
+            taskType: childTasks.some(c => c.assigneeContactId) ? 'group' : 'personal',
+          },
+          childTasks: childTasks.map((c) => ({
+            title: c.title,
+            description: c.description,
+            priority: c.priority,
+            assigneeContactId: c.assigneeContactId || null,
+            projectId,
+          })),
         }),
       });
       const data = await res.json();
       if (data.success) {
-        setCreatedTasks((prev) => new Set([...prev, index]));
+        setAllCreated(true);
       }
     } catch (error) {
-      console.error('タスク作成エラー:', error);
+      console.error('タスク一括作成エラー:', error);
     } finally {
-      setCreatingTask(null);
+      setIsCreatingAll(false);
     }
   };
 
   // 会議関連のイベントタイプか判定
-  const isMeetingType = ['meeting', 'call', 'calendar_meeting'].includes(event.event_type);
+  const isMeetingType = ['meeting', 'call', 'calendar_meeting', 'decision'].includes(event.event_type);
 
   if (isEditing) {
     return (
@@ -166,7 +208,7 @@ export default function EventDetail({
   }
 
   const typeConfig = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.note;
-  const Icon = ICON_MAP[typeConfig.icon] || FileText;
+  const TypeIcon = ICON_MAP[typeConfig.icon] || FileText;
 
   return (
     <Card variant="flat" className="w-80 overflow-y-auto bg-slate-50 shrink-0">
@@ -204,7 +246,7 @@ export default function EventDetail({
         {/* タイプバッジ */}
         <div className="flex items-center gap-2 mb-4">
           <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${typeConfig.color}`}>
-            <Icon className="w-3.5 h-3.5" />
+            <TypeIcon className="w-3.5 h-3.5" />
             {typeConfig.label}
           </div>
           {event.ai_generated && (
@@ -279,7 +321,7 @@ export default function EventDetail({
           </div>
         )}
 
-        {/* タスク提案ボタン（会議タイプのみ） */}
+        {/* Phase 56: 親子タスク提案セクション */}
         {isMeetingType && event.content && (
           <div className="mt-4 pt-4 border-t border-slate-200">
             {!showSuggestions ? (
@@ -303,43 +345,79 @@ export default function EventDetail({
                     <Loader2 className="w-4 h-4 animate-spin" />
                     AI分析中...
                   </div>
-                ) : suggestions.length === 0 ? (
+                ) : !parentTask && childTasks.length === 0 ? (
                   <p className="text-xs text-slate-400 py-2">提案するタスクが見つかりませんでした</p>
                 ) : (
                   <div className="space-y-2">
-                    {suggestions.map((s, i) => (
-                      <div key={i} className="bg-white rounded-lg border border-slate-200 p-3">
+                    {/* 親タスク */}
+                    {parentTask && (
+                      <div className="bg-purple-50 rounded-lg border border-purple-200 p-3">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <ListChecks className="w-3.5 h-3.5 text-purple-600" />
+                          <span className="text-xs font-bold text-purple-800">{parentTask.title}</span>
+                        </div>
+                        {parentTask.description && (
+                          <p className="text-[11px] text-purple-600 line-clamp-2">{parentTask.description}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 子タスク一覧 */}
+                    {childTasks.map((c, i) => (
+                      <div key={i} className="bg-white rounded-lg border border-slate-200 p-3 ml-3 relative">
+                        {/* ツリー接続線 */}
+                        <div className="absolute -left-3 top-0 bottom-0 w-3 flex items-center">
+                          <div className="w-3 h-px bg-slate-300" />
+                        </div>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_LABELS[s.priority]?.color || ''}`}>
-                                {PRIORITY_LABELS[s.priority]?.label || s.priority}
+                            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${PRIORITY_LABELS[c.priority]?.color || ''}`}>
+                                {PRIORITY_LABELS[c.priority]?.label || c.priority}
                               </span>
-                              <span className="text-xs font-medium text-slate-800 truncate">{s.title}</span>
+                              <span className="text-xs font-medium text-slate-800 truncate">{c.title}</span>
                             </div>
-                            {s.description && (
-                              <p className="text-[11px] text-slate-500 line-clamp-2">{s.description}</p>
+                            {c.description && (
+                              <p className="text-[11px] text-slate-500 line-clamp-2">{c.description}</p>
+                            )}
+                            {c.assigneeName && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <Users className="w-3 h-3 text-slate-400" />
+                                <span className="text-[10px] text-slate-500">
+                                  {c.assigneeName}
+                                  {c.assigneeContactId && (
+                                    <span className="text-green-600 ml-1">&#10003;</span>
+                                  )}
+                                </span>
+                              </div>
                             )}
                           </div>
-                          {createdTasks.has(i) ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
-                          ) : (
-                            <button
-                              onClick={() => handleCreateTask(i, s)}
-                              disabled={creatingTask === i}
-                              className="shrink-0 p-1 rounded hover:bg-blue-50 text-blue-600 disabled:opacity-50"
-                              title="タスク作成"
-                            >
-                              {creatingTask === i ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Plus className="w-4 h-4" />
-                              )}
-                            </button>
-                          )}
                         </div>
                       </div>
                     ))}
+
+                    {/* 一括作成ボタン */}
+                    {childTasks.length > 0 && (
+                      <div className="mt-3">
+                        {allCreated ? (
+                          <div className="flex items-center gap-2 justify-center py-2 bg-green-50 rounded-lg border border-green-200">
+                            <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            <span className="text-xs font-medium text-green-700">タスクを作成しました</span>
+                          </div>
+                        ) : (
+                          <Button
+                            onClick={handleCreateAllTasks}
+                            disabled={isCreatingAll}
+                            icon={isCreatingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                            variant="primary"
+                            size="sm"
+                            className="w-full"
+                          >
+                            {isCreatingAll ? '作成中...' : `全て作成（${childTasks.length}件）`}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -159,7 +159,28 @@ export class TaskService {
         })
       );
 
-      return tasksWithConversations;
+      // Phase 56: 親子タスクのグルーピング
+      const parentTasks = tasksWithConversations.filter((t) => !t.parentTaskId);
+      const childTaskMap = new Map<string, Task[]>();
+      for (const t of tasksWithConversations) {
+        if (t.parentTaskId) {
+          const children = childTaskMap.get(t.parentTaskId) || [];
+          children.push(t);
+          childTaskMap.set(t.parentTaskId, children);
+        }
+      }
+      // 親タスクにchildTasksをアタッチ
+      for (const p of parentTasks) {
+        const children = childTaskMap.get(p.id);
+        if (children) {
+          p.childTasks = children;
+        }
+      }
+      // 親タスクと、親を持たない子タスク（孤児防止）を返す
+      const orphanChildren = tasksWithConversations.filter(
+        (t) => t.parentTaskId && !parentTasks.find((p) => p.id === t.parentTaskId)
+      );
+      return [...parentTasks, ...orphanChildren];
     } catch (error) {
       console.error('Error fetching tasks from Supabase:', error);
       return [];

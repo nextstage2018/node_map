@@ -1,8 +1,9 @@
-// Phase 55: カレンダーイベント自動取り込みCron（毎日6:00）
-// 昨日のカレンダーイベントをbusiness_eventsに自動登録
+// Phase 55+56: カレンダーイベント自動取り込みCron（毎日6:00）
+// 昨日のカレンダーイベントをbusiness_eventsに自動登録 + タスク自動提案
 import { NextResponse } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getEvents } from '@/services/calendar/calendarClient.service';
+import { suggestTasksWithStructure, matchContactByName } from '@/services/businessLog/taskSuggestion.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -157,6 +158,44 @@ export async function GET(request: Request) {
             console.error(`[SyncCalendarEvents] イベント登録エラー (${event.id}):`, error);
           } else {
             totalCreated++;
+
+            // Phase 56: コンテンツがある場合、タスク提案を自動生成して保存
+            if (content.trim()) {
+              try {
+                // 登録したイベントのIDを取得
+                const { data: insertedEvent } = await supabase
+                  .from('business_events')
+                  .select('id')
+                  .eq('source_calendar_event_id', event.id)
+                  .eq('user_id', userId)
+                  .single();
+
+                if (insertedEvent) {
+                  const projectName = projectId
+                    ? (await supabase.from('projects').select('name').eq('id', projectId).single())?.data?.name
+                    : null;
+
+                  const suggestion = await suggestTasksWithStructure(content, projectName || null, attendeeNames);
+                  if (suggestion && suggestion.childTasks.length > 0) {
+                    // 担当者マッチング
+                    for (const child of suggestion.childTasks) {
+                      if (child.assigneeName) {
+                        const cId = await matchContactByName(supabase, userId, child.assigneeName);
+                        if (cId) child.assigneeContactId = cId;
+                      }
+                    }
+                    await supabase.from('task_suggestions').insert({
+                      user_id: userId,
+                      business_event_id: insertedEvent.id,
+                      suggestions: suggestion,
+                      status: 'pending',
+                    });
+                  }
+                }
+              } catch (suggestErr) {
+                console.error(`[SyncCalendarEvents] タスク提案エラー (${event.id}):`, suggestErr);
+              }
+            }
           }
         }
       } catch (userError) {

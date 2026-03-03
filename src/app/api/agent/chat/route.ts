@@ -361,6 +361,19 @@ async function fetchDataAndBuildCards(
         // エラー時は0のまま
       }
 
+      // Phase 56: タスク提案数を取得
+      let pendingTaskSuggestions = 0;
+      try {
+        const { count: tsCount } = await supabase
+          .from('task_suggestions')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('status', 'pending');
+        pendingTaskSuggestions = tsCount || 0;
+      } catch {
+        // エラー時は0のまま
+      }
+
       // 次の予定を計算
       let nextEvent: { title: string; time: string; minutesUntil?: number } | undefined;
       const now = new Date();
@@ -390,6 +403,7 @@ async function fetchDataAndBuildCards(
           todayEventCount: calendarEvents.filter(e => !e.isAllDay).length,
           pendingFileCount,
           pendingKnowledgeProposals,
+          pendingTaskSuggestions,
           nextEvent,
         },
       });

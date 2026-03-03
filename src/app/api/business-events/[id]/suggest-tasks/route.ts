@@ -1,12 +1,12 @@
-// Phase 55: 会議メモからAIタスク提案API
+// Phase 56: 会議メモからAI親子タスク提案API
 import { NextResponse } from 'next/server';
 import { getServerSupabase, createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
-import { suggestTasksFromMeeting } from '@/services/businessLog/taskSuggestion.service';
+import { suggestTasksWithStructure, matchContactByName } from '@/services/businessLog/taskSuggestion.service';
 
 export const dynamic = 'force-dynamic';
 
-// GET: 会議イベントの内容からタスク候補をAI提案
+// GET: 会議イベントの内容から親タスク＋子タスクをAI提案
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -45,16 +45,58 @@ export async function GET(
     if (!event.content) {
       return NextResponse.json({
         success: true,
-        data: { suggestions: [] },
+        data: { parentTask: null, childTasks: [] },
       });
     }
 
     const projectName = (event.projects as { name?: string } | null)?.name || null;
-    const suggestions = await suggestTasksFromMeeting(event.content, projectName);
+
+    // 参加者名を抽出（contentから【参加者】セクション）
+    const participantMatch = event.content.match(/【参加者】([^\n]+)/);
+    const participantNames = participantMatch
+      ? participantMatch[1].split(/[,、]/).map((n: string) => n.trim()).filter(Boolean)
+      : [];
+
+    const result = await suggestTasksWithStructure(event.content, projectName, participantNames);
+
+    if (!result) {
+      return NextResponse.json({
+        success: true,
+        data: { parentTask: null, childTasks: [] },
+      });
+    }
+
+    // 担当者名からcontact_personsマッチング
+    for (const child of result.childTasks) {
+      if (child.assigneeName) {
+        const contactId = await matchContactByName(supabase, userId, child.assigneeName);
+        if (contactId) {
+          child.assigneeContactId = contactId;
+        }
+      }
+    }
+
+    // task_suggestionsに保存
+    try {
+      await supabase
+        .from('task_suggestions')
+        .insert({
+          user_id: userId,
+          business_event_id: id,
+          suggestions: result,
+          status: 'pending',
+        });
+    } catch (saveErr) {
+      console.error('[SuggestTasks API] 提案保存エラー（続行）:', saveErr);
+    }
 
     return NextResponse.json({
       success: true,
-      data: { suggestions },
+      data: {
+        parentTask: result.parentTask,
+        childTasks: result.childTasks,
+        projectId: event.project_id || null,
+      },
     });
   } catch (error) {
     console.error('[SuggestTasks API] エラー:', error);
