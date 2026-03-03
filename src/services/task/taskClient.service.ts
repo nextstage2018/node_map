@@ -835,17 +835,43 @@ export class TaskService {
     try {
       const { data: task } = await sb
         .from('tasks')
-        .select('title, result_summary, project_id, description')
+        .select('title, result_summary, project_id, description, ideation_summary')
         .eq('id', taskId)
         .single();
 
       if (!task) return false;
 
+      // 会話履歴も取得して保存する（思考ログとしての価値を保全）
+      let conversationLog = '';
+      try {
+        const { data: convs } = await sb
+          .from('task_conversations')
+          .select('role, content, phase, created_at')
+          .eq('task_id', taskId)
+          .order('created_at', { ascending: true });
+
+        if (convs && convs.length > 0) {
+          conversationLog = '\n\n---\n📝 会話ログ:\n' + convs.map((c: any) => {
+            const role = c.role === 'user' ? 'ユーザー' : 'AI';
+            const phase = c.phase === 'ideation' ? '構想' : c.phase === 'progress' ? '進行' : '結果';
+            return `[${phase}] ${role}: ${c.content}`;
+          }).join('\n\n');
+        }
+      } catch (convErr) {
+        console.error('Error fetching conversations for archive:', convErr);
+      }
+
+      // 構想メモ + 結果要約 + 会話ログをまとめて保存
+      const contentParts: string[] = [];
+      if (task.ideation_summary) contentParts.push(`【構想メモ】\n${task.ideation_summary}`);
+      if (task.result_summary) contentParts.push(`【結果要約】\n${task.result_summary}`);
+      contentParts.push(conversationLog);
+
       const { error: eventError } = await sb
         .from('business_events')
         .insert({
           title: `タスク完了: ${task.title}`,
-          content: task.result_summary || task.description || '',
+          content: contentParts.join('\n\n') || task.description || '',
           event_type: 'task_completed',
           project_id: task.project_id,
           user_id: userId,

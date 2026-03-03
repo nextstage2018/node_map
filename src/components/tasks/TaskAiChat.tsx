@@ -212,10 +212,15 @@ export default function TaskAiChat({
   // === フェーズ遷移 ===
   const handlePhaseTransition = async (nextPhase: TaskPhase) => {
     try {
+      // 構想→進行: ステータスも in_progress に変更（カンバンで「進行中」列に移動）
+      const updatePayload: Record<string, string> = { id: task.id, phase: nextPhase };
+      if (nextPhase === 'progress') {
+        updatePayload.status = 'in_progress';
+      }
       await fetch('/api/tasks', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: task.id, phase: nextPhase }),
+        body: JSON.stringify(updatePayload),
       });
       onPhaseChange(nextPhase);
       onTaskUpdate();
