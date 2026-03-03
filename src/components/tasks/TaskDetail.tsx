@@ -168,7 +168,7 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
     .filter(Boolean);
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full min-h-0 bg-white">
       {/* 削除確認モーダル */}
       {showDeleteModal && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">

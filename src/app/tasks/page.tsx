@@ -344,7 +344,7 @@ export default function TasksPage() {
         </div>
 
         {/* 右：タスク詳細 + AI会話 */}
-        <div className="w-[480px] border-l border-slate-200 bg-white shrink-0">
+        <div className="w-[480px] border-l border-slate-200 bg-white shrink-0 overflow-hidden">
           <TaskDetail
             task={selectedTask}
             onUpdate={updateTask}

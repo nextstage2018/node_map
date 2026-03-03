@@ -213,7 +213,7 @@ export default function TaskAiChat({
     conversations.filter((c) => c.phase === p);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
       {/* フェーズインジケータ */}
       <div className="px-4 py-3 border-b border-slate-100 bg-white">
         <div className="flex items-center gap-1">
@@ -295,7 +295,7 @@ export default function TaskAiChat({
       )}
 
       {/* 会話エリア */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-gradient-to-b from-slate-50/30 to-white">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3 bg-gradient-to-b from-slate-50/30 to-white">
         {/* ===== 構想フェーズ：構造化フォーム ===== */}
         {showIdeationFormUI && (
           <div className="bg-white border border-amber-200 rounded-xl p-4 shadow-sm">
@@ -556,7 +556,7 @@ export default function TaskAiChat({
       )}
 
       {/* 入力エリア（下部固定・テキストエリアは上方向に拡張） */}
-      <div className="px-4 py-3 border-t border-slate-100 bg-white mt-auto">
+      <div className="px-4 py-3 border-t border-slate-100 bg-white shrink-0">
         <p className="text-[10px] text-slate-300 mb-1">Ctrl+Enter で送信</p>
         <div className="flex gap-2 items-end">
           <textarea
