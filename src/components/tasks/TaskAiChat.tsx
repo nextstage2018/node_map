@@ -555,8 +555,9 @@ export default function TaskAiChat({
         </div>
       )}
 
-      {/* 入力エリア */}
-      <div className="px-4 py-3 border-t border-slate-100 bg-white">
+      {/* 入力エリア（下部固定・テキストエリアは上方向に拡張） */}
+      <div className="px-4 py-3 border-t border-slate-100 bg-white mt-auto">
+        <p className="text-[10px] text-slate-300 mb-1">Ctrl+Enter で送信</p>
         <div className="flex gap-2 items-end">
           <textarea
             ref={textareaRef}
@@ -570,7 +571,7 @@ export default function TaskAiChat({
                 ? '進捗や気づきを入力...'
                 : '結果や学びを入力...'
             }
-            rows={2}
+            rows={1}
             className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none placeholder:text-slate-300 min-h-[40px] max-h-[160px]"
           />
           <button
@@ -581,7 +582,6 @@ export default function TaskAiChat({
             送信
           </button>
         </div>
-        <p className="text-[10px] text-slate-300 mt-1">Ctrl+Enter で送信</p>
       </div>
     </div>
   );

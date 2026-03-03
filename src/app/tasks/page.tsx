@@ -46,6 +46,19 @@ export default function TasksPage() {
   const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [viewMode, setViewMode] = useState<TaskBoardViewMode>('status');
 
+  // tasks配列が更新されたら selectedTask も最新データに同期
+  useEffect(() => {
+    if (selectedTask) {
+      const updated = tasks.find((t) => t.id === selectedTask.id);
+      if (updated) {
+        setSelectedTask(updated);
+      } else {
+        // タスクが削除された場合
+        setSelectedTask(null);
+      }
+    }
+  }, [tasks]);
+
   // フィルタ
   const [filterProjectId, setFilterProjectId] = useState<string>('');
   const [filterCategory, setFilterCategory] = useState<string>('');
