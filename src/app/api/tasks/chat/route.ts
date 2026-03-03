@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { TaskService } from '@/services/task/taskClient.service';
-import { generateTaskChat, generateTaskSummary } from '@/services/ai/aiClient.service';
+import { generateTaskChat, generateTaskSummary, TaskChatContext } from '@/services/ai/aiClient.service';
 import { NodeService } from '@/services/nodemap/nodeClient.service';
 import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { TaskAiChatRequest, NodeData } from '@/lib/types';
 import { getServerUserId } from '@/lib/serverAuth';
+import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,12 +34,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // プロジェクト・組織のコンテキストを取得
+    let chatContext: TaskChatContext = {};
+    if (task.projectId) {
+      try {
+        const sb = getServerSupabase() || getSupabase();
+        if (sb) {
+          const { data: project } = await sb
+            .from('projects')
+            .select('name, description, organization_id, organizations(name, memo)')
+            .eq('id', task.projectId)
+            .single();
+          if (project) {
+            chatContext.projectName = project.name;
+            chatContext.projectDescription = project.description;
+            const org = project.organizations as any;
+            if (org) {
+              chatContext.organizationName = org.name;
+              chatContext.organizationMemo = org.memo;
+            }
+          }
+          // プロジェクトメンバー名を取得
+          const { data: members } = await sb
+            .from('task_members')
+            .select('user_id')
+            .eq('task_id', body.taskId);
+          if (members && members.length > 0) {
+            const userIds = members.map((m: any) => m.user_id);
+            const { data: contacts } = await sb
+              .from('contact_persons')
+              .select('full_name')
+              .in('id', userIds);
+            if (contacts) {
+              chatContext.memberNames = contacts.map((c: any) => c.full_name).filter(Boolean);
+            }
+          }
+        }
+      } catch (ctxErr) {
+        console.error('[Tasks Chat] コンテキスト取得エラー（続行）:', ctxErr);
+      }
+    }
+
     // AI応答を生成（Phase 17: タグ分類も同時実行）
     const response = await generateTaskChat(
       task,
       body.message,
       body.phase,
-      task.conversations
+      task.conversations,
+      chatContext
     );
 
     // Phase 42f残り: 会話ターンIDを生成（会話ジャンプ用）

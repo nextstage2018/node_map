@@ -282,6 +282,17 @@ function getDemoThreadSummary(subject: string, threadMessages: ThreadMessage[]):
 // ===== Phase 2: タスクAI会話 =====
 
 /**
+ * タスクAI会話に渡すプロジェクト外周コンテキスト
+ */
+export interface TaskChatContext {
+  projectName?: string;
+  organizationName?: string;
+  organizationMemo?: string;
+  projectDescription?: string;
+  memberNames?: string[];
+}
+
+/**
  * Phase 17: ユーザーメッセージの会話タグをルールベースで分類する
  * APIコール不要で高速に分類できる
  */
@@ -328,7 +339,8 @@ export async function generateTaskChat(
   task: Task,
   userMessage: string,
   phase: TaskPhase,
-  conversationHistory: AiConversationMessage[]
+  conversationHistory: AiConversationMessage[],
+  projectContext?: TaskChatContext
 ): Promise<TaskAiChatResponse> {
   const apiKey = getApiKey();
 
@@ -343,16 +355,63 @@ export async function generateTaskChat(
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
 
-    const phaseInstructions: Record<TaskPhase, string> = {
-      ideation: `あなたはタスク完成までの「伴走パートナー」です。現在は「構想フェーズ」です。
-ユーザーがタスクのゴール・やるべきこと・懸念点を明確にするのを手伝ってください。
+    // --- プロジェクト外周コンテキスト ---
+    const projectParts: string[] = [];
+    if (projectContext?.organizationName) {
+      projectParts.push(`組織: ${projectContext.organizationName}`);
+    }
+    if (projectContext?.organizationMemo) {
+      projectParts.push(`組織メモ: ${projectContext.organizationMemo}`);
+    }
+    if (projectContext?.projectName) {
+      projectParts.push(`プロジェクト: ${projectContext.projectName}`);
+    }
+    if (projectContext?.projectDescription) {
+      projectParts.push(`プロジェクト概要: ${projectContext.projectDescription}`);
+    }
+    if (projectContext?.memberNames && projectContext.memberNames.length > 0) {
+      projectParts.push(`関係者: ${projectContext.memberNames.join('、')}`);
+    }
+    const projectContextStr = projectParts.length > 0
+      ? `\n\n## プロジェクト・組織の背景情報（この文脈を踏まえて応答すること）\n${projectParts.join('\n')}`
+      : '';
 
-振る舞い:
-- 種（元のアイデアメモ）の文脈を踏まえて会話する
-- 誘導質問は1〜2問に留める（多すぎると面倒になる）
-- ゴール、やるべきこと、懸念点、期限を引き出す
-- 曖昧な部分を具体化する質問をする
-- 構想がまとまったら「進行フェーズに移りましょう」と促す`,
+    // --- 構想フェーズの会話ステップ判定 ---
+    const ideationUserCount = conversationHistory.filter(c => c.role === 'user' && c.phase === 'ideation').length;
+
+    const phaseInstructions: Record<TaskPhase, string> = {
+      ideation: `あなたはビジネスタスクの「構想パートナー」です。
+
+## 最重要ルール: 一問一答
+- **必ず1つの質問だけ**を聞いてください。複数の質問を同時にしないでください。
+- ユーザーの回答が曖昧・浅い・不明瞭な場合は、**同じトピックで深掘り質問**をしてください。
+- 具体的・行動可能なレベルに達してから次のトピックに移ってください。
+- 次のトピックに移るとき「では次に〜について聞かせてください」と明示してください。
+
+## 構想で埋めるべき4項目（この順番で進める）
+1. 🎯 ゴール（完了条件・達成イメージ）→「成功とはどんな状態か」を明確にする
+2. 📝 主な内容（やるべきこと・作業範囲）→「具体的に何をするのか」をリスト化する
+3. ⚠️ 気になる点（リスク・不明点・依存事項）→「何が障害になりうるか」を洗い出す
+4. 📅 期限（いつまでに・マイルストーン）→「時間軸」を確認する
+
+## 進め方
+${ideationUserCount === 0 ? '- これが最初のメッセージです。まず「ゴール」について質問してください。' : ''}
+- 1項目が十分に明確になったら、次の項目に移る旨を一言伝えてから質問する
+- 回答が「〜くらい」「たぶん」「なんとなく」等の曖昧表現だったら、具体化を促す（「具体的には？」「例えば？」「数字で言うと？」）
+- 4項目すべてが十分に埋まったら、会話内容から【構想まとめ】を以下の形式で整理して提示する:
+  【ゴール】...
+  【主な内容】...
+  【気になる点】...
+  【期限】...
+  そして「この内容でよければ、進行フェーズに移りましょう」と促す
+
+## 応答品質（重要）
+- このタスクの会話は「思考ログ」として後から見返す価値がある内容にする
+- 表面的な相槌（「いいですね！」「わかりました！」）だけで終わらない
+- ユーザーの発言を構造化して言い換え、認識のズレを防ぐ
+- プロジェクトの文脈を踏まえた実質的な応答をする
+- 具体的な提案や視点を加えて会話に厚みを持たせる`,
+
       progress: `あなたはタスク完成までの「伴走パートナー」です。現在は「進行フェーズ」です。
 ユーザーが実際に作業を進める中で、壁打ち相手・相談役として機能してください。
 
@@ -362,7 +421,9 @@ export async function generateTaskChat(
 - 壁にぶつかったら突破のヒントを提案する
 - 新しい発見や方向転換を歓迎する
 - 押しつけがましくならず、聞かれたら的確に答える
-- 必要に応じて「次にやるべきこと」を提案する`,
+- 必要に応じて「次にやるべきこと」を提案する
+- 思考ログとして後で見返す価値のある応答をする`,
+
       result: `あなたはタスク完成までの「伴走パートナー」です。現在は「結果フェーズ」です。
 ユーザーが成果をまとめて完了するのを支援してください。
 
@@ -370,25 +431,24 @@ export async function generateTaskChat(
 - 構想フェーズのゴールと実際の結果を比較する
 - 達成できたこと・できなかったことを整理する
 - 学びや次のアクションを引き出す
-- 「結果をまとめますか？」と促す
-- 自動で要約を生成する`,
+- 「結果をまとめますか？」と促す`,
     };
 
     // タスク情報に加え、種からの経緯も含めて文脈を構築
     const contextParts = [
-      `タスク情報:`,
+      `## タスク情報`,
       `- タイトル: ${task.title}`,
-      `- 説明: ${task.description}`,
     ];
+    if (task.description) contextParts.push(`- 説明: ${task.description}`);
     if (task.ideationSummary) contextParts.push(`- 構想メモ:\n${task.ideationSummary}`);
     if (task.seedId) contextParts.push(`- ※このタスクは「種ボックス」のアイデアから生まれたものです。種での検討内容が構想メモに反映されています。`);
     if ((task as any).dueDate) contextParts.push(`- 期限: ${(task as any).dueDate}`);
 
-    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}`;
+    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}${projectContextStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
     const messages = [
-      ...conversationHistory.slice(-10).map((msg) => ({
+      ...conversationHistory.slice(-20).map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
@@ -397,7 +457,7 @@ export async function generateTaskChat(
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1000,
+      max_tokens: 1500,
       system: systemPrompt,
       messages,
     });

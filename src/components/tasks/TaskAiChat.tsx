@@ -19,13 +19,81 @@ const CONVERSATION_TAG_STYLE: Record<ConversationTag, { bg: string; text: string
   'その他':         { bg: 'bg-slate-100',   text: 'text-slate-500',  icon: '💬' },
 };
 
-// 構想フェーズのサジェストチップ
-const IDEATION_CHIPS = [
-  { label: '🎯 ゴールを整理', message: 'このタスクのゴールを一緒に整理してほしい。何を達成すれば完了と言えるか考えたい。' },
-  { label: '📝 やることを洗い出す', message: 'このタスクでやるべきことを洗い出してほしい。何から手をつけるべきか一緒に考えたい。' },
-  { label: '⚠️ リスクを確認', message: 'このタスクの懸念点やリスクを一緒に確認したい。見落としがないかチェックしたい。' },
-  { label: '📅 スケジュールを考える', message: 'このタスクのスケジュール感を考えたい。いつまでに何を終わらせるべきか整理したい。' },
-];
+// 構想フェーズの4項目定義
+const IDEATION_ITEMS = [
+  {
+    key: 'goal',
+    icon: '🎯',
+    label: 'ゴール',
+    chipLabel: '🎯 ゴールを整理',
+    chipMessage: 'このタスクのゴールを一緒に整理してほしい。何を達成すれば完了と言えるか考えたい。',
+    // AI・ユーザーの発言にこれらのキーワードが含まれていれば、この項目が議論されたと判定
+    keywords: /ゴール|目標|達成|完了条件|成功|成果物|ゴールイメージ|目指す|最終的に|完了と[言い]える|どうなったら/,
+  },
+  {
+    key: 'content',
+    icon: '📝',
+    label: '内容',
+    chipLabel: '📝 やることを洗い出す',
+    chipMessage: 'このタスクでやるべきことを洗い出してほしい。何から手をつけるべきか一緒に考えたい。',
+    keywords: /やること|作業|内容|手順|やるべき|ステップ|具体的に.*する|実施|アクション|進め方|何をする/,
+  },
+  {
+    key: 'concerns',
+    icon: '⚠️',
+    label: '気になる点',
+    chipLabel: '⚠️ リスクを確認',
+    chipMessage: 'このタスクの懸念点やリスクを一緒に確認したい。見落としがないかチェックしたい。',
+    keywords: /リスク|懸念|気になる|不安|障害|問題|課題|不明点|心配|ボトルネック|依存|注意/,
+  },
+  {
+    key: 'deadline',
+    icon: '📅',
+    label: '期限',
+    chipLabel: '📅 スケジュールを考える',
+    chipMessage: 'このタスクのスケジュール感を考えたい。いつまでに何を終わらせるべきか整理したい。',
+    keywords: /期限|いつまで|締め切り|スケジュール|日程|納期|マイルストーン|デッドライン|[0-9]+月|[0-9]+日|来週|今週/,
+  },
+] as const;
+
+/**
+ * 会話内容から構想4項目の充足状況を判定
+ * AIの質問とユーザーの回答の両方が必要（AIが聞いて→ユーザーが答えた = 充足）
+ */
+function detectIdeationProgress(conversations: AiConversationMessage[]): Record<string, boolean> {
+  const ideationConvs = conversations.filter(c => c.phase === 'ideation');
+  const result: Record<string, boolean> = {
+    goal: false,
+    content: false,
+    concerns: false,
+    deadline: false,
+  };
+
+  for (const item of IDEATION_ITEMS) {
+    // AIがこのトピックについて質問し、ユーザーが回答しているかチェック
+    let aiAsked = false;
+    let userResponded = false;
+
+    for (const conv of ideationConvs) {
+      if (conv.role === 'assistant' && item.keywords.test(conv.content)) {
+        aiAsked = true;
+      }
+      // AIが聞いた後のユーザー発言をカウント
+      if (aiAsked && conv.role === 'user' && conv.content.length >= 5) {
+        userResponded = true;
+      }
+    }
+
+    // ユーザーが自発的にこのトピックについて話している場合も充足とする
+    const userMentioned = ideationConvs.some(
+      c => c.role === 'user' && item.keywords.test(c.content) && c.content.length >= 10
+    );
+
+    result[item.key] = (aiAsked && userResponded) || userMentioned;
+  }
+
+  return result;
+}
 
 interface TaskAiChatProps {
   task: Task;
@@ -241,6 +309,53 @@ export default function TaskAiChat({
         </div>
       </div>
 
+      {/* ===== 構想フェーズ：進捗トラッカー ===== */}
+      {phase === 'ideation' && conversations.length > 0 && (() => {
+        const progress = detectIdeationProgress(conversations);
+        const completedCount = Object.values(progress).filter(Boolean).length;
+        return (
+          <div className="mx-4 mt-2 mb-1 shrink-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-semibold text-amber-600">
+                構想の進捗
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {completedCount}/4 項目
+              </span>
+              {/* プログレスバー */}
+              <div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-amber-400 to-amber-500 rounded-full transition-all duration-500"
+                  style={{ width: `${(completedCount / 4) * 100}%` }}
+                />
+              </div>
+            </div>
+            <div className="flex gap-1">
+              {IDEATION_ITEMS.map(item => {
+                const isDone = progress[item.key];
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => {
+                      if (!isDone) sendMessage(item.chipMessage);
+                    }}
+                    disabled={isSending || isDone}
+                    className={cn(
+                      'flex items-center gap-0.5 px-2 py-1 rounded-md text-[10px] font-medium transition-all',
+                      isDone
+                        ? 'bg-green-50 text-green-600 border border-green-200'
+                        : 'bg-slate-50 text-slate-400 border border-slate-200 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 cursor-pointer'
+                    )}
+                  >
+                    {isDone ? '✅' : item.icon} {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 構想メモ（既存データがあれば表示） */}
       {task.ideationSummary && (
         <div className="mx-4 mt-3 p-3 bg-gradient-to-br from-amber-50 to-amber-50/30 rounded-xl border border-amber-200 shrink-0">
@@ -276,20 +391,20 @@ export default function TaskAiChat({
                   <span className="text-[10px] font-semibold text-slate-400">🤖 AI</span>
                 </div>
                 <p className="text-[13px] whitespace-pre-wrap leading-relaxed">
-                  このタスクの構想を一緒に練りましょう！{'\n\n'}ゴールイメージ、やるべきこと、気になる点など、{'\n'}思いつくことを自由に話しかけてください。{'\n'}AIが質問しながら一緒に整理していきます。
+                  このタスクの構想を一緒に練りましょう！{'\n\n'}まずは🎯ゴールから。{'\n'}「このタスクが完了したら、どんな状態になっていたら成功ですか？」{'\n\n'}一問一答で4つの項目（ゴール→内容→気になる点→期限）を{'\n'}順番に整理していきます。
                 </p>
               </div>
             </div>
             {/* サジェストチップ */}
             <div className="flex flex-wrap gap-1.5 px-1">
-              {IDEATION_CHIPS.map(chip => (
+              {IDEATION_ITEMS.map(item => (
                 <button
-                  key={chip.label}
-                  onClick={() => sendMessage(chip.message)}
+                  key={item.key}
+                  onClick={() => sendMessage(item.chipMessage)}
                   disabled={isSending}
                   className="text-[11px] px-2.5 py-1.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 transition-colors disabled:opacity-50"
                 >
-                  {chip.label}
+                  {item.chipLabel}
                 </button>
               ))}
             </div>
@@ -388,22 +503,36 @@ export default function TaskAiChat({
         </div>
       )}
 
-      {/* フェーズ遷移ボタン */}
-      {phase === 'ideation' && conversations.length >= 2 && (
-        <div className="px-4 py-2.5 bg-gradient-to-r from-amber-50 to-amber-50/50 border-t border-amber-200 shrink-0">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-amber-700">
-              構想がまとまったら、進行フェーズに移りましょう
-            </span>
-            <button
-              onClick={() => handlePhaseTransition('progress')}
-              className="px-3 py-1.5 text-xs font-semibold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors"
-            >
-              🔄 進行フェーズへ
-            </button>
+      {/* フェーズ遷移ボタン（構想→進行: 全4項目が充足している場合のみ表示） */}
+      {phase === 'ideation' && (() => {
+        const progress = detectIdeationProgress(conversations);
+        const allDone = Object.values(progress).every(Boolean);
+        const completedCount = Object.values(progress).filter(Boolean).length;
+
+        if (conversations.length < 2) return null;
+
+        return allDone ? (
+          <div className="px-4 py-2.5 bg-gradient-to-r from-green-50 to-amber-50/50 border-t border-green-200 shrink-0">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-green-700">
+                ✅ 構想の4項目が揃いました！進行フェーズへ移りましょう
+              </span>
+              <button
+                onClick={() => handlePhaseTransition('progress')}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors"
+              >
+                🔄 進行フェーズへ
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="px-4 py-2 bg-slate-50/80 border-t border-slate-100 shrink-0">
+            <span className="text-[11px] text-slate-400">
+              💡 構想を進めましょう（{completedCount}/4 項目完了 — 全項目が揃うと進行フェーズに移れます）
+            </span>
+          </div>
+        );
+      })()}
 
       {phase === 'progress' && conversations.length >= 2 && (
         <div className="px-4 py-2.5 bg-gradient-to-r from-blue-50 to-blue-50/50 border-t border-blue-200 shrink-0">
