@@ -1,4 +1,4 @@
-// Phase 46+47: ナレッジ — CRUD UI + 未確認ノード管理 + キーワード詳細 + 提案履歴
+// Phase 46+47+57: ナレッジ — 個人知識地図 + CRUD UI + 未確認ノード管理 + 提案履歴
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -7,6 +7,8 @@ import ContextBar from '@/components/shared/ContextBar';
 import DomainTree from '@/components/master/DomainTree';
 import MasterStats from '@/components/master/MasterStats';
 import UnconfirmedPanel from '@/components/master/UnconfirmedPanel';
+import ThisWeekTagCloud from '@/components/master/ThisWeekTagCloud';
+import MyKnowledgePanel from '@/components/master/MyKnowledgePanel';
 import { LoadingState } from '@/components/ui/EmptyState';
 import type { KnowledgeHierarchy } from '@/lib/types';
 
@@ -29,6 +31,7 @@ interface ProposalHistoryItem {
 }
 
 type MasterTab = 'hierarchy' | 'proposals';
+type Period = 'week' | 'month' | 'all';
 
 export default function MasterPage() {
   const [hierarchy, setHierarchy] = useState<KnowledgeHierarchy | null>(null);
@@ -38,6 +41,7 @@ export default function MasterPage() {
   const [activeTab, setActiveTab] = useState<MasterTab>('hierarchy');
   const [proposals, setProposals] = useState<ProposalHistoryItem[]>([]);
   const [pendingProposalCount, setPendingProposalCount] = useState(0);
+  const [knowledgePeriod, setKnowledgePeriod] = useState<Period>('all');
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -99,7 +103,7 @@ export default function MasterPage() {
     <AppLayout>
       <ContextBar
         title="ナレッジ"
-        subtitle="組織共通の知識分類体系（領域 → 分野 → キーワード）"
+        subtitle="個人の知識地図 — タスク・メッセージから蓄積されたキーワード"
       >
         {!isLoading && (
           <div className="relative w-64">
@@ -129,10 +133,19 @@ export default function MasterPage() {
             <LoadingState />
           ) : (
             <>
+              {/* Phase 57: 今週のタグクラウド */}
+              <ThisWeekTagCloud />
+
+              {/* Phase 57: マイナレッジパネル */}
+              <MyKnowledgePanel
+                period={knowledgePeriod}
+                onPeriodChange={setKnowledgePeriod}
+              />
+
               {/* 未確認ノードパネル */}
               <UnconfirmedPanel onConfirmed={fetchData} />
 
-              {/* タブ切り替え */}
+              {/* タブ切り替え（管理用） */}
               <div className="flex gap-1 border-b border-slate-200">
                 <button
                   onClick={() => setActiveTab('hierarchy')}
@@ -142,7 +155,7 @@ export default function MasterPage() {
                       : 'border-transparent text-slate-500 hover:text-slate-700'
                   }`}
                 >
-                  階層構造
+                  階層構造（管理）
                 </button>
                 <button
                   onClick={() => setActiveTab('proposals')}

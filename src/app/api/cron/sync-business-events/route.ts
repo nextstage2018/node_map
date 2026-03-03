@@ -1,9 +1,11 @@
-// Phase 45c: ビジネスイベント自動蓄積 Cron Job
+// Phase 45c+57: ビジネスイベント自動蓄積 Cron Job
 // inbox_messages（送受信）からビジネスイベントを自動生成
 // 重複防止: source_message_id で既存チェック
+// Phase 57: ビジネスイベントからキーワード抽出追加
 // 日次実行（vercel.json で設定）
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -31,6 +33,7 @@ export async function GET(request: NextRequest) {
     created: 0,
     skipped: 0,
     errors: 0,
+    keywordsExtracted: 0,
   };
 
   try {
@@ -212,11 +215,70 @@ export async function GET(request: NextRequest) {
           stats.errors++;
         } else {
           stats.created++;
+
+          // Phase 57: キーワード抽出（ビジネスイベントのtitle+contentから）
+          try {
+            const extractText = [title, content].filter(Boolean).join('\n');
+            if (extractText.length >= 10) {
+              const extractResult = await ThoughtNodeService.extractAndLinkFromMessage({
+                messageId: msg.id,
+                subject: title,
+                body: content,
+                userId: defaultUserId,
+                channel: msg.channel || 'business_event',
+              });
+              if (extractResult.linkedCount > 0) {
+                stats.keywordsExtracted += extractResult.linkedCount;
+              }
+            }
+          } catch (kwError) {
+            console.error('[Cron/BusinessEvents] キーワード抽出エラー:', kwError);
+          }
         }
       } catch (msgError) {
         console.error('[Cron/BusinessEvents] メッセージ処理エラー:', msg.id, msgError);
         stats.errors++;
       }
+    }
+
+    // Phase 57: 既存のキーワード未抽出イベントも処理（1回のCron実行で最大20件）
+    try {
+      const { data: unextracted } = await supabase
+        .from('business_events')
+        .select('id, title, content, user_id, source_channel, source_message_id')
+        .or('keywords_extracted.is.null,keywords_extracted.eq.false')
+        .not('content', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (unextracted && unextracted.length > 0) {
+        for (const evt of unextracted) {
+          try {
+            const extractText = [evt.title, evt.content].filter(Boolean).join('\n');
+            if (extractText.length >= 10 && evt.user_id) {
+              const extractResult = await ThoughtNodeService.extractAndLinkFromMessage({
+                messageId: evt.source_message_id || evt.id,
+                subject: evt.title || '',
+                body: evt.content || '',
+                userId: evt.user_id,
+                channel: evt.source_channel || 'business_event',
+              });
+              if (extractResult.linkedCount > 0) {
+                stats.keywordsExtracted += extractResult.linkedCount;
+              }
+            }
+            // 抽出済みフラグを立てる
+            await supabase
+              .from('business_events')
+              .update({ keywords_extracted: true })
+              .eq('id', evt.id);
+          } catch (e) {
+            console.error('[Cron/BusinessEvents] 既存イベントキーワード抽出エラー:', evt.id, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Cron/BusinessEvents] 既存イベント処理エラー:', e);
     }
 
     console.log('[Cron/BusinessEvents] 完了:', JSON.stringify(stats));
