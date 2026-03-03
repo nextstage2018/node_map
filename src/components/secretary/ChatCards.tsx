@@ -7,7 +7,7 @@ import {
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
-  FolderInput, Check, X, ChevronDown, Sparkles,
+  FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -153,6 +153,15 @@ export function MessageDetailCard({
   onCreateJob?: () => void;
   onCreateTask?: () => void;
 }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const bodyText = message.body || '（本文なし）';
+  // 本文が長い場合は折りたたみ（200文字 or 6行以上）
+  const lineCount = bodyText.split('\n').length;
+  const isLong = bodyText.length > 200 || lineCount > 6;
+  const previewText = isLong && !isExpanded
+    ? bodyText.split('\n').slice(0, 5).join('\n').slice(0, 200) + '…'
+    : bodyText;
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
       <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
@@ -166,9 +175,24 @@ export function MessageDetailCard({
         )}
       </div>
       <div className="px-4 py-3">
-        <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed">
-          {message.body}
+        <p className={cn(
+          "text-sm text-slate-600 whitespace-pre-wrap leading-relaxed",
+          !isExpanded && isLong && "max-h-32 overflow-hidden"
+        )}>
+          {previewText}
         </p>
+        {isLong && (
+          <button
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="mt-1.5 text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium"
+          >
+            {isExpanded ? (
+              <><ChevronUp className="w-3 h-3" /> 折りたたむ</>
+            ) : (
+              <><ChevronDown className="w-3 h-3" /> 全文を表示（{bodyText.length}文字）</>
+            )}
+          </button>
+        )}
       </div>
       <div className="px-4 py-2.5 bg-slate-50 border-t border-slate-100 flex gap-2">
         <button

@@ -483,11 +483,11 @@ export default function SecretaryChat() {
     restoreHistory();
   }, []);
 
-  // 初回のブリーフィング（履歴がない場合のみ）
+  // 初回はダッシュボードを表示（自動ブリーフィングしない）
   useEffect(() => {
     if (!isRestoringHistory && !hasBriefing && messages.length === 0) {
       setHasBriefing(true);
-      sendMessage('今日の状況を教えて', true);
+      // ダッシュボード画面を表示したまま待機（ユーザーがチップを選択 or 話しかけるまで）
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestoringHistory]);
@@ -1387,19 +1387,35 @@ export default function SecretaryChat() {
       {/* チャットエリア */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 && !isLoading ? (
-          // ウェルカム画面（ブリーフィング読み込み前）
-          <div className="flex flex-col items-center justify-center h-full text-center">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg mb-4">
-              <Sparkles className="w-8 h-8 text-white" />
+          // ダッシュボード（初期画面）
+          <div className="max-w-2xl mx-auto py-4">
+            <div className="text-center mb-6">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg mb-3 mx-auto">
+                <Sparkles className="w-7 h-7 text-white" />
+              </div>
+              <p className="text-lg font-bold text-slate-800">何をしましょうか？</p>
+              <p className="text-xs text-slate-400 mt-1">タップするか、自由に話しかけてください</p>
             </div>
-            <p className="text-lg font-bold text-slate-800 mb-1">おはようございます</p>
-            <p className="text-sm text-slate-400 mb-6">今日もよろしくお願いします</p>
-            <div className="flex flex-wrap justify-center gap-2 max-w-md">
-              {SUGGEST_CHIPS.map((chip) => (
+            {/* メインアクション（大きめカード） */}
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {SUGGEST_CHIPS.slice(0, 4).map((chip) => (
                 <button
                   key={chip.label}
                   onClick={() => sendMessage(chip.message)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-full hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 transition-all shadow-sm"
+                  className="flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 transition-all shadow-sm text-left"
+                >
+                  <span className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">{chip.icon}</span>
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+            {/* その他アクション（小さめチップ） */}
+            <div className="flex flex-wrap gap-1.5">
+              {SUGGEST_CHIPS.slice(4).map((chip) => (
+                <button
+                  key={chip.label}
+                  onClick={() => sendMessage(chip.message)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
                 >
                   {chip.icon}
                   {chip.label}
