@@ -6,7 +6,7 @@ import {
   Bot, Send, Loader2, Trash2,
   Inbox, CheckSquare, Zap, GitBranch,
   ClipboardList, Sun, Sparkles, Calendar, FolderInput,
-  Paperclip, Upload, X, FileText, ChevronDown,
+  Paperclip, Upload, X, FileText, ChevronDown, Building2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
@@ -34,6 +34,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
   { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
   { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
+  { label: '組織を整理', icon: <Building2 className="w-3.5 h-3.5" />, message: '未登録の組織を確認して', category: 'general' },
 ];
 
 // ========================================
@@ -1037,6 +1038,58 @@ export default function SecretaryChat() {
             }]);
           }
         }
+        break;
+      }
+      // Phase 52: 組織一括セットアップ
+      case 'create_org': {
+        const candidate = d?.candidate as {
+          domain: string; suggestedName: string; contactIds: string[];
+          channels: Array<{ serviceName: string; channelId: string; channelName: string }>;
+        };
+        const relationship = d?.relationship as string || 'client';
+        if (candidate) {
+          try {
+            const res = await fetch('/api/organizations/auto-setup', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: candidate.suggestedName,
+                domain: candidate.domain,
+                relationshipType: relationship,
+                contactIds: candidate.contactIds,
+                channels: candidate.channels,
+              }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              const r = result.data;
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `「${candidate.suggestedName}」を作成しました！（メンバー${r.membersAdded}人、チャネル${r.channelsAdded}件を紐づけ）`,
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `組織の作成に失敗しました: ${result.error || '不明なエラー'}`,
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '組織の作成中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'skip_org': {
+        // スキップは特にDB操作不要（カード上の表示のみ）
         break;
       }
       default: {

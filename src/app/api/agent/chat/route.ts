@@ -90,6 +90,7 @@ type Intent =
   | 'task_progress'         // タスク進行（AIに相談）
   | 'pattern_analysis'      // Phase 51b: 傾向分析
   | 'knowledge_reuse'       // Phase 51b: 過去知見の再利用
+  | 'setup_organization'    // Phase 52: 組織セットアップ
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -206,6 +207,12 @@ function classifyIntent(message: string): Intent {
   // Phase 51b: 過去知見の再利用（「前回の」「この前の方法」「以前の」）
   if (m.includes('前回') || m.includes('この前') || m.includes('以前') || m.includes('あの時')) return 'knowledge_reuse';
   if (m.includes('同じよう') || m.includes('似たような')) return 'knowledge_reuse';
+
+  // Phase 52: 組織セットアップ（「組織を登録」「取引先を追加」「会社を設定」）
+  if (m.includes('組織') && (m.includes('設定') || m.includes('作成') || m.includes('追加') || m.includes('登録') || m.includes('整理') || m.includes('確認'))) return 'setup_organization';
+  if (m.includes('取引先') && (m.includes('追加') || m.includes('登録') || m.includes('設定'))) return 'setup_organization';
+  if (m.includes('会社') && (m.includes('登録') || m.includes('追加') || m.includes('設定'))) return 'setup_organization';
+  if (m.includes('未登録') && (m.includes('組織') || m.includes('会社'))) return 'setup_organization';
 
   return 'general';
 }
@@ -1431,6 +1438,46 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         }
       } catch (extErr) {
         console.error('[Secretary API] Phase 51b コンテキスト拡張エラー:', extErr);
+      }
+    }
+
+    // ========================================
+    // Phase 52: 組織レコメンド
+    // ========================================
+    if (intent === 'setup_organization' || intent === 'briefing') {
+      try {
+        const { OrgRecommendationService } = await import('@/services/analytics/orgRecommendation.service');
+        const candidates = await OrgRecommendationService.detectUnregisteredOrgs(userId);
+
+        if (candidates.length > 0) {
+          if (intent === 'setup_organization') {
+            // 直接リクエスト → カード表示
+            cards.push({
+              type: 'org_recommendation',
+              data: { candidates },
+            });
+            parts.push(`\n\n【未登録組織候補（${candidates.length}件）】\n` +
+              candidates.slice(0, 5).map(c =>
+                `- ${c.suggestedName}（${c.domain}）: ${c.contactCount}人, ${c.messageCount}件のやり取り`
+              ).join('\n'));
+          } else {
+            // ブリーフィング → 3件以上ある場合のみ表示（ノイズ防止）
+            if (candidates.length >= 2) {
+              cards.push({
+                type: 'org_recommendation',
+                data: { candidates: candidates.slice(0, 5) },
+              });
+              parts.push(`\n\n【🏢 組織の登録をおすすめ】\n未登録の組織候補が${candidates.length}件あります（${candidates.slice(0, 3).map(c => c.suggestedName).join('、')}）`);
+            }
+          }
+        } else if (intent === 'setup_organization') {
+          parts.push('\n\n【組織候補】\n未登録の組織候補は見つかりませんでした。メッセージ履歴が少ない場合は、メッセージが蓄積されると自動検出されます。');
+        }
+      } catch (orgErr) {
+        console.error('[Secretary API] 組織レコメンドエラー:', orgErr);
+        if (intent === 'setup_organization') {
+          parts.push('\n\n【組織候補】\n組織候補の検出中にエラーが発生しました。');
+        }
       }
     }
   } catch (error) {

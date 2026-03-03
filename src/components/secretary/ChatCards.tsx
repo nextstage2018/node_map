@@ -1616,6 +1616,14 @@ export function CardRenderer({
           onReject={(proposalId) => onAction?.('reject_knowledge_proposal', { proposalId })}
         />
       );
+    case 'org_recommendation':
+      return (
+        <OrgRecommendationCard
+          data={card.data}
+          onSetup={(candidate, rel) => onAction?.('create_org', { candidate, relationship: rel })}
+          onSkip={(domain) => onAction?.('skip_org', { domain })}
+        />
+      );
     default:
       return null;
   }
@@ -2237,6 +2245,181 @@ function KnowledgeProposalCard({
           <X className="w-4 h-4" />
         </button>
       </div>
+    </div>
+  );
+}
+
+// ========================================
+// 組織レコメンドカード（Phase 52）
+// ========================================
+interface OrgRecommendationData {
+  candidates: Array<{
+    domain: string;
+    suggestedName: string;
+    contactCount: number;
+    messageCount: number;
+    contactIds: string[];
+    channels: Array<{ serviceName: string; channelId: string; channelName: string }>;
+    suggestedRelationship: string;
+    confidence: number;
+  }>;
+}
+
+export function OrgRecommendationCard({
+  data,
+  onSetup,
+  onSkip,
+}: {
+  data: OrgRecommendationData;
+  onSetup: (candidate: OrgRecommendationData['candidates'][0], relationship: string) => void;
+  onSkip: (domain: string) => void;
+}) {
+  const [relationships, setRelationships] = useState<Record<string, string>>({});
+  const [processing, setProcessing] = useState<Record<string, boolean>>({});
+  const [done, setDone] = useState<Record<string, 'created' | 'skipped'>>({});
+  const [isBulk, setIsBulk] = useState(false);
+
+  const pendingCandidates = data.candidates.filter(c => !done[c.domain]);
+
+  const handleSetup = async (candidate: OrgRecommendationData['candidates'][0]) => {
+    setProcessing(p => ({ ...p, [candidate.domain]: true }));
+    const rel = relationships[candidate.domain] || candidate.suggestedRelationship;
+    await onSetup(candidate, rel);
+    setDone(d => ({ ...d, [candidate.domain]: 'created' }));
+    setProcessing(p => ({ ...p, [candidate.domain]: false }));
+  };
+
+  const handleSkip = (domain: string) => {
+    setDone(d => ({ ...d, [domain]: 'skipped' }));
+    onSkip(domain);
+  };
+
+  const handleBulkSetup = async () => {
+    setIsBulk(true);
+    for (const c of pendingCandidates) {
+      await handleSetup(c);
+    }
+    setIsBulk(false);
+  };
+
+  const relOptions = [
+    { value: 'client', label: '取引先' },
+    { value: 'partner', label: 'パートナー' },
+    { value: 'vendor', label: '仕入先' },
+    { value: 'prospect', label: '見込み客' },
+  ];
+
+  const channelIcon = (svc: string) => {
+    if (svc === 'email') return '📧';
+    if (svc === 'slack') return '#';
+    if (svc === 'chatwork') return '💬';
+    return '🔗';
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-blue-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-blue-50 border-b border-blue-200">
+        <p className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+          🏢 組織の登録をおすすめします
+        </p>
+        <p className="text-[10px] text-blue-600 mt-0.5">
+          メッセージ履歴から未登録の組織を検出しました
+        </p>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {data.candidates.map((c) => {
+          const status = done[c.domain];
+          const isProcessingThis = processing[c.domain];
+
+          return (
+            <div key={c.domain} className={cn(
+              'px-4 py-3 transition-colors',
+              status === 'created' && 'bg-green-50',
+              status === 'skipped' && 'bg-slate-50 opacity-60',
+            )}>
+              {/* 組織名 + ドメイン */}
+              <div className="flex items-center justify-between mb-1.5">
+                <div>
+                  <span className="text-sm font-semibold text-slate-900">{c.suggestedName}</span>
+                  <span className="text-[10px] text-slate-400 ml-2">({c.domain})</span>
+                </div>
+                {status === 'created' && (
+                  <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">作成済み</span>
+                )}
+                {status === 'skipped' && (
+                  <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">スキップ</span>
+                )}
+              </div>
+
+              {/* 統計 */}
+              <div className="flex items-center gap-3 text-[10px] text-slate-500 mb-2">
+                <span>👤 {c.contactCount}人</span>
+                <span>📨 {c.messageCount}件のやり取り</span>
+                {c.channels.length > 0 && (
+                  <span>
+                    {c.channels.map((ch, i) => (
+                      <span key={i} className="mr-1">{channelIcon(ch.serviceName)}{ch.channelName}</span>
+                    ))}
+                  </span>
+                )}
+              </div>
+
+              {/* アクション（未処理時のみ） */}
+              {!status && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={relationships[c.domain] || c.suggestedRelationship}
+                    onChange={(e) => setRelationships(r => ({ ...r, [c.domain]: e.target.value }))}
+                    className="text-[11px] px-2 py-1 border border-slate-200 rounded-md bg-white"
+                  >
+                    {relOptions.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => handleSetup(c)}
+                    disabled={isProcessingThis || isBulk}
+                    className={cn(
+                      'text-[11px] px-3 py-1 rounded-md font-medium transition-colors',
+                      isProcessingThis
+                        ? 'bg-slate-100 text-slate-400'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    )}
+                  >
+                    {isProcessingThis ? '作成中...' : '作成する'}
+                  </button>
+                  <button
+                    onClick={() => handleSkip(c.domain)}
+                    disabled={isProcessingThis || isBulk}
+                    className="text-[11px] px-2 py-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                  >
+                    スキップ
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 一括作成ボタン */}
+      {pendingCandidates.length >= 2 && (
+        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200">
+          <button
+            onClick={handleBulkSetup}
+            disabled={isBulk}
+            className={cn(
+              'w-full py-2 rounded-lg text-sm font-medium transition-colors',
+              isBulk
+                ? 'bg-slate-200 text-slate-400'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            )}
+          >
+            {isBulk ? '一括作成中...' : `🔄 一括作成（${pendingCandidates.length}件）`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
