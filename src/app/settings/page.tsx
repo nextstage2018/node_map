@@ -110,6 +110,7 @@ export default function SettingsPage() {
     email: '',
     timezone: 'Asia/Tokyo',
     language: 'ja',
+    emailSignature: '',
   });
 
   // 通知設定
@@ -617,6 +618,17 @@ export default function SettingsPage() {
                     <option value="ja">日本語</option>
                     <option value="en">English</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">メール署名</label>
+                  <textarea
+                    value={profile.emailSignature}
+                    onChange={(e) => setProfile({ ...profile, emailSignature: e.target.value })}
+                    rows={5}
+                    placeholder={"例:\n--\n鈴木 太郎\n株式会社○○ 営業部\nTEL: 03-xxxx-xxxx\nEmail: taro@example.com"}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
+                  />
+                  <p className="text-xs text-slate-500 mt-1.5">メールでの返信・日程調整時に自動的に末尾に付与されます。Slack・Chatworkでは使用されません。</p>
                 </div>
                 <div className="pt-2">
                   <Button

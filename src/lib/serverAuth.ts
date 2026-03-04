@@ -70,6 +70,32 @@ export async function getServerUserDisplayName(): Promise<string | null> {
   }
 }
 
+/**
+ * サーバーサイドでログインユーザーのメール署名を取得する
+ * - user_metadata.email_signature → 設定画面で登録した署名
+ */
+export async function getServerUserEmailSignature(): Promise<string> {
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
+    return '';
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return '';
+    }
+
+    const meta = user.user_metadata || {};
+    return meta.email_signature || '';
+  } catch {
+    return '';
+  }
+}
+
 export async function getServerUserEmail(): Promise<string | null> {
   if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
     return null;

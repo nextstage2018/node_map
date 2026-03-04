@@ -93,6 +93,24 @@ export async function POST(request: NextRequest) {
 
     // 元のジョブのステータスをdraft_readyに更新
     if (consultation.job_id) {
+      // ジョブのチャネル情報を取得して署名を判定
+      const { data: jobData } = await sb
+        .from('jobs')
+        .select('source_channel')
+        .eq('id', consultation.job_id)
+        .single();
+      const jobChannel = jobData?.source_channel || '';
+      const isEmailChannel = !jobChannel || jobChannel === 'email';
+
+      // メール署名を取得
+      let emailSignature = '';
+      if (isEmailChannel) {
+        try {
+          const { getServerUserEmailSignature } = await import('@/lib/serverAuth');
+          emailSignature = await getServerUserEmailSignature();
+        } catch { /* ignore */ }
+      }
+
       // AIで返信文面を生成
       let aiDraft = '';
       try {
@@ -102,7 +120,7 @@ export async function POST(request: NextRequest) {
           model: 'claude-sonnet-4-5-20250929',
           max_tokens: 1024,
           system: `あなたはビジネスメールの返信文面を生成するアシスタントです。
-社内相談の結果を踏まえた返信文面を生成してください。丁寧なビジネス文面で、相談結果の内容を自然に盛り込んでください。`,
+社内相談の結果を踏まえた返信文面を生成してください。丁寧なビジネス文面で、相談結果の内容を自然に盛り込んでください。${isEmailChannel && emailSignature ? '署名は別途自動付与されるので、末尾に名前や署名を書かないでください。' : !isEmailChannel ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}`,
           messages: [{
             role: 'user',
             content: `【スレッド要約】\n${consultation.thread_summary || 'なし'}\n\n【相談内容】\n${consultation.question}\n\n【社内からの回答】\n${answer}\n\n上記を踏まえた返信文面を生成してください。`,
@@ -112,6 +130,11 @@ export async function POST(request: NextRequest) {
       } catch (aiErr) {
         console.error('[Consultations] AI返信生成エラー:', aiErr);
         aiDraft = `社内相談の回答を踏まえた返信:\n\n${answer}`;
+      }
+
+      // メールで署名設定がある場合は自動付与
+      if (isEmailChannel && emailSignature && aiDraft) {
+        aiDraft = aiDraft.trimEnd() + '\n\n' + emailSignature;
       }
 
       await sb.from('jobs').update({

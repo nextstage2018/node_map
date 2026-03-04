@@ -1,6 +1,6 @@
 // Phase 58: ジョブ構造化API — 4タイプ別AI処理
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerUserId, getServerUserDisplayName } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserDisplayName, getServerUserEmailSignature } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     // ジョブタイプ別の処理
     switch (jobType) {
       case 'schedule':
-        return await handleSchedule(userId, messageContent, senderName, subject, body, messageId);
+        return await handleSchedule(userId, messageContent, senderName, subject, body, messageId, channel);
       case 'consult':
         return await handleConsult(userId, messageContent, senderName, subject, body, messageId, consultQuestion, consultTargetName);
       case 'save_to_drive':
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 // ===== 日程調整 =====
 async function handleSchedule(
   userId: string, messageContent: string, senderName: string,
-  subject: string, body: string, messageId: string
+  subject: string, body: string, messageId: string, channel?: string
 ) {
   // 1. カレンダー空き時間を取得（翌営業日〜1週間、10:00-19:00）
   let freeSlots: string[] = [];
@@ -99,8 +99,10 @@ async function handleSchedule(
     console.error('[StructureJob] カレンダー取得エラー:', calErr);
   }
 
-  // 2. ユーザー名を取得
+  // 2. ユーザー名と署名を取得
   const userName = await getServerUserDisplayName() || '';
+  const emailSignature = await getServerUserEmailSignature();
+  const isEmail = !channel || channel === 'email';
 
   // 3. 空き日程テキストをコード側で組み立て（AIに絞り込ませない）
   const slotsListText = freeSlots.length > 0
@@ -115,17 +117,18 @@ async function handleSchedule(
       max_tokens: 1024,
       system: `あなたはビジネスの日程調整を支援するアシスタントです。
 
-返信メールの「挨拶文」と「締め文」だけを生成してください。
+返信メッセージの「挨拶文」と「締め文」だけを生成してください。
 空き日程の候補リストは別途挿入するので、あなたは日程を一切書かないでください。
 
 返信者の名前は「${userName || '（名前）'}」です。
+${isEmail && emailSignature ? '署名は別途自動付与されるので、締め文に名前や署名を含めないでください。' : !isEmail ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}
 
 必ず以下のJSON形式で返してください:
 {
   "title": "ジョブのタイトル（例: ○○さんと日程調整）",
   "description": "やるべきことの要約（50文字以内）",
   "greeting": "挨拶文（メッセージ内容を踏まえた丁寧なビジネス文面。日程候補は書かない。最後に「以下の日程でご都合はいかがでしょうか。」等の導入文で終わる）",
-  "closing": "締め文（ご都合のよい日時をお選びください等の一文 + ご確認のほど〜 + 署名「${userName || '名前'}」）",
+  "closing": "締め文（ご都合のよい日時をお選びください等の一文 + ご確認のほど〜${isEmail && !emailSignature ? ' + 署名「' + (userName || '名前') + '」' : ''}）",
   "purpose": "打ち合わせの目的（抽出結果）"
 }`,
       messages: [{
@@ -139,14 +142,21 @@ async function handleSchedule(
     const structured = JSON.parse(cleaned);
 
     // コード側で返信文面を組み立て（空き日程を強制挿入）
-    const aiDraft = [
+    const draftParts = [
       structured.greeting || `${senderName}様\n\nお世話になっております。${userName}でございます。`,
       '',
       '【候補日時】',
       slotsListText,
       '',
-      structured.closing || `ご都合の良い日時をお選びいただけましたら幸いです。\nよろしくお願いいたします。\n${userName}`,
-    ].join('\n');
+      structured.closing || `ご都合の良い日時をお選びいただけましたら幸いです。\nよろしくお願いいたします。${isEmail && !emailSignature ? '\n' + userName : ''}`,
+    ];
+
+    // メールで署名設定がある場合は自動付与
+    if (isEmail && emailSignature) {
+      draftParts.push('', emailSignature);
+    }
+
+    const aiDraft = draftParts.join('\n');
 
     return NextResponse.json({
       success: true,
@@ -160,7 +170,7 @@ async function handleSchedule(
     });
   } catch {
     // フォールバック: AIなしでもテンプレートで返信文面を生成
-    const aiDraft = [
+    const fallbackParts = [
       `${senderName}様`,
       '',
       `お世話になっております。${userName || '（名前）'}でございます。`,
@@ -172,9 +182,16 @@ async function handleSchedule(
       '',
       'ご都合の良い日時をお選びいただけましたら幸いです。',
       'よろしくお願いいたします。',
-      '',
-      userName || '（名前）',
-    ].join('\n');
+    ];
+
+    // メールで署名設定がある場合は自動付与、なければ名前のみ
+    if (isEmail && emailSignature) {
+      fallbackParts.push('', emailSignature);
+    } else if (isEmail) {
+      fallbackParts.push('', userName || '（名前）');
+    }
+
+    const aiDraft = fallbackParts.join('\n');
 
     return NextResponse.json({
       success: true,

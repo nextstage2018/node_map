@@ -40,7 +40,8 @@ export interface ReplyContext {
 export async function generateReplyDraft(
   message: UnifiedMessage,
   instruction?: string,
-  context?: ReplyContext
+  context?: ReplyContext,
+  emailSignature?: string
 ): Promise<AiDraftResponse> {
   const apiKey = getApiKey();
 
@@ -54,9 +55,9 @@ export async function generateReplyDraft(
 
     // --- チャネル別のトーン指示 ---
     const channelTone: Record<string, string> = {
-      email: 'フォーマルなビジネスメール。適切な挨拶・締めの言葉を含める。',
-      slack: 'やや柔軟でカジュアル。適度にフレンドリーに。長い挨拶は不要。',
-      chatwork: '標準的なビジネストーン。簡潔で読みやすく。',
+      email: 'フォーマルなビジネスメール。適切な挨拶・締めの言葉を含める。' + (emailSignature ? '署名は別途自動付与されるので、末尾に名前や署名を書かないでください。' : ''),
+      slack: 'やや柔軟でカジュアル。適度にフレンドリーに。長い挨拶は不要。末尾に名前や署名を書かないでください。',
+      chatwork: '標準的なビジネストーン。簡潔で読みやすく。末尾に名前や署名を書かないでください。',
     };
 
     // --- コンタクト情報からの指示を構築 ---
@@ -130,7 +131,12 @@ ${context.threadContext}`;
       ],
     });
 
-    const draft = response.content[0]?.type === 'text' ? response.content[0].text : '';
+    let draft = response.content[0]?.type === 'text' ? response.content[0].text : '';
+
+    // メールチャネルで署名が設定されている場合、自動付与
+    if (message.channel === 'email' && emailSignature) {
+      draft = draft.trimEnd() + '\n\n' + emailSignature;
+    }
 
     return {
       draft,

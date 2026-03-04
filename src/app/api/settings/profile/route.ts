@@ -56,6 +56,7 @@ export async function GET() {
         timezone: metadata.timezone || 'Asia/Tokyo',
         language: metadata.language || 'ja',
         avatarUrl: metadata.avatar_url || null,
+        emailSignature: metadata.email_signature || '',
       },
     });
   } catch (error) {
@@ -72,7 +73,7 @@ export async function PUT(req: Request) {
   try {
     const userId = await getServerUserId();
     const body = await req.json();
-    const { displayName, timezone, language, avatarUrl } = body;
+    const { displayName, timezone, language, avatarUrl, emailSignature } = body;
 
     // デモモード
     if (userId === 'demo-user-001' || !supabaseUrl || !supabaseAnonKey) {
@@ -81,6 +82,7 @@ export async function PUT(req: Request) {
       if (timezone !== undefined) demoProfiles[userId].timezone = timezone;
       if (language !== undefined) demoProfiles[userId].language = language;
       if (avatarUrl !== undefined) demoProfiles[userId].avatarUrl = avatarUrl;
+      if (emailSignature !== undefined) demoProfiles[userId].emailSignature = emailSignature;
 
       return NextResponse.json({
         success: true,
@@ -97,6 +99,7 @@ export async function PUT(req: Request) {
     if (timezone !== undefined) updateData.timezone = timezone;
     if (language !== undefined) updateData.language = language;
     if (avatarUrl !== undefined) updateData.avatar_url = avatarUrl;
+    if (emailSignature !== undefined) updateData.email_signature = emailSignature;
 
     const { data, error } = await client.auth.updateUser({
       data: updateData,
@@ -120,6 +123,7 @@ export async function PUT(req: Request) {
         timezone: metadata.timezone || 'Asia/Tokyo',
         language: metadata.language || 'ja',
         avatarUrl: metadata.avatar_url || null,
+        emailSignature: metadata.email_signature || '',
       },
     });
   } catch (error) {

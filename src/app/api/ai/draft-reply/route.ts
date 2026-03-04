@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { AiDraftRequest } from '@/lib/types';
 import { generateReplyDraft } from '@/services/ai/aiClient.service';
-import { getServerUserId } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserEmailSignature } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
@@ -129,8 +129,8 @@ export async function POST(request: NextRequest) {
     const body: AiDraftRequest = await request.json();
     const { originalMessage, instruction } = body;
 
-    // コンタクト情報と過去メッセージを並行取得
-    const [contactContext, recentMessages] = await Promise.all([
+    // コンタクト情報と過去メッセージと署名を並行取得
+    const [contactContext, recentMessages, emailSignature] = await Promise.all([
       getContactContext(
         originalMessage.from?.address || '',
         originalMessage.from?.name || ''
@@ -140,6 +140,7 @@ export async function POST(request: NextRequest) {
         originalMessage.from?.name || '',
         originalMessage.id
       ),
+      getServerUserEmailSignature(),
     ]);
 
     // スレッド内の会話（メールの引用チェーン）
@@ -157,7 +158,8 @@ export async function POST(request: NextRequest) {
         contactContext: contactContext || undefined,
         recentMessages,
         threadContext,
-      }
+      },
+      emailSignature
     );
 
     return NextResponse.json({

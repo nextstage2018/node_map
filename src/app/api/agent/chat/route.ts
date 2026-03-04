@@ -2055,11 +2055,18 @@ async function handleCreateJobIntent(
     metadata: (targetMsg.metadata || {}) as UnifiedMessage['metadata'],
   };
 
+  // メール署名を取得（メールチャネルの場合のみ付与）
+  let emailSignature = '';
+  try {
+    const { getServerUserEmailSignature } = await import('@/lib/serverAuth');
+    emailSignature = await getServerUserEmailSignature();
+  } catch { /* ignore */ }
+
   const draftResult = await generateReplyDraft(unifiedMsg, undefined, {
     contactContext,
     recentMessages,
     threadContext: '',
-  });
+  }, emailSignature);
 
   const draftText = draftResult.draft || '';
 
