@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, Send, Loader2, Trash2,
-  Inbox, CheckSquare, Zap, GitBranch,
+  Inbox, CheckSquare, Zap, GitBranch, MessageSquare,
   ClipboardList, Sun, Sparkles, Calendar, FolderInput,
   Paperclip, Upload, X, FileText, ChevronDown, Building2,
   UserPlus, FolderPlus,
@@ -34,6 +34,7 @@ const SUGGEST_CHIPS: SuggestChip[] = [
   { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
   { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
   { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
+  { label: '相談を確認', icon: <MessageSquare className="w-3.5 h-3.5" />, message: '社内相談を確認して', category: 'general' },
   { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
   { label: 'タスク修正を調整', icon: <CheckSquare className="w-3.5 h-3.5" />, message: 'タスクの修正提案を確認して', category: 'task' },
   { label: '組織を整理', icon: <Building2 className="w-3.5 h-3.5" />, message: '未登録の組織を確認して', category: 'general' },
@@ -1452,6 +1453,44 @@ export default function SecretaryChat() {
               id: generateId(),
               role: 'assistant',
               content: '修正提案の却下中にエラーが発生しました。',
+              timestamp: new Date().toISOString(),
+            }]);
+          }
+        }
+        break;
+      }
+      case 'answer_consultation': {
+        const consultationId = d?.consultationId as string;
+        const answer = d?.answer as string;
+        if (consultationId && answer) {
+          try {
+            const res = await fetch('/api/consultations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ consultationId, answer }),
+            });
+            const result = await res.json();
+            if (result.success) {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: '回答を送信しました。相手の秘書にAI返信文面が生成されます。',
+                cards: [{ type: 'action_result', data: { success: true, message: '社内相談に回答しました。AI返信文面が生成されました。' } }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: `回答の送信に失敗しました: ${result.error || '不明'}`,
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: '回答の送信中にエラーが発生しました。',
               timestamp: new Date().toISOString(),
             }]);
           }

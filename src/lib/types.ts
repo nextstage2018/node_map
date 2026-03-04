@@ -172,6 +172,8 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  // Phase 58: 社内相談
+  consultationId?: string;
   // フェーズ遷移タイムスタンプ
   ideationAt?: string;
   progressAt?: string;
@@ -293,10 +295,10 @@ export interface TaskSuggestion {
 // ===== Phase Restructure: ジョブ・アイデアメモ・タスク種類 =====
 
 // ジョブステータス（シンプル: 未完了 or 完了）
-export type JobStatus = 'pending' | 'done';
+export type JobStatus = 'pending' | 'approved' | 'executing' | 'done' | 'failed' | 'consulting' | 'draft_ready';
 
 // ジョブ種別
-export type JobType = 'schedule' | 'reply_later' | 'check' | 'other';
+export type JobType = 'schedule' | 'reply' | 'reply_later' | 'check' | 'other' | 'consult' | 'save_to_drive' | 'todo';
 
 // ジョブ（AIに委ねる日常の簡易作業。思考マップ対象外）
 export interface Job {
@@ -315,6 +317,8 @@ export interface Job {
   calendarEventId?: string;
   createdAt: string;
   completedAt?: string;
+  // Phase 58: 社内相談
+  consultationId?: string;
 }
 
 // 種の状態
@@ -344,6 +348,23 @@ export interface Seed {
 
 // タスクボードの表示モード
 export type TaskBoardViewMode = 'status' | 'timeline';
+
+// Phase 58: 社内相談
+export interface Consultation {
+  id: string;
+  jobId: string;
+  requesterUserId: string;
+  responderUserId: string;
+  responderContactId?: string;
+  sourceMessageId?: string;
+  sourceChannel?: string;
+  threadSummary?: string;
+  question: string;
+  answer?: string;
+  status: 'pending' | 'answered' | 'cancelled';
+  createdAt: string;
+  answeredAt?: string;
+}
 
 // ジョブ作成リクエスト
 export interface CreateJobRequest {

@@ -356,16 +356,21 @@ function LinkifiedText({ text, className }: { text: string; className?: string }
  * ジョブ種別選択ドロップダウン＋AI構造化
  */
 const JOB_TYPES = [
-  { value: 'schedule', label: '日程調整', icon: '📅' },
-  { value: 'reply_later', label: 'あとで返信', icon: '💬' },
-  { value: 'check', label: '要確認', icon: '🔍' },
-  { value: 'other', label: 'その他', icon: '📝' },
+  { value: 'schedule', label: '日程調整', icon: '📅', desc: 'カレンダー空き確認→候補日提示→返信文生成' },
+  { value: 'consult', label: '社内相談', icon: '💬', desc: '社内メンバーに相談→回答後に返信文生成' },
+  { value: 'save_to_drive', label: 'Driveに保存', icon: '📁', desc: '添付/URLをプロジェクトDriveに保存' },
+  { value: 'todo', label: '後でやる', icon: '📌', desc: 'ジョブリストに保存して後で対応' },
 ] as const;
 
 function JobActionButton({ message }: { message: UnifiedMessage }) {
   const [showMenu, setShowMenu] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showConsultForm, setShowConsultForm] = useState(false);
+  const [consultQuestion, setConsultQuestion] = useState('');
+  const [consultTarget, setConsultTarget] = useState('');
+  const [consultTargetId, setConsultTargetId] = useState('');
+  const [internalMembers, setInternalMembers] = useState<{id: string; name: string; email?: string}[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -378,8 +383,34 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showMenu]);
 
+  // 社内相談: 自社組織メンバーを取得
+  const fetchInternalMembers = useCallback(async () => {
+    try {
+      const orgRes = await fetch('/api/organizations');
+      const orgJson = await orgRes.json();
+      if (!orgJson.success) return;
+      const selfOrg = orgJson.data?.find((o: { relationshipType?: string }) => o.relationshipType === 'self');
+      if (!selfOrg) return;
+      const memRes = await fetch(`/api/organizations/${selfOrg.id}/members`);
+      const memJson = await memRes.json();
+      if (memJson.success && memJson.data) {
+        setInternalMembers(memJson.data.map((m: { id: string; display_name?: string; email?: string }) => ({
+          id: m.id, name: m.display_name || '不明', email: m.email,
+        })));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const handleJobType = async (jobType: string) => {
     setShowMenu(false);
+
+    // 社内相談: フォーム表示
+    if (jobType === 'consult') {
+      fetchInternalMembers();
+      setShowConsultForm(true);
+      return;
+    }
+
     setIsCreating(true);
     try {
       // AIがメッセージ内容からジョブ情報を構造化
@@ -392,6 +423,7 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
           subject: message.subject || '',
           body: message.body,
           jobType,
+          messageId: message.id,
         }),
       });
       const aiJson = await aiRes.json();
@@ -410,11 +442,17 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
           type: jobType,
           sourceMessageId: message.id,
           sourceChannel: message.channel,
+          aiDraft: structured.aiDraft,
         }),
       });
       const json = await res.json();
       if (json.success) {
-        setResult({ type: 'success', text: 'ジョブに追加しました' });
+        const labels: Record<string, string> = {
+          schedule: '日程調整ジョブを作成しました',
+          save_to_drive: 'Driveに保存しました',
+          todo: '後でやるリストに追加しました',
+        };
+        setResult({ type: 'success', text: labels[jobType] || 'ジョブに追加しました' });
       } else {
         setResult({ type: 'error', text: json.error || '作成に失敗' });
       }
@@ -422,6 +460,65 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
       setResult({ type: 'error', text: '通信エラー' });
     } finally {
       setIsCreating(false);
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  // 社内相談: フォーム送信
+  const handleConsultSubmit = async () => {
+    if (!consultQuestion.trim()) return;
+    setShowConsultForm(false);
+    setIsCreating(true);
+    try {
+      const aiRes = await fetch('/api/ai/structure-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: message.channel,
+          from: message.from?.name || '',
+          subject: message.subject || '',
+          body: message.body,
+          jobType: 'consult',
+          messageId: message.id,
+          consultQuestion: consultQuestion,
+          consultTargetName: consultTarget,
+          consultTargetContactId: consultTargetId,
+        }),
+      });
+      const aiJson = await aiRes.json();
+      const structured = aiJson.success ? aiJson.data : {
+        title: `社内相談: ${consultTarget}`,
+        description: consultQuestion.slice(0, 100),
+      };
+
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: structured.title,
+          description: structured.description,
+          type: 'consult',
+          sourceMessageId: message.id,
+          sourceChannel: message.channel,
+          consultQuestion: consultQuestion,
+          consultTargetName: consultTarget,
+          consultTargetContactId: consultTargetId,
+          threadSummary: structured.threadSummary,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setResult({ type: 'success', text: '社内相談を作成しました' });
+      } else {
+        setResult({ type: 'error', text: json.error || '作成に失敗' });
+      }
+    } catch {
+      setResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(false);
+      setConsultQuestion('');
+      setConsultTarget('');
+      setConsultTargetId('');
       setTimeout(() => setResult(null), 3000);
     }
   };
@@ -450,20 +547,77 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
         {isCreating ? '⏳ 登録中...' : '⚡ ジョブ'}
       </Button>
       {showMenu && (
-        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[180px] z-50">
+        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[240px] z-50">
           <div className="px-3 py-1.5 text-[10px] text-slate-400 font-medium border-b border-slate-100">
-            種別を選択
+            アクションを選択
           </div>
           {JOB_TYPES.map((jt) => (
             <button
               key={jt.value}
               onClick={() => handleJobType(jt.value)}
-              className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors flex items-center gap-2"
+              className="w-full text-left px-3 py-2 hover:bg-slate-50 transition-colors"
             >
-              <span>{jt.icon}</span>
-              <span className="text-slate-700">{jt.label}</span>
+              <div className="flex items-center gap-2">
+                <span>{jt.icon}</span>
+                <span className="text-xs font-medium text-slate-700">{jt.label}</span>
+              </div>
+              <p className="text-[10px] text-slate-400 ml-6 mt-0.5">{jt.desc}</p>
             </button>
           ))}
+        </div>
+      )}
+      {showConsultForm && (
+        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg p-4 min-w-[320px] z-50">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-slate-700">💬 社内相談</h4>
+            <button onClick={() => setShowConsultForm(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">相談相手（社内メンバー）</label>
+              {internalMembers.length > 0 ? (
+                <select
+                  value={consultTargetId}
+                  onChange={(e) => {
+                    const m = internalMembers.find(m => m.id === e.target.value);
+                    setConsultTargetId(e.target.value);
+                    setConsultTarget(m?.name || '');
+                  }}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">選択してください</option>
+                  {internalMembers.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}{m.email ? ` (${m.email})` : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={consultTarget}
+                  onChange={(e) => setConsultTarget(e.target.value)}
+                  placeholder="相談相手の名前"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 mb-1">相談内容</label>
+              <textarea
+                value={consultQuestion}
+                onChange={(e) => setConsultQuestion(e.target.value)}
+                placeholder="何を相談したいですか？"
+                rows={3}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              />
+            </div>
+            <button
+              onClick={handleConsultSubmit}
+              disabled={!consultQuestion.trim()}
+              className="w-full bg-blue-600 text-white text-xs font-medium py-2 rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+            >
+              相談を送信
+            </button>
+          </div>
         </div>
       )}
     </div>

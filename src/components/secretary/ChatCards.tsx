@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import {
-  Mail, MessageSquare, Hash, Clock, CheckCircle2, XCircle,
+  Mail, MessageSquare, MessageCircle, Hash, Clock, CheckCircle2, XCircle,
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
@@ -928,6 +928,9 @@ interface BriefingSummaryData {
   pendingKnowledgeProposals?: number; // ナレッジ提案数
   pendingTaskSuggestions?: number; // Phase 56: タスク提案数
   pendingNegotiations?: number;   // Phase 56c: 調整待ちタスク数
+  consultingJobCount?: number;       // Phase 58: 相談中ジョブ数
+  draftReadyJobCount?: number;       // Phase 58: 回答あり（返信下書き生成済み）
+  pendingConsultationCount?: number; // Phase 58: あなた宛ての未回答相談数
   nextEvent?: {           // 次の予定
     title: string;
     time: string;         // "10:00〜11:00"
@@ -1016,6 +1019,24 @@ export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData 
             <div>
               <span className="text-lg font-bold text-orange-700">{summary.pendingNegotiations}</span>
               <span className="text-[10px] text-orange-600 ml-1">調整待ちタスク</span>
+            </div>
+          </div>
+        )}
+        {(summary.pendingConsultationCount ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <MessageCircle className="w-4 h-4 text-purple-500" />
+            <div>
+              <span className="text-lg font-bold text-purple-700">{summary.pendingConsultationCount}</span>
+              <span className="text-[10px] text-purple-600 ml-1">あなた宛ての相談</span>
+            </div>
+          </div>
+        )}
+        {(summary.draftReadyJobCount ?? 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-indigo-500" />
+            <div>
+              <span className="text-lg font-bold text-indigo-700">{summary.draftReadyJobCount}</span>
+              <span className="text-[10px] text-indigo-600 ml-1">回答あり（要確認）</span>
             </div>
           </div>
         )}
@@ -1712,6 +1733,75 @@ function TaskNegotiationCard({
 // ========================================
 // カードレンダラー（型に応じて適切なカードを表示）
 // ========================================
+// ========================================
+// Phase 58: 社内相談一覧カード
+// ========================================
+interface ConsultationItem {
+  id: string;
+  jobTitle: string;
+  question: string;
+  threadSummary?: string;
+  createdAt: string;
+}
+
+export function ConsultationListCard({
+  consultations,
+  onAnswer,
+}: {
+  consultations: ConsultationItem[];
+  onAnswer?: (consultationId: string, answer: string) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState<string | null>(null);
+
+  const handleSubmit = async (id: string) => {
+    const answer = answers[id];
+    if (!answer?.trim()) return;
+    setSubmitting(id);
+    onAnswer?.(id, answer.trim());
+    // Optimistic: clear after submit
+    setTimeout(() => setSubmitting(null), 2000);
+  };
+
+  return (
+    <div className="bg-purple-50 rounded-xl border border-purple-200 overflow-hidden shadow-sm my-2">
+      <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
+        <MessageCircle className="w-4 h-4 text-purple-600" />
+        <span className="text-xs font-semibold text-purple-800">あなた宛ての社内相談（{consultations.length}件）</span>
+      </div>
+      <div className="divide-y divide-purple-100">
+        {consultations.map(c => (
+          <div key={c.id} className="px-4 py-3">
+            <div className="text-xs text-purple-500 mb-1">{c.jobTitle}</div>
+            {c.threadSummary && (
+              <div className="text-[11px] text-gray-400 mb-1 p-2 bg-white/60 rounded">
+                {c.threadSummary.slice(0, 150)}
+              </div>
+            )}
+            <div className="text-sm text-gray-700 mb-2">{c.question}</div>
+            <textarea
+              value={answers[c.id] || ''}
+              onChange={e => setAnswers(prev => ({ ...prev, [c.id]: e.target.value }))}
+              placeholder="回答を入力..."
+              className="w-full px-2 py-1.5 border border-purple-200 rounded text-xs resize-none focus:ring-1 focus:ring-purple-300"
+              rows={2}
+            />
+            <div className="flex justify-end mt-1">
+              <button
+                onClick={() => handleSubmit(c.id)}
+                disabled={!answers[c.id]?.trim() || submitting === c.id}
+                className="px-3 py-1 text-xs bg-purple-600 text-white rounded-full hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting === c.id ? '送信中...' : '回答を送信'}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CardRenderer({
   card,
   onAction,
@@ -1885,6 +1975,13 @@ export function CardRenderer({
           onGenerateAdjustment={(taskId) => onAction?.('generate_task_adjustment', { taskId })}
           onApplyAdjustment={(taskId, adjustment) => onAction?.('approve_task_adjustment', { taskId, adjustment })}
           onDismiss={(taskId) => onAction?.('dismiss_task_negotiation', { taskId })}
+        />
+      );
+    case 'consultation_list':
+      return (
+        <ConsultationListCard
+          consultations={card.data.consultations || []}
+          onAnswer={(consultationId, answer) => onAction?.('answer_consultation', { consultationId, answer })}
         />
       );
     default:

@@ -96,6 +96,7 @@ type Intent =
   | 'create_project'        // Phase 53c: プロジェクト作成
   | 'search_contact'        // Phase 53c: コンタクト検索
   | 'task_negotiation'      // Phase 56c: タスク修正提案・調整
+  | 'consultations'         // Phase 58: 社内相談確認
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -155,6 +156,9 @@ function classifyIntent(message: string): Intent {
 
   // タスク一覧
   if (m.includes('タスク') || m.includes('やること') || m.includes('期限') || m.includes('進行中')) return 'tasks';
+
+  // Phase 58: 社内相談確認（「相談を確認」「相談が来てる」「相談に回答」）
+  if (m.includes('相談') && (m.includes('確認') || m.includes('来') || m.includes('回答') || m.includes('見') || m.includes('届'))) return 'consultations';
 
   // ジョブ一覧
   if (m.includes('ジョブ') || (m.includes('対応') && m.includes('必要'))) return 'jobs';
@@ -345,6 +349,19 @@ async function fetchDataAndBuildCards(
       const activeTaskCount = tasks.filter(t => t.status !== 'done' && t.status !== 'proposed').length;
       const proposedTaskCount = tasks.filter(t => t.status === 'proposed').length;
       const pendingJobCount = jobs.filter(j => j.status === 'pending' || j.status === 'draft').length;
+      const consultingJobCount = jobs.filter(j => j.status === 'consulting').length;
+      const draftReadyJobCount = jobs.filter(j => j.status === 'draft_ready').length;
+
+      // Phase 58: あなた宛ての未回答相談数を取得
+      let pendingConsultationCount = 0;
+      try {
+        const { data: pendingConsults } = await supabase
+          .from('consultations')
+          .select('id')
+          .eq('responder_user_id', userId)
+          .eq('status', 'pending');
+        pendingConsultationCount = pendingConsults?.length || 0;
+      } catch { /* ignore */ }
 
       // 未確認ファイル数を取得
       let pendingFileCount = 0;
@@ -418,6 +435,9 @@ async function fetchDataAndBuildCards(
           activeTaskCount,
           proposedTaskCount,
           pendingJobCount,
+          consultingJobCount,
+          draftReadyJobCount,
+          pendingConsultationCount,
           todayEventCount: calendarEvents.filter(e => !e.isAllDay).length,
           pendingFileCount,
           pendingKnowledgeProposals,
@@ -655,6 +675,36 @@ async function fetchDataAndBuildCards(
             targetName: undefined,
           },
         });
+      }
+    }
+
+    // Phase 58: 社内相談カード（あなた宛ての未回答相談）
+    if (intent === 'consultations' || intent === 'briefing') {
+      try {
+        const { data: pendingConsults } = await supabase
+          .from('consultations')
+          .select('*, jobs(title, description, source_message_id, source_channel)')
+          .eq('responder_user_id', userId)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(5);
+
+        if (pendingConsults && pendingConsults.length > 0) {
+          cards.push({
+            type: 'consultation_list',
+            data: {
+              consultations: pendingConsults.map((c: Record<string, unknown>) => ({
+                id: c.id,
+                jobTitle: (c.jobs as Record<string, unknown>)?.title || '社内相談',
+                question: c.question,
+                threadSummary: c.thread_summary,
+                createdAt: c.created_at,
+              })),
+            },
+          });
+        }
+      } catch (e) {
+        console.error('[Agent] 相談取得エラー:', e);
       }
     }
 
@@ -2605,6 +2655,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? '対応が必要な項目です。各カードから承認・修正・却下を選択できます。'
         : '未処理のジョブはありません。';
+    case 'consultations':
+      return hasCards
+        ? 'あなた宛ての社内相談があります。内容を確認して回答してください。回答するとAIが返信文面を自動生成します。'
+        : '現在あなた宛ての相談はありません。';
     case 'create_job':
       return hasCards
         ? 'ジョブを作成し、下書きを用意しました。\n\n内容を確認して「承認して実行」を押すと、AIが自動で送信します。修正が必要なら「修正する」をクリックしてください。'

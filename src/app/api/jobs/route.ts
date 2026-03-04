@@ -84,6 +84,8 @@ export async function POST(request: NextRequest) {
       executionMetadata,
       // Calendar統合
       scheduledStart, scheduledEnd,
+      // Phase 58: 社内相談
+      consultQuestion, consultTargetName, consultTargetContactId, threadSummary,
     } = body;
 
     if (!title) {
@@ -122,6 +124,46 @@ export async function POST(request: NextRequest) {
     if (error) {
       console.error('ジョブ作成エラー:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    // Phase 58: 社内相談の場合はconsultationsテーブルにも登録
+    if (type === 'consult' && consultQuestion) {
+      try {
+        // 相談相手のuser_idを取得（contact_idから）
+        let responderUserId = '';
+        if (consultTargetContactId) {
+          const { data: contactData } = await sb
+            .from('contact_persons')
+            .select('user_id')
+            .eq('id', consultTargetContactId)
+            .single();
+          responderUserId = contactData?.user_id || consultTargetContactId;
+        }
+
+        await sb.from('consultations').insert({
+          job_id: data.id,
+          requester_user_id: userId,
+          responder_user_id: responderUserId || consultTargetContactId || 'unknown',
+          responder_contact_id: consultTargetContactId || null,
+          source_message_id: sourceMessageId || null,
+          source_channel: sourceChannel || null,
+          thread_summary: threadSummary || null,
+          question: consultQuestion,
+          status: 'pending',
+        });
+
+        // ジョブのステータスをconsultingに更新
+        await sb.from('jobs').update({
+          status: 'consulting',
+          target_name: consultTargetName || null,
+          target_contact_id: consultTargetContactId || null,
+        }).eq('id', data.id);
+
+        data.status = 'consulting';
+        data.target_name = consultTargetName;
+      } catch (consultErr) {
+        console.error('[Jobs API] 社内相談登録エラー:', consultErr);
+      }
     }
 
     // Calendar統合: スケジュール時刻がある場合はカレンダーに同期
