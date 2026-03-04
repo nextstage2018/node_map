@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-05（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）+ ナレッジページ改善（Phase 57）+ ジョブ再設計・社内相談・署名・文体学習・アカウント紐づけ（Phase 58/58a/58b）まで反映）
+最終更新: 2026-03-05（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）+ ナレッジページ改善（Phase 57）+ ジョブ再設計・社内相談・署名・文体学習・アカウント紐づけ（Phase 58/58a/58b）+ UX改善・インボックス高速化（Phase 59）まで反映）
 
 ---
 
@@ -152,6 +152,128 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 58 | ジョブ再設計: 社内相談機能（consultationsテーブル＋相談→回答→AI返信生成フロー）＋ジョブ種別拡張（consult/todo追加）＋ジョブステータス拡張（consulting/draft_ready追加）＋ジョブページUI改善（相談回答パネル・フィルタ・統計）＋カレンダー/スケジュール機能バグ修正 | mainにマージ済み |
 | Phase 58a | メール署名機能＋AI文体学習: 設定プロフィールにメール署名欄追加＋メール返信時に署名自動付与（Slack/CWは付与しない）＋getUserWritingStyle()による過去送信スタイルリアルタイム参照＋全AI下書き生成パスに文体学習統合 | mainにマージ済み |
 | Phase 58b | 組織メンバー↔NodeMapアカウント紐づけ: contact_persons.linked_user_id追加＋/api/users（auth.admin.listUsers）＋組織詳細ページにアカウント紐づけUI＋社内相談でlinked_user_idをresponder_user_idに使用 | mainにマージ済み |
+| Phase 59 | UX改善・インボックス高速化: ジョブ完了アーカイブタブ＋メモ→タスク直接変換（AI自動生成）＋インボックス受信条件改善（トークンベース取得）＋既読判定バグ修正（サーバーキャッシュ無効化＋クライアント既読保持）＋インボックス読み込み高速化（DBクエリ並列化＋差分取得バックグラウンド化＋重複既読チェック削除） | mainにマージ済み |
+
+---
+
+## Phase 59 実装内容（UX改善・インボックス高速化）
+
+### 概要
+ジョブ完了アーカイブ、メモ→タスク直接変換、インボックス受信条件改善、既読判定バグ修正、インボックス読み込み高速化の5つの改善を実施。
+
+### 1. ジョブ完了アーカイブタブ
+
+#### 変更ファイル
+- `src/app/jobs/page.tsx` — ジョブページを「進行中」「完了」2タブ構成に変更。完了タブにキーワード検索＋種別フィルタ＋詳細展開表示を追加
+
+#### 機能
+- 完了ジョブ（status='done'/'failed'）を「完了」タブにアーカイブ表示
+- キーワード検索（タイトル・説明・AI下書き内を検索）
+- 種別フィルタ（reply/schedule/check/consult/todo/other）
+- 詳細展開（完了日・送信内容・実行ログ・相談内容表示）
+- 「進行中に戻す」ボタン（status='pending'に復帰）
+- 個別削除ボタン
+
+### 2. メモ→タスク直接変換（AI自動生成）
+
+#### 変更ファイル
+- `src/app/api/memos/[id]/convert/route.ts` — 種（seed）作成からタスク直接作成に変更。Claude APIでタイトル・説明・優先度を自動生成
+- `src/app/memos/page.tsx` — UIを種化モーダルからタスク変換モーダルに変更。タスク種別・プロジェクト・期限日を人間が選択
+
+#### 処理フロー
+```
+メモ詳細 → 「📋 タスクにする」ボタン
+  → タスク種別（個人/グループ）＋プロジェクト＋期限日を選択
+  → POST /api/memos/[id]/convert
+    → Claude API でメモ内容＋AI会話履歴からタスク情報を自動生成
+      - タイトル（30文字以内・動詞始まり）
+      - 説明（3-5行・背景と具体的アクション）
+      - 優先度（high/medium/low）
+    → TaskService.createTask() でタスク作成
+    → メモに converted_task_id を記録
+  → 結果表示（タイトル・説明・優先度バッジ）
+  → 「タスクを見る」リンクで /tasks へ遷移
+```
+
+### 3. インボックス受信条件改善（トークンベース取得）
+
+#### 変更ファイル
+- `src/app/api/messages/route.ts` — 購読チャネル必須からトークンベース取得に変更
+
+#### 設計思想
+- **旧**: 購読チャネル（user_channel_subscriptions）に登録がないと取得しない → 初期設定が面倒
+- **新**: トークン（環境変数 or user_service_tokens）があれば**全メッセージを自動取得してDBに保存**
+- **表示フィルタ**: 購読チャネル登録なし→全表示、登録あり→登録チャネルのみ表示
+- つまり「接続＝即動作」。購読は任意の絞り込み機能
+
+#### hasChannelToken() 関数
+```typescript
+async function hasChannelToken(serviceName: string, userId: string): Promise<boolean> {
+  // 1. 環境変数チェック（EMAIL_USER / SLACK_BOT_TOKEN / CHATWORK_API_TOKEN）
+  // 2. DBトークンチェック（user_service_tokens）
+}
+```
+
+### 4. 既読判定バグ修正
+
+#### 原因
+- ユーザーが既読にする → DBは更新される
+- 次回取得時にサーバーサイドキャッシュ（3分TTL）がヒット → **古い未読状態を返す**
+- クライアントがサーバー応答で上書き → 既読が未読に戻る
+
+#### 修正（3ファイル）
+- `src/app/api/messages/read/route.ts` — 既読更新後に `cache.invalidateByPrefix('messages:')` でサーバーキャッシュ無効化
+- `src/hooks/useMessages.ts` — バックグラウンド更新・強制更新時にローカルの既読状態をサーバー応答で上書きしない保護ロジック追加
+- `src/app/api/messages/route.ts` — `saveMessages` をfire-and-forgetから `await` に変更（レースコンディション解消）
+
+### 5. インボックス読み込み高速化
+
+#### 変更ファイル
+- `src/app/api/messages/route.ts` — 全面最適化
+
+#### 高速化ポイント（3つ）
+
+**① DBクエリ一括並列化（旧：直列7回 → 新：並列1回）**
+- `getChannelCapabilities()` 関数に統合
+- 購読チャネル＋トークンチェック＋同期状態3チャネル分 = 5クエリを `Promise.all` で同時実行
+- 以前は購読取得→トークン3回→同期状態3回の直列7回
+
+**② 差分取得をバックグラウンドに戻す**
+- 通常ページ表示ではDBから即レスポンス（数百ms）
+- Gmail/Slack/Chatwork APIへの差分取得は `fetchDiffInBackground()` としてレスポンス後に実行
+- 新着はDB保存＋キャッシュ無効化 → 次回アクセスで表示
+- 既読上書き問題は `saveMessages` 側のexistingReadIds チェックで解決済み
+
+**③ 重複DB既読チェック削除**
+- 差分取得モード: `loadMessages()` がDB値（正しいis_read）を返すので追加チェック不要
+- 初回同期・強制更新のときだけ既読チェックを実行
+
+#### getChannelCapabilities() の設計
+```typescript
+// 1回のawaitで5つのDBクエリを並列実行
+const [subsResult, tokenResult, emailSync, slackSync, cwSync] = await Promise.all([
+  supabase.from('user_channel_subscriptions')...,  // 購読チャネル
+  supabase.from('user_service_tokens')...,          // トークン（環境変数で揃っていない場合のみ）
+  supabase.from('inbox_sync_state').eq('channel', 'email')...,
+  supabase.from('inbox_sync_state').eq('channel', 'slack')...,
+  supabase.from('inbox_sync_state').eq('channel', 'chatwork')...,
+]);
+// → subscriptions + canFetch + syncStates を一括返却
+```
+
+### 変更ファイル一覧
+- `src/app/jobs/page.tsx` — 完了アーカイブタブ
+- `src/app/api/memos/[id]/convert/route.ts` — メモ→タスク変換API
+- `src/app/memos/page.tsx` — メモページUI
+- `src/app/api/messages/route.ts` — 受信条件改善＋高速化
+- `src/app/api/messages/read/route.ts` — 既読キャッシュ無効化
+- `src/hooks/useMessages.ts` — クライアント既読保持
+
+### 重要な実装ノート
+- **メモ→タスク変換のAIフォールバック**: ANTHROPIC_API_KEYなし時はメモ内容をそのままタスクタイトル・説明に使用
+- **トークンベース取得**: 環境変数（EMAIL_USER等）とDBトークン（user_service_tokens）の両方をチェック。どちらかがあれば取得可能
+- **差分取得バックグラウンド化の安全性**: `saveMessages` が既存の `is_read=true` を保持する（Phase 25の既存ロジック）ため、バックグラウンド保存で既読が上書きされることはない
+- **サーバーキャッシュ無効化のタイミング**: 既読API（/api/messages/read）と差分取得バックグラウンド（fetchDiffInBackground）の両方でキャッシュを無効化
 
 ---
 
