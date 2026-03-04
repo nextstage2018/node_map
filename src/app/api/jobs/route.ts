@@ -129,15 +129,15 @@ export async function POST(request: NextRequest) {
     // Phase 58: 社内相談の場合はconsultationsテーブルにも登録
     if (type === 'consult' && consultQuestion) {
       try {
-        // 相談相手のuser_idを取得（contact_idから）
+        // 相談相手のlinked_user_id（NodeMapアカウント）を取得
         let responderUserId = '';
         if (consultTargetContactId) {
           const { data: contactData } = await sb
             .from('contact_persons')
-            .select('user_id')
+            .select('linked_user_id')
             .eq('id', consultTargetContactId)
             .single();
-          responderUserId = contactData?.user_id || consultTargetContactId;
+          responderUserId = contactData?.linked_user_id || '';
         }
 
         await sb.from('consultations').insert({

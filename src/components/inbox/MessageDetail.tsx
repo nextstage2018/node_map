@@ -370,7 +370,7 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
   const [consultQuestion, setConsultQuestion] = useState('');
   const [consultTarget, setConsultTarget] = useState('');
   const [consultTargetId, setConsultTargetId] = useState('');
-  const [internalMembers, setInternalMembers] = useState<{id: string; name: string; email?: string}[]>([]);
+  const [internalMembers, setInternalMembers] = useState<{id: string; name: string; email?: string; linkedUserId?: string}[]>([]);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -394,9 +394,12 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
       const memRes = await fetch(`/api/organizations/${selfOrg.id}/members`);
       const memJson = await memRes.json();
       if (memJson.success && memJson.data) {
-        setInternalMembers(memJson.data.map((m: { id: string; display_name?: string; email?: string }) => ({
-          id: m.id, name: m.display_name || '不明', email: m.email,
-        })));
+        // linked_user_id があるメンバーのみ相談可能（NodeMapアカウント紐づけ済み）
+        const allMembers = memJson.data.map((m: { id: string; name?: string; linked_user_id?: string }) => ({
+          id: m.id, name: m.name || '不明', linkedUserId: m.linked_user_id || undefined,
+        }));
+        // 紐づけ済みメンバーを優先表示（未紐づけも表示するが注記付き）
+        setInternalMembers(allMembers);
       }
     } catch { /* ignore */ }
   }, []);
@@ -586,8 +589,14 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
                   className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">選択してください</option>
-                  {internalMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}{m.email ? ` (${m.email})` : ''}</option>
+                  {internalMembers.filter(m => m.linkedUserId).map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                  {internalMembers.some(m => !m.linkedUserId) && (
+                    <option disabled>── 未紐づけ（相談不可）──</option>
+                  )}
+                  {internalMembers.filter(m => !m.linkedUserId).map(m => (
+                    <option key={m.id} value={m.id} disabled>{m.name}（アカウント未紐づけ）</option>
                   ))}
                 </select>
               ) : (

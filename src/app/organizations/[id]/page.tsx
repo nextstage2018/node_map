@@ -46,6 +46,13 @@ interface Member {
   is_team_member: boolean | null;
   auto_added_to_org: boolean | null;
   confirmed: boolean | null;
+  linked_user_id: string | null;
+}
+
+interface NodeMapUser {
+  id: string;
+  email: string;
+  displayName: string;
 }
 
 interface AvailableChannel {
@@ -130,6 +137,7 @@ export default function OrganizationDetailPage() {
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
   const [detecting, setDetecting] = useState(false);
+  const [nodeMapUsers, setNodeMapUsers] = useState<NodeMapUser[]>([]);
 
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -177,14 +185,22 @@ export default function OrganizationDetailPage() {
     } catch { /* */ }
   }, [orgId]);
 
+  const fetchNodeMapUsers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/users');
+      const data = await res.json();
+      if (data.success) setNodeMapUsers(data.data || []);
+    } catch { /* */ }
+  }, []);
+
   useEffect(() => {
     const load = async () => {
       setIsLoading(true);
-      await Promise.all([fetchOrg(), fetchChannels(), fetchMembers()]);
+      await Promise.all([fetchOrg(), fetchChannels(), fetchMembers(), fetchNodeMapUsers()]);
       setIsLoading(false);
     };
     load();
-  }, [fetchOrg, fetchChannels, fetchMembers]);
+  }, [fetchOrg, fetchChannels, fetchMembers, fetchNodeMapUsers]);
 
   // ========================================
   // 組織情報の保存
@@ -315,6 +331,27 @@ export default function OrganizationDetailPage() {
       if (data.success) {
         showMsg('success', 'メンバーを外しました');
         fetchMembers();
+      }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // NodeMapアカウント紐づけ
+  const linkMemberUser = async (contactId: string, linkedUserId: string) => {
+    try {
+      const res = await fetch(`/api/organizations/${orgId}/members`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contactId, linkedUserId: linkedUserId || null }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // ローカルステートを即時更新
+        setMembers(prev => prev.map(m =>
+          m.id === contactId ? { ...m, linked_user_id: linkedUserId || null } : m
+        ));
+        showMsg('success', linkedUserId ? 'アカウントを紐づけました' : '紐づけを解除しました');
+      } else {
+        showMsg('error', data.error || '紐づけに失敗しました');
       }
     } catch { showMsg('error', '通信エラー'); }
   };
@@ -813,43 +850,64 @@ export default function OrganizationDetailPage() {
                   {members.map(m => (
                     <div
                       key={m.id}
-                      className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg"
+                      className="p-3 bg-white border border-slate-200 rounded-lg"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
-                          {m.name.charAt(0)}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-slate-700">{m.name}</span>
-                            {m.auto_added_to_org && (
-                              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 rounded-full">
-                                自動追加
-                              </span>
-                            )}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                            {m.name.charAt(0)}
                           </div>
-                          <div className="flex items-center gap-3 mt-0.5">
-                            {m.main_channel && (
-                              <span className="text-[10px] text-slate-400">{m.main_channel}</span>
-                            )}
-                            {m.message_count != null && m.message_count > 0 && (
-                              <span className="text-[10px] text-slate-400">{m.message_count}件</span>
-                            )}
-                            {m.last_contact_at && (
-                              <span className="text-[10px] text-slate-400">
-                                最終: {new Date(m.last_contact_at).toLocaleDateString('ja-JP')}
-                              </span>
-                            )}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-medium text-slate-700">{m.name}</span>
+                              {m.auto_added_to_org && (
+                                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-600 border border-amber-200 rounded-full">
+                                  自動追加
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-0.5">
+                              {m.main_channel && (
+                                <span className="text-[10px] text-slate-400">{m.main_channel}</span>
+                              )}
+                              {m.message_count != null && m.message_count > 0 && (
+                                <span className="text-[10px] text-slate-400">{m.message_count}件</span>
+                              )}
+                              {m.last_contact_at && (
+                                <span className="text-[10px] text-slate-400">
+                                  最終: {new Date(m.last_contact_at).toLocaleDateString('ja-JP')}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
+                        <button
+                          onClick={() => removeMember(m.id)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="メンバーから外す"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => removeMember(m.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        title="メンバーから外す"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      {/* NodeMapアカウント紐づけ（自社組織のみ） */}
+                      {org?.relationship_type === 'internal' && nodeMapUsers.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+                          <span className="text-[10px] text-slate-400 whitespace-nowrap">NodeMapアカウント:</span>
+                          <select
+                            value={m.linked_user_id || ''}
+                            onChange={(e) => linkMemberUser(m.id, e.target.value)}
+                            className="flex-1 border border-slate-200 rounded px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          >
+                            <option value="">未紐づけ</option>
+                            {nodeMapUsers.map(u => (
+                              <option key={u.id} value={u.id}>{u.displayName} ({u.email})</option>
+                            ))}
+                          </select>
+                          {m.linked_user_id && (
+                            <span className="text-[10px] text-green-600">&#10003;</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

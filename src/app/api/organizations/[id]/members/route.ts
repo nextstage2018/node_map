@@ -37,7 +37,7 @@ export async function GET(
 
     const { data, error } = await supabase
       .from('contact_persons')
-      .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, auto_added_to_org, confirmed, company_name')
+      .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, auto_added_to_org, confirmed, company_name, linked_user_id')
       .eq('organization_id', orgId)
       .order('name', { ascending: true });
 
@@ -222,5 +222,63 @@ export async function DELETE(
   } catch (error) {
     console.error('[Org Members API] エラー:', error);
     return NextResponse.json({ success: false, error: 'メンバーの削除に失敗しました' }, { status: 500 });
+  }
+}
+
+// PATCH: メンバーの linked_user_id を更新（NodeMapアカウント紐づけ）
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
+    }
+
+    const { id: orgId } = await params;
+    const body = await request.json();
+    const { contactId, linkedUserId } = body;
+
+    if (!contactId) {
+      return NextResponse.json({ success: false, error: 'contactId は必須です' }, { status: 400 });
+    }
+
+    // 組織の所有確認
+    const { data: org } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('id', orgId)
+      .eq('user_id', userId)
+      .single();
+
+    if (!org) {
+      return NextResponse.json({ success: false, error: '組織が見つかりません' }, { status: 404 });
+    }
+
+    // linked_user_id を更新（null で紐づけ解除も可能）
+    const { error } = await supabase
+      .from('contact_persons')
+      .update({
+        linked_user_id: linkedUserId || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', contactId)
+      .eq('organization_id', orgId);
+
+    if (error) {
+      console.error('[Org Members API] 紐づけ更新エラー:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[Org Members API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'アカウント紐づけの更新に失敗しました' }, { status: 500 });
   }
 }
