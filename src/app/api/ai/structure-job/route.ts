@@ -52,8 +52,7 @@ async function handleSchedule(
   // 1. カレンダー空き時間を取得（翌営業日〜1週間、10:00-19:00）
   let freeSlots: string[] = [];
   try {
-    const { CalendarClientService } = await import('@/services/calendar/calendarClient.service');
-    const calService = new CalendarClientService();
+    const { findFreeSlots: findSlots } = await import('@/services/calendar/calendarClient.service');
 
     // 翌営業日を計算
     const now = new Date();
@@ -66,13 +65,14 @@ async function handleSchedule(
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 7);
 
-    const slots = await calService.findFreeSlots(userId, {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      businessHoursStart: 10,
-      businessHoursEnd: 19,
-      slotDurationMinutes: 60,
-    });
+    const slots = await findSlots(
+      userId,
+      startDate.toISOString(),
+      endDate.toISOString(),
+      60,   // slotDurationMinutes
+      10,   // workingHoursStart
+      19    // workingHoursEnd
+    );
 
     if (slots && slots.length > 0) {
       // 日別にグループ化して表示用テキスト生成
