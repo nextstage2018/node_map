@@ -86,8 +86,20 @@ export function useMessages() {
         const res = await fetch('/api/messages?page=1&limit=50');
         const data = await res.json();
         if (data.success) {
-          setMessages(data.data);
-          clientMessageCache = { messages: data.data, timestamp: Date.now(), page: 1 };
+          // ローカルで既読にしたメッセージの状態を保持する
+          // サーバーキャッシュが古い未読状態を返す場合があるため
+          const localReadIds = new Set(
+            (clientMessageCache?.messages || [])
+              .filter((m: UnifiedMessage) => m.isRead)
+              .map((m: UnifiedMessage) => m.id)
+          );
+          const mergedMessages = (data.data as UnifiedMessage[]).map((m: UnifiedMessage) =>
+            localReadIds.has(m.id) && !m.isRead
+              ? { ...m, isRead: true, status: 'read' as const }
+              : m
+          );
+          setMessages(mergedMessages);
+          clientMessageCache = { messages: mergedMessages, timestamp: Date.now(), page: 1 };
           setHasMore(data.pagination?.hasMore ?? false);
         }
       } catch {
@@ -109,8 +121,21 @@ export function useMessages() {
       const res = await fetch(url);
       const data = await res.json();
       if (data.success) {
-        setMessages(data.data);
-        clientMessageCache = { messages: data.data, timestamp: Date.now(), page: 1 };
+        // 強制更新時でもローカルの既読状態を保持
+        const prevReadIds = new Set(
+          (clientMessageCache?.messages || [])
+            .filter((m: UnifiedMessage) => m.isRead)
+            .map((m: UnifiedMessage) => m.id)
+        );
+        const mergedMessages = prevReadIds.size > 0
+          ? (data.data as UnifiedMessage[]).map((m: UnifiedMessage) =>
+              prevReadIds.has(m.id) && !m.isRead
+                ? { ...m, isRead: true, status: 'read' as const }
+                : m
+            )
+          : data.data;
+        setMessages(mergedMessages);
+        clientMessageCache = { messages: mergedMessages, timestamp: Date.now(), page: 1 };
         setHasMore(data.pagination?.hasMore ?? false);
       } else {
         setError(data.error || 'メッセージの取得に失敗しました');

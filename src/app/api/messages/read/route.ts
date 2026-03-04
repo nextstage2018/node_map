@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { markAsRead } from '@/services/inbox/inboxStorage.service';
 import { isSupabaseConfigured, createServerClient } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
+import { cache } from '@/lib/cache';
 
 export const dynamic = 'force-dynamic';
 
@@ -163,6 +164,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Messages/Read] ${updated}/${messageIds.length}件をDB既読に更新`);
+
+    // サーバーサイドメッセージキャッシュを無効化（古い未読状態を返さないように）
+    cache.invalidateByPrefix('messages:');
 
     return NextResponse.json({ success: true, updated });
   } catch (error) {

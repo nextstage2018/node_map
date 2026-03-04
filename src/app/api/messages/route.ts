@@ -380,11 +380,13 @@ export async function GET(request: NextRequest) {
         console.log('[Messages API] 初回同期（全量取得）— トークンベース');
         allMessages = await fetchAllFromAPIs(isDemo, canFetchGmail, canFetchSlack, canFetchChatwork, limit, page, userId);
 
-        // DBに保存
+        // DBに保存（awaitして既読チェック前にDB反映を確実にする）
         if (allMessages.length > 0) {
-          saveMessages(allMessages).catch((err) => {
+          try {
+            await saveMessages(allMessages);
+          } catch (err) {
             console.error('[Messages API] Supabase保存エラー:', err);
-          });
+          }
           // スパム判定（バックグラウンド）
           runSpamCheck(allMessages).catch(() => {});
         }
@@ -398,11 +400,13 @@ export async function GET(request: NextRequest) {
       // === デモモード or 強制更新 ===
       allMessages = await fetchAllFromAPIs(isDemo, canFetchGmail, canFetchSlack, canFetchChatwork, limit, page, userId);
 
-      // DB保存＆同期更新
+      // DB保存＆同期更新（awaitして既読チェック前にDB反映を確実にする）
       if (isSupabaseConfigured() && allMessages.length > 0) {
-        saveMessages(allMessages).catch((err) => {
+        try {
+          await saveMessages(allMessages);
+        } catch (err) {
           console.error('[Messages API] Supabase保存エラー:', err);
-        });
+        }
         runSpamCheck(allMessages).catch(() => {});
         if (canFetchGmail) updateSyncTimestamp('email').catch(() => {});
         if (canFetchSlack) updateSyncTimestamp('slack').catch(() => {});
