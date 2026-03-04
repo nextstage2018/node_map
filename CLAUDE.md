@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-04（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）+ ナレッジページ改善（Phase 57）まで反映）
+最終更新: 2026-03-05（秘書ファースト Phase A〜C + Phase B拡張 + Calendar連携 + ブリーフィング強化 + Calendar×タスク/ジョブ統合 + Google Drive連携 + Drive実運用対応（Phase 44a-44d）+ マルチチャネル・URL・格納指示・ビジネスログ自動蓄積（Phase 45a-45c）+ ナレッジ自動構造化（Phase 47）+ バグ修正・機能強化（Phase 48）+ タスクページ改善・秘書タスク連携（Phase 49）+ タスクファイル添付・AI構想会話改善（Phase 50）+ データ連携強化（Phase 51）+ 組織自動レコメンド（Phase 52）+ 秘書AI総合改善（Phase 53）+ ナレッジページ改善（Phase 57）+ ジョブ再設計・社内相談・署名・文体学習・アカウント紐づけ（Phase 58/58a/58b）まで反映）
 
 ---
 
@@ -21,7 +21,7 @@
 
 | テーブル名 | 備考 |
 |---|---|
-| `contact_persons` | コンタクト本体。id は TEXT型（自動生成なし）→ 必ず `'team_${Date.now()}_${random}'` 等で生成して渡す |
+| `contact_persons` | コンタクト本体。id は TEXT型（自動生成なし）→ 必ず `'team_${Date.now()}_${random}'` 等で生成して渡す。Phase 58b: linked_user_id UUID（NodeMapアカウントとの紐づけ。Supabase auth UID） |
 | `contact_channels` | コンタクトの連絡先。UNIQUE(contact_id, channel, address) 制約あり |
 | `inbox_messages` | メッセージ本体（受信＋送信）。user_id カラムは存在しない。direction カラムで送受信を区別（received/sent） |
 | `unified_messages` | 現在は空。inbox_messages を使うこと |
@@ -31,7 +31,7 @@
 | `project_channels` | プロジェクトとチャネルの紐づけ。UNIQUE(project_id, service_name, channel_identifier) |
 | `seeds` | 種ボックス（段階的廃止予定）。project_id で紐づけ可。user_id カラムあり |
 | `tasks` | タスク。id は UUID型（DEFAULT gen_random_uuid()）。seed_id / project_id / task_type('personal'\|'group') カラムあり |
-| `jobs` | ジョブ（AIに委ねる日常の簡易作業）。type='schedule'\|'reply'\|'check'\|'other'。status='pending'\|'approved'\|'executing'\|'done'\|'failed'。Phase B拡張: approved_at / executed_at / execution_log / reply_to_message_id / target_contact_id / target_address / target_name / execution_metadata カラム追加 |
+| `jobs` | ジョブ（AIに委ねる日常の簡易作業）。type='schedule'\|'reply'\|'check'\|'consult'\|'todo'\|'other'。status='pending'\|'approved'\|'executing'\|'consulting'\|'draft_ready'\|'done'\|'failed'。Phase B拡張: approved_at / executed_at / execution_log / reply_to_message_id / target_contact_id / target_address / target_name / execution_metadata カラム追加。Phase 58: ai_draft TEXT（AI生成下書き保存）追加 |
 | `idea_memos` | アイデアメモ。断片的な思いつきを記録。tags TEXT[]。タスク変換機能なし |
 | `memo_conversations` | メモのAI会話。turn_id で会話ターン管理 |
 | `thought_task_nodes` | タスク/種とナレッジノードの紐づけ。UNIQUE(task_id, node_id) / UNIQUE(seed_id, node_id) |
@@ -44,6 +44,7 @@
 | `task_members` | グループタスクのメンバー管理。UNIQUE(task_id, user_id)。role='owner'/'member'。calendar_event_idでメンバーごとのカレンダー予定を追跡 |
 | `contact_patterns` | Phase 51: コンタクトパターン分析。連絡頻度・最終連絡・推奨アクション。日次Cron compute-patterns で自動計算 |
 | `secretary_conversations` | Phase 53: 秘書チャット会話永続化。role='user'/'assistant'。cards JSONB。AIコンテキスト用（UI復元はしない） |
+| `consultations` | Phase 58: 社内相談。job_id / requester_user_id / responder_user_id / responder_contact_id / source_message_id / source_channel / thread_summary / question / answer / status('pending'\|'answered') / answered_at。回答時にAI返信文面を自動生成 |
 
 ---
 
@@ -53,7 +54,7 @@
 |---|---|---|
 | インボックス | /inbox | inbox_messages |
 | タスク | /tasks | tasks / task_conversations |
-| ジョブ | /jobs | jobs |
+| ジョブ | /jobs | jobs / consultations |
 | アイデアメモ | /memos | idea_memos / memo_conversations |
 | 思考マップ | /thought-map | thought_task_nodes / thought_edges / knowledge_master_entries |
 | コンタクト | /contacts | contact_persons / contact_channels |
@@ -148,6 +149,131 @@ import { getSupabase, getServerSupabase, createServerClient } from '@/lib/supaba
 | Phase 52 | 組織自動レコメンド: OrgRecommendationService（ドメイン集計→未登録組織候補検出）＋auto-setup API＋OrgRecommendationCard＋ブリーフィング連携 | mainにマージ済み |
 | Phase 53 | 秘書AI総合改善: secretary_conversations永続化＋コンテキスト15→30拡大＋新規intent（create_contact/search_contact/create_organization/create_project）＋インラインCRUDカード＋/api/contacts POST＋ダッシュボード初期画面＋カレンダー終日除外＋メッセージ詳細DB直接取得＋MessageDetailCard折りたたみ | mainにマージ済み |
 | Phase 57 | ナレッジページ改善（個人知識地図＋自動整理）: 今週のタグクラウド＋マイナレッジパネル＋/api/nodes/this-week＋/api/nodes/my-keywords＋ビジネスイベントキーワード抽出＋統計カード解説文 | mainにマージ済み |
+| Phase 58 | ジョブ再設計: 社内相談機能（consultationsテーブル＋相談→回答→AI返信生成フロー）＋ジョブ種別拡張（consult/todo追加）＋ジョブステータス拡張（consulting/draft_ready追加）＋ジョブページUI改善（相談回答パネル・フィルタ・統計）＋カレンダー/スケジュール機能バグ修正 | mainにマージ済み |
+| Phase 58a | メール署名機能＋AI文体学習: 設定プロフィールにメール署名欄追加＋メール返信時に署名自動付与（Slack/CWは付与しない）＋getUserWritingStyle()による過去送信スタイルリアルタイム参照＋全AI下書き生成パスに文体学習統合 | mainにマージ済み |
+| Phase 58b | 組織メンバー↔NodeMapアカウント紐づけ: contact_persons.linked_user_id追加＋/api/users（auth.admin.listUsers）＋組織詳細ページにアカウント紐づけUI＋社内相談でlinked_user_idをresponder_user_idに使用 | mainにマージ済み |
+
+---
+
+## Phase 58/58a/58b 実装内容（ジョブ再設計・署名・文体学習・アカウント紐づけ）
+
+### Phase 58: ジョブ再設計・社内相談
+
+#### 概要
+ジョブ機能を再設計し、社内相談（consult）とToDoの種別を追加。社内相談はメッセージを読んで社内メンバーに相談→回答を受けてAIが返信文面を自動生成する一連のフローを実装。
+
+#### DBマイグレーション（Supabase実行済み）
+```sql
+-- consultations テーブル（Supabase上で直接作成）
+CREATE TABLE consultations (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  job_id UUID REFERENCES jobs(id) ON DELETE CASCADE,
+  requester_user_id TEXT NOT NULL,
+  responder_user_id TEXT NOT NULL,
+  responder_contact_id TEXT,
+  source_message_id TEXT,
+  source_channel TEXT,
+  thread_summary TEXT,
+  question TEXT NOT NULL,
+  answer TEXT,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'answered')),
+  answered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- 060_jobs_ai_draft_column.sql
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS ai_draft TEXT;
+```
+
+#### 新規ファイル
+- `src/app/api/consultations/route.ts` — 社内相談API（GET: 相談一覧、POST: 回答＋AI返信文面自動生成）
+- `supabase/migrations/060_jobs_ai_draft_column.sql` — jobs.ai_draftカラム追加
+
+#### 変更ファイル
+- `src/app/api/jobs/route.ts` — consult/todo種別対応、consulting/draft_readyステータス追加、相談作成時にconsultationsテーブル登録
+- `src/app/jobs/page.tsx` — 社内相談回答パネル（あなた宛ての相談バナー＋回答入力）、consult/todoフィルタ、consulting/draft_readyステータス表示
+- `src/components/inbox/MessageDetail.tsx` — 社内相談フォーム（自社組織メンバーのプルダウン選択＋相談内容入力）
+- `src/app/api/agent/chat/route.ts` — consultations intent追加（秘書ブリーフィングに未回答相談数表示）
+- `src/components/secretary/ChatCards.tsx` — ConsultationCard追加（相談内容表示＋回答入力＋AI下書きプレビュー）
+- `src/components/secretary/SecretaryChat.tsx` — 相談関連アクション追加
+
+#### 社内相談フロー
+```
+インボックスでメッセージ閲覧 → 「💬 社内相談」選択
+  → 相談相手（自社組織メンバー）をプルダウン選択
+  → 相談内容を入力 → 送信
+  → AI structure-job でスレッド要約自動生成
+  → jobs(type='consult', status='consulting') + consultations(status='pending') 登録
+  → 相談相手のジョブページに「あなた宛ての相談」バナー表示
+  → 相談相手が回答入力 → POST /api/consultations
+    → AIが回答を踏まえた返信文面を自動生成
+    → jobs.ai_draft に保存、status='draft_ready'
+    → 依頼者がジョブページで下書きを確認・編集・送信
+```
+
+### Phase 58a: メール署名 + AI文体学習
+
+#### 概要
+メール返信時に署名を自動付与する機能と、過去の送信メッセージからユーザーの文体を学習してAI生成文面に反映する機能を実装。
+
+#### メール署名
+- `src/app/settings/page.tsx` — プロフィールタブにメール署名テキストエリア追加
+- `src/app/api/settings/profile/route.ts` — `emailSignature` フィールド追加（user_metadata.email_signature に保存）
+- `src/lib/serverAuth.ts` — `getServerUserEmailSignature()` 関数追加
+- **ルール**: メール → 署名自動付与 / Slack・Chatwork → 署名なし＋末尾に名前を書かない
+
+#### AI文体学習（getUserWritingStyle）
+```typescript
+// src/services/ai/aiClient.service.ts
+export async function getUserWritingStyle(userId: string, channel?: string): Promise<string>
+// - inbox_messages から direction='sent' の送信メッセージを最大10件取得
+// - チャネル指定時はそのチャネルのみフィルタ
+// - 5件以上使えるメッセージがあればスタイルサンプルとしてプロンプトに注入
+// - 「ユーザーの過去の送信スタイルに合わせた文体で書くこと（最重要）」指示付き
+```
+
+#### 文体学習の適用箇所（全AI下書き生成パス）
+- `src/app/api/ai/draft-reply/route.ts` — 返信下書き生成
+- `src/app/api/agent/chat/route.ts` — 秘書チャットからのジョブ作成
+- `src/app/api/ai/structure-job/route.ts` — スケジュール系ジョブのAI下書き
+- `src/app/api/consultations/route.ts` — 社内相談回答後のAI返信生成
+
+### Phase 58b: 組織メンバー↔NodeMapアカウント紐づけ
+
+#### 概要
+組織メンバー（contact_persons）にNodeMapのユーザーアカウント（Supabase auth UID）を紐づけることで、社内相談が相手の秘書ブリーフィングに正しく表示されるようにする。
+
+#### DBマイグレーション（Supabase実行済み）
+```sql
+-- 061_contact_linked_user_id.sql
+ALTER TABLE contact_persons ADD COLUMN IF NOT EXISTS linked_user_id UUID;
+CREATE INDEX IF NOT EXISTS idx_contact_persons_linked_user_id ON contact_persons(linked_user_id);
+```
+
+#### 新規ファイル
+- `supabase/migrations/061_contact_linked_user_id.sql` — linked_user_idカラム追加
+- `src/app/api/users/route.ts` — NodeMapユーザー一覧API（auth.admin.listUsers()使用）
+
+#### 変更ファイル
+- `src/app/api/organizations/[id]/members/route.ts` — linked_user_id をSELECTに追加、PATCHハンドラー追加（紐づけ更新）
+- `src/app/organizations/[id]/page.tsx` — メンバー一覧にNodeMapアカウント紐づけドロップダウン追加（自社組織のみ表示）
+- `src/app/api/jobs/route.ts` — 相談作成時に linked_user_id を responder_user_id として使用
+- `src/components/inbox/MessageDetail.tsx` — 相談メンバー選択でlinked_user_id紐づけ済みのみ選択可、未紐づけはグレーアウト表示
+
+#### 紐づけフロー
+```
+組織詳細ページ（自社組織）→ メンバー一覧
+  → 各メンバーに「NodeMapアカウント」ドロップダウン表示
+  → Supabase authのユーザー一覧から選択
+  → PATCH /api/organizations/[id]/members で linked_user_id 保存
+  → 社内相談時に linked_user_id → consultations.responder_user_id に使用
+  → 相手の秘書ブリーフィングに相談が表示される
+```
+
+#### 重要な実装ノート
+- **auth.admin.listUsers()**: SUPABASE_SERVICE_ROLE_KEY が必要（createClient で直接使用）
+- **自社組織のみ**: アカウント紐づけUIは relationship_type='self' の組織のみ表示
+- **未紐づけメンバー**: 相談相手として選択不可（disabled表示 +「アカウント未紐づけ」注記）
 
 ---
 
