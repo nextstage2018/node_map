@@ -1,6 +1,6 @@
 // Phase 58: ジョブ構造化API — 4タイプ別AI処理
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerUserId } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserDisplayName } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -107,46 +107,89 @@ async function handleSchedule(
     console.error('[StructureJob] カレンダー取得エラー:', calErr);
   }
 
-  // 2. AIで返信文面を生成
-  const freeSlotsText = freeSlots.length > 0
-    ? `\n\n【空き日程（1時間枠）】\n${freeSlots.join('\n')}`
-    : '\n\n※カレンダー情報が取得できませんでした。';
+  // 2. ユーザー名を取得
+  const userName = await getServerUserDisplayName() || '';
 
+  // 3. 空き日程テキストをコード側で組み立て（AIに絞り込ませない）
+  const slotsListText = freeSlots.length > 0
+    ? freeSlots.map(s => `・${s}`).join('\n')
+    : '※カレンダー情報が取得できませんでした。手動で候補をご記入ください。';
+
+  // 4. AIで挨拶文と締め文だけ生成（空き日程はコードで挿入する）
   try {
     const anthropic = new Anthropic();
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 1024,
       system: `あなたはビジネスの日程調整を支援するアシスタントです。
-メッセージの内容と空き日程を元に、返信文面を生成してください。
+
+返信メールの「挨拶文」と「締め文」だけを生成してください。
+空き日程の候補リストは別途挿入するので、あなたは日程を一切書かないでください。
+
+返信者の名前は「${userName || '（名前）'}」です。
 
 必ず以下のJSON形式で返してください:
 {
   "title": "ジョブのタイトル（例: ○○さんと日程調整）",
   "description": "やるべきことの要約（50文字以内）",
-  "aiDraft": "返信メール本文（丁寧なビジネス文面。空き日程を含める。）",
+  "greeting": "挨拶文（メッセージ内容を踏まえた丁寧なビジネス文面。日程候補は書かない。最後に「以下の日程でご都合はいかがでしょうか。」等の導入文で終わる）",
+  "closing": "締め文（ご都合のよい日時をお選びください等の一文 + ご確認のほど〜 + 署名「${userName || '名前'}」）",
   "purpose": "打ち合わせの目的（抽出結果）"
-}
-
-空き日程は翌営業日以降1週間分を提示してください。相手に選んでもらう形式で、押し付けにならないよう配慮してください。`,
+}`,
       messages: [{
         role: 'user',
-        content: `以下のメッセージに対して日程調整の返信文面を生成してください:\n\n${messageContent}${freeSlotsText}`,
+        content: `以下のメッセージに対して日程調整の返信を作成してください:\n\n${messageContent}`,
       }],
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '';
     const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     const structured = JSON.parse(cleaned);
-    structured.freeSlots = freeSlots;
-    return NextResponse.json({ success: true, data: structured });
+
+    // コード側で返信文面を組み立て（空き日程を強制挿入）
+    const aiDraft = [
+      structured.greeting || `${senderName}様\n\nお世話になっております。${userName}でございます。`,
+      '',
+      '【候補日時】',
+      slotsListText,
+      '',
+      structured.closing || `ご都合の良い日時をお選びいただけましたら幸いです。\nよろしくお願いいたします。\n${userName}`,
+    ].join('\n');
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        title: structured.title || `${senderName}と日程調整`,
+        description: structured.description || `${subject || 'メッセージ'}に対する日程調整`,
+        aiDraft,
+        purpose: structured.purpose,
+        freeSlots,
+      },
+    });
   } catch {
+    // フォールバック: AIなしでもテンプレートで返信文面を生成
+    const aiDraft = [
+      `${senderName}様`,
+      '',
+      `お世話になっております。${userName || '（名前）'}でございます。`,
+      'ご連絡ありがとうございます。',
+      '以下の日程でご都合はいかがでしょうか。',
+      '',
+      '【候補日時】',
+      slotsListText,
+      '',
+      'ご都合の良い日時をお選びいただけましたら幸いです。',
+      'よろしくお願いいたします。',
+      '',
+      userName || '（名前）',
+    ].join('\n');
+
     return NextResponse.json({
       success: true,
       data: {
         title: `${senderName}と日程調整`,
         description: `${subject || 'メッセージ'}に対する日程調整`,
-        aiDraft: `日程調整の返信文面を生成できませんでした。\n\n空き日程:\n${freeSlots.join('\n') || '取得できませんでした'}`,
+        aiDraft,
         freeSlots,
       },
     });

@@ -44,6 +44,32 @@ export async function getServerUserId(): Promise<string> {
  * - ログイン済み → ユーザーのメールアドレス
  * - 未ログイン → null
  */
+/**
+ * Phase 58: サーバーサイドでログインユーザーの表示名を取得する
+ * - user_metadata.display_name → user_metadata.full_name → email のフォールバック
+ */
+export async function getServerUserDisplayName(): Promise<string | null> {
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
+    return null;
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) {
+      return null;
+    }
+
+    const meta = user.user_metadata || {};
+    return meta.display_name || meta.full_name || user.email || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getServerUserEmail(): Promise<string | null> {
   if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
     return null;
