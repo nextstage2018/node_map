@@ -75,31 +75,23 @@ async function handleSchedule(
     );
 
     if (slots && slots.length > 0) {
-      // 日別にグループ化して表示用テキスト生成
+      // findFreeSlotsは連続空きブロック全体を1スロットで返す
+      // 例: { start: "2026-03-05T13:00:00", end: "2026-03-05T19:00:00", durationMinutes: 360 }
+      // → start と end の両方を使って「13:00-19:00」と表示する
+
       const slotsByDate = new Map<string, string[]>();
       for (const slot of slots) {
-        const start = new Date(slot.start);
-        const dateKey = start.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' });
-        const timeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}`;
+        const startDt = new Date(slot.start);
+        const endDt = new Date(slot.end);
+        const dateKey = startDt.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric', weekday: 'short' });
+        const startStr = `${startDt.getHours().toString().padStart(2, '0')}:${startDt.getMinutes().toString().padStart(2, '0')}`;
+        const endStr = `${endDt.getHours().toString().padStart(2, '0')}:${endDt.getMinutes().toString().padStart(2, '0')}`;
+        const rangeStr = `${startStr}-${endStr}`;
         if (!slotsByDate.has(dateKey)) slotsByDate.set(dateKey, []);
-        slotsByDate.get(dateKey)!.push(timeStr);
+        slotsByDate.get(dateKey)!.push(rangeStr);
       }
 
-      // 連続スロットを範囲に統合（例: 10:00, 11:00, 12:00 → 10:00-13:00）
-      for (const [dateKey, times] of slotsByDate) {
-        const ranges: string[] = [];
-        let rangeStart = times[0];
-        let prevHour = parseInt(times[0].split(':')[0]);
-
-        for (let i = 1; i < times.length; i++) {
-          const currentHour = parseInt(times[i].split(':')[0]);
-          if (currentHour !== prevHour + 1) {
-            ranges.push(`${rangeStart}-${(prevHour + 1).toString().padStart(2, '0')}:00`);
-            rangeStart = times[i];
-          }
-          prevHour = currentHour;
-        }
-        ranges.push(`${rangeStart}-${(prevHour + 1).toString().padStart(2, '0')}:00`);
+      for (const [dateKey, ranges] of slotsByDate) {
         freeSlots.push(`${dateKey} ${ranges.join(', ')}`);
       }
     }
