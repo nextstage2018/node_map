@@ -2066,7 +2066,7 @@ async function handleCreateJobIntent(
     contactContext,
     recentMessages,
     threadContext: '',
-  }, emailSignature);
+  }, emailSignature, userId);
 
   const draftText = draftResult.draft || '';
 

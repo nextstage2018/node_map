@@ -19,6 +19,60 @@ function getApiKey(): string {
 }
 
 /**
+ * ユーザーの過去の送信メッセージからライティングスタイルを取得
+ * チャネル別に直近の送信文面を取得し、スタイル参考用のプロンプト文を生成
+ */
+export async function getUserWritingStyle(userId: string, channel?: string): Promise<string> {
+  try {
+    const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+    const sb = getServerSupabase() || getSupabase();
+
+    let query = sb
+      .from('inbox_messages')
+      .select('body, channel, subject')
+      .eq('direction', 'sent')
+      .not('body', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    // チャネル指定がある場合はそのチャネルの送信のみ
+    if (channel) {
+      query = query.eq('channel', channel);
+    }
+
+    const { data: sentMessages } = await query;
+
+    if (!sentMessages || sentMessages.length === 0) {
+      return '';
+    }
+
+    // 短すぎるメッセージ（5文字未満）や空をフィルタ、最大5件に絞る
+    const usable = sentMessages
+      .filter((m: Record<string, unknown>) => {
+        const body = (m.body as string) || '';
+        return body.trim().length >= 5;
+      })
+      .slice(0, 5);
+
+    if (usable.length === 0) return '';
+
+    const samples = usable.map((m: Record<string, unknown>, i: number) => {
+      const body = ((m.body as string) || '').slice(0, 300);
+      return `--- 送信例${i + 1} ---\n${body}`;
+    }).join('\n\n');
+
+    return `
+## あなたの過去の送信メッセージ（文体・表現の参考にしてください）
+以下はこのユーザーが実際に送った文面です。口調・挨拶の仕方・敬語の使い方・文末表現・全体のトーンを分析し、可能な限り同じスタイルで返信を作成してください。ただし、内容はコピーせず、スタイルのみ参考にしてください。
+
+${samples}`;
+  } catch (e) {
+    console.error('ライティングスタイル取得エラー:', e);
+    return '';
+  }
+}
+
+/**
  * 返信下書きに渡す追加コンテキスト
  */
 export interface ReplyContext {
@@ -41,7 +95,8 @@ export async function generateReplyDraft(
   message: UnifiedMessage,
   instruction?: string,
   context?: ReplyContext,
-  emailSignature?: string
+  emailSignature?: string,
+  userId?: string
 ): Promise<AiDraftResponse> {
   const apiKey = getApiKey();
 
@@ -52,6 +107,12 @@ export async function generateReplyDraft(
   try {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
+
+    // --- ユーザーのライティングスタイルを取得 ---
+    let writingStylePrompt = '';
+    if (userId) {
+      writingStylePrompt = await getUserWritingStyle(userId, message.channel);
+    }
 
     // --- チャネル別のトーン指示 ---
     const channelTone: Record<string, string> = {
@@ -78,6 +139,7 @@ export async function generateReplyDraft(
 - 日本のビジネスマナーに沿った文面
 - 簡潔かつ要点を押さえた内容
 - 元のメッセージの文脈を踏まえた返信
+${writingStylePrompt ? '- ユーザーの過去の送信スタイルに合わせた文体で書くこと（最重要）' : ''}
 
 ## チャネル別トーン
 ${channelTone[message.channel] || channelTone.email}`;
@@ -94,6 +156,11 @@ ${contactParts.join('\n')}`;
 
 ## 過去のやり取り（直近のメッセージ。文脈を把握してください）
 ${context.recentMessages.join('\n')}`;
+    }
+
+    // ライティングスタイル参考（過去の送信メッセージ）
+    if (writingStylePrompt) {
+      systemPrompt += writingStylePrompt;
     }
 
     // --- ユーザープロンプト ---

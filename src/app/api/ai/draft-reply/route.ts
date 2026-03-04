@@ -125,7 +125,7 @@ async function getRecentMessages(fromAddress: string, fromName: string, currentM
 export async function POST(request: NextRequest) {
   try {
     // Phase 22: 認証確認
-    await getServerUserId();
+    const userId = await getServerUserId();
     const body: AiDraftRequest = await request.json();
     const { originalMessage, instruction } = body;
 
@@ -159,7 +159,8 @@ export async function POST(request: NextRequest) {
         recentMessages,
         threadContext,
       },
-      emailSignature
+      emailSignature,
+      userId || undefined
     );
 
     return NextResponse.json({

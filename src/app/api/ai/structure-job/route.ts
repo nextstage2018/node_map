@@ -99,10 +99,17 @@ async function handleSchedule(
     console.error('[StructureJob] カレンダー取得エラー:', calErr);
   }
 
-  // 2. ユーザー名と署名を取得
+  // 2. ユーザー名・署名・ライティングスタイルを取得
   const userName = await getServerUserDisplayName() || '';
   const emailSignature = await getServerUserEmailSignature();
   const isEmail = !channel || channel === 'email';
+
+  // ライティングスタイル取得
+  let writingStylePrompt = '';
+  try {
+    const { getUserWritingStyle } = await import('@/services/ai/aiClient.service');
+    writingStylePrompt = await getUserWritingStyle(userId, channel || 'email');
+  } catch { /* ignore */ }
 
   // 3. 空き日程テキストをコード側で組み立て（AIに絞り込ませない）
   const slotsListText = freeSlots.length > 0
@@ -122,6 +129,7 @@ async function handleSchedule(
 
 返信者の名前は「${userName || '（名前）'}」です。
 ${isEmail && emailSignature ? '署名は別途自動付与されるので、締め文に名前や署名を含めないでください。' : !isEmail ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}
+${writingStylePrompt ? '\n【重要】以下のユーザーの過去の送信スタイルに合わせた文体で書いてください。' + writingStylePrompt : ''}
 
 必ず以下のJSON形式で返してください:
 {

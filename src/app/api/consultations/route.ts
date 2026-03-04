@@ -111,6 +111,13 @@ export async function POST(request: NextRequest) {
         } catch { /* ignore */ }
       }
 
+      // ライティングスタイルを取得
+      let writingStylePrompt = '';
+      try {
+        const { getUserWritingStyle } = await import('@/services/ai/aiClient.service');
+        writingStylePrompt = await getUserWritingStyle(userId, jobChannel || undefined);
+      } catch { /* ignore */ }
+
       // AIで返信文面を生成
       let aiDraft = '';
       try {
@@ -120,7 +127,7 @@ export async function POST(request: NextRequest) {
           model: 'claude-sonnet-4-5-20250929',
           max_tokens: 1024,
           system: `あなたはビジネスメールの返信文面を生成するアシスタントです。
-社内相談の結果を踏まえた返信文面を生成してください。丁寧なビジネス文面で、相談結果の内容を自然に盛り込んでください。${isEmailChannel && emailSignature ? '署名は別途自動付与されるので、末尾に名前や署名を書かないでください。' : !isEmailChannel ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}`,
+社内相談の結果を踏まえた返信文面を生成してください。丁寧なビジネス文面で、相談結果の内容を自然に盛り込んでください。${isEmailChannel && emailSignature ? '署名は別途自動付与されるので、末尾に名前や署名を書かないでください。' : !isEmailChannel ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}${writingStylePrompt ? '\n\n【重要】以下のユーザーの過去の送信スタイルに合わせた文体で書いてください。' + writingStylePrompt : ''}`,
           messages: [{
             role: 'user',
             content: `【スレッド要約】\n${consultation.thread_summary || 'なし'}\n\n【相談内容】\n${consultation.question}\n\n【社内からの回答】\n${answer}\n\n上記を踏まえた返信文面を生成してください。`,
