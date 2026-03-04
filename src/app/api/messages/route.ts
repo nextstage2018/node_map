@@ -1,6 +1,5 @@
 // Phase 26+: メッセージ取得API — 全チャネル受信→DB保存→購読フィルタ表示
-// 修正: トークン設定済みなら購読チャネル未登録でも全取得（DBには全保存、表示時に絞り込み）
-// 修正: 差分取得をawaitして新着を即レスポンスに含める
+// 高速化: DB読み出し優先 + 差分取得バックグラウンド化 + クエリ並列化 + 重複DB問い合わせ削除
 import { NextResponse, NextRequest } from 'next/server';
 import { fetchEmails } from '@/services/email/emailClient.service';
 import { fetchSlackMessages } from '@/services/slack/slackClient.service';
@@ -17,94 +16,93 @@ import { getServerUserId } from '@/lib/serverAuth';
 export const dynamic = 'force-dynamic';
 
 // ========================================
-// Phase 25: ユーザーの購読チャネルを取得
+// 購読チャネル + トークン + 同期状態を一括取得（DB問い合わせを最小化）
 // ========================================
-async function getUserSubscriptions(userId: string): Promise<Record<string, string[]>> {
-  const result: Record<string, string[]> = {
-    gmail: [],
-    slack: [],
-    chatwork: [],
-  };
-
-  const supabase = createServerClient();
-  if (!supabase) return result; // デモモードでは全取得
-
-  try {
-    const { data, error } = await supabase
-      .from('user_channel_subscriptions')
-      .select('service_name, channel_id')
-      .eq('user_id', userId)
-      .eq('is_active', true);
-
-    if (error || !data) return result;
-
-    for (const sub of data) {
-      if (result[sub.service_name]) {
-        result[sub.service_name].push(sub.channel_id);
-      }
-    }
-  } catch (e) {
-    console.error('[Messages API] 購読チャネル取得エラー:', e);
-  }
-
-  return result;
+interface ChannelCapability {
+  subscriptions: Record<string, string[]>;
+  canFetch: { gmail: boolean; slack: boolean; chatwork: boolean };
+  syncStates: { email: SyncState; slack: SyncState; chatwork: SyncState };
 }
 
-// ========================================
-// トークン設定チェック: 各チャネルのトークンがあるか（取得可能か）
-// 購読チャネルが未登録でもトークンがあれば全取得する
-// ========================================
-async function hasChannelToken(serviceName: string, userId: string): Promise<boolean> {
-  // 環境変数チェック
-  if (serviceName === 'gmail' && process.env.EMAIL_USER) return true;
-  if (serviceName === 'slack' && process.env.SLACK_BOT_TOKEN) return true;
-  if (serviceName === 'chatwork' && process.env.CHATWORK_API_TOKEN) return true;
-
-  // DBトークンチェック
-  const supabase = createServerClient();
-  if (!supabase) return false;
-
-  try {
-    const svcName = serviceName === 'gmail' ? 'gmail' : serviceName;
-    const { data } = await supabase
-      .from('user_service_tokens')
-      .select('id')
-      .eq('service_name', svcName)
-      .eq('user_id', userId)
-      .eq('is_active', true)
-      .limit(1);
-    return !!(data && data.length > 0);
-  } catch {
-    return false;
-  }
-}
-
-// ========================================
-// Phase 26: 同期状態管理 — 初回全量/差分更新
-// ========================================
 interface SyncState {
   last_sync_at: string | null;
   initial_sync_done: boolean;
 }
 
-async function getSyncState(channel: string): Promise<SyncState> {
+async function getChannelCapabilities(userId: string): Promise<ChannelCapability> {
   const supabase = createServerClient();
-  if (!supabase) return { last_sync_at: null, initial_sync_done: false };
+  const defaultSyncState: SyncState = { last_sync_at: null, initial_sync_done: false };
 
-  try {
-    const { data } = await supabase
-      .from('inbox_sync_state')
-      .select('last_sync_at, initial_sync_done')
-      .eq('channel', channel)
-      .single();
-
+  if (!supabase) {
     return {
-      last_sync_at: data?.last_sync_at || null,
-      initial_sync_done: data?.initial_sync_done || false,
+      subscriptions: { gmail: [], slack: [], chatwork: [] },
+      canFetch: { gmail: false, slack: false, chatwork: false },
+      syncStates: { email: defaultSyncState, slack: defaultSyncState, chatwork: defaultSyncState },
     };
-  } catch {
-    return { last_sync_at: null, initial_sync_done: false };
   }
+
+  // 環境変数で即判定できるトークン
+  const envGmail = !!process.env.EMAIL_USER;
+  const envSlack = !!process.env.SLACK_BOT_TOKEN;
+  const envChatwork = !!process.env.CHATWORK_API_TOKEN;
+
+  // 全DBクエリを並列実行（1回のawaitで全部取得）
+  const [subsResult, tokenResult, emailSyncResult, slackSyncResult, cwSyncResult] = await Promise.all([
+    // 購読チャネル
+    supabase
+      .from('user_channel_subscriptions')
+      .select('service_name, channel_id')
+      .eq('user_id', userId)
+      .eq('is_active', true),
+    // トークン（環境変数で全チャネル揃っていなければDBチェック）
+    (!envGmail || !envSlack || !envChatwork)
+      ? supabase
+          .from('user_service_tokens')
+          .select('service_name')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+      : Promise.resolve({ data: [] as { service_name: string }[], error: null }),
+    // 同期状態（3チャネル分）
+    supabase.from('inbox_sync_state').select('last_sync_at, initial_sync_done').eq('channel', 'email').single(),
+    supabase.from('inbox_sync_state').select('last_sync_at, initial_sync_done').eq('channel', 'slack').single(),
+    supabase.from('inbox_sync_state').select('last_sync_at, initial_sync_done').eq('channel', 'chatwork').single(),
+  ]);
+
+  // 購読チャネル
+  const subscriptions: Record<string, string[]> = { gmail: [], slack: [], chatwork: [] };
+  if (subsResult.data) {
+    for (const sub of subsResult.data) {
+      if (subscriptions[sub.service_name]) {
+        subscriptions[sub.service_name].push(sub.channel_id);
+      }
+    }
+  }
+
+  // トークン判定
+  const dbTokenServices = new Set((tokenResult.data || []).map((t) => t.service_name));
+  const canFetch = {
+    gmail: subscriptions.gmail.length > 0 || envGmail || dbTokenServices.has('gmail'),
+    slack: subscriptions.slack.length > 0 || envSlack || dbTokenServices.has('slack'),
+    chatwork: subscriptions.chatwork.length > 0 || envChatwork || dbTokenServices.has('chatwork'),
+  };
+
+  // 同期状態
+  const syncStates = {
+    email: {
+      last_sync_at: emailSyncResult.data?.last_sync_at || null,
+      initial_sync_done: emailSyncResult.data?.initial_sync_done || false,
+    },
+    slack: {
+      last_sync_at: slackSyncResult.data?.last_sync_at || null,
+      initial_sync_done: slackSyncResult.data?.initial_sync_done || false,
+    },
+    chatwork: {
+      last_sync_at: cwSyncResult.data?.last_sync_at || null,
+      initial_sync_done: cwSyncResult.data?.initial_sync_done || false,
+    },
+  };
+
+  return { subscriptions, canFetch, syncStates };
 }
 
 async function updateSyncTimestamp(channel: string): Promise<void> {
@@ -202,7 +200,65 @@ async function runSpamCheck(messages: UnifiedMessage[]): Promise<void> {
 }
 
 // ========================================
-// GET: メッセージ一覧（Phase 26: 差分取得対応）
+// 差分取得（バックグラウンド）— タイムアウト付き
+// ========================================
+async function fetchDiffInBackground(
+  canFetch: { gmail: boolean; slack: boolean; chatwork: boolean },
+  syncStates: { email: SyncState; slack: SyncState; chatwork: SyncState },
+  userId: string,
+): Promise<void> {
+  try {
+    const newMessages: UnifiedMessage[] = [];
+    const fetchPromises: Promise<void>[] = [];
+
+    if (canFetch.gmail && syncStates.email.last_sync_at) {
+      fetchPromises.push(
+        fetchEmails(20, 1).then(emails => {
+          const sinceDate = new Date(syncStates.email.last_sync_at!);
+          newMessages.push(...emails.filter(e => new Date(e.timestamp) > sinceDate));
+        }).catch(e => console.error('[Messages API] Gmail差分取得エラー:', e))
+      );
+    }
+    if (canFetch.slack && syncStates.slack.last_sync_at) {
+      fetchPromises.push(
+        fetchSlackMessages(20, userId).then(msgs => {
+          const sinceDate = new Date(syncStates.slack.last_sync_at!);
+          newMessages.push(...msgs.filter(s => new Date(s.timestamp) > sinceDate));
+        }).catch(e => console.error('[Messages API] Slack差分取得エラー:', e))
+      );
+    }
+    if (canFetch.chatwork && syncStates.chatwork.last_sync_at) {
+      fetchPromises.push(
+        fetchChatworkMessages(20).then(msgs => {
+          const sinceDate = new Date(syncStates.chatwork.last_sync_at!);
+          newMessages.push(...msgs.filter(c => new Date(c.timestamp) > sinceDate));
+        }).catch(e => console.error('[Messages API] Chatwork差分取得エラー:', e))
+      );
+    }
+
+    if (fetchPromises.length === 0) return;
+
+    await Promise.all(fetchPromises);
+
+    if (newMessages.length > 0) {
+      console.log(`[Messages API] バックグラウンド差分取得 ${newMessages.length}件の新着`);
+      await saveMessages(newMessages);
+      // キャッシュ無効化（次のリクエストでDB最新を返す）
+      cache.invalidateByPrefix('messages:');
+      runSpamCheck(newMessages).catch(() => {});
+    }
+
+    // 同期タイムスタンプ更新
+    if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+    if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
+    if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
+  } catch (e) {
+    console.error('[Messages API] バックグラウンド差分取得エラー:', e);
+  }
+}
+
+// ========================================
+// GET: メッセージ一覧（高速化版）
 // ========================================
 export async function GET(request: NextRequest) {
   try {
@@ -258,147 +314,87 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Phase 25: ユーザーの購読チャネルを取得（表示フィルタ用）
-    const subscriptions = await getUserSubscriptions(userId);
-    const hasGmailSubs = subscriptions.gmail.length > 0;
-    const hasSlackSubs = subscriptions.slack.length > 0;
-    const hasChatworkSubs = subscriptions.chatwork.length > 0;
-
-    // トークンチェック: 購読チャネル未登録でもトークンがあれば取得する
-    const [hasGmailToken, hasSlackToken, hasChatworkToken] = await Promise.all([
-      hasChannelToken('gmail', userId),
-      hasChannelToken('slack', userId),
-      hasChannelToken('chatwork', userId),
-    ]);
-
-    // 取得対象: トークンがあれば取得する（購読有無にかかわらずDBには全保存）
-    const canFetchGmail = hasGmailSubs || hasGmailToken;
-    const canFetchSlack = hasSlackSubs || hasSlackToken;
-    const canFetchChatwork = hasChatworkSubs || hasChatworkToken;
-
     const isDemo = !isSupabaseConfigured();
 
     // ========================================
-    // Phase 26: 差分取得ロジック
+    // 全チャネル情報を一括並列取得（購読+トークン+同期状態）
+    // ========================================
+    const { subscriptions, canFetch, syncStates } = isDemo
+      ? {
+          subscriptions: { gmail: [], slack: [], chatwork: [] } as Record<string, string[]>,
+          canFetch: { gmail: true, slack: true, chatwork: true },
+          syncStates: {
+            email: { last_sync_at: null, initial_sync_done: false },
+            slack: { last_sync_at: null, initial_sync_done: false },
+            chatwork: { last_sync_at: null, initial_sync_done: false },
+          },
+        }
+      : await getChannelCapabilities(userId);
+
+    // ========================================
+    // メッセージ取得ロジック
     // ========================================
     let allMessages: UnifiedMessage[] = [];
 
     if (!isDemo && !forceRefresh) {
       // === 差分取得モード ===
-      // 1. 各チャネルの同期状態を確認（トークンベースで判定）
-      const [emailSync, slackSync, chatworkSync] = await Promise.all([
-        canFetchGmail ? getSyncState('email') : Promise.resolve({ last_sync_at: null, initial_sync_done: false }),
-        canFetchSlack ? getSyncState('slack') : Promise.resolve({ last_sync_at: null, initial_sync_done: false }),
-        canFetchChatwork ? getSyncState('chatwork') : Promise.resolve({ last_sync_at: null, initial_sync_done: false }),
-      ]);
-
       const allSynced = (
-        (!canFetchGmail || emailSync.initial_sync_done) &&
-        (!canFetchSlack || slackSync.initial_sync_done) &&
-        (!canFetchChatwork || chatworkSync.initial_sync_done)
+        (!canFetch.gmail || syncStates.email.initial_sync_done) &&
+        (!canFetch.slack || syncStates.slack.initial_sync_done) &&
+        (!canFetch.chatwork || syncStates.chatwork.initial_sync_done)
       );
 
       if (allSynced) {
-        // 2. DB からメッセージを読み出し（メイン）
-        console.log('[Messages API] Phase 26: DBから読み出し（差分取得モード）');
+        // DB読み出し（メイン — これだけ待つ。高速）
+        console.log('[Messages API] DBから読み出し（差分取得モード）');
         const now = new Date();
         const rangeStart = new Date(now);
         rangeStart.setDate(rangeStart.getDate() - page * 30);
-        const rangeEnd = page === 1 ? now : new Date(now);
-        if (page > 1) rangeEnd.setDate(rangeEnd.getDate() - (page - 1) * 30);
 
         const dbResult = await loadMessages({
           since: rangeStart.toISOString(),
           limit: 200,
-          direction: directionFilter, // Phase 38: 方向フィルタ対応
+          direction: directionFilter,
         });
         allMessages = dbResult.messages;
 
         // 日付範囲フィルタ
         if (page > 1) {
+          const rangeEnd = new Date(now);
+          rangeEnd.setDate(rangeEnd.getDate() - (page - 1) * 30);
           allMessages = allMessages.filter((msg) => {
             const msgDate = new Date(msg.timestamp);
             return msgDate >= rangeStart && msgDate < rangeEnd;
           });
         }
 
-        // 3. 差分取得（新着メッセージをAPIから取得→DB保存→レスポンスに含める）
-        try {
-          const newMessages: UnifiedMessage[] = [];
-
-          // 各チャネルで最新のlast_sync_at以降のみ取得（トークンベース）
-          const fetchPromises: Promise<void>[] = [];
-
-          if (canFetchGmail && emailSync.last_sync_at) {
-            fetchPromises.push(
-              fetchEmails(20, 1).then(emails => {
-                const sinceDate = new Date(emailSync.last_sync_at!);
-                newMessages.push(...emails.filter(e => new Date(e.timestamp) > sinceDate));
-              }).catch(e => console.error('[Messages API] Gmail差分取得エラー:', e))
-            );
-          }
-          if (canFetchSlack && slackSync.last_sync_at) {
-            fetchPromises.push(
-              fetchSlackMessages(20, userId).then(msgs => {
-                const sinceDate = new Date(slackSync.last_sync_at!);
-                newMessages.push(...msgs.filter(s => new Date(s.timestamp) > sinceDate));
-              }).catch(e => console.error('[Messages API] Slack差分取得エラー:', e))
-            );
-          }
-          if (canFetchChatwork && chatworkSync.last_sync_at) {
-            fetchPromises.push(
-              fetchChatworkMessages(20).then(msgs => {
-                const sinceDate = new Date(chatworkSync.last_sync_at!);
-                newMessages.push(...msgs.filter(c => new Date(c.timestamp) > sinceDate));
-              }).catch(e => console.error('[Messages API] Chatwork差分取得エラー:', e))
-            );
-          }
-
-          await Promise.all(fetchPromises);
-
-          if (newMessages.length > 0) {
-            console.log(`[Messages API] 差分取得 ${newMessages.length}件の新着`);
-            await saveMessages(newMessages);
-            // 新着をレスポンスに追加（DB読み込み分と重複排除）
-            const existingIds = new Set(allMessages.map(m => m.id));
-            const uniqueNew = newMessages.filter(m => !existingIds.has(m.id));
-            allMessages = [...uniqueNew, ...allMessages];
-            // スパム判定（バックグラウンド）
-            runSpamCheck(newMessages).catch(() => {});
-          }
-        } catch (e) {
-          console.error('[Messages API] 差分取得エラー:', e);
-        }
-
-        // 同期タイムスタンプ更新
-        if (canFetchGmail) updateSyncTimestamp('email').catch(() => {});
-        if (canFetchSlack) updateSyncTimestamp('slack').catch(() => {});
-        if (canFetchChatwork) updateSyncTimestamp('chatwork').catch(() => {});
+        // 差分取得はバックグラウンド（レスポンスをブロックしない）
+        // 新着は次回リクエスト時にDBから読める。キャッシュも無効化される
+        fetchDiffInBackground(canFetch, syncStates, userId).catch(() => {});
 
       } else {
         // === 初回同期モード ===
         console.log('[Messages API] 初回同期（全量取得）— トークンベース');
-        allMessages = await fetchAllFromAPIs(isDemo, canFetchGmail, canFetchSlack, canFetchChatwork, limit, page, userId);
+        allMessages = await fetchAllFromAPIs(isDemo, canFetch.gmail, canFetch.slack, canFetch.chatwork, limit, page, userId);
 
-        // DBに保存（awaitして既読チェック前にDB反映を確実にする）
+        // DBに保存（awaitして既読状態をDBに確実に反映）
         if (allMessages.length > 0) {
           try {
             await saveMessages(allMessages);
           } catch (err) {
             console.error('[Messages API] Supabase保存エラー:', err);
           }
-          // スパム判定（バックグラウンド）
           runSpamCheck(allMessages).catch(() => {});
         }
 
         // 同期タイムスタンプ更新
-        if (canFetchGmail) updateSyncTimestamp('email').catch(() => {});
-        if (canFetchSlack) updateSyncTimestamp('slack').catch(() => {});
-        if (canFetchChatwork) updateSyncTimestamp('chatwork').catch(() => {});
+        if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+        if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
+        if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
       }
     } else {
       // === デモモード or 強制更新 ===
-      allMessages = await fetchAllFromAPIs(isDemo, canFetchGmail, canFetchSlack, canFetchChatwork, limit, page, userId);
+      allMessages = await fetchAllFromAPIs(isDemo, canFetch.gmail, canFetch.slack, canFetch.chatwork, limit, page, userId);
 
       // DB保存＆同期更新（awaitして既読チェック前にDB反映を確実にする）
       if (isSupabaseConfigured() && allMessages.length > 0) {
@@ -408,9 +404,9 @@ export async function GET(request: NextRequest) {
           console.error('[Messages API] Supabase保存エラー:', err);
         }
         runSpamCheck(allMessages).catch(() => {});
-        if (canFetchGmail) updateSyncTimestamp('email').catch(() => {});
-        if (canFetchSlack) updateSyncTimestamp('slack').catch(() => {});
-        if (canFetchChatwork) updateSyncTimestamp('chatwork').catch(() => {});
+        if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+        if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
+        if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
       }
 
       // Phase 38: DBに保存済みの送信メッセージを統合（外部APIには含まれないため）
@@ -431,8 +427,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Phase 25: DB上の既読状態を反映
-    if (isSupabaseConfigured() && allMessages.length > 0) {
+    // DB既読状態の反映（初回同期 or 強制更新のときだけ必要）
+    // ※差分取得モードではloadMessagesがDB値（正しいis_read）を返すので不要
+    if (isSupabaseConfigured() && allMessages.length > 0 && (forceRefresh || isDemo)) {
       const supabaseRead = createServerClient();
       if (supabaseRead) {
         try {
@@ -460,27 +457,6 @@ export async function GET(request: NextRequest) {
           console.error('[Messages API] DB既読チェックエラー:', e);
         }
       }
-    }
-
-    // 購読チャネルでフィルタリング（登録あり→絞り込み、登録なし→全表示）
-    if (!isDemo) {
-      const channelToServiceMap: Record<string, string> = {
-        email: 'gmail',
-        slack: 'slack',
-        chatwork: 'chatwork',
-      };
-      // 購読チャネルが1つでも登録されているサービスのみ絞り込む
-      // 未登録のサービスはトークンがあれば全表示
-      allMessages = allMessages.filter((msg) => {
-        const serviceName = channelToServiceMap[msg.channel] || msg.channel;
-        const subs = subscriptions[serviceName];
-        // 購読チャネルが登録されていない場合 → 全表示（トークンで取得済みなので表示する）
-        if (!subs || subs.length === 0) return true;
-        // 購読チャネルが登録されている場合 → 登録チャネルのみ表示
-        // ※ Slack/Chatworkは個別チャネルIDでフィルタ可能だが、
-        //   現状はサービス単位の購読なので true を返す
-        return true;
-      });
     }
 
     // Phase 25: 日付範囲フィルタ（API全量取得モードの場合のみ）
