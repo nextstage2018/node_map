@@ -1,4 +1,4 @@
-// Phase Restructure: アイデアメモページ — 断片的な思いつきの場所
+// アイデアメモページ — メモ→タスク直接変換対応
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -6,7 +6,7 @@ import type { IdeaMemo } from '@/lib/types';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import Button from '@/components/ui/Button';
-import { Plus, Trash2, MessageSquare, Send, X, Sprout } from 'lucide-react';
+import { Plus, Trash2, MessageSquare, Send, X, ClipboardList } from 'lucide-react';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -26,12 +26,15 @@ export default function MemosPage() {
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // 種化モーダル
+  // タスク化モーダル
   const [showConvertModal, setShowConvertModal] = useState(false);
   const [convertMemoId, setConvertMemoId] = useState<string | null>(null);
   const [isConverting, setIsConverting] = useState(false);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedTaskType, setSelectedTaskType] = useState<'personal' | 'group'>('personal');
+  const [selectedDueDate, setSelectedDueDate] = useState<string>('');
+  const [convertResult, setConvertResult] = useState<{ title: string; description: string; priority: string } | null>(null);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -41,34 +44,46 @@ export default function MemosPage() {
     } catch (e) { /* ignore */ }
   }, []);
 
-  const handleConvertToSeed = async () => {
+  const handleConvertToTask = async () => {
     if (!convertMemoId || isConverting) return;
     setIsConverting(true);
+    setConvertResult(null);
     try {
       const res = await fetch(`/api/memos/${convertMemoId}/convert`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId: selectedProjectId || null }),
+        body: JSON.stringify({
+          projectId: selectedProjectId || null,
+          taskType: selectedTaskType,
+          dueDate: selectedDueDate || null,
+        }),
       });
       const json = await res.json();
       if (json.success) {
-        alert('種に変換しました！種ボックスで確認できます。');
-        setShowConvertModal(false);
-        setConvertMemoId(null);
+        setConvertResult(json.data.task);
       } else {
         alert('変換に失敗しました: ' + (json.error || ''));
       }
     } catch (e) {
-      console.error('種化エラー:', e);
+      console.error('タスク化エラー:', e);
       alert('変換に失敗しました');
     } finally {
       setIsConverting(false);
     }
   };
 
+  const closeConvertModal = () => {
+    setShowConvertModal(false);
+    setConvertMemoId(null);
+    setConvertResult(null);
+  };
+
   const openConvertModal = (memoId: string) => {
     setConvertMemoId(memoId);
     setSelectedProjectId('');
+    setSelectedTaskType('personal');
+    setSelectedDueDate('');
+    setConvertResult(null);
     setShowConvertModal(true);
     fetchProjects();
   };
@@ -91,7 +106,6 @@ export default function MemosPage() {
     fetchMemos();
   }, [fetchMemos]);
 
-  // 会話履歴をスクロール
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
@@ -135,7 +149,6 @@ export default function MemosPage() {
     setChatMessages([]);
     setChatInput('');
 
-    // 会話履歴を取得
     try {
       const res = await fetch(`/api/memos/chat?memoId=${memo.id}`);
       const json = await res.json();
@@ -237,10 +250,10 @@ export default function MemosPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={(e) => { e.stopPropagation(); openConvertModal(memo.id); }}
-                        className="text-gray-400 hover:text-green-500"
-                        title="種にする"
+                        className="text-gray-400 hover:text-blue-500"
+                        title="タスクにする"
                       >
-                        <Sprout className="w-4 h-4" />
+                        <ClipboardList className="w-4 h-4" />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); openChat(memo); }}
@@ -328,42 +341,136 @@ export default function MemosPage() {
           </div>
         )}
       </div>
-      {/* 種化確認モーダル */}
+
+      {/* タスク化モーダル */}
       {showConvertModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowConvertModal(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={closeConvertModal}>
           <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4 shadow-xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-bold mb-3">🌱 種に変換</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              このメモとAI会話の内容を種ボックスに変換します。
-            </p>
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">プロジェクト（任意）</label>
-              <select
-                value={selectedProjectId}
-                onChange={e => setSelectedProjectId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg text-sm"
-              >
-                <option value="">未指定</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowConvertModal(false)}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
-                キャンセル
-              </button>
-              <button
-                onClick={handleConvertToSeed}
-                disabled={isConverting}
-                className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-              >
-                {isConverting ? '変換中...' : '🌱 種にする'}
-              </button>
-            </div>
+            {/* 変換結果表示 */}
+            {convertResult ? (
+              <>
+                <h3 className="text-lg font-bold mb-3 flex items-center gap-2">
+                  <span className="text-green-500">✓</span> タスクを作成しました
+                </h3>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4 space-y-2">
+                  <div>
+                    <span className="text-xs text-gray-500">タイトル</span>
+                    <p className="text-sm font-medium text-gray-800">{convertResult.title}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">説明</span>
+                    <p className="text-sm text-gray-600 whitespace-pre-wrap">{convertResult.description}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500">優先度</span>
+                    <span className={`ml-1 text-xs px-2 py-0.5 rounded-full ${
+                      convertResult.priority === 'high' ? 'bg-red-100 text-red-700' :
+                      convertResult.priority === 'low' ? 'bg-gray-100 text-gray-600' :
+                      'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {convertResult.priority === 'high' ? '高' : convertResult.priority === 'low' ? '低' : '中'}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={closeConvertModal}
+                    className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                  >
+                    閉じる
+                  </button>
+                  <a
+                    href="/tasks"
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    タスクを見る
+                  </a>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-bold mb-2">📋 タスクに変換</h3>
+                <p className="text-sm text-gray-500 mb-4">
+                  AIがメモとAI会話の内容からタスクのタイトル・説明・優先度を自動で作成します。
+                </p>
+
+                {/* タスクの種類 */}
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">タスクの種類</label>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedTaskType('personal')}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        selectedTaskType === 'personal'
+                          ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      👤 個人タスク
+                    </button>
+                    <button
+                      onClick={() => setSelectedTaskType('group')}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        selectedTaskType === 'group'
+                          ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium'
+                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      👥 グループタスク
+                    </button>
+                  </div>
+                </div>
+
+                {/* プロジェクト */}
+                <div className="mb-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">プロジェクト</label>
+                  <select
+                    value={selectedProjectId}
+                    onChange={e => setSelectedProjectId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  >
+                    <option value="">未指定</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 期限日 */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">期限日</label>
+                  <input
+                    type="date"
+                    value={selectedDueDate}
+                    onChange={e => setSelectedDueDate(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={closeConvertModal}
+                    className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={handleConvertToTask}
+                    disabled={isConverting}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    {isConverting ? (
+                      <>
+                        <span className="animate-spin inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full" />
+                        AIが作成中...
+                      </>
+                    ) : (
+                      '📋 タスクにする'
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
