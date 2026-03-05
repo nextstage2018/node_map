@@ -154,14 +154,17 @@ export async function POST(request: NextRequest) {
           const startDate = now.toISOString();
           const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
           const freeSlots = await findFreeSlots(userId, startDate, endDate, 30);
-          const slotsText = formatFreeSlotsForContext(freeSlots, 8);
-          finalInstruction = `日程調整の返信を作成してください。以下のカレンダーの空き時間を参照し、具体的な候補日時を提案する返信文を書いてください。
+          const slotsText = formatFreeSlotsForContext(freeSlots, 20);
+          finalInstruction = `日程調整の返信を作成してください。以下は私のGoogleカレンダーから取得した実際の空き時間です。この空き時間の中から候補を提案してください。
 
-【あなたの空き時間（Googleカレンダー参照済み）】
+【私の空き時間（${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 時点のカレンダー参照）】
 ${slotsText}
 
-※ 上記の空き時間から3〜5つの候補を選んで提案してください。
-※ 「ご都合の良い日時をお知らせください」のような曖昧な表現ではなく、具体的な日時を提示してください。
+## 重要なルール
+- 上記の空き時間に含まれる時間帯のみ候補にすること（空き時間外は絶対に提案しない）
+- 各日の空き時間をすべて候補として提示すること（1日1枠ではなく、空いている時間帯をそのまま書く）
+- 例: 「3/6（金）は 10:00〜12:00、13:00〜18:00 で空いております」のように、日ごとに全空き時間を書く
+- 「ご都合の良い日時をお知らせください」のような曖昧な表現ではなく、具体的な空き時間を提示すること
 ${instruction ? `\n【追加指示】${instruction}` : ''}`;
           console.log('[DraftReply] 日程調整モード: 空き時間', freeSlots.length, '件取得');
         } else {

@@ -285,6 +285,7 @@ export async function findFreeSlots(
     const freeSlots: FreeSlot[] = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
+    const nowMs = Date.now(); // 現在時刻（過去スロットフィルタ用）
 
     for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
@@ -295,6 +296,9 @@ export async function findFreeSlots(
       const dayStartMs = dayStart.getTime();
       const dayEndMs = dayEnd.getTime();
 
+      // 今日の営業時間が既に終了している場合はスキップ
+      if (dayEndMs <= nowMs) continue;
+
       // その日のbusy スロットを抽出
       const dayBusy = busySlots
         .filter(s => s.start < dayEndMs && s.end > dayStartMs)
@@ -303,8 +307,8 @@ export async function findFreeSlots(
           end: Math.min(s.end, dayEndMs),
         }));
 
-      // 空き時間を計算
-      let cursor = dayStartMs;
+      // 空き時間を計算（今日の場合は現在時刻以降のみ）
+      let cursor = Math.max(dayStartMs, nowMs);
 
       for (const busy of dayBusy) {
         if (busy.start > cursor) {
