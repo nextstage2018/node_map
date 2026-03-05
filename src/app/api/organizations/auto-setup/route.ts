@@ -3,8 +3,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { OrgRecommendationService } from '@/services/analytics/orgRecommendation.service';
 
 export const dynamic = 'force-dynamic';
+
+// Phase 60: 未登録組織の候補を取得
+export async function GET() {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const candidates = await OrgRecommendationService.detectUnregisteredOrgs(userId);
+    return NextResponse.json({ success: true, data: candidates });
+  } catch (error) {
+    console.error('[Auto Setup GET] エラー:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {

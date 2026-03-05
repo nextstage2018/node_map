@@ -1,4 +1,4 @@
-// Phase 34: 組織一覧ページ
+// Phase 34 + Phase 60: 組織一覧ページ（2カラム: 提案 + 登録済み）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -10,6 +10,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import EmptyState, { LoadingState } from '@/components/ui/EmptyState';
+import OrgSuggestionPanel from '@/components/organizations/OrgSuggestionPanel';
 
 // ========================================
 // 型定義
@@ -43,6 +44,7 @@ export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<OrgWithCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [hasSuggestions, setHasSuggestions] = useState(false);
 
   // Phase 34: 新規作成フォーム
   const [showForm, setShowForm] = useState(false);
@@ -113,6 +115,11 @@ export default function OrganizationsPage() {
       }
     } catch { showMsg('error', '通信エラー'); }
   };
+
+  // 提案パネルの表示状態を追跡（2カラム制御用）
+  const handleSuggestionMount = useCallback((hasItems: boolean) => {
+    setHasSuggestions(hasItems);
+  }, []);
 
   return (
     <AppLayout>
@@ -212,62 +219,76 @@ export default function OrganizationsPage() {
           </div>
         )}
 
-        {/* 組織カード一覧 */}
+        {/* メインコンテンツ: 提案 + 組織一覧 */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          {isLoading ? (
-            <LoadingState />
-          ) : organizations.length === 0 ? (
-            <EmptyState
-              icon={<Building2 className="w-12 h-12" />}
-              title="組織がありません"
-              description="「新規作成」ボタンで最初の組織を登録しましょう"
-            />
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {organizations.map((org) => (
-                <Card
-                  key={org.id}
-                  variant="outlined"
-                  padding="md"
-                  hoverable
-                  onClick={() => router.push(`/organizations/${org.id}`)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                      <Building2 className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
-                        {org.relationship_type && REL_TYPE_LABELS[org.relationship_type] && (
-                          <Badge
-                            label={REL_TYPE_LABELS[org.relationship_type].label}
-                            color={REL_TYPE_LABELS[org.relationship_type].bg}
-                            size="xs"
-                          />
-                        )}
-                      </div>
-                      {org.domain && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <Globe className="w-3 h-3 text-slate-400" />
-                          <span className="text-xs text-slate-500">{org.domain}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1 mt-2">
-                        <Users className="w-3.5 h-3.5 text-slate-400" />
-                        <span className="text-xs text-slate-600">
-                          {org.contactCount > 0
-                            ? `${org.contactCount}人のコンタクト`
-                            : 'コンタクトなし'}
-                        </span>
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-400 transition-colors mt-3" />
-                  </div>
-                </Card>
-              ))}
+          <div className="flex gap-6">
+            {/* 左カラム: 提案パネル */}
+            <div className="w-80 shrink-0">
+              <OrgSuggestionPanel
+                onOrgCreated={() => {
+                  fetchOrganizations();
+                }}
+              />
             </div>
-          )}
+
+            {/* 右カラム: 登録済み組織一覧 */}
+            <div className="flex-1 min-w-0">
+              {isLoading ? (
+                <LoadingState />
+              ) : organizations.length === 0 ? (
+                <EmptyState
+                  icon={<Building2 className="w-12 h-12" />}
+                  title="組織がありません"
+                  description="「新規作成」ボタンで最初の組織を登録しましょう"
+                />
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {organizations.map((org) => (
+                    <Card
+                      key={org.id}
+                      variant="outlined"
+                      padding="md"
+                      hoverable
+                      onClick={() => router.push(`/organizations/${org.id}`)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                          <Building2 className="w-5 h-5 text-blue-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
+                            {org.relationship_type && REL_TYPE_LABELS[org.relationship_type] && (
+                              <Badge
+                                label={REL_TYPE_LABELS[org.relationship_type].label}
+                                color={REL_TYPE_LABELS[org.relationship_type].bg}
+                                size="xs"
+                              />
+                            )}
+                          </div>
+                          {org.domain && (
+                            <div className="flex items-center gap-1 mt-0.5">
+                              <Globe className="w-3 h-3 text-slate-400" />
+                              <span className="text-xs text-slate-500">{org.domain}</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1 mt-2">
+                            <Users className="w-3.5 h-3.5 text-slate-400" />
+                            <span className="text-xs text-slate-600">
+                              {org.contactCount > 0
+                                ? `${org.contactCount}人のコンタクト`
+                                : 'コンタクトなし'}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-400 transition-colors mt-3" />
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </AppLayout>
