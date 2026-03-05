@@ -1,9 +1,9 @@
 // Phase 60: 組織自動提案パネル
-// メールドメインから未登録組織を自動検出し、候補カードとして表示
+// メール・Slack・Chatwork・会社名から未登録組織を自動検出し、候補カードとして表示
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Users, Mail, MessageSquare, ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react';
+import { Building2, Users, Mail, MessageSquare, ChevronDown, ChevronUp, Loader2, Sparkles, CheckCircle } from 'lucide-react';
 
 interface OrgCandidate {
   domain: string;
@@ -18,6 +18,7 @@ interface OrgCandidate {
   }>;
   suggestedRelationship: 'client' | 'partner' | 'vendor' | 'prospect';
   confidence: number;
+  source?: 'email' | 'slack' | 'chatwork' | 'company_name';
 }
 
 const REL_OPTIONS: { value: string; label: string }[] = [
@@ -27,8 +28,15 @@ const REL_OPTIONS: { value: string; label: string }[] = [
   { value: 'prospect', label: '見込み' },
 ];
 
+const SOURCE_LABELS: Record<string, { label: string; color: string }> = {
+  email: { label: 'メール', color: 'bg-blue-100 text-blue-700' },
+  slack: { label: 'Slack', color: 'bg-purple-100 text-purple-700' },
+  chatwork: { label: 'Chatwork', color: 'bg-green-100 text-green-700' },
+  company_name: { label: '会社名', color: 'bg-amber-100 text-amber-700' },
+};
+
 interface Props {
-  onOrgCreated: () => void; // 組織作成後のリフレッシュコールバック
+  onOrgCreated: () => void;
 }
 
 export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
@@ -48,7 +56,6 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
       const data = await res.json();
       if (data.success && data.data) {
         setCandidates(data.data);
-        // 関係性の初期値を設定
         const rels: Record<string, string> = {};
         const names: Record<string, string> = {};
         for (const c of data.data) {
@@ -70,12 +77,17 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
   const handleCreate = async (candidate: OrgCandidate) => {
     setCreating(candidate.domain);
     try {
+      // domainがcompany:で始まる場合はメールドメインではないので除外
+      const domainForApi = candidate.domain.startsWith('company:') || candidate.domain.includes(':')
+        ? undefined
+        : candidate.domain;
+
       const res = await fetch('/api/organizations/auto-setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editingNames[candidate.domain] || candidate.suggestedName,
-          domain: candidate.domain,
+          domain: domainForApi,
           relationshipType: relationships[candidate.domain] || candidate.suggestedRelationship,
           contactIds: candidate.contactIds,
           channels: candidate.channels,
@@ -97,24 +109,9 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
     setSkipped(prev => new Set([...prev, domain]));
   };
 
-  // 表示する候補（スキップ・作成済みを除外）
   const visibleCandidates = candidates.filter(
     c => !skipped.has(c.domain) && !created.has(c.domain)
   );
-
-  // 候補がないまたはローディング中
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-8 text-slate-400">
-        <Loader2 className="w-5 h-5 animate-spin mr-2" />
-        <span className="text-sm">候補を検出中...</span>
-      </div>
-    );
-  }
-
-  if (visibleCandidates.length === 0) {
-    return null; // 候補なし → パネル自体を非表示
-  }
 
   const channelIcon = (serviceName: string) => {
     switch (serviceName) {
@@ -123,6 +120,13 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
       case 'chatwork': return <MessageSquare className="w-3 h-3" />;
       default: return null;
     }
+  };
+
+  // ドメイン表示（company:xxx や slack:xxx は見せない）
+  const displayDomain = (candidate: OrgCandidate) => {
+    if (candidate.domain.startsWith('company:')) return null;
+    if (candidate.domain.includes(':')) return null;
+    return candidate.domain;
   };
 
   return (
@@ -137,9 +141,15 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
           <h3 className="text-sm font-bold text-slate-800">
             組織の登録候補
           </h3>
-          <span className="text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full font-medium">
-            {visibleCandidates.length}件
-          </span>
+          {!isLoading && (
+            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+              visibleCandidates.length > 0
+                ? 'text-amber-600 bg-amber-100'
+                : 'text-slate-400 bg-slate-100'
+            }`}>
+              {visibleCandidates.length}件
+            </span>
+          )}
         </div>
         {collapsed ? (
           <ChevronDown className="w-4 h-4 text-slate-400" />
@@ -150,89 +160,118 @@ export default function OrgSuggestionPanel({ onOrgCreated }: Props) {
 
       {!collapsed && (
         <>
-          <p className="text-xs text-slate-500 mt-1 mb-3">
-            メール履歴から未登録の組織を検出しました。内容を確認して登録してください。
-          </p>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-6 text-slate-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              <span className="text-xs">メール・Slack・Chatworkから候補を検出中...</span>
+            </div>
+          ) : visibleCandidates.length === 0 ? (
+            <div className="flex items-center gap-2 py-4 text-slate-400">
+              <CheckCircle className="w-4 h-4 text-green-400" />
+              <span className="text-xs">
+                {candidates.length > 0
+                  ? 'すべての候補を処理しました'
+                  : '未登録の組織候補は見つかりませんでした'}
+              </span>
+            </div>
+          ) : (
+            <>
+              <p className="text-xs text-slate-500 mt-1 mb-3">
+                メッセージ履歴から未登録の組織を検出しました。内容を確認して登録してください。
+              </p>
 
-          <div className="space-y-3">
-            {visibleCandidates.map((candidate) => (
-              <div
-                key={candidate.domain}
-                className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm"
-              >
-                {/* 組織名（編集可能） */}
-                <div className="mb-2">
-                  <input
-                    type="text"
-                    value={editingNames[candidate.domain] || candidate.suggestedName}
-                    onChange={(e) =>
-                      setEditingNames(prev => ({ ...prev, [candidate.domain]: e.target.value }))
-                    }
-                    className="text-sm font-bold text-slate-900 w-full border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none pb-0.5 bg-transparent"
-                  />
-                  <span className="text-xs text-slate-400">{candidate.domain}</span>
-                </div>
+              <div className="space-y-3">
+                {visibleCandidates.map((candidate) => (
+                  <div
+                    key={candidate.domain}
+                    className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm"
+                  >
+                    {/* 検出元バッジ + 組織名 */}
+                    <div className="mb-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        {candidate.source && SOURCE_LABELS[candidate.source] && (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${SOURCE_LABELS[candidate.source].color}`}>
+                            {SOURCE_LABELS[candidate.source].label}
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={editingNames[candidate.domain] || candidate.suggestedName}
+                        onChange={(e) =>
+                          setEditingNames(prev => ({ ...prev, [candidate.domain]: e.target.value }))
+                        }
+                        className="text-sm font-bold text-slate-900 w-full border-b border-transparent hover:border-slate-300 focus:border-blue-500 focus:outline-none pb-0.5 bg-transparent"
+                      />
+                      {displayDomain(candidate) && (
+                        <span className="text-xs text-slate-400">{displayDomain(candidate)}</span>
+                      )}
+                    </div>
 
-                {/* メタ情報 */}
-                <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    {candidate.contactCount}人
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Mail className="w-3 h-3" />
-                    {candidate.messageCount}通
-                  </span>
-                  {candidate.channels.length > 0 && (
-                    <span className="flex items-center gap-1">
-                      {candidate.channels.map((ch, i) => (
-                        <span key={i} className="flex items-center gap-0.5" title={ch.channelName}>
-                          {channelIcon(ch.serviceName)}
+                    {/* メタ情報 */}
+                    <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
+                      <span className="flex items-center gap-1">
+                        <Users className="w-3 h-3" />
+                        {candidate.contactCount}人
+                      </span>
+                      {candidate.messageCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="w-3 h-3" />
+                          {candidate.messageCount}通
                         </span>
-                      ))}
-                    </span>
-                  )}
-                </div>
+                      )}
+                      {candidate.channels.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          {candidate.channels.map((ch, i) => (
+                            <span key={i} className="flex items-center gap-0.5" title={ch.channelName}>
+                              {channelIcon(ch.serviceName)}
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </div>
 
-                {/* 関係性選択 + ボタン */}
-                <div className="flex items-center gap-2">
-                  <select
-                    value={relationships[candidate.domain] || candidate.suggestedRelationship}
-                    onChange={(e) =>
-                      setRelationships(prev => ({ ...prev, [candidate.domain]: e.target.value }))
-                    }
-                    className="text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  >
-                    {REL_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
+                    {/* 関係性選択 + ボタン */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={relationships[candidate.domain] || candidate.suggestedRelationship}
+                        onChange={(e) =>
+                          setRelationships(prev => ({ ...prev, [candidate.domain]: e.target.value }))
+                        }
+                        className="text-xs border border-slate-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        {REL_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
 
-                  <div className="flex-1" />
+                      <div className="flex-1" />
 
-                  <button
-                    onClick={() => handleSkip(candidate.domain)}
-                    className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
-                  >
-                    スキップ
-                  </button>
+                      <button
+                        onClick={() => handleSkip(candidate.domain)}
+                        className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
+                      >
+                        スキップ
+                      </button>
 
-                  <button
-                    onClick={() => handleCreate(candidate)}
-                    disabled={creating === candidate.domain}
-                    className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg px-3 py-1.5 flex items-center gap-1"
-                  >
-                    {creating === candidate.domain ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Building2 className="w-3 h-3" />
-                    )}
-                    登録する
-                  </button>
-                </div>
+                      <button
+                        onClick={() => handleCreate(candidate)}
+                        disabled={creating === candidate.domain}
+                        className="text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg px-3 py-1.5 flex items-center gap-1"
+                      >
+                        {creating === candidate.domain ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Building2 className="w-3 h-3" />
+                        )}
+                        登録する
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </>
+          )}
         </>
       )}
     </div>
