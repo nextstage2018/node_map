@@ -2,9 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ===== NodeMap v2 配色ルール =====
- * 基本3色: primary(青) / neutral(グレー) / dark(ネイビー)
- * 例外4色: success(緑) / warning(橙) / danger(赤) / info(水色)
+/* ===== NodeMap UIリデザイン 配色ルール =====
+ * メイン: Slate（slate-50〜900） — 背景・テキスト・ボーダー全般
+ * アクセント: Blue（blue-500/600） — CTA・アクティブ状態・リンク
+ * セマンティック: 緑=完了 赤=緊急 黄=注意（最小限に使用）
  * チャネルブランド色はSVGロゴ内のみ（UIには使わない）
  */
 :root {
@@ -32,6 +33,8 @@
   --nm-warning-light: #FFFBEB;
   --nm-danger: #DC2626;
   --nm-danger-light: #FEF2F2;
+  --nm-info: #2563EB;
+  --nm-info-light: #EFF6FF;
 }
 
 body {
@@ -40,10 +43,46 @@ body {
   color: var(--nm-text);
 }
 
-/* line-clamp utility */
+/* ===== ユーティリティクラス ===== */
+
+/* line-clamp */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* カード左ボーダーのアクセント色 */
+@layer utilities {
+  .border-l-accent-blue {
+    border-left-color: #2563EB;
+  }
+  .border-l-accent-green {
+    border-left-color: #16A34A;
+  }
+  .border-l-accent-yellow {
+    border-left-color: #D97706;
+  }
+  .border-l-accent-red {
+    border-left-color: #DC2626;
+  }
+  .border-l-accent-purple {
+    border-left-color: #7C3AED;
+  }
+  .border-l-accent-slate {
+    border-left-color: #64748B;
+  }
 }
