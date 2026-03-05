@@ -44,7 +44,6 @@ export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState<OrgWithCount[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [hasSuggestions, setHasSuggestions] = useState(false);
 
   // Phase 34: 新規作成フォーム
   const [showForm, setShowForm] = useState(false);
@@ -115,11 +114,6 @@ export default function OrganizationsPage() {
       }
     } catch { showMsg('error', '通信エラー'); }
   };
-
-  // 提案パネルの表示状態を追跡（2カラム制御用）
-  const handleSuggestionMount = useCallback((hasItems: boolean) => {
-    setHasSuggestions(hasItems);
-  }, []);
 
   return (
     <AppLayout>
