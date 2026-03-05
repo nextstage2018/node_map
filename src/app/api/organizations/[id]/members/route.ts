@@ -85,10 +85,13 @@ export async function POST(
 
     const { id: orgId } = await params;
     const body = await request.json();
-    const { contact_ids } = body;
 
-    if (!contact_ids || !Array.isArray(contact_ids) || contact_ids.length === 0) {
-      return NextResponse.json({ success: false, error: 'contact_ids は必須です' }, { status: 400 });
+    // contact_ids または auto_contacts（名前＋アドレス）を受け取る
+    const { contact_ids: rawContactIds, auto_contacts } = body;
+    const contact_ids: string[] = rawContactIds ? [...rawContactIds] : [];
+
+    if ((!contact_ids || contact_ids.length === 0) && (!auto_contacts || auto_contacts.length === 0)) {
+      return NextResponse.json({ success: false, error: 'contact_ids または auto_contacts は必須です' }, { status: 400 });
     }
 
     // 組織の所有確認（relationship_type + name も取得）
@@ -101,6 +104,46 @@ export async function POST(
 
     if (!org) {
       return NextResponse.json({ success: false, error: '組織が見つかりません' }, { status: 404 });
+    }
+
+    // auto_contactsがあれば先にcontact_personsに本登録
+    if (auto_contacts && Array.isArray(auto_contacts) && auto_contacts.length > 0) {
+      for (const ac of auto_contacts) {
+        const newId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const { error: insertErr } = await supabase
+          .from('contact_persons')
+          .insert({
+            id: newId,
+            name: ac.name || '不明',
+            main_channel: ac.channel || 'email',
+            message_count: ac.messageCount || 0,
+            last_contact_at: ac.lastContactAt || null,
+            confirmed: true,
+            owner_user_id: userId,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        if (!insertErr) {
+          contact_ids.push(newId);
+          // チャネル情報も登録
+          if (ac.address) {
+            await supabase
+              .from('contact_channels')
+              .upsert({
+                contact_id: newId,
+                channel: ac.channel || 'email',
+                address: ac.address,
+              }, { onConflict: 'contact_id,channel,address' })
+              .then(() => {});
+          }
+        } else {
+          console.error('[Org Members API] autoコンタクト登録エラー:', insertErr);
+        }
+      }
+    }
+
+    if (contact_ids.length === 0) {
+      return NextResponse.json({ success: false, error: '追加するコンタクトがありません' }, { status: 400 });
     }
 
     // Phase 37b: 既に別の組織に所属しているコンタクトをチェック
@@ -159,7 +202,11 @@ export async function POST(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data, count: data?.length || 0 });
+    if (!data || data.length === 0) {
+      return NextResponse.json({ success: false, error: '対象のコンタクトが見つかりませんでした。先にコンタクトを登録してください。' }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true, data, count: data.length });
   } catch (error) {
     console.error('[Org Members API] エラー:', error);
     return NextResponse.json({ success: false, error: 'メンバーの追加に失敗しました' }, { status: 500 });
