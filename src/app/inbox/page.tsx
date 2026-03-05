@@ -11,6 +11,7 @@ import Sidebar from '@/components/shared/Sidebar';
 import MessageList from '@/components/inbox/MessageList';
 import MessageDetail from '@/components/inbox/MessageDetail';
 import ComposeMessage from '@/components/inbox/ComposeMessage';
+import ContactHistoryPanel from '@/components/inbox/ContactHistoryPanel';
 
 export default function InboxPage() {
   const { messages, messageGroups, isLoading, isLoadingMore, error, refresh, loadMore, hasMore, messageCounts, unreadCounts, sentCount, addSentMessage, markGroupAsRead } =
@@ -148,6 +149,17 @@ export default function InboxPage() {
               />
             )}
           </div>
+
+          {/* Phase B: 過去のやり取り変遷パネル（右カラム） */}
+          {selectedGroup && selectedGroup.latestMessage && selectedGroup.latestMessage.direction !== 'sent' && (
+            <div className="w-72 border-l border-slate-200 flex-col overflow-hidden hidden xl:flex">
+              <ContactHistoryPanel
+                fromAddress={selectedGroup.latestMessage.from.address}
+                fromName={selectedGroup.latestMessage.from.name}
+                currentMessageId={selectedGroup.latestMessage.id}
+              />
+            </div>
+          )}
         </div>
       </div>
     </AppLayout>

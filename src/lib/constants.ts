@@ -58,6 +58,14 @@ export const APP_NAME = 'NodeMap';
 
 export const ITEMS_PER_PAGE = 50;
 
+// ===== Phase B: メール休眠化フラグ =====
+// EMAIL_ENABLED=false でメール取得・表示を無効化（ソースコードは残す）
+// 環境変数 NEXT_PUBLIC_EMAIL_ENABLED=false で無効化、未設定 or true で有効
+export const EMAIL_ENABLED = process.env.NEXT_PUBLIC_EMAIL_ENABLED !== 'false';
+
+// インボックスのポーリング間隔（ミリ秒）
+export const INBOX_POLL_INTERVAL = 3 * 60 * 1000; // 3分
+
 // ===== Phase A: 共通ルール =====
 
 // 営業時間ルール（全カレンダー・日程調整に適用）

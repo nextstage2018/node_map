@@ -11,6 +11,7 @@ import { generateThreadSummary } from '@/services/ai/aiClient.service';
 import { saveMessages, loadMessages, getBlocklist } from '@/services/inbox/inboxStorage.service';
 import { isSupabaseConfigured, createServerClient } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
+import { EMAIL_ENABLED } from '@/lib/constants';
 
 // force dynamic rendering to prevent static cache
 export const dynamic = 'force-dynamic';
@@ -83,7 +84,8 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
   // トークン判定
   const dbTokenServices = new Set((tokenResult.data || []).map((t) => t.service_name));
   const canFetch = {
-    gmail: envGmail || dbTokenServices.has('gmail'),
+    // Phase B: EMAIL_ENABLED=false でメール取得を無効化
+    gmail: EMAIL_ENABLED && (envGmail || dbTokenServices.has('gmail')),
     slack: envSlack || dbTokenServices.has('slack'),
     chatwork: envChatwork || dbTokenServices.has('chatwork'),
   };
@@ -213,7 +215,8 @@ async function fetchDiffInBackground(
     const newMessages: UnifiedMessage[] = [];
     const fetchPromises: Promise<void>[] = [];
 
-    if (canFetch.gmail && syncStates.email.last_sync_at) {
+    // Phase B: EMAIL_ENABLED チェック（canFetch.gmailは既にフラグ反映済みだが二重チェック）
+    if (EMAIL_ENABLED && canFetch.gmail && syncStates.email.last_sync_at) {
       fetchPromises.push(
         fetchEmails(20, 1).then(emails => {
           const sinceDate = new Date(syncStates.email.last_sync_at!);
@@ -611,7 +614,8 @@ async function fetchAllFromAPIs(
 ): Promise<UnifiedMessage[]> {
   const fetchPromises: Promise<UnifiedMessage[]>[] = [];
 
-  if (isDemo || hasGmailSubs) {
+  // Phase B: EMAIL_ENABLED=false でメール取得スキップ
+  if (EMAIL_ENABLED && (isDemo || hasGmailSubs)) {
     fetchPromises.push(fetchEmails(limit, page));
   } else {
     fetchPromises.push(Promise.resolve([]));

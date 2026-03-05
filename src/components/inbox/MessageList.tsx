@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { UnifiedMessage, MessageGroup, ChannelType } from '@/lib/types';
-import { CHANNEL_CONFIG } from '@/lib/constants';
+import { CHANNEL_CONFIG, EMAIL_ENABLED } from '@/lib/constants';
 import { formatRelativeTime, truncate, stripHtml } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import ChannelBadge from '@/components/ui/ChannelBadge';
@@ -39,9 +39,10 @@ export default function MessageList({
         ? messageGroups.filter((g) => g.messages.some((m) => m.direction === 'sent'))
         : messageGroups.filter((g) => g.channel === filter);
 
+  // Phase B: EMAIL_ENABLED=false でメールフィルタ非表示
   const filters: { value: ChannelType | 'all'; label: string; icon?: string }[] = [
     { value: 'all', label: 'すべて' },
-    { value: 'email', label: 'Gmail', icon: CHANNEL_CONFIG.email.icon },
+    ...(EMAIL_ENABLED ? [{ value: 'email' as ChannelType, label: 'Gmail', icon: CHANNEL_CONFIG.email.icon }] : []),
     { value: 'slack', label: 'Slack', icon: CHANNEL_CONFIG.slack.icon },
     { value: 'chatwork', label: 'Chatwork', icon: CHANNEL_CONFIG.chatwork.icon },
   ];

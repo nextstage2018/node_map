@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { CHANNEL_CONFIG } from '@/lib/constants';
+import { CHANNEL_CONFIG, EMAIL_ENABLED } from '@/lib/constants';
 import { ChannelType } from '@/lib/types';
 import { Inbox, CheckSquare, Map, Users, BookOpen, Settings, Target, FileText, AlertTriangle, Calendar, Lightbulb, ArrowRight, CheckCircle, Send } from 'lucide-react';
 
@@ -30,7 +30,10 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ messageCounts, unreadCounts, sentCount = 0, activeFilter = 'all', onFilterChange }: SidebarProps) {
-  const channels: ChannelType[] = ['email', 'slack', 'chatwork'];
+  // Phase B: EMAIL_ENABLED=false でメールフィルタを非表示
+  const channels: ChannelType[] = EMAIL_ENABLED
+    ? ['email', 'slack', 'chatwork']
+    : ['slack', 'chatwork'];
   const totalUnread = Object.values(unreadCounts).reduce((a, b) => a + b, 0);
 
   return (

@@ -90,6 +90,33 @@ GET /api/messages
 7. **同期タイムスタンプなしで API 全量取得禁止** - `inbox_sync_state.last_sync_at` で差分判定
 8. **hasChannelToken() 確認** - トークン存在を仮定しない
 
+### Phase B: メール休眠化
+- **フラグ**: `NEXT_PUBLIC_EMAIL_ENABLED=false` でメール機能を無効化（デフォルト: true）
+- **定数**: `EMAIL_ENABLED`（`src/lib/constants.ts`）
+- **影響範囲**: メール取得スキップ（API）、サイドバー/フィルタからメール非表示（UI）、秘書AIブリーフィングからメール除外
+- **復帰方法**: 環境変数を `true` に設定（または削除）するだけで復帰
+- **ソースコード**: 削除なし。フラグによる条件分岐のみ
+
+### Phase B: リアルタイム更新
+- **ポーリング**: `INBOX_POLL_INTERVAL`（3分間隔）でバックグラウンド自動更新
+- **ページ復帰**: `visibilitychange` イベントでタブ切り替え・最小化復帰時に自動更新
+- **SWR パターン**: キャッシュを表示しつつバックグラウンドで最新化（ローディング表示なし）
+- **実装**: `useMessages.ts` の useEffect で interval + visibilitychange リスナー
+
+### Phase B: Chatwork/Slack 返信下書き対応
+- **全チャネル対応済み**: ReplyForm の AI 下書きボタン・autoAiDraft は既に全チャネルで有効
+- **チャネル別トーン**: email=フォーマル、slack=カジュアル、chatwork=標準（`generateReplyDraft` で自動調整）
+- **署名**: メールのみ自動付与（Slack/Chatwork は付与しない）
+- **グループチャネル判定**: Slack チャネル / Chatwork ルームで全体向けトーン調整
+
+### Phase B: 過去のやり取り変遷パネル
+- **API**: `GET /api/messages/history?fromAddress=...&excludeId=...&limit=20`
+- **データソース**: `inbox_messages` を `from_address` でグルーピング、送受信両方を時系列表示
+- **UI**: メッセージ詳細画面の右カラム（`xl` ブレークポイント以上で表示、幅 72）
+- **コンポーネント**: `ContactHistoryPanel`（`src/components/inbox/ContactHistoryPanel.tsx`）
+- **注意書き**: 「最新の受信は反映されていない場合があります」を表示
+- **AI活用**: `getRecentMessages()` が既に返信下書きAIのコンテキストに過去やり取りを注入済み
+
 ### テストチェックリスト
 - [ ] 初回同期フロー: initial_sync_done=false → true、全チャネルから取得
 - [ ] 差分取得フロー: 2 回目以降 < 100ms で DB 即座、新着 5 秒以内に表示
@@ -97,6 +124,10 @@ GET /api/messages
 - [ ] バックグラウンド: fetchDiffInBackground 実行中に GET レスポンス返される
 - [ ] 返信フロー: To/Cc/Bcc 自動計算、AI 文体学習適用、メールアドレスバリデーション
 - [ ] 購読フィルタ: subscriptions 登録なし＋トークン有 → 全メッセージ表示
+- [ ] メール休眠: EMAIL_ENABLED=false → メール取得なし、フィルタ非表示、ブリーフィング除外
+- [ ] リアルタイム更新: 3分ポーリング動作、タブ復帰時に自動更新
+- [ ] Chatwork/Slack下書き: 返信ボタン → AI下書き自動生成、チャネル別トーン
+- [ ] 変遷パネル: from_address で過去やり取り取得、右カラムに表示、xl以上で表示
 
 ---
 

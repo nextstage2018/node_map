@@ -13,6 +13,7 @@ import {
 } from '@/services/calendar/calendarClient.service';
 import type { CalendarEvent } from '@/services/calendar/calendarClient.service';
 import type { UnifiedMessage } from '@/lib/types';
+import { EMAIL_ENABLED } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -328,6 +329,11 @@ async function fetchDataAndBuildCards(
     }
 
     await Promise.all(fetches);
+
+    // Phase B: メール休眠中はメールメッセージを除外
+    if (!EMAIL_ENABLED) {
+      messages = messages.filter(m => m.channel !== 'email');
+    }
 
     // ---- カード生成 ----
 

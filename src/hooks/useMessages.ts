@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { UnifiedMessage, ChannelType, MessageGroup } from '@/lib/types';
 import { getMessageGroupKey, getGroupLabel } from '@/lib/utils';
+import { INBOX_POLL_INTERVAL } from '@/lib/constants';
 
 // クライアント側メッセージキャッシュ（ブラウザタブ内で有効）
 let clientMessageCache: {
@@ -175,6 +176,31 @@ export function useMessages() {
 
   useEffect(() => {
     fetchMessages();
+  }, [fetchMessages]);
+
+  // Phase B: ポーリング（3分間隔でバックグラウンド更新）
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // ページがアクティブ（visible）な場合のみポーリング
+      if (document.visibilityState === 'visible') {
+        fetchMessages(false); // SWRパターンで静かに更新
+      }
+    }, INBOX_POLL_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [fetchMessages]);
+
+  // Phase B: ページ復帰時の自動更新（タブ切り替え・最小化復帰）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // ページがアクティブに戻ったら自動更新（SWRパターン）
+        fetchMessages(false);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchMessages]);
 
   // グループ化されたメッセージ
