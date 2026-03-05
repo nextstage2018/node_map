@@ -1,16 +1,15 @@
-// Phase 34 + Phase 60: 組織一覧ページ（2カラム: 提案 + 登録済み）
+// Phase UI-7: 組織一覧ページ（カード形式 + PJ数・メンバー数表示）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Plus, Users, Globe, X, Search, ChevronRight } from 'lucide-react';
+import { Building2, Plus, Users, Globe, X, Search, FolderOpen } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import EmptyState, { LoadingState } from '@/components/ui/EmptyState';
-import OrgSuggestionPanel from '@/components/organizations/OrgSuggestionPanel';
 
 // ========================================
 // 型定義
@@ -24,16 +23,50 @@ interface Organization {
   updated_at: string;
 }
 
-const REL_TYPE_LABELS: Record<string, { label: string; bg: string; text: string }> = {
-  internal: { label: '自社', bg: 'bg-blue-50', text: 'text-blue-700' },
-  client: { label: '取引先', bg: 'bg-amber-50', text: 'text-amber-700' },
-  partner: { label: 'パートナー', bg: 'bg-purple-50', text: 'text-purple-700' },
-  vendor: { label: '仕入先', bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  prospect: { label: '見込み', bg: 'bg-cyan-50', text: 'text-cyan-700' },
+interface OrgWithCounts extends Organization {
+  contactCount: number;
+  projectCount: number;
+}
+
+const REL_TYPE_LABELS: Record<string, { label: string; labelColor: 'blue' | 'green' | 'yellow' | 'red' | 'purple' | 'slate' }> = {
+  internal: { label: '自社', labelColor: 'blue' },
+  client: { label: '取引先', labelColor: 'yellow' },
+  partner: { label: 'パートナー', labelColor: 'purple' },
+  vendor: { label: '仕入先', labelColor: 'green' },
+  prospect: { label: '見込み', labelColor: 'slate' },
 };
 
-interface OrgWithCount extends Organization {
-  contactCount: number;
+// 頭文字アイコンの背景色
+const INITIAL_COLORS = [
+  'bg-blue-100 text-blue-700',
+  'bg-emerald-100 text-emerald-700',
+  'bg-purple-100 text-purple-700',
+  'bg-amber-100 text-amber-700',
+  'bg-rose-100 text-rose-700',
+  'bg-cyan-100 text-cyan-700',
+  'bg-indigo-100 text-indigo-700',
+];
+
+function getInitialColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return INITIAL_COLORS[Math.abs(hash) % INITIAL_COLORS.length];
+}
+
+function getInitial(name: string): string {
+  // 日本語の場合は最初の1文字、英語の場合は最初の2文字
+  const trimmed = name.trim();
+  if (/^[a-zA-Z]/.test(trimmed)) {
+    const words = trimmed.split(/\s+/);
+    return words.length >= 2
+      ? (words[0][0] + words[1][0]).toUpperCase()
+      : trimmed.substring(0, 2).toUpperCase();
+  }
+  // 「株式会社」「有限会社」等のプレフィックスをスキップ
+  const cleaned = trimmed.replace(/^(株式会社|有限会社|合同会社|合資会社)\s*/, '');
+  return (cleaned || trimmed).charAt(0);
 }
 
 // ========================================
@@ -41,11 +74,11 @@ interface OrgWithCount extends Organization {
 // ========================================
 export default function OrganizationsPage() {
   const router = useRouter();
-  const [organizations, setOrganizations] = useState<OrgWithCount[]>([]);
+  const [organizations, setOrganizations] = useState<OrgWithCounts[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  // Phase 34: 新規作成フォーム
+  // 新規作成フォーム
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDomain, setNewDomain] = useState('');
@@ -59,33 +92,42 @@ export default function OrganizationsPage() {
   };
 
   // ========================================
-  // データ取得（組織 + 各組織のコンタクト数）
+  // データ取得（組織 + コンタクト数 + PJ数）
   // ========================================
   const fetchOrganizations = useCallback(async () => {
     setIsLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
-      const res = await fetch(`/api/organizations?${params}`);
-      const data = await res.json();
-      if (data.success) {
-        const orgs: Organization[] = data.data || [];
 
-        // Phase 34: 各組織のコンタクト数を取得
-        const contactsRes = await fetch('/api/contacts');
-        const contactsData = await contactsRes.json();
+      const [orgRes, contactsRes, projectsRes] = await Promise.all([
+        fetch(`/api/organizations?${params}`),
+        fetch('/api/contacts'),
+        fetch('/api/projects'),
+      ]);
+
+      const orgData = await orgRes.json();
+      const contactsData = await contactsRes.json();
+      const projectsData = await projectsRes.json();
+
+      if (orgData.success) {
+        const orgs: Organization[] = orgData.data || [];
         const contacts = contactsData.success ? contactsData.data || [] : [];
+        const projects = projectsData.success ? projectsData.data || [] : [];
 
-        const orgsWithCount: OrgWithCount[] = orgs.map((org) => ({
+        const orgsWithCounts: OrgWithCounts[] = orgs.map((org) => ({
           ...org,
           contactCount: contacts.filter(
             (c: { companyName?: string }) => c.companyName === org.name
           ).length,
+          projectCount: projects.filter(
+            (p: { organization_id?: string }) => p.organization_id === org.id
+          ).length,
         }));
 
-        setOrganizations(orgsWithCount);
+        setOrganizations(orgsWithCounts);
       }
-    } catch { /* エラーは無視 */ }
+    } catch { /* ignore */ }
     finally { setIsLoading(false); }
   }, [search]);
 
@@ -213,76 +255,63 @@ export default function OrganizationsPage() {
           </div>
         )}
 
-        {/* メインコンテンツ: 提案 + 組織一覧 */}
+        {/* メインコンテンツ: 組織カード一覧 */}
         <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="flex gap-6">
-            {/* 左カラム: 提案パネル */}
-            <div className="w-80 shrink-0">
-              <OrgSuggestionPanel
-                onOrgCreated={() => {
-                  fetchOrganizations();
-                }}
-              />
-            </div>
-
-            {/* 右カラム: 登録済み組織一覧 */}
-            <div className="flex-1 min-w-0">
-              {isLoading ? (
-                <LoadingState />
-              ) : organizations.length === 0 ? (
-                <EmptyState
-                  icon={<Building2 className="w-12 h-12" />}
-                  title="組織がありません"
-                  description="「新規作成」ボタンで最初の組織を登録しましょう"
-                />
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {organizations.map((org) => (
-                    <Card
-                      key={org.id}
-                      variant="outlined"
-                      padding="md"
-                      hoverable
-                      onClick={() => router.push(`/organizations/${org.id}`)}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                          <Building2 className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
-                            {org.relationship_type && REL_TYPE_LABELS[org.relationship_type] && (
-                              <Badge
-                                label={REL_TYPE_LABELS[org.relationship_type].label}
-                                color={REL_TYPE_LABELS[org.relationship_type].bg}
-                                size="xs"
-                              />
-                            )}
-                          </div>
-                          {org.domain && (
-                            <div className="flex items-center gap-1 mt-0.5">
-                              <Globe className="w-3 h-3 text-slate-400" />
-                              <span className="text-xs text-slate-500">{org.domain}</span>
-                            </div>
-                          )}
-                          <div className="flex items-center gap-1 mt-2">
-                            <Users className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-xs text-slate-600">
-                              {org.contactCount > 0
-                                ? `${org.contactCount}人のコンタクト`
-                                : 'コンタクトなし'}
-                            </span>
-                          </div>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-blue-400 transition-colors mt-3" />
+          {isLoading ? (
+            <LoadingState />
+          ) : organizations.length === 0 ? (
+            <EmptyState
+              icon={<Building2 className="w-12 h-12" />}
+              title="組織がありません"
+              description="「新規作成」ボタンで最初の組織を登録しましょう"
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {organizations.map((org) => {
+                const relConfig = org.relationship_type ? REL_TYPE_LABELS[org.relationship_type] : null;
+                return (
+                  <Card
+                    key={org.id}
+                    variant="interactive"
+                    padding="md"
+                    onClick={() => router.push(`/organizations/${org.id}`)}
+                  >
+                    <div className="flex items-start gap-3">
+                      {/* 頭文字アイコン */}
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-base font-bold ${getInitialColor(org.name)}`}>
+                        {getInitial(org.name)}
                       </div>
-                    </Card>
-                  ))}
-                </div>
-              )}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-bold text-slate-900 truncate">{org.name}</h3>
+                          {relConfig && (
+                            <Badge label={relConfig.label} labelColor={relConfig.labelColor} size="xs" />
+                          )}
+                        </div>
+                        {org.domain && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <Globe className="w-3 h-3 text-slate-400" />
+                            <span className="text-xs text-slate-500">{org.domain}</span>
+                          </div>
+                        )}
+                        {/* PJ数・メンバー数 */}
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+                            {org.projectCount} PJ
+                          </span>
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <Users className="w-3.5 h-3.5 text-slate-400" />
+                            {org.contactCount}人
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </AppLayout>
