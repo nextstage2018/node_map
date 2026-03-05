@@ -19,7 +19,7 @@ import { UnifiedMessage } from '@/lib/types';
 // ================================
 // メッセージ保存（UPSERT）
 // ================================
-export async function saveMessages(messages: UnifiedMessage[]): Promise<number> {
+export async function saveMessages(messages: UnifiedMessage[], userId?: string): Promise<number> {
   const supabase = getSupabase();
   if (!supabase || !isSupabaseConfigured() || messages.length === 0) return 0;
 
@@ -59,6 +59,8 @@ export async function saveMessages(messages: UnifiedMessage[]): Promise<number> 
       thread_messages: msg.threadMessages || [],
       // Phase 38: 送信/受信の方向
       direction: msg.direction || 'received',
+      // Phase 60: ユーザーデータ分離
+      user_id: userId || null,
     }));
 
     // バッチでupsert（50件ずつ）
@@ -97,6 +99,7 @@ export async function loadMessages(options?: {
   offset?: number;
   since?: string; // ISO日時
   direction?: 'received' | 'sent' | 'all'; // Phase 38: 方向フィルタ
+  userId?: string; // Phase 60: ユーザーデータ分離
 }): Promise<{ messages: UnifiedMessage[]; total: number }> {
   const supabase = getSupabase();
   if (!supabase || !isSupabaseConfigured()) {
@@ -112,6 +115,10 @@ export async function loadMessages(options?: {
       .select('*', { count: 'exact' })
       .order('timestamp', { ascending: false });
 
+    // Phase 60: ユーザーデータ分離
+    if (options?.userId) {
+      query = query.eq('user_id', options.userId);
+    }
     if (options?.channel) {
       query = query.eq('channel', options.channel);
     }

@@ -281,6 +281,7 @@ export async function GET(request: NextRequest) {
           .from('inbox_messages')
           .select('*')
           .eq('id', singleId)
+          .eq('user_id', userId)
           .single();
         if (msgError || !msgData) {
           return NextResponse.json({ success: false, error: 'メッセージが見つかりません' }, { status: 404 });
@@ -355,6 +356,7 @@ export async function GET(request: NextRequest) {
           since: rangeStart.toISOString(),
           limit: 200,
           direction: directionFilter,
+          userId,
         });
         allMessages = dbResult.messages;
 
@@ -380,7 +382,7 @@ export async function GET(request: NextRequest) {
         // DBに保存（awaitして既読状態をDBに確実に反映）
         if (allMessages.length > 0) {
           try {
-            await saveMessages(allMessages);
+            await saveMessages(allMessages, userId);
           } catch (err) {
             console.error('[Messages API] Supabase保存エラー:', err);
           }
@@ -399,7 +401,7 @@ export async function GET(request: NextRequest) {
       // DB保存＆同期更新（awaitして既読チェック前にDB反映を確実にする）
       if (isSupabaseConfigured() && allMessages.length > 0) {
         try {
-          await saveMessages(allMessages);
+          await saveMessages(allMessages, userId);
         } catch (err) {
           console.error('[Messages API] Supabase保存エラー:', err);
         }
@@ -412,7 +414,7 @@ export async function GET(request: NextRequest) {
       // Phase 38: DBに保存済みの送信メッセージを統合（外部APIには含まれないため）
       if (isSupabaseConfigured() && !isDemo) {
         try {
-          const sentResult = await loadMessages({ direction: 'sent', limit: 100 });
+          const sentResult = await loadMessages({ direction: 'sent', limit: 100, userId });
           if (sentResult.messages.length > 0) {
             const existingIds = new Set(allMessages.map((m) => m.id));
             const newSentMessages = sentResult.messages.filter((m) => !existingIds.has(m.id));

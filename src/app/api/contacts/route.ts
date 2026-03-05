@@ -234,7 +234,7 @@ export async function GET(request: NextRequest) {
     const { data: existingContacts } = await supabase
       .from('contact_persons')
       .select('*, contact_channels(*), organizations(relationship_type)')
-      .or(`visibility.eq.shared,visibility.is.null,owner_user_id.eq.${userId},owner_user_id.is.null`);
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     // 3. Phase 35: senderの統計情報をアドレス/名前で引けるマップに変換
     // 「Me」やログインユーザーのアドレスを除外
