@@ -2,7 +2,7 @@
 // 予定取得・作成・空き時間検索
 
 import { createServerClient } from '@/lib/supabase';
-import { BUSINESS_HOURS, isNodeMapEvent } from '@/lib/constants';
+import { BUSINESS_HOURS, isNodeMapEvent, isJapaneseHoliday } from '@/lib/constants';
 
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
@@ -293,6 +293,8 @@ export async function findFreeSlots(
     for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
       const dayOfWeek = d.getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+      // Phase C: 日本の祝日を除外
+      if (isJapaneseHoliday(d)) continue;
 
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursStart, 0, 0);
       const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursEnd, 0, 0);
@@ -439,16 +441,33 @@ export function formatEventsForContext(events: CalendarEvent[]): string {
 }
 
 // ========================================
-// 空き時間のテキスト要約
+// 空き時間のテキスト要約（Phase C: 全候補出力・日付グルーピング）
 // ========================================
-export function formatFreeSlotsForContext(slots: FreeSlot[], maxSlots = 5): string {
+export function formatFreeSlotsForContext(slots: FreeSlot[], maxSlots = 50): string {
   if (slots.length === 0) return '空き時間なし';
 
-  return slots.slice(0, maxSlots).map(s => {
+  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+  const target = slots.slice(0, maxSlots);
+
+  // 日付でグルーピング
+  const grouped = new Map<string, { dateStr: string; times: string[] }>();
+  for (const s of target) {
     const start = new Date(s.start);
     const end = new Date(s.end);
-    const dateStr = `${start.getMonth() + 1}/${start.getDate()}（${['日', '月', '火', '水', '木', '金', '土'][start.getDay()]}）`;
+    const dateKey = `${start.getFullYear()}-${start.getMonth()}-${start.getDate()}`;
+    const dateStr = `${start.getMonth() + 1}/${start.getDate()}（${dayNames[start.getDay()]}）`;
     const timeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}〜${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
-    return `- ${dateStr} ${timeStr}（${s.durationMinutes}分）`;
-  }).join('\n');
+
+    if (!grouped.has(dateKey)) {
+      grouped.set(dateKey, { dateStr, times: [] });
+    }
+    grouped.get(dateKey)!.times.push(timeStr);
+  }
+
+  // 日付ごとに全空き時間を出力
+  const lines: string[] = [];
+  for (const [, group] of grouped) {
+    lines.push(`- ${group.dateStr} ${group.times.join('、')}`);
+  }
+  return lines.join('\n');
 }

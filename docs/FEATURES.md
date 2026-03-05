@@ -43,13 +43,29 @@ OAuth (gmail service name)
 10. **トークン リフレッシュ失敗は許容** - 既存トークン返却で処理継続
 11. **isCalendarConnected() 必須** - Calendar API 前に `token.scope.includes('calendar')` で確認
 
+### Phase C: 祝日除外
+- **祝日判定関数**: `isJapaneseHoliday(date)` / `getJapaneseHolidays(year)`（`src/lib/constants.ts`）
+- **対象祝日**: 固定祝日（元日〜勤労感謝の日）+ ハッピーマンデー（成人の日・海の日・敬老の日・スポーツの日）+ 春分の日・秋分の日 + 振替休日 + 国民の休日
+- **適用箇所**: `findFreeSlots()` で土日に加え祝日もスキップ
+- **範囲**: 2000〜2099年対応（天文学的近似式による春分・秋分計算）
+
+### Phase C: 複数候補の全出力
+- **改善前**: `formatFreeSlotsForContext(slots, maxSlots)` でスロット数を制限（秘書: 8件、インボックス: 20件）
+- **改善後**: デフォルト maxSlots=50（実質制限なし）、同一日付の空きは1行にグルーピング
+- **出力形式**: `- 3/6（金） 10:00〜12:00、13:00〜18:00`（同じ日の全空き時間をカンマ区切り）
+- **秘書AI・インボックス共通**: 両方とも `formatFreeSlotsForContext(freeSlots)` でデフォルト呼び出し（同一ロジック）
+
 ### テストチェックリスト
 - [ ] `getGoogleToken()` トークン取得・キャッシュ確認
 - [ ] `refreshTokenIfNeeded()` 期限内→既存返却、期限切れ→更新、失敗→既存返却
 - [ ] `isCalendarConnected()` スコープチェック
 - [ ] `getTodayEvents()` 終日除外、API エラー → `[]`
 - [ ] `findFreeSlots()` 営業時間内のみ、土日除外、現在時刻以降、NodeMap 二重カウント防止
+- [ ] `findFreeSlots()` 祝日除外（Phase C）: 祝日の日を空き時間に含めない
+- [ ] `isJapaneseHoliday()` 固定祝日・ハッピーマンデー・春分/秋分・振替休日・国民の休日を正しく判定
+- [ ] `formatFreeSlotsForContext()` 全候補出力・日付グルーピング（Phase C）
 - [ ] 日程調整返信 `scheduleMode=true` で空き時間注入、未接続時フォールバック
+- [ ] 秘書AIの日程調整が `findFreeSlots()` を正しく使用（祝日除外・全候補出力）
 - [ ] グループタスク → 全メンバーに同期
 
 ---

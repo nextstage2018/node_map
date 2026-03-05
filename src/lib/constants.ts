@@ -74,6 +74,141 @@ export const BUSINESS_HOURS = {
   weekdayEnd: 19,    // 19:00
 } as const;
 
+// ===== Phase C: 日本の祝日判定 =====
+// 「国民の祝日に関する法律」に基づく祝日一覧（固定日 + 変動日）
+// 毎年の固定祝日
+const FIXED_HOLIDAYS: { month: number; day: number; name: string }[] = [
+  { month: 1, day: 1, name: '元日' },
+  { month: 2, day: 11, name: '建国記念の日' },
+  { month: 2, day: 23, name: '天皇誕生日' },
+  { month: 4, day: 29, name: '昭和の日' },
+  { month: 5, day: 3, name: '憲法記念日' },
+  { month: 5, day: 4, name: 'みどりの日' },
+  { month: 5, day: 5, name: 'こどもの日' },
+  { month: 8, day: 11, name: '山の日' },
+  { month: 11, day: 3, name: '文化の日' },
+  { month: 11, day: 23, name: '勤労感謝の日' },
+];
+
+// ハッピーマンデー制度（第n月曜日の祝日）
+const HAPPY_MONDAY_HOLIDAYS: { month: number; week: number; name: string }[] = [
+  { month: 1, week: 2, name: '成人の日' },       // 1月第2月曜日
+  { month: 7, week: 3, name: '海の日' },         // 7月第3月曜日
+  { month: 9, week: 3, name: '敬老の日' },       // 9月第3月曜日
+  { month: 10, week: 2, name: 'スポーツの日' },  // 10月第2月曜日
+];
+
+/**
+ * 指定月の第n月曜日の日付を取得
+ */
+function getNthMonday(year: number, month: number, n: number): number {
+  const firstDay = new Date(year, month - 1, 1);
+  const firstDayOfWeek = firstDay.getDay();
+  // 最初の月曜日
+  const firstMonday = firstDayOfWeek <= 1 ? 1 + (1 - firstDayOfWeek) : 1 + (8 - firstDayOfWeek);
+  return firstMonday + (n - 1) * 7;
+}
+
+/**
+ * 春分日を計算（天文学的な近似式）
+ */
+function getVernalEquinoxDay(year: number): number {
+  if (year >= 2000 && year <= 2099) {
+    return Math.floor(20.8431 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+  }
+  return 21; // フォールバック
+}
+
+/**
+ * 秋分日を計算（天文学的な近似式）
+ */
+function getAutumnalEquinoxDay(year: number): number {
+  if (year >= 2000 && year <= 2099) {
+    return Math.floor(23.2488 + 0.242194 * (year - 1980) - Math.floor((year - 1980) / 4));
+  }
+  return 23; // フォールバック
+}
+
+/**
+ * 指定年の全祝日リストを生成（振替休日・国民の休日を含む）
+ */
+export function getJapaneseHolidays(year: number): { month: number; day: number; name: string }[] {
+  const holidays: { month: number; day: number; name: string }[] = [];
+
+  // 1. 固定祝日
+  for (const h of FIXED_HOLIDAYS) {
+    holidays.push({ ...h });
+  }
+
+  // 2. ハッピーマンデー祝日
+  for (const h of HAPPY_MONDAY_HOLIDAYS) {
+    const day = getNthMonday(year, h.month, h.week);
+    holidays.push({ month: h.month, day, name: h.name });
+  }
+
+  // 3. 春分の日・秋分の日
+  holidays.push({ month: 3, day: getVernalEquinoxDay(year), name: '春分の日' });
+  holidays.push({ month: 9, day: getAutumnalEquinoxDay(year), name: '秋分の日' });
+
+  // ソート
+  holidays.sort((a, b) => a.month - b.month || a.day - b.day);
+
+  // 4. 振替休日: 祝日が日曜なら翌営業日（次の祝日でない平日）が振替休日
+  const holidaySet = new Set(holidays.map(h => `${h.month}-${h.day}`));
+  const substitutes: { month: number; day: number; name: string }[] = [];
+
+  for (const h of holidays) {
+    const d = new Date(year, h.month - 1, h.day);
+    if (d.getDay() === 0) { // 日曜日
+      let subDay = h.day + 1;
+      while (holidaySet.has(`${h.month}-${subDay}`)) {
+        subDay++;
+      }
+      const subDate = new Date(year, h.month - 1, subDay);
+      substitutes.push({
+        month: subDate.getMonth() + 1,
+        day: subDate.getDate(),
+        name: '振替休日',
+      });
+      holidaySet.add(`${subDate.getMonth() + 1}-${subDate.getDate()}`);
+    }
+  }
+
+  // 5. 国民の休日: 祝日に挟まれた平日
+  for (let i = 0; i < holidays.length - 1; i++) {
+    const curr = new Date(year, holidays[i].month - 1, holidays[i].day);
+    const next = new Date(year, holidays[i + 1].month - 1, holidays[i + 1].day);
+    const diff = (next.getTime() - curr.getTime()) / (24 * 60 * 60 * 1000);
+    if (diff === 2) {
+      const between = new Date(curr.getTime() + 24 * 60 * 60 * 1000);
+      const key = `${between.getMonth() + 1}-${between.getDate()}`;
+      if (!holidaySet.has(key) && between.getDay() !== 0 && between.getDay() !== 6) {
+        substitutes.push({
+          month: between.getMonth() + 1,
+          day: between.getDate(),
+          name: '国民の休日',
+        });
+      }
+    }
+  }
+
+  const allHolidays = [...holidays, ...substitutes];
+  allHolidays.sort((a, b) => a.month - b.month || a.day - b.day);
+  return allHolidays;
+}
+
+/**
+ * 指定日が日本の祝日かどうかを判定
+ * @param date Date オブジェクト（Asia/Tokyo タイムゾーン前提）
+ */
+export function isJapaneseHoliday(date: Date): boolean {
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const holidays = getJapaneseHolidays(year);
+  return holidays.some(h => h.month === month && h.day === day);
+}
+
 // カレンダー命名ルール
 export const CALENDAR_PREFIX = {
   task: '[NM-Task]',

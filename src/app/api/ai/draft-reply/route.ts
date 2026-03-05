@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
           const startDate = now.toISOString();
           const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
           const freeSlots = await findFreeSlots(userId, startDate, endDate, 30);
-          const slotsText = formatFreeSlotsForContext(freeSlots, 20);
+          const slotsText = formatFreeSlotsForContext(freeSlots);
           finalInstruction = `日程調整の返信を作成してください。以下は私のGoogleカレンダーから取得した実際の空き時間です。この空き時間の中から候補を提案してください。
 
 【私の空き時間（${new Date().toLocaleDateString('ja-JP')} ${new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 時点のカレンダー参照）】
