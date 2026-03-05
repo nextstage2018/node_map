@@ -1,13 +1,24 @@
 'use client';
 
-// Phase 42f+42h: 思考マップ可視化ページ（地形ビュー + 比較モード + リプレイモード）
+// Phase 42f+42h+UI-6: 思考マップ可視化ページ（地形ビュー + 比較モード + リプレイモード + ナレッジ統合）
 // 他メンバーがユーザーの思考マップ（種→タスク完了までのノード遷移）を閲覧するUI
 // モード: 全体マップ / 個別トレース / 比較（2人の動線重ね） / リプレイ（AI対話）
+// UI-6: ナレッジページを「ナレッジ」タブとして統合
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/shared/AppLayout';
-import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, MapIcon, GitBranch, MessageCircle, Loader2, Search, Users, Play, Send } from 'lucide-react';
+import { ArrowLeft, User, FileText, Sprout, Circle, ArrowRight, X, MapIcon, GitBranch, MessageCircle, Loader2, Search, Users, Play, Send, BookOpen } from 'lucide-react';
 import ConversationModal from '@/components/thought-map/ConversationModal';
+
+// UI-6: ナレッジ統合コンポーネント
+import MyKnowledgePanel from '@/components/master/MyKnowledgePanel';
+import ThisWeekTagCloud from '@/components/master/ThisWeekTagCloud';
+import UnconfirmedPanel from '@/components/master/UnconfirmedPanel';
+import DomainTree from '@/components/master/DomainTree';
+import MasterStats from '@/components/master/MasterStats';
+import { LoadingState } from '@/components/ui/EmptyState';
+import type { KnowledgeHierarchy } from '@/lib/types';
 
 // 全体マップ用のタスク簡易型
 interface OverviewTask {
@@ -146,7 +157,125 @@ interface ReplayMessage {
   content: string;
 }
 
+// UI-6: ナレッジタブ用の型定義
+type PageTab = 'map' | 'knowledge';
+type KnowledgePeriod = 'today' | 'week' | 'month' | 'all';
+type KnowledgeSubTab = 'hierarchy' | 'proposals';
+
+interface DomainStat {
+  domainId: string;
+  domainName: string;
+  color: string;
+  nodeCount: number;
+  fieldCount: number;
+}
+
+interface ProposalHistoryItem {
+  id: string;
+  status: string;
+  entryCount: number;
+  clusteringConfidence: number;
+  proposalWeek: string;
+  createdAt: string;
+  appliedAt: string | null;
+}
+
+// Suspense境界でラップ（Next.js 14 useSearchParams要件）
 export default function ThoughtMapPage() {
+  return (
+    <Suspense fallback={
+      <AppLayout>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-sm text-slate-500">読み込み中...</div>
+        </div>
+      </AppLayout>
+    }>
+      <ThoughtMapPageInner />
+    </Suspense>
+  );
+}
+
+function ThoughtMapPageInner() {
+  // UI-6: タブ管理
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialTab = searchParams.get('tab') === 'knowledge' ? 'knowledge' : 'map';
+  const [activeTab, setActiveTab] = useState<PageTab>(initialTab);
+
+  // UI-6: ナレッジタブ用state
+  const [knowledgePeriod, setKnowledgePeriod] = useState<KnowledgePeriod>('today');
+  const [knowledgeHierarchy, setKnowledgeHierarchy] = useState<KnowledgeHierarchy | null>(null);
+  const [knowledgeStats, setKnowledgeStats] = useState<DomainStat[]>([]);
+  const [knowledgeSearchQuery, setKnowledgeSearchQuery] = useState('');
+  const [knowledgeIsLoading, setKnowledgeIsLoading] = useState(false);
+  const [knowledgeSubTab, setKnowledgeSubTab] = useState<KnowledgeSubTab>('hierarchy');
+  const [knowledgeProposals, setKnowledgeProposals] = useState<ProposalHistoryItem[]>([]);
+  const [pendingProposalCount, setPendingProposalCount] = useState(0);
+
+  const handleTabChange = (tab: PageTab) => {
+    setActiveTab(tab);
+    // URLを更新（ブラウザ履歴には追加しない）
+    const url = tab === 'knowledge' ? '/thought-map?tab=knowledge' : '/thought-map';
+    router.replace(url);
+  };
+
+  // UI-6: ナレッジデータ取得
+  const fetchKnowledgeData = useCallback(async () => {
+    setKnowledgeIsLoading(true);
+    try {
+      const [hierRes, proposalsRes] = await Promise.all([
+        fetch('/api/master'),
+        fetch('/api/knowledge/proposals').catch(() => null),
+      ]);
+      const hierData = await hierRes.json();
+
+      if (hierData.success) {
+        setKnowledgeHierarchy(hierData.data);
+        const domainStats: DomainStat[] = hierData.data.domains.map(
+          (d: KnowledgeHierarchy['domains'][0]) => ({
+            domainId: d.id,
+            domainName: d.name,
+            color: d.color,
+            nodeCount: d.fields.reduce(
+              (sum: number, f: KnowledgeHierarchy['domains'][0]['fields'][0]) => sum + f.nodeCount,
+              0
+            ),
+            fieldCount: d.fields.length,
+          })
+        );
+        setKnowledgeStats(domainStats);
+      }
+
+      if (proposalsRes) {
+        const proposalsData = await proposalsRes.json();
+        if (proposalsData.success && proposalsData.data) {
+          const items = proposalsData.data.map((p: Record<string, unknown>) => ({
+            id: p.id as string,
+            status: p.status as string,
+            entryCount: p.entryCount as number,
+            clusteringConfidence: p.clusteringConfidence as number,
+            proposalWeek: p.proposalWeek as string,
+            createdAt: p.createdAt as string,
+            appliedAt: (p.appliedAt as string) || null,
+          }));
+          setKnowledgeProposals(items);
+          setPendingProposalCount(items.filter((p: ProposalHistoryItem) => p.status === 'pending').length);
+        }
+      }
+    } catch {
+      // エラーハンドリング
+    } finally {
+      setKnowledgeIsLoading(false);
+    }
+  }, []);
+
+  // ナレッジタブが選ばれたらデータ取得
+  useEffect(() => {
+    if (activeTab === 'knowledge' && !knowledgeHierarchy) {
+      fetchKnowledgeData();
+    }
+  }, [activeTab, knowledgeHierarchy, fetchKnowledgeData]);
+
   const [step, setStep] = useState<
     'users' | 'mode' | 'overview' | 'tasks' | 'flow'
     | 'compare-select' | 'compare' | 'replay-select' | 'replay'
@@ -477,6 +606,160 @@ export default function ThoughtMapPage() {
   return (
     <AppLayout>
       <div className="flex-1 overflow-hidden flex flex-col">
+        {/* UI-6: タブ切替ヘッダー */}
+        <div className="bg-white border-b border-slate-200 px-6">
+          <div className="flex items-center gap-6">
+            <button
+              onClick={() => handleTabChange('map')}
+              className={`flex items-center gap-2 px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'map'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <GitBranch className="w-4 h-4" />
+              思考マップ
+            </button>
+            <button
+              onClick={() => handleTabChange('knowledge')}
+              className={`flex items-center gap-2 px-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeTab === 'knowledge'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              ナレッジ
+            </button>
+          </div>
+        </div>
+
+        {/* ===== ナレッジタブ ===== */}
+        {activeTab === 'knowledge' ? (
+          <div className="flex-1 overflow-auto">
+            <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+              {knowledgeIsLoading && !knowledgeHierarchy ? (
+                <LoadingState />
+              ) : (
+                <>
+                  {/* 今週のタグクラウド */}
+                  <ThisWeekTagCloud />
+
+                  {/* マイナレッジパネル（期間フィルター付き） */}
+                  <MyKnowledgePanel
+                    period={knowledgePeriod}
+                    onPeriodChange={setKnowledgePeriod}
+                  />
+
+                  {/* 未確認ノードパネル */}
+                  <UnconfirmedPanel onConfirmed={fetchKnowledgeData} />
+
+                  {/* 管理タブ切り替え */}
+                  <div className="flex gap-1 border-b border-slate-200">
+                    <button
+                      onClick={() => setKnowledgeSubTab('hierarchy')}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        knowledgeSubTab === 'hierarchy'
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      階層構造（管理）
+                    </button>
+                    <button
+                      onClick={() => setKnowledgeSubTab('proposals')}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                        knowledgeSubTab === 'proposals'
+                          ? 'border-purple-500 text-purple-600'
+                          : 'border-transparent text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      AI提案履歴
+                      {pendingProposalCount > 0 && (
+                        <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">
+                          {pendingProposalCount}
+                        </span>
+                      )}
+                    </button>
+                  </div>
+
+                  {knowledgeSubTab === 'hierarchy' && (
+                    <>
+                      {knowledgeHierarchy && (
+                        <MasterStats
+                          stats={knowledgeStats}
+                          totalEntries={knowledgeHierarchy.totalEntries}
+                          unclassifiedCount={knowledgeHierarchy.unclassifiedCount}
+                        />
+                      )}
+                      {knowledgeHierarchy && (
+                        <DomainTree
+                          hierarchy={knowledgeHierarchy}
+                          searchQuery={knowledgeSearchQuery}
+                          onDataChanged={fetchKnowledgeData}
+                        />
+                      )}
+                    </>
+                  )}
+
+                  {knowledgeSubTab === 'proposals' && (
+                    <div className="space-y-4">
+                      <p className="text-xs text-slate-500">
+                        AIが週次で蓄積されたキーワードを分析し、領域/分野の構造を自動提案します。
+                        秘書チャットの「ナレッジ提案」から確認・承認できます。
+                      </p>
+                      {knowledgeProposals.length === 0 ? (
+                        <div className="text-center py-12 text-sm text-slate-400">
+                          まだ提案履歴はありません。キーワードが蓄積されると自動的に提案が生成されます。
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {knowledgeProposals.map((p) => (
+                            <div
+                              key={p.id}
+                              className="border border-slate-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <span className="text-sm font-medium text-slate-700">
+                                    {p.proposalWeek || '不明'}
+                                  </span>
+                                  <span className="text-xs text-slate-500">
+                                    {p.entryCount}個のキーワード
+                                  </span>
+                                  <span className="text-xs text-slate-400">
+                                    信頼度 {Math.round((p.clusteringConfidence || 0) * 100)}%
+                                  </span>
+                                </div>
+                                <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                                  p.status === 'approved' ? 'bg-green-100 text-green-700' :
+                                  p.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                  p.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                  'bg-slate-100 text-slate-600'
+                                }`}>
+                                  {p.status === 'approved' ? '承認済み' :
+                                   p.status === 'rejected' ? '却下' :
+                                   p.status === 'pending' ? '待機中' :
+                                   p.status}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-[10px] text-slate-400">
+                                作成: {new Date(p.createdAt).toLocaleString('ja-JP')}
+                                {p.appliedAt && ` / 適用: ${new Date(p.appliedAt).toLocaleString('ja-JP')}`}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+        /* ===== 思考マップタブ（既存） ===== */
+        <>
         {/* パンくず / ヘッダー */}
         <div className={`px-6 py-3 border-b flex items-center gap-3 ${isCanvasStep ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
           {step !== 'users' && (
@@ -650,6 +933,8 @@ export default function ThoughtMapPage() {
               <TaskList tasks={tasks} onSelect={selectReplayTask} />
             )}
           </div>
+        )}
+        </>
         )}
       </div>
     </AppLayout>
