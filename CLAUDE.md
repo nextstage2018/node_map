@@ -1799,6 +1799,171 @@ CLAUDE.md を読んでから作業を開始してください。
 
 ---
 
+## AI コンテキスト一覧（SSOT）
+
+NodeMap内の全AI呼び出し箇所と、各エンドポイントが参照するデータソースの一覧。モデルは特記なき限り `claude-sonnet-4-5-20250929`。
+
+### ユーザー共通コンテキスト（複数エンドポイントで使用）
+
+| コンテキスト | 取得元 | 使用箇所 |
+|---|---|---|
+| 文体学習（getUserWritingStyle） | inbox_messages WHERE direction='sent'（最大10件） | 返信下書き / ジョブ構造化 / 社内相談回答 / 秘書ジョブ作成 |
+| メール署名 | user_metadata.email_signature | 返信下書き / ジョブ構造化 / 社内相談回答（メールのみ。Slack/CWは付与しない） |
+| プロフィール | user_metadata（display_name / personality_type / ai_response_style） | 秘書チャット / ジョブ構造化 |
+
+### エンドポイント別 AI コンテキスト詳細
+
+#### 1. 秘書チャット — `/api/agent/chat/route.ts`
+**用途**: メインAI会話。意図分類→データ取得→カード生成→応答
+**max_tokens**: 2000
+
+| Intent | 参照テーブル / API | 注入データ |
+|---|---|---|
+| briefing | inbox_messages, tasks, jobs, consultations, knowledge_clustering_proposals, business_events, Google Calendar API | 未読数, 緊急数, タスク数, ジョブ数, 相談数, 未確認ファイル数, ナレッジ提案数, 今日の予定 |
+| inbox | inbox_messages | from_name, subject, body(250文字), is_read, direction, timestamp |
+| message_detail | inbox_messages | メッセージ全文 + スレッド |
+| reply_draft | （/api/ai/draft-reply に委譲） | — |
+| create_job | inbox_messages | メッセージ内容 + 送信者情報 + 文体学習 + 署名 |
+| calendar | Google Calendar API | 今日の予定一覧（終日除外） |
+| schedule | Google Calendar API, tasks, jobs | 空き時間候補（findFreeSlots） |
+| tasks | tasks | title, status, priority, phase, due_date（最新20件） |
+| jobs | jobs | title, status, type, due_date, description（最新15件） |
+| projects | projects, organizations | 名前, 組織名 |
+| documents | drive_documents | ファイル名, リンク, 作成日 |
+| file_intake | drive_file_staging | status=pending_review のファイル一覧 + AI分類結果 |
+| store_file | organizations, projects | URL抽出 + 格納先候補 |
+| business_summary | business_events | AI週間要約 + イベント集計 |
+| knowledge_structuring | knowledge_clustering_proposals | 待機中提案 + 未確認キーワード数 |
+| create_contact / search_contact | contact_persons, contact_channels | 名前, メール, 会社名, 関係性 |
+| create_organization | organizations | 既存組織一覧 |
+| create_project | projects, organizations | プロジェクト + 組織一覧 |
+| create_task | tasks | AIがメッセージからタイトル・優先度・プロジェクト推定 |
+| task_progress | tasks, task_conversations | タスク状態 + 最近の会話 |
+| create_calendar_event | Google Calendar API | 自然言語→日時パース |
+| create_drive_folder | projects, organizations, Google Drive API | プロジェクト自動検出 + 命名規則 |
+| consultations | consultations, jobs | 未回答相談数 |
+| setup_organization | organizations, inbox_messages | 未登録組織候補（ドメイン集計） |
+
+#### 2. タスクAI会話 — `/api/tasks/chat/route.ts` → `aiClient.service.ts`
+**用途**: タスク内の構想・進行・結果フェーズ別AI伴走
+**max_tokens**: 1500
+
+| 参照テーブル | 注入データ |
+|---|---|
+| tasks | title, description, ideation_summary, seed_id, due_date |
+| projects | name, description, organization_id |
+| organizations | name, memo |
+| task_members → contact_persons | メンバー名一覧 |
+| task_conversations | 会話履歴（最大20ターン、各200文字制限） |
+| — | フェーズ別プロンプト（構想: 一問一答4項目 / 進行: 壁打ち / 結果: 成果整理） |
+| — | coveredItems検出（ゴール/内容/懸念/期限の議論済み判定） |
+
+#### 3. 返信下書き — `/api/ai/draft-reply/route.ts` → `aiClient.service.ts`
+**用途**: メッセージへの返信文面AI生成
+**max_tokens**: 1000
+
+| 参照テーブル | 注入データ |
+|---|---|
+| contact_channels → contact_persons | notes, ai_context, company_name, department, relationship_type |
+| inbox_messages | 送信者との直近5件のやり取り |
+| inbox_messages (thread) | スレッド文脈（引用チェーン） |
+| user_metadata | メール署名（メールのみ、AI応答後に付与） |
+| inbox_messages (sent) | 文体学習（getUserWritingStyle） |
+| — | チャネル別トーン指示（Email=丁寧 / Slack=カジュアル / CW=標準） |
+
+#### 4. ジョブ構造化 — `/api/ai/structure-job/route.ts`
+**用途**: メッセージからジョブ種別に応じたAI下書き生成
+**max_tokens**: 256〜1024（種別による）
+
+| 種別 | 参照テーブル | 注入データ |
+|---|---|---|
+| schedule（日程調整） | Google Calendar API, user_metadata | 空き時間候補 + 表示名 + 署名 + 文体学習 |
+| consult（社内相談） | inbox_messages (thread) | スレッド要約（直近10件） |
+| todo（後でやる） | — | メッセージ内容のみ |
+| default | — | メッセージ内容のみ |
+
+#### 5. 社内相談回答 — `/api/consultations/route.ts`
+**用途**: 相談回答を踏まえた返信文面AI生成
+**max_tokens**: 1024
+
+| 参照テーブル | 注入データ |
+|---|---|
+| consultations | thread_summary, question, answer |
+| jobs | source_channel（チャネル判定） |
+| user_metadata | メール署名（メールのみ） |
+| inbox_messages (sent) | 文体学習 |
+
+#### 6. メモ→タスク変換 — `/api/memos/[id]/convert/route.ts`
+**用途**: アイデアメモからタスク情報をAI自動生成
+**max_tokens**: 600
+
+| 参照テーブル | 注入データ |
+|---|---|
+| idea_memos | content（メモ本文） |
+| memo_conversations | 全AI会話履歴（role, content） |
+
+#### 7. キーワード抽出 — `thoughtNode.service.ts` → `keywordExtractor.service.ts`
+**用途**: AI会話/メッセージからナレッジキーワード自動抽出
+**max_tokens**: 800
+
+| 参照テーブル | 注入データ |
+|---|---|
+| （入力テキストのみ） | 会話テキスト + source_type + phase |
+| — | 抽出ルール: 名詞/専門用語のみ、信頼度0.7以上、最大8キーワード |
+
+#### 8. ナレッジクラスタリング — `knowledgeClustering.service.ts`
+**用途**: 週次AIクラスタリング（キーワード→領域/分野構造提案）
+**max_tokens**: 2000 | **トリガー**: 毎週月曜2:30 Cron
+
+| 参照テーブル | 注入データ |
+|---|---|
+| knowledge_master_entries | 未確認キーワード一覧（is_confirmed=false、50個以上） |
+| knowledge_domains | 既存領域（整合性参照用） |
+| knowledge_fields | 既存分野（整合性参照用） |
+
+#### 9. ファイル分類 — `fileClassification.service.ts`
+**用途**: 添付ファイルの書類種別/方向/リネームをAI判定
+**max_tokens**: 500
+
+| 参照テーブル | 注入データ |
+|---|---|
+| （メタデータのみ） | fileName, mimeType, emailSubject, emailBody(200文字), senderName, direction, organizationName, projectName |
+| — | ファイル中身は読まない（軽量設計） |
+
+#### 10. 思考リプレイ — `/api/thought-map/replay/route.ts`
+**用途**: 完了タスクの思考を再現し、過去の意思決定についてAI対話
+**max_tokens**: 1500
+
+| 参照テーブル | 注入データ |
+|---|---|
+| tasks | title, description, status, ideation_summary, result_summary |
+| task_conversations | 全会話履歴（最大50件、各200文字） |
+| thought_snapshots | 初期ゴール vs 着地点 |
+| thought_task_nodes → knowledge_master_entries | ノード一覧（思考の旅路） |
+
+#### 11. ビジネスイベント週間要約 — `/api/cron/summarize-business-log/route.ts`
+**用途**: プロジェクト別の週間活動をAI要約
+**max_tokens**: 800 | **トリガー**: 毎週月曜2:00 Cron
+
+| 参照テーブル | 注入データ |
+|---|---|
+| business_events | 過去7日間のイベント（カテゴリ別: メッセージ/ドキュメント/会議/その他） |
+| projects | プロジェクト名 |
+
+#### 12. タスク完了要約 — `aiClient.service.ts` → `generateTaskSummary()`
+**用途**: タスク完了時に結論・プロセス・学び・次アクションを生成
+**max_tokens**: 1000 | **モデル**: claude-opus-4-5-20251101
+
+| 参照テーブル | 注入データ |
+|---|---|
+| tasks | title, ideation_summary |
+| task_conversations | 全会話履歴 |
+
+### フォールバック方針
+全エンドポイント共通: ANTHROPIC_API_KEY未設定またはAPI失敗時は、テンプレートベース or メッセージ内容そのまま使用。AI失敗がタスク/ジョブの作成・更新処理をブロックしない設計。
+
+---
+
 ## 環境変数（.env.local / Vercel）
 
 ```
