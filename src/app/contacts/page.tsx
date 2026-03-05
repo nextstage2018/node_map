@@ -140,11 +140,40 @@ function getAvatarColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
+
+// ========================================
+// 🔰 機能ガイド
+// ========================================
+function FeatureGuide({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="mx-6 mt-4 mb-2 p-4 bg-blue-50 border border-blue-200 rounded-lg relative">
+      <button onClick={onClose} className="absolute top-2 right-2 text-blue-400 hover:text-blue-600 text-sm">✕</button>
+      <h3 className="text-sm font-bold text-blue-800 mb-2">🔰 コンタクトページの使い方</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs text-blue-700">
+        <div><span className="font-semibold">📋 コンタクト一覧</span> — メール・Slack・Chatworkの送受信相手が自動で一覧化されます。名前をクリックすると詳細を編集できます。</div>
+        <div><span className="font-semibold">👤 新規追加</span> — 手動でコンタクトを登録できます。メールアドレスから組織を自動判定します。</div>
+        <div><span className="font-semibold">🔍 プロフィール自動取得</span> — Slack/ChatworkのAPIから名前・部署・会社名を自動で補完します。</div>
+        <div><span className="font-semibold">🔀 重複を統合</span> — 同じ人が複数登録されている場合、自動検出して1つに統合できます。</div>
+        <div><span className="font-semibold">📎 チャネル追加</span> — コンタクト詳細で連絡先（メール/Slack/Chatwork）を追加し、1人に複数チャネルをまとめます。</div>
+        <div><span className="font-semibold">📋 関連タスク</span> — コンタクトの所属組織→プロジェクト→タスクを辿り、関連する仕事を自動表示します。</div>
+        <div><span className="font-semibold">🚫 ブロックリスト</span> — メルマガなど不要な送信者をブロックして、コンタクト一覧から除外できます。</div>
+        <div><span className="font-semibold">🤖 AI活用</span> — コンタクト情報は秘書AIの返信下書き・ジョブ作成時にコンテキストとして活用されます。</div>
+      </div>
+    </div>
+  );
+}
+
 // ========================================
 // メインコンポーネント
 // ========================================
 export default function ContactsPage() {
   const [activeTab, setActiveTab] = useState<'contacts' | 'blocklist'>('contacts');
+  const [showGuide, setShowGuide] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('contacts_guide_dismissed') !== 'true';
+    }
+    return true;
+  });
 
   // --- コンタクト関連state ---
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -567,6 +596,7 @@ export default function ContactsPage() {
         }
       />
       <div className="flex-1 overflow-hidden flex flex-col">
+        {showGuide && <FeatureGuide onClose={() => { setShowGuide(false); localStorage.setItem('contacts_guide_dismissed', 'true'); }} />}
         <div className="px-6 py-4 border-b border-slate-200 bg-slate-50">
 
           {/* タブ切り替え */}

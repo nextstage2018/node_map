@@ -277,6 +277,28 @@ const [subsResult, tokenResult, emailSync, slackSync, cwSync] = await Promise.al
 
 ---
 
+
+---
+
+## コンタクトAPI完成（Phase 35完了）
+
+### 概要
+コンタクトページのUIに対応する不足API 5件を実装し、全機能を動作可能にした。
+
+### 新規ファイル
+- `src/app/api/contacts/duplicates/route.ts` — 重複検出API（同名・同アドレスでグループ化）
+- `src/app/api/contacts/merge/route.ts` — コンタクトマージAPI（チャンネル統合→元コンタクト削除）
+- `src/app/api/contacts/[id]/channels/route.ts` — チャネル追加API（UNIQUE制約で重複防止）
+- `src/app/api/contacts/[id]/tasks/route.ts` — 関連タスク取得API（組織→プロジェクト→タスク経由）
+- `src/app/api/contacts/enrich/route.ts` — プロフィール自動取得API（Slack users.info / Chatwork contacts）
+
+### AI コンテキストへの影響
+| 項目 | 影響 |
+|---|---|
+| コンタクトチャンネル統合 | マージにより1人のコンタクトに全チャンネルが集約 → 返信下書きAIが全チャネルの過去やり取りを参照可能に |
+| プロフィール自動取得 | Slack/Chatworkから名前・部署・会社名を補完 → AI返信の宛名・敬称が正確に |
+| 関連タスク表示 | コンタクト→組織→プロジェクト→タスクの紐づけ → 秘書AIのブリーフィングでコンタクト文脈が豊かに |
+
 ## Phase 58/58a/58b 実装内容（ジョブ再設計・署名・文体学習・アカウント紐づけ）
 
 ### Phase 58: ジョブ再設計・社内相談
