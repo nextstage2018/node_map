@@ -372,10 +372,7 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
   const [consultTargetId, setConsultTargetId] = useState('');
   const [internalMembers, setInternalMembers] = useState<{id: string; name: string; email?: string; linkedUserId?: string}[]>([]);
   // Phase 62: 日程調整の宛先選択
-  const [showScheduleTargetForm, setShowScheduleTargetForm] = useState(false);
-  const [scheduleTargetName, setScheduleTargetName] = useState(message.from?.name || '');
-  const [scheduleTargetAddress, setScheduleTargetAddress] = useState(message.from?.address || '');
-  const [contacts, setContacts] = useState<{id: string; name: string; address?: string}[]>([]);
+  // Phase 62: 宛先はメッセージ送信者を自動使用（選択UIは不要）
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Phase 62: グループチャネル判定
@@ -391,22 +388,6 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
     if (showMenu) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showMenu]);
-
-  // Phase 62: コンタクト一覧を取得（日程調整の宛先選択用）
-  const fetchContacts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/contacts');
-      const json = await res.json();
-      if (json.success && json.data) {
-        const contactList = json.data.map((c: { id: string; name?: string; channels?: { address?: string }[] }) => ({
-          id: c.id,
-          name: c.name || '不明',
-          address: c.channels?.[0]?.address || '',
-        }));
-        setContacts(contactList);
-      }
-    } catch { /* ignore */ }
-  }, []);
 
   // 社内相談: 自社組織メンバーを取得
   const fetchInternalMembers = useCallback(async () => {
@@ -439,23 +420,14 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
       return;
     }
 
-    // Phase 62: 日程調整: 宛先選択フォーム表示
-    if (jobType === 'schedule') {
-      setScheduleTargetName(message.from?.name || '');
-      setScheduleTargetAddress(message.from?.address || '');
-      fetchContacts();
-      setShowScheduleTargetForm(true);
-      return;
-    }
-
     await createJob(jobType);
   };
 
-  // Phase 62: ジョブ作成共通関数（target情報を含む）
-  const createJob = async (jobType: string, overrideTarget?: { name: string; address: string }) => {
+  // Phase 62: ジョブ作成共通関数（宛先はメッセージ送信者を自動使用）
+  const createJob = async (jobType: string) => {
     setIsCreating(true);
-    const targetName = overrideTarget?.name || message.from?.name || '';
-    const targetAddress = overrideTarget?.address || message.from?.address || '';
+    const targetName = message.from?.name || '';
+    const targetAddress = message.from?.address || '';
 
     try {
       // AIがメッセージ内容からジョブ情報を構造化
@@ -513,12 +485,6 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
       setIsCreating(false);
       setTimeout(() => setResult(null), 3000);
     }
-  };
-
-  // Phase 62: 日程調整の宛先確定→ジョブ作成
-  const handleScheduleSubmit = async () => {
-    setShowScheduleTargetForm(false);
-    await createJob('schedule', { name: scheduleTargetName, address: scheduleTargetAddress });
   };
 
   // 社内相談: フォーム送信
@@ -683,58 +649,7 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
           </div>
         </div>
       )}
-      {/* Phase 62: 日程調整の宛先選択フォーム */}
-      {showScheduleTargetForm && (
-        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg p-4 min-w-[320px] z-50">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="text-sm font-semibold text-slate-700">📅 日程調整の宛先</h4>
-            <button onClick={() => setShowScheduleTargetForm(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-[11px] text-slate-500 mb-1">宛先（コンタクトから選択 or 手入力）</label>
-              {contacts.length > 0 ? (
-                <select
-                  value={scheduleTargetAddress}
-                  onChange={(e) => {
-                    const c = contacts.find(c => (c.address || c.name) === e.target.value);
-                    if (c) {
-                      setScheduleTargetName(c.name);
-                      setScheduleTargetAddress(c.address || c.name);
-                    } else {
-                      setScheduleTargetAddress(e.target.value);
-                    }
-                  }}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value={message.from?.address || ''}>{message.from?.name || '送信者'}（元メッセージ送信者）</option>
-                  {contacts
-                    .filter(c => c.address !== message.from?.address)
-                    .map(c => (
-                    <option key={c.id} value={c.address || c.name}>{c.name}{c.address ? ` (${c.address})` : ''}</option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={scheduleTargetName}
-                  onChange={(e) => setScheduleTargetName(e.target.value)}
-                  placeholder="宛先の名前"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              )}
-            </div>
-            <p className="text-[10px] text-slate-400">カレンダーの空き時間から候補日を自動生成します</p>
-            <button
-              onClick={handleScheduleSubmit}
-              disabled={!scheduleTargetName.trim()}
-              className="w-full bg-blue-600 text-white text-xs font-medium py-2 rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
-            >
-              日程調整ジョブを作成
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Phase 62: 日程調整もメッセージ送信者を自動宛先にするため、選択フォーム不要 */}
     </div>
   );
 }
@@ -743,24 +658,14 @@ function JobActionButton({ message }: { message: UnifiedMessage }) {
  * タスク作成ポップアップ（AI自動入力フォーム）
  */
 function TaskActionButton({ message }: { message: UnifiedMessage }) {
-  const [showModal, setShowModal] = useState(false);
-  const [isStructuring, setIsStructuring] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [form, setForm] = useState({
-    title: '',
-    goal: '',
-    description: '',
-    priority: 'medium',
-    deadline: '',
-    concerns: '',
-  });
 
-  const openAndStructure = async () => {
-    setShowModal(true);
-    setIsStructuring(true);
+  const createTask = async () => {
+    setIsCreating(true);
     try {
-      const res = await fetch('/api/ai/structure-task', {
+      // AIがメッセージからタスク情報を構造化
+      const aiRes = await fetch('/api/ai/structure-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -771,42 +676,23 @@ function TaskActionButton({ message }: { message: UnifiedMessage }) {
           timestamp: message.timestamp,
         }),
       });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setForm({
-          title: json.data.title || '',
-          goal: json.data.goal || '',
-          description: json.data.description || '',
-          priority: json.data.priority || 'medium',
-          deadline: json.data.deadline || '',
-          concerns: json.data.concerns || '',
-        });
-      }
-    } catch {
-      // AIが失敗してもフォームは手入力可能
-      setForm(prev => ({
-        ...prev,
+      const aiJson = await aiRes.json();
+      const structured = (aiJson.success && aiJson.data) ? aiJson.data : {
         title: message.subject || message.body.slice(0, 50),
         description: message.body.slice(0, 500),
-      }));
-    } finally {
-      setIsStructuring(false);
-    }
-  };
+        priority: 'medium',
+      };
 
-  const handleSubmit = async () => {
-    if (!form.title.trim()) return;
-    setIsSubmitting(true);
-    try {
+      // 即タスク登録
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: form.title,
-          description: form.description,
-          goal: form.goal,
-          priority: form.priority,
-          dueDate: form.deadline || undefined,
+          title: structured.title,
+          description: structured.description,
+          goal: structured.goal || '',
+          priority: structured.priority || 'medium',
+          dueDate: structured.deadline || undefined,
           sourceMessageId: message.id,
           sourceChannel: message.channel,
           sourceContent: message.body,
@@ -814,7 +700,6 @@ function TaskActionButton({ message }: { message: UnifiedMessage }) {
       });
       const json = await res.json();
       if (json.success) {
-        setShowModal(false);
         setResult({ type: 'success', text: 'タスクを登録しました' });
       } else {
         setResult({ type: 'error', text: json.error || '登録に失敗' });
@@ -822,12 +707,12 @@ function TaskActionButton({ message }: { message: UnifiedMessage }) {
     } catch {
       setResult({ type: 'error', text: '通信エラー' });
     } finally {
-      setIsSubmitting(false);
+      setIsCreating(false);
       setTimeout(() => setResult(null), 3000);
     }
   };
 
-  if (result && !showModal) {
+  if (result) {
     return (
       <span className={cn(
         'inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium',
@@ -841,127 +726,9 @@ function TaskActionButton({ message }: { message: UnifiedMessage }) {
   }
 
   return (
-    <>
-      <Button variant="secondary" size="sm" onClick={openAndStructure}>
-        📋 タスク化
-      </Button>
-
-      {/* タスク登録モーダル */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-          <div className="bg-white rounded-xl shadow-xl w-[480px] max-h-[80vh] overflow-y-auto mx-4">
-            <div className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-slate-900">タスクを登録</h3>
-                <button
-                  onClick={() => setShowModal(false)}
-                  className="text-slate-400 hover:text-slate-600 text-lg"
-                >
-                  ✕
-                </button>
-              </div>
-
-              {isStructuring ? (
-                <div className="flex flex-col items-center justify-center py-8 gap-3">
-                  <div className="animate-spin text-2xl">⟳</div>
-                  <p className="text-xs text-slate-500">AIがメッセージを分析中...</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* タイトル */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">タイトル</label>
-                    <input
-                      type="text"
-                      value={form.title}
-                      onChange={(e) => setForm({ ...form, title: e.target.value })}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* ゴール */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">ゴール</label>
-                    <input
-                      type="text"
-                      value={form.goal}
-                      onChange={(e) => setForm({ ...form, goal: e.target.value })}
-                      placeholder="何を達成するか"
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  {/* 詳細 */}
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">詳細</label>
-                    <textarea
-                      value={form.description}
-                      onChange={(e) => setForm({ ...form, description: e.target.value })}
-                      rows={3}
-                      className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                    />
-                  </div>
-
-                  {/* 優先度＋期限 */}
-                  <div className="flex gap-3">
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-slate-600 mb-1">優先度</label>
-                      <select
-                        value={form.priority}
-                        onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="high">高</option>
-                        <option value="medium">中</option>
-                        <option value="low">低</option>
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <label className="block text-xs font-medium text-slate-600 mb-1">期限</label>
-                      <input
-                        type="date"
-                        value={form.deadline}
-                        onChange={(e) => setForm({ ...form, deadline: e.target.value })}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* 懸念事項 */}
-                  {form.concerns && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">懸念事項</label>
-                      <textarea
-                        value={form.concerns}
-                        onChange={(e) => setForm({ ...form, concerns: e.target.value })}
-                        rows={2}
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                      />
-                    </div>
-                  )}
-
-                  <p className="text-[10px] text-slate-400">AIが自動入力しました。内容を確認・編集してから登録してください。</p>
-
-                  {/* ボタン */}
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="ghost" size="sm" onClick={() => setShowModal(false)}>
-                      キャンセル
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSubmit}
-                      disabled={isSubmitting || !form.title.trim()}
-                    >
-                      {isSubmitting ? '登録中...' : '登録する'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <Button variant="secondary" size="sm" onClick={createTask} disabled={isCreating}>
+      {isCreating ? '⏳ 登録中...' : '📋 タスク化'}
+    </Button>
   );
 }
 
