@@ -187,8 +187,8 @@ export class TaskService {
     }
   }
 
-  // タスク取得（単体）
-  static async getTask(id: string): Promise<Task | null> {
+  // タスク取得（単体）— userId指定時は所有者チェック
+  static async getTask(id: string, userId?: string): Promise<Task | null> {
     const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
@@ -196,11 +196,14 @@ export class TaskService {
     }
 
     try {
-      const { data: task, error } = await sb
+      let query = sb
         .from('tasks')
         .select('*')
-        .eq('id', id)
-        .single();
+        .eq('id', id);
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+      const { data: task, error } = await query.single();
 
       if (error || !task) return null;
 
@@ -386,12 +389,15 @@ export class TaskService {
         }
       }
 
-      const { data, error } = await sb
+      let updateQuery = sb
         .from('tasks')
         .update(updateData)
-        .eq('id', id)
-        .select()
-        .single();
+        .eq('id', id);
+      // userId指定時は所有者チェック（Phase 60: データ分離）
+      if (req.userId) {
+        updateQuery = updateQuery.eq('user_id', req.userId);
+      }
+      const { data, error } = await updateQuery.select().single();
 
       if (error) {
         console.error('Error updating task in Supabase:', error);
@@ -798,8 +804,8 @@ export class TaskService {
     }
   }
 
-  // 種の削除
-  static async deleteSeed(seedId: string): Promise<boolean> {
+  // 種の削除 — userId指定時は所有者チェック（Phase 60: データ分離）
+  static async deleteSeed(seedId: string, userId?: string): Promise<boolean> {
     const sb = getServerSupabase() || getSupabase();
 
     if (!sb) {
@@ -807,10 +813,14 @@ export class TaskService {
     }
 
     try {
-      const { error } = await sb
+      let query = sb
         .from('seeds')
         .delete()
         .eq('id', seedId);
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+      const { error } = await query;
 
       if (error) {
         console.error('Error deleting seed in Supabase:', error);
@@ -824,18 +834,22 @@ export class TaskService {
     }
   }
 
-  // タスクの削除
-  static async deleteTask(taskId: string): Promise<boolean> {
+  // タスクの削除 — userId指定時は所有者チェック（Phase 60: データ分離）
+  static async deleteTask(taskId: string, userId?: string): Promise<boolean> {
     const sb = getServerSupabase() || getSupabase();
     if (!sb) return false;
 
     try {
       // FK CASCADE で関連テーブル（task_conversations, thought_task_nodes,
       // thought_edges, thought_snapshots, task_members）は自動削除される
-      const { error } = await sb
+      let query = sb
         .from('tasks')
         .delete()
         .eq('id', taskId);
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+      const { error } = await query;
 
       if (error) {
         console.error('Error deleting task in Supabase:', error);

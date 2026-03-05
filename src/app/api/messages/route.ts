@@ -41,10 +41,12 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
     };
   }
 
-  // 環境変数で即判定できるトークン
-  const envGmail = !!process.env.EMAIL_USER;
-  const envSlack = !!process.env.SLACK_BOT_TOKEN;
-  const envChatwork = !!process.env.CHATWORK_API_TOKEN;
+  // 環境変数トークンはオーナーユーザー専用（他ユーザーはDBトークンのみ）
+  const envTokenOwnerId = process.env.ENV_TOKEN_OWNER_ID || '';
+  const isEnvTokenOwner = envTokenOwnerId ? (userId === envTokenOwnerId) : true;
+  const envGmail = isEnvTokenOwner && !!process.env.EMAIL_USER;
+  const envSlack = isEnvTokenOwner && !!process.env.SLACK_BOT_TOKEN;
+  const envChatwork = isEnvTokenOwner && !!process.env.CHATWORK_API_TOKEN;
 
   // 全DBクエリを並列実行（1回のawaitで全部取得）
   const [subsResult, tokenResult, emailSyncResult, slackSyncResult, cwSyncResult] = await Promise.all([
@@ -81,9 +83,9 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
   // トークン判定
   const dbTokenServices = new Set((tokenResult.data || []).map((t) => t.service_name));
   const canFetch = {
-    gmail: subscriptions.gmail.length > 0 || envGmail || dbTokenServices.has('gmail'),
-    slack: subscriptions.slack.length > 0 || envSlack || dbTokenServices.has('slack'),
-    chatwork: subscriptions.chatwork.length > 0 || envChatwork || dbTokenServices.has('chatwork'),
+    gmail: envGmail || dbTokenServices.has('gmail'),
+    slack: envSlack || dbTokenServices.has('slack'),
+    chatwork: envChatwork || dbTokenServices.has('chatwork'),
   };
 
   // 同期状態

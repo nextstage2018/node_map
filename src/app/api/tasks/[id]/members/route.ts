@@ -23,6 +23,17 @@ export async function GET(
     const { id: taskId } = await params;
     const sb = getServerSupabase() || getSupabase();
 
+    // Phase 60: タスクの所有者チェック
+    const { data: taskCheck } = await sb
+      .from('tasks')
+      .select('id')
+      .eq('id', taskId)
+      .eq('user_id', userId)
+      .single();
+    if (!taskCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const { data, error } = await sb
       .from('task_members')
       .select('*')
@@ -69,6 +80,17 @@ export async function POST(
     }
 
     const sb = getServerSupabase() || getSupabase();
+
+    // Phase 60: タスクの所有者チェック
+    const { data: taskCheck } = await sb
+      .from('tasks')
+      .select('id')
+      .eq('id', taskId)
+      .eq('user_id', userId)
+      .single();
+    if (!taskCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
     const { data, error } = await sb
       .from('task_members')
@@ -150,6 +172,17 @@ export async function DELETE(
     }
 
     const sb = getServerSupabase() || getSupabase();
+
+    // Phase 60: タスクの所有者チェック
+    const { data: taskCheck } = await sb
+      .from('tasks')
+      .select('id')
+      .eq('id', taskId)
+      .eq('user_id', userId)
+      .single();
+    if (!taskCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
 
     // メンバー情報を取得（カレンダー予定削除用）
     const { data: member } = await sb

@@ -28,6 +28,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'primaryId は mergeIds に含めないでください' }, { status: 400 });
     }
 
+    // Phase 60: マージ対象コンタクトが現在ユーザーの所有であることを確認
+    const { data: ownedContacts, error: checkError } = await supabase
+      .from('contact_persons')
+      .select('id')
+      .in('id', [...mergeIds, primaryId])
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
+
+    if (checkError || !ownedContacts || ownedContacts.length !== mergeIds.length + 1) {
+      return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
     // 1. マージ元のチャンネルを取得
     const { data: mergeChannels } = await supabase
       .from('contact_channels')

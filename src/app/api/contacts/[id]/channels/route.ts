@@ -46,11 +46,12 @@ export async function POST(
       );
     }
 
-    // Phase 35: コンタクトの存在確認
+    // Phase 35: コンタクトの存在確認 + Phase 60: 所有者チェック
     const { data: contact, error: contactError } = await supabase
       .from('contact_persons')
       .select('id')
       .eq('id', contactId)
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
       .single();
 
     if (contactError || !contact) {

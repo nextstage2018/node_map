@@ -198,7 +198,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const task = await TaskService.updateTask(body.id, body);
+    const task = await TaskService.updateTask(body.id, { ...body, userId });
     if (!task) {
       return NextResponse.json(
         { success: false, error: 'タスクが見つかりません' },
@@ -307,6 +307,7 @@ export async function DELETE(request: NextRequest) {
           .from('tasks')
           .select('calendar_event_id')
           .eq('id', taskId)
+          .eq('user_id', userId)
           .single();
         if (taskData?.calendar_event_id) {
           const { deleteCalendarEvent } = await import('@/services/calendar/calendarSync.service');
@@ -317,7 +318,7 @@ export async function DELETE(request: NextRequest) {
       console.error('[Tasks API] カレンダー削除エラー（続行）:', calErr);
     }
 
-    const success = await TaskService.deleteTask(taskId);
+    const success = await TaskService.deleteTask(taskId, userId);
     if (!success) {
       return NextResponse.json(
         { success: false, error: 'タスク削除に失敗しました' },

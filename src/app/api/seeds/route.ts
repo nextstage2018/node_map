@@ -240,6 +240,7 @@ export async function PUT(request: NextRequest) {
           .from('seeds')
           .update({ project_id: body.projectId || null, updated_at: new Date().toISOString() })
           .eq('id', body.seedId)
+          .eq('user_id', userId)
           .select()
           .single();
         if (error) {
@@ -295,7 +296,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const deleted = await TaskService.deleteSeed(seedId);
+    const deleted = await TaskService.deleteSeed(seedId, userId);
     if (!deleted) {
       return NextResponse.json(
         { success: false, error: '種が見つかりません' },

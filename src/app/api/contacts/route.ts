@@ -97,6 +97,7 @@ export async function GET(request: NextRequest) {
         .from('inbox_messages')
         .select('from_name, from_address, channel, timestamp, metadata')
         .in('channel', ['slack', 'chatwork'])
+        .eq('user_id', userId)
         .neq('from_name', 'あなた')
         .neq('from_name', '')
         .order('timestamp', { ascending: false });
@@ -106,6 +107,7 @@ export async function GET(request: NextRequest) {
         .from('inbox_messages')
         .select('to_list, channel, timestamp, metadata, direction')
         .eq('channel', 'email')
+        .eq('user_id', userId)
         .eq('direction', 'sent')
         .order('timestamp', { ascending: false });
 
@@ -636,6 +638,7 @@ export async function PUT(request: NextRequest) {
         .from('contact_persons')
         .select('organization_id, contact_channels(address, channel)')
         .eq('id', id)
+        .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
         .single();
 
       if (currentContact && !currentContact.organization_id) {
@@ -652,7 +655,8 @@ export async function PUT(request: NextRequest) {
     const { error } = await supabase
       .from('contact_persons')
       .update(updateData)
-      .eq('id', id);
+      .eq('id', id)
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     if (error) {
       console.error('[Contacts API] 更新エラー:', error);

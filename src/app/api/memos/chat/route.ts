@@ -23,6 +23,13 @@ export async function GET(request: NextRequest) {
     }
 
     const sb = getServerSupabase() || getSupabase();
+
+    // メモの所有者チェック
+    const { data: memoCheck } = await sb.from('idea_memos').select('id').eq('id', memoId).eq('user_id', userId).single();
+    if (!memoCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const { data, error } = await sb
       .from('memo_conversations')
       .select('*')
@@ -65,6 +72,13 @@ export async function POST(request: NextRequest) {
     }
 
     const sb = getServerSupabase() || getSupabase();
+
+    // メモの所有者チェック
+    const { data: memoCheck } = await sb.from('idea_memos').select('id').eq('id', memoId).eq('user_id', userId).single();
+    if (!memoCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {

@@ -40,6 +40,7 @@ export async function GET() {
     const { data: contacts, error } = await supabase
       .from('contact_persons')
       .select('id, name, relationship_type, main_channel, message_count, last_contact_at, company_name, contact_channels(address, channel)')
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
       .order('name');
 
     if (error) {

@@ -22,6 +22,17 @@ export async function GET(
       return NextResponse.json({ error: 'DB接続エラー' }, { status: 500 });
     }
 
+    // Phase 60: タスクの所有者チェック
+    const { data: taskCheck } = await sb
+      .from('tasks')
+      .select('id')
+      .eq('id', taskId)
+      .eq('user_id', userId)
+      .single();
+    if (!taskCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
     const { data, error } = await sb
       .from('drive_documents')
       .select('id, file_name, original_file_name, drive_url, drive_file_id, document_type, direction, year_month, mime_type, file_size, memo, created_at')
@@ -62,6 +73,17 @@ export async function PATCH(
     const sb = getServerSupabase() || getSupabase();
     if (!sb) {
       return NextResponse.json({ error: 'DB接続エラー' }, { status: 500 });
+    }
+
+    // Phase 60: タスクの所有者チェック
+    const { data: taskCheck } = await sb
+      .from('tasks')
+      .select('id')
+      .eq('id', taskId)
+      .eq('user_id', userId)
+      .single();
+    if (!taskCheck) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
     }
 
     const { error } = await sb

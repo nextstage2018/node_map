@@ -25,8 +25,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // タスク取得
-    const task = await TaskService.getTask(body.taskId);
+    // タスク取得（Phase 60: ユーザーID検証付き）
+    const task = await TaskService.getTask(body.taskId, userId);
     if (!task) {
       return NextResponse.json(
         { success: false, error: 'タスクが見つかりません' },
@@ -187,7 +187,7 @@ export async function PUT(request: NextRequest) {
     const userId = await getServerUserId();
     const body: { taskId: string } = await request.json();
 
-    const task = await TaskService.getTask(body.taskId);
+    const task = await TaskService.getTask(body.taskId, userId);
     if (!task) {
       return NextResponse.json(
         { success: false, error: 'タスクが見つかりません' },
