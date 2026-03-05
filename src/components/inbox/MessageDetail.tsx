@@ -745,6 +745,235 @@ function InboxActionButtons({ message }: { message: UnifiedMessage }) {
 }
 
 /**
+ * メッセージバブル直下のインラインアクション（返信・ジョブ・タスク化を1行表示）
+ */
+function MessageInlineActions({
+  message,
+  onReply,
+}: {
+  message: UnifiedMessage;
+  onReply: () => void;
+}) {
+  const [isCreating, setIsCreating] = useState(false);
+  const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showConsultForm, setShowConsultForm] = useState(false);
+  const [consultQuestion, setConsultQuestion] = useState('');
+  const [consultTarget, setConsultTarget] = useState('');
+  const [consultTargetId, setConsultTargetId] = useState('');
+  const [internalMembers, setInternalMembers] = useState<{id: string; name: string; linkedUserId?: string}[]>([]);
+
+  const isGroupChannel = (message.channel === 'slack' && !!message.metadata?.slackChannel)
+    || (message.channel === 'chatwork' && !!message.metadata?.chatworkRoomId);
+
+  const fetchInternalMembers = useCallback(async () => {
+    try {
+      const orgRes = await fetch('/api/organizations');
+      const orgJson = await orgRes.json();
+      if (!orgJson.success) return;
+      const selfOrg = orgJson.data?.find((o: { relationshipType?: string }) => o.relationshipType === 'self');
+      if (!selfOrg) return;
+      const memRes = await fetch(`/api/organizations/${selfOrg.id}/members`);
+      const memJson = await memRes.json();
+      if (memJson.success && memJson.data) {
+        setInternalMembers(memJson.data.map((m: { id: string; name?: string; linked_user_id?: string }) => ({
+          id: m.id, name: m.name || '不明', linkedUserId: m.linked_user_id || undefined,
+        })));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const createJob = async (jobType: string) => {
+    setIsCreating(true);
+    const targetName = message.from?.name || '';
+    const targetAddress = message.from?.address || '';
+    try {
+      const aiRes = await fetch('/api/ai/structure-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: message.channel, from: message.from?.name || '',
+          subject: message.subject || '', body: message.body,
+          jobType, messageId: message.id, isGroupChannel,
+          senderAddress: message.from?.address || '',
+        }),
+      });
+      const aiJson = await aiRes.json();
+      const structured = aiJson.success ? aiJson.data : {
+        title: message.subject || message.body.slice(0, 30), description: message.body.slice(0, 100),
+      };
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: structured.title, description: structured.description,
+          type: jobType, sourceMessageId: message.id, sourceChannel: message.channel,
+          aiDraft: structured.aiDraft, replyToMessageId: message.id,
+          targetAddress, targetName, executionMetadata: message.metadata || {},
+        }),
+      });
+      const json = await res.json();
+      const labels: Record<string, string> = {
+        schedule: '📅 日程調整ジョブを作成', save_to_drive: '📁 Driveに保存', todo: '📌 後でやるに追加',
+      };
+      setResult(json.success
+        ? { type: 'success', text: labels[jobType] || 'ジョブに追加' }
+        : { type: 'error', text: json.error || '作成に失敗' });
+    } catch {
+      setResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(false);
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const createTask = async () => {
+    setIsCreating(true);
+    try {
+      const aiRes = await fetch('/api/ai/structure-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: message.channel, from: message.from?.name || '',
+          subject: message.subject || '', body: message.body, timestamp: message.timestamp,
+        }),
+      });
+      const aiJson = await aiRes.json();
+      const structured = (aiJson.success && aiJson.data) ? aiJson.data : {
+        title: message.subject || message.body.slice(0, 50),
+        description: message.body.slice(0, 500), priority: 'medium',
+      };
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: structured.title, description: structured.description,
+          goal: structured.goal || '', priority: structured.priority || 'medium',
+          dueDate: structured.deadline || undefined,
+          sourceMessageId: message.id, sourceChannel: message.channel, sourceContent: message.body,
+        }),
+      });
+      const json = await res.json();
+      setResult(json.success
+        ? { type: 'success', text: '📋 タスクを登録' }
+        : { type: 'error', text: json.error || '登録に失敗' });
+    } catch {
+      setResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(false);
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const handleConsultSubmit = async () => {
+    if (!consultQuestion.trim()) return;
+    setShowConsultForm(false);
+    setIsCreating(true);
+    try {
+      const aiRes = await fetch('/api/ai/structure-job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: message.channel, from: message.from?.name || '',
+          subject: message.subject || '', body: message.body,
+          jobType: 'consult', messageId: message.id,
+          consultQuestion, consultTargetName: consultTarget, consultTargetContactId: consultTargetId,
+        }),
+      });
+      const aiJson = await aiRes.json();
+      const structured = aiJson.success ? aiJson.data : {
+        title: `社内相談: ${consultTarget}`, description: consultQuestion.slice(0, 100),
+      };
+      const res = await fetch('/api/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: structured.title, description: structured.description,
+          type: 'consult', sourceMessageId: message.id, sourceChannel: message.channel,
+          consultQuestion, consultTargetName: consultTarget, consultTargetContactId: consultTargetId,
+          threadSummary: structured.threadSummary,
+        }),
+      });
+      const json = await res.json();
+      setResult(json.success
+        ? { type: 'success', text: '💬 社内相談を作成' }
+        : { type: 'error', text: json.error || '作成に失敗' });
+    } catch {
+      setResult({ type: 'error', text: '通信エラー' });
+    } finally {
+      setIsCreating(false);
+      setConsultQuestion(''); setConsultTarget(''); setConsultTargetId('');
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  if (result) {
+    return (
+      <div className="mt-2">
+        <span className={cn('inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full',
+          result.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
+        )}>
+          {result.type === 'success' ? '✅' : '❌'} {result.text}
+        </span>
+      </div>
+    );
+  }
+
+  if (isCreating) {
+    return <div className="mt-2"><span className="text-xs text-slate-400 animate-pulse">⏳ 処理中...</span></div>;
+  }
+
+  const btnCls = "text-[11px] px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors whitespace-nowrap";
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap gap-1">
+        <button onClick={onReply} className={btnCls}>↩ 返信</button>
+        <button onClick={() => createJob('schedule')} className={btnCls}>📅 日程調整</button>
+        <button onClick={() => { fetchInternalMembers(); setShowConsultForm(true); }} className={btnCls}>💬 相談</button>
+        <button onClick={() => createJob('save_to_drive')} className={btnCls}>📁 Drive</button>
+        <button onClick={() => createJob('todo')} className={btnCls}>📌 後で</button>
+        <button onClick={createTask} className={btnCls}>📋 タスク</button>
+      </div>
+      {showConsultForm && (
+        <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700">💬 社内相談</span>
+            <button onClick={() => setShowConsultForm(false)} className="text-slate-400 hover:text-slate-600 text-xs">✕</button>
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">相談相手</label>
+            {internalMembers.length > 0 ? (
+              <select value={consultTargetId} onChange={(e) => {
+                const m = internalMembers.find(m => m.id === e.target.value);
+                setConsultTargetId(e.target.value); setConsultTarget(m?.name || '');
+              }} className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs">
+                <option value="">選択してください</option>
+                {internalMembers.filter(m => m.linkedUserId).map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            ) : (
+              <input type="text" value={consultTarget} onChange={(e) => setConsultTarget(e.target.value)}
+                placeholder="相談相手の名前" className="w-full border border-slate-200 rounded-lg px-2 py-1 text-xs" />
+            )}
+          </div>
+          <div>
+            <label className="block text-[11px] text-slate-500 mb-1">相談内容</label>
+            <textarea value={consultQuestion} onChange={(e) => setConsultQuestion(e.target.value)}
+              placeholder="何を相談したいですか？" rows={2}
+              className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs resize-none" />
+          </div>
+          <button onClick={handleConsultSubmit} disabled={!consultQuestion.trim()}
+            className="w-full bg-blue-600 text-white text-xs py-1.5 rounded-lg hover:bg-blue-700 disabled:bg-slate-300 transition-colors">
+            相談を送信
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * AIタスク化提案バナー（コンパクト折りたたみ式）
  */
 function AiTaskSuggestionBanner({ message }: { message: UnifiedMessage }) {
@@ -1060,6 +1289,7 @@ function GroupDetail({
 }) {
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
+  const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
 
   // 最新メッセージに自動スクロール
   useEffect(() => {
@@ -1067,6 +1297,16 @@ function GroupDetail({
       groupEndRef.current.scrollIntoView({ behavior: 'auto' });
     }
   }, [group.groupKey, group.messageCount]);
+
+  // グループ変更時に選択リセット
+  useEffect(() => {
+    setSelectedMsgId(null);
+  }, [group.groupKey]);
+
+  const handleReplyFromBubble = () => {
+    onToggleReply();
+    setSelectedMsgId(null);
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -1100,36 +1340,26 @@ function GroupDetail({
       {onBlock && <SpamWarningBanner message={latestMessage} onBlock={onBlock} />}
       {blockBanner}
 
-      {/* AIタスク化提案 */}
-      <AiTaskSuggestionBanner message={latestMessage} />
-
-      {/* 会話一覧（最新メッセージへ自動スクロール） */}
+      {/* 会話一覧（相手のメッセージをクリックでアクション表示） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {group.messages.map((msg) => (
-          <ConversationBubble key={msg.id} message={msg} />
+          <ConversationBubble
+            key={msg.id}
+            message={msg}
+            isSelected={selectedMsgId === msg.id}
+            onSelect={() => setSelectedMsgId(selectedMsgId === msg.id ? null : msg.id)}
+            onReply={handleReplyFromBubble}
+          />
         ))}
         <div ref={groupEndRef} />
       </div>
 
-      {/* アクションバー */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50">
-        {showReply ? (
-          <ReplyForm
-            message={latestMessage}
-            onClose={onCloseReply}
-            onSentMessage={onSentMessage}
-            autoAiDraft
-          />
-        ) : (
-          <div className="flex gap-2">
-            <Button onClick={onToggleReply}>
-              ↩ 返信（AI下書き）
-            </Button>
-            <InboxActionButtons message={latestMessage} />
-            {onBlock && <BlockButton message={latestMessage} onBlock={onBlock} />}
-          </div>
-        )}
-      </div>
+      {/* 返信フォーム（バブルから「返信」選択時のみ表示） */}
+      {showReply && (
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
+          <ReplyForm message={latestMessage} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
+        </div>
+      )}
     </div>
   );
 }
@@ -1137,62 +1367,63 @@ function GroupDetail({
 /**
  * 会話バブル：個別メッセージをチャット風に表示
  */
-function ConversationBubble({ message }: { message: UnifiedMessage }) {
+function ConversationBubble({
+  message,
+  isSelected,
+  onSelect,
+  onReply,
+}: {
+  message: UnifiedMessage;
+  isSelected?: boolean;
+  onSelect?: () => void;
+  onReply?: () => void;
+}) {
   // Phase 38: direction フィールドまたは名前で送受信を判定
   const isOwn = message.direction === 'sent' || message.from.name === 'あなた' || message.from.name === 'Me';
+  const canSelect = !isOwn && onSelect;
 
   return (
     <div className={cn('flex', isOwn ? 'justify-end' : 'justify-start')}>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-2xl px-4 py-3',
-          isOwn
-            ? 'bg-blue-600 text-white rounded-br-sm'
-            : 'bg-slate-100 text-slate-800 rounded-bl-sm'
-        )}
-      >
-        {/* 送信者名・日時 */}
-        <div className="flex items-center gap-2 mb-1">
-          <span
-            className={cn(
-              'text-xs font-semibold',
-              isOwn ? 'text-blue-100' : 'text-slate-500'
-            )}
-          >
-            {isOwn ? 'あなた' : message.from.name}
-          </span>
-          <span
-            className={cn(
-              'text-[10px]',
-              isOwn ? 'text-blue-200' : 'text-slate-400'
-            )}
-          >
-            {formatRelativeTime(message.timestamp)}
-          </span>
-        </div>
-        {/* 件名（メールの場合） */}
-        {message.subject && (
-          <div
-            className={cn(
-              'text-xs font-semibold mb-1',
-              isOwn ? 'text-blue-100' : 'text-slate-600'
-            )}
-          >
-            {message.subject}
+      <div className="max-w-[85%]">
+        <div
+          onClick={canSelect ? onSelect : undefined}
+          className={cn(
+            'rounded-2xl px-4 py-3 transition-all',
+            isOwn
+              ? 'bg-blue-600 text-white rounded-br-sm'
+              : 'bg-slate-100 text-slate-800 rounded-bl-sm',
+            canSelect && 'cursor-pointer hover:ring-2 hover:ring-blue-300',
+            isSelected && !isOwn && 'ring-2 ring-blue-400'
+          )}
+        >
+          {/* 送信者名・日時 */}
+          <div className="flex items-center gap-2 mb-1">
+            <span className={cn('text-xs font-semibold', isOwn ? 'text-blue-100' : 'text-slate-500')}>
+              {isOwn ? 'あなた' : message.from.name}
+            </span>
+            <span className={cn('text-[10px]', isOwn ? 'text-blue-200' : 'text-slate-400')}>
+              {formatRelativeTime(message.timestamp)}
+            </span>
           </div>
+          {/* 件名（メールの場合） */}
+          {message.subject && (
+            <div className={cn('text-xs font-semibold mb-1', isOwn ? 'text-blue-100' : 'text-slate-600')}>
+              {message.subject}
+            </div>
+          )}
+          {/* 本文 */}
+          {message.channel === 'chatwork' ? (
+            <ChatworkBody body={message.body} className="text-[13px]" isOwn={isOwn} />
+          ) : (
+            <LinkifiedText text={message.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
+          )}
+          {/* リアクション */}
+          <ReactionBar messageId={message.id} channel={message.channel} existingReactions={message.metadata?.reactions} />
+        </div>
+        {/* 選択時：インラインアクション */}
+        {isSelected && !isOwn && onReply && (
+          <MessageInlineActions message={message} onReply={onReply} />
         )}
-        {/* 本文 */}
-        {message.channel === 'chatwork' ? (
-          <ChatworkBody body={message.body} className="text-[13px]" isOwn={isOwn} />
-        ) : (
-          <LinkifiedText text={message.body} className="whitespace-pre-wrap leading-relaxed text-[13px]" />
-        )}
-        {/* リアクション */}
-        <ReactionBar
-          messageId={message.id}
-          channel={message.channel}
-          existingReactions={message.metadata?.reactions}
-        />
       </div>
     </div>
   );
@@ -1334,64 +1565,55 @@ function EmailThreadDetail({
         </div>
       )}
 
-      {/* 会話一覧（古い順・最新メッセージへ自動スクロール） */}
+      {/* 会話一覧（古い順・相手メッセージクリックでアクション表示） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {threadMessages.map((msg) => (
-          <div
-            key={msg.id}
-            className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}
-          >
-            <div
-              className={cn(
-                'max-w-[85%] rounded-2xl px-4 py-3',
-                msg.isOwn
-                  ? 'bg-blue-600 text-white rounded-br-sm'
-                  : 'bg-slate-100 text-slate-800 rounded-bl-sm'
-              )}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span
+        {threadMessages.map((msg, idx) => {
+          const isLast = idx === threadMessages.length - 1;
+          return (
+            <div key={msg.id}>
+              <div className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}>
+                <div
                   className={cn(
-                    'text-xs font-semibold',
-                    msg.isOwn ? 'text-blue-100' : 'text-slate-500'
+                    'max-w-[85%] rounded-2xl px-4 py-3 transition-all',
+                    msg.isOwn
+                      ? 'bg-blue-600 text-white rounded-br-sm'
+                      : 'bg-slate-100 text-slate-800 rounded-bl-sm',
+                    !msg.isOwn && isLast && 'ring-2 ring-blue-400'
                   )}
                 >
-                  {msg.isOwn ? 'あなた' : msg.from.name}
-                </span>
-                <span
-                  className={cn(
-                    'text-[10px]',
-                    msg.isOwn ? 'text-blue-200' : 'text-slate-400'
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={cn('text-xs font-semibold', msg.isOwn ? 'text-blue-100' : 'text-slate-500')}>
+                      {msg.isOwn ? 'あなた' : msg.from.name}
+                    </span>
+                    <span className={cn('text-[10px]', msg.isOwn ? 'text-blue-200' : 'text-slate-400')}>
+                      {msg.timestamp}
+                    </span>
+                  </div>
+                  {message.channel === 'chatwork' ? (
+                    <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
+                  ) : (
+                    <p className="whitespace-pre-wrap leading-relaxed text-[13px]">{msg.body}</p>
                   )}
-                >
-                  {msg.timestamp}
-                </span>
+                </div>
               </div>
-              {message.channel === 'chatwork' ? (
-                <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
-              ) : (
-                <p className="whitespace-pre-wrap leading-relaxed text-[13px]">
-                  {msg.body}
-                </p>
+              {/* 最後の相手メッセージにアクション表示 */}
+              {!msg.isOwn && isLast && (
+                <div className="ml-0 mt-0">
+                  <MessageInlineActions message={message} onReply={onToggleReply} />
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={threadEndRef} />
       </div>
 
-      {/* アクションバー */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50">
-        {showReply ? (
+      {/* 返信フォーム（アクションから「返信」選択時のみ表示） */}
+      {showReply && (
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
           <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
-        ) : (
-          <div className="flex gap-2">
-            <Button onClick={onToggleReply}>↩ 返信（AI下書き）</Button>
-            <InboxActionButtons message={message} />
-            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1476,10 +1698,7 @@ function SingleMessageDetail({
       {/* Phase 51a: タスク化済みバックリンク */}
       <TaskLinkedBadge messageId={message.id} />
 
-      {/* AIタスク化提案 */}
-      <AiTaskSuggestionBanner message={message} />
-
-      {/* 本文 */}
+      {/* 本文（クリックでアクション表示） */}
       <div className="flex-1 overflow-y-auto p-6">
         {message.channel === 'chatwork' ? (
           <ChatworkBody body={message.body} />
@@ -1488,15 +1707,18 @@ function SingleMessageDetail({
         )}
 
         {/* リアクション */}
-        <ReactionBar
-          messageId={message.id}
-          channel={message.channel}
-          existingReactions={message.metadata?.reactions}
-        />
+        <ReactionBar messageId={message.id} channel={message.channel} existingReactions={message.metadata?.reactions} />
 
         {/* 添付ファイル */}
         {message.attachments && message.attachments.length > 0 && (
           <AttachmentList attachments={message.attachments} />
+        )}
+
+        {/* インラインアクション（自分のメッセージでなければ表示） */}
+        {message.from.name !== 'あなた' && message.from.name !== 'Me' && message.direction !== 'sent' && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <MessageInlineActions message={message} onReply={onToggleReply} />
+          </div>
         )}
       </div>
 
@@ -1510,33 +1732,16 @@ function SingleMessageDetail({
           </div>
           <div className="overflow-y-auto max-h-64 px-6 py-3 space-y-3">
             {message.threadMessages!.map((msg) => (
-              <div
-                key={msg.id}
-                className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}
-              >
-                <div
-                  className={cn(
-                    'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
-                    msg.isOwn
-                      ? 'bg-blue-600 text-white rounded-br-sm'
-                      : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
-                  )}
-                >
+              <div key={msg.id} className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}>
+                <div className={cn(
+                  'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm',
+                  msg.isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm'
+                )}>
                   <div className="flex items-center gap-2 mb-1">
-                    <span
-                      className={cn(
-                        'text-xs font-semibold',
-                        msg.isOwn ? 'text-blue-100' : 'text-slate-500'
-                      )}
-                    >
+                    <span className={cn('text-xs font-semibold', msg.isOwn ? 'text-blue-100' : 'text-slate-500')}>
                       {msg.isOwn ? 'あなた' : msg.from.name}
                     </span>
-                    <span
-                      className={cn(
-                        'text-[10px]',
-                        msg.isOwn ? 'text-blue-200' : 'text-slate-400'
-                      )}
-                    >
+                    <span className={cn('text-[10px]', msg.isOwn ? 'text-blue-200' : 'text-slate-400')}>
                       {formatRelativeTime(msg.timestamp)}
                     </span>
                   </div>
@@ -1553,25 +1758,12 @@ function SingleMessageDetail({
         </div>
       )}
 
-      {/* アクションバー */}
-      <div className="p-4 border-t border-slate-200 bg-slate-50">
-        {showReply ? (
-          <ReplyForm
-            message={message}
-            onClose={onCloseReply}
-            onSentMessage={onSentMessage}
-            autoAiDraft
-          />
-        ) : (
-          <div className="flex gap-2">
-            <Button onClick={onToggleReply}>
-              ↩ 返信（AI下書き）
-            </Button>
-            <InboxActionButtons message={message} />
-            {onBlock && <BlockButton message={message} onBlock={onBlock} />}
-          </div>
-        )}
-      </div>
+      {/* 返信フォーム（アクションから「返信」選択時のみ表示） */}
+      {showReply && (
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
+          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
+        </div>
+      )}
     </div>
   );
 }
