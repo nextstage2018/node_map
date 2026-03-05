@@ -5,10 +5,10 @@ import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import ChannelSubscriptionModal from '@/components/settings/ChannelSubscriptionModal';
-import SetupWizard from '@/components/setup/SetupWizard';
+
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import { LoadingState } from '@/components/ui/EmptyState';
+
 import ProjectTypeManager from '@/components/settings/ProjectTypeManager';
 
 // ========================================
@@ -120,10 +120,6 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showChatworkForm, setShowChatworkForm] = useState(false);
   const [chatworkFormData, setChatworkFormData] = useState<Record<string, string>>({});
-
-  // Phase 30b: セットアップウィザード
-  const [showSetupWizard, setShowSetupWizard] = useState(false);
-  const [hasOwnOrg, setHasOwnOrg] = useState<boolean | null>(null);
 
   // Phase 25: チャネル購読モーダル
   const [channelModal, setChannelModal] = useState<{
@@ -237,30 +233,11 @@ export default function SettingsPage() {
     }
   }, []);
 
-  // 自社組織の存在チェック
-  const checkOwnOrg = useCallback(async () => {
-    try {
-      const res = await fetch('/api/organizations');
-      const data = await res.json();
-      if (data.success && data.data?.length > 0) {
-        const hasInternal = data.data.some(
-          (org: { relationship_type?: string }) => org.relationship_type === 'internal'
-        );
-        setHasOwnOrg(hasInternal || data.data.length > 0);
-      } else {
-        setHasOwnOrg(false);
-      }
-    } catch {
-      setHasOwnOrg(false);
-    }
-  }, []);
-
   useEffect(() => {
     loadTokens();
     loadProfile();
     loadSubscriptionCounts();
-    checkOwnOrg();
-  }, [loadTokens, loadProfile, loadSubscriptionCounts, checkOwnOrg]);
+  }, [loadTokens, loadProfile, loadSubscriptionCounts]);
 
   // OAuth認証コールバック結果チェック
   useEffect(() => {
@@ -421,8 +398,6 @@ export default function SettingsPage() {
     { id: 'project-types', label: 'プロジェクト種別' },
     { id: 'profile', label: 'プロフィール' },
     { id: 'notifications', label: '通知設定' },
-    // 自社組織が未登録の場合のみセットアップタブを表示
-    ...(!hasOwnOrg ? [{ id: 'setup', label: '初回セットアップ' }] : []),
   ];
 
   return (
@@ -760,26 +735,6 @@ export default function SettingsPage() {
             </Card>
           )}
 
-          {/* Phase 30b: 初回セットアップタブ */}
-          {activeTab === 'setup' && (
-            <Card variant="outlined" padding="lg" className="max-w-2xl">
-              <FeatureGuide>
-                <p className="font-medium mb-1">初回セットアップ</p>
-                <p>自社の情報、チームメンバー、プロジェクトを一括で登録できます。
-                セットアップ完了後は、組織ページやコンタクトページからメンバーの追加・管理ができます。</p>
-              </FeatureGuide>
-              <div className="space-y-5">
-                <Button
-                  onClick={() => setShowSetupWizard(true)}
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
-                >
-                  初回セットアップを開始
-                </Button>
-              </div>
-            </Card>
-          )}
         </div>
       </div>
 
@@ -795,14 +750,6 @@ export default function SettingsPage() {
         }}
       />
 
-      {/* Phase 30b: セットアップウィザード */}
-      <SetupWizard
-        isOpen={showSetupWizard}
-        onClose={() => setShowSetupWizard(false)}
-        onCompleted={() => {
-          setMessage({ type: 'success', text: '初回セットアップが完了しました！' });
-        }}
-      />
     </AppLayout>
   );
 }
