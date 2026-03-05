@@ -11,6 +11,7 @@ interface ReplyFormProps {
   onSentMessage?: (msg: UnifiedMessage) => void;
   autoAiDraft?: boolean;
   draftHint?: string; // AI下書き生成時の追加指示（例: '日程調整の返信を作成'）
+  scheduleMode?: boolean; // 日程調整モード（カレンダー空き時間を自動取得）
 }
 
 interface SuggestItem {
@@ -240,7 +241,7 @@ function RecipientInput({
  * Slack: メンション追加可能
  * Chatwork: 宛先指定可能
  */
-export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft = false, draftHint }: ReplyFormProps) {
+export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft = false, draftHint, scheduleMode = false }: ReplyFormProps) {
   const [replyText, setReplyText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
@@ -321,6 +322,7 @@ export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft
         body: JSON.stringify({
           originalMessage: message,
           instruction: instruction || draftHint || undefined,
+          scheduleMode: scheduleMode || undefined,
         }),
       });
       const data = await res.json();

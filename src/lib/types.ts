@@ -87,6 +87,7 @@ export interface ReplyRequest {
 export interface AiDraftRequest {
   originalMessage: UnifiedMessage;
   instruction?: string; // ユーザーからの追加指示（例：「丁寧に断る」）
+  scheduleMode?: boolean; // true: 日程調整モード（カレンダー空き時間を自動取得してAIに注入）
 }
 
 // AI返信下書きレスポンス

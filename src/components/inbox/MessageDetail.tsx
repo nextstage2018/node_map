@@ -783,31 +783,27 @@ function MessageInlineActions({
     } catch { /* ignore */ }
   }, []);
 
-  // Drive保存: 即時実行（ジョブ不要）
+  // Drive保存: 即時実行（添付ファイルをDriveステージングに保存）
   const saveToDrive = async () => {
     setIsCreating(true);
     try {
-      const res = await fetch('/api/drive/store-file', {
+      const res = await fetch('/api/drive/save-attachments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messageId: message.id,
-          channel: message.channel,
-          subject: message.subject || '',
-          body: message.body?.slice(0, 200),
-          fromName: message.from?.name || '',
-          fromAddress: message.from?.address || '',
-        }),
+        body: JSON.stringify({ messageId: message.id }),
       });
       const json = await res.json();
-      setResult(json.success
-        ? { type: 'success', text: '📁 Driveに保存しました' }
-        : { type: 'error', text: json.error || '保存に失敗' });
+      if (json.success) {
+        const d = json.data;
+        setResult({ type: 'success', text: `📁 ${d.savedFiles}件のファイルをDriveに保存` });
+      } else {
+        setResult({ type: 'error', text: json.error || '保存に失敗' });
+      }
     } catch {
       setResult({ type: 'error', text: '通信エラー' });
     } finally {
       setIsCreating(false);
-      setTimeout(() => setResult(null), 3000);
+      setTimeout(() => setResult(null), 5000);
     }
   };
 
@@ -1277,6 +1273,7 @@ function GroupDetail({
   const groupEndRef = useRef<HTMLDivElement>(null);
   const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
   const [replyDraftHint, setReplyDraftHint] = useState<string | undefined>(undefined);
+  const [replyScheduleMode, setReplyScheduleMode] = useState(false);
 
   // 最新メッセージに自動スクロール
   useEffect(() => {
@@ -1289,16 +1286,19 @@ function GroupDetail({
   useEffect(() => {
     setSelectedMsgId(null);
     setReplyDraftHint(undefined);
+    setReplyScheduleMode(false);
   }, [group.groupKey]);
 
   const handleReplyFromBubble = () => {
     setReplyDraftHint(undefined);
+    setReplyScheduleMode(false);
     onToggleReply();
     setSelectedMsgId(null);
   };
 
   const handleScheduleReplyFromBubble = () => {
-    setReplyDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。');
+    setReplyDraftHint('日程調整の返信を作成してください。');
+    setReplyScheduleMode(true);
     onToggleReply();
     setSelectedMsgId(null);
   };
@@ -1353,7 +1353,7 @@ function GroupDetail({
       {/* 返信フォーム（バブルから「返信」選択時のみ表示） */}
       {showReply && (
         <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <ReplyForm message={latestMessage} onClose={() => { onCloseReply(); setReplyDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={replyDraftHint} />
+          <ReplyForm message={latestMessage} onClose={() => { onCloseReply(); setReplyDraftHint(undefined); setReplyScheduleMode(false); }} onSentMessage={onSentMessage} autoAiDraft draftHint={replyDraftHint} scheduleMode={replyScheduleMode} />
         </div>
       )}
     </div>
@@ -1454,6 +1454,7 @@ function EmailThreadDetail({
   const [summaryError, setSummaryError] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const [emailDraftHint, setEmailDraftHint] = useState<string | undefined>(undefined);
+  const [emailScheduleMode, setEmailScheduleMode] = useState(false);
 
   const fetchSummary = useCallback(async () => {
     if (threadMessages.length < 2) return;
@@ -1598,12 +1599,12 @@ function EmailThreadDetail({
       <div className="border-t border-slate-200 bg-slate-50">
         {!showReply && message.direction !== 'sent' && (
           <div className="px-4 py-3">
-            <MessageInlineActions message={message} onReply={() => { setEmailDraftHint(undefined); onToggleReply(); }} onScheduleReply={() => { setEmailDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。'); onToggleReply(); }} compact />
+            <MessageInlineActions message={message} onReply={() => { setEmailDraftHint(undefined); setEmailScheduleMode(false); onToggleReply(); }} onScheduleReply={() => { setEmailDraftHint('日程調整の返信を作成してください。'); setEmailScheduleMode(true); onToggleReply(); }} compact />
           </div>
         )}
         {showReply && (
           <div className="p-4">
-            <ReplyForm message={message} onClose={() => { onCloseReply(); setEmailDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={emailDraftHint} />
+            <ReplyForm message={message} onClose={() => { onCloseReply(); setEmailDraftHint(undefined); setEmailScheduleMode(false); }} onSentMessage={onSentMessage} autoAiDraft draftHint={emailDraftHint} scheduleMode={emailScheduleMode} />
           </div>
         )}
       </div>
@@ -1639,6 +1640,7 @@ function SingleMessageDetail({
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
   const singleThreadEndRef = useRef<HTMLDivElement>(null);
   const [singleDraftHint, setSingleDraftHint] = useState<string | undefined>(undefined);
+  const [singleScheduleMode, setSingleScheduleMode] = useState(false);
   const isOwnMessage = message.from.name === 'あなた' || message.from.name === 'Me' || message.direction === 'sent';
 
   // スレッド履歴の最新メッセージに自動スクロール
@@ -1750,12 +1752,12 @@ function SingleMessageDetail({
       <div className="border-t border-slate-200 bg-slate-50">
         {!showReply && !isOwnMessage && (
           <div className="px-4 py-3">
-            <MessageInlineActions message={message} onReply={() => { setSingleDraftHint(undefined); onToggleReply(); }} onScheduleReply={() => { setSingleDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。'); onToggleReply(); }} compact />
+            <MessageInlineActions message={message} onReply={() => { setSingleDraftHint(undefined); setSingleScheduleMode(false); onToggleReply(); }} onScheduleReply={() => { setSingleDraftHint('日程調整の返信を作成してください。'); setSingleScheduleMode(true); onToggleReply(); }} compact />
           </div>
         )}
         {showReply && (
           <div className="p-4">
-            <ReplyForm message={message} onClose={() => { onCloseReply(); setSingleDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={singleDraftHint} />
+            <ReplyForm message={message} onClose={() => { onCloseReply(); setSingleDraftHint(undefined); setSingleScheduleMode(false); }} onSentMessage={onSentMessage} autoAiDraft draftHint={singleDraftHint} scheduleMode={singleScheduleMode} />
           </div>
         )}
       </div>

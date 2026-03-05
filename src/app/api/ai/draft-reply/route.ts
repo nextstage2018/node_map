@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     // Phase 22: 認証確認
     const userId = await getServerUserId();
     const body: AiDraftRequest = await request.json();
-    const { originalMessage, instruction } = body;
+    const { originalMessage, instruction, scheduleMode } = body;
 
     // コンタクト情報と過去メッセージと署名を並行取得
     const [contactContext, recentMessages, emailSignature] = await Promise.all([
@@ -143,6 +143,37 @@ export async function POST(request: NextRequest) {
       getServerUserEmailSignature(),
     ]);
 
+    // 日程調整モード: カレンダーの空き時間を取得してinstructionに注入
+    let finalInstruction = instruction;
+    if (scheduleMode && userId) {
+      try {
+        const { findFreeSlots, formatFreeSlotsForContext, isCalendarConnected } = await import('@/services/calendar/calendarClient.service');
+        const connected = await isCalendarConnected(userId);
+        if (connected) {
+          const now = new Date();
+          const startDate = now.toISOString();
+          const endDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+          const freeSlots = await findFreeSlots(userId, startDate, endDate, 30);
+          const slotsText = formatFreeSlotsForContext(freeSlots, 8);
+          finalInstruction = `日程調整の返信を作成してください。以下のカレンダーの空き時間を参照し、具体的な候補日時を提案する返信文を書いてください。
+
+【あなたの空き時間（Googleカレンダー参照済み）】
+${slotsText}
+
+※ 上記の空き時間から3〜5つの候補を選んで提案してください。
+※ 「ご都合の良い日時をお知らせください」のような曖昧な表現ではなく、具体的な日時を提示してください。
+${instruction ? `\n【追加指示】${instruction}` : ''}`;
+          console.log('[DraftReply] 日程調整モード: 空き時間', freeSlots.length, '件取得');
+        } else {
+          finalInstruction = instruction || '日程調整の返信を作成してください。相手に候補日時を聞く形で返信してください。';
+          console.log('[DraftReply] 日程調整モード: カレンダー未接続');
+        }
+      } catch (calError) {
+        console.error('[DraftReply] カレンダー取得エラー:', calError);
+        finalInstruction = instruction || '日程調整の返信を作成してください。相手に候補日時を聞く形で返信してください。';
+      }
+    }
+
     // スレッド内の会話（メールの引用チェーン）
     const threadContext = originalMessage.threadMessages
       ?.map((m: { from: { name: string }; body: string; isOwn?: boolean }) => {
@@ -157,7 +188,7 @@ export async function POST(request: NextRequest) {
 
     const result = await generateReplyDraft(
       originalMessage,
-      instruction,
+      finalInstruction,
       {
         contactContext: contactContext || undefined,
         recentMessages,
