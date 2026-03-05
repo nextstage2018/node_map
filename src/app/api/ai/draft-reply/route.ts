@@ -151,6 +151,10 @@ export async function POST(request: NextRequest) {
       })
       .join('\n---\n') || '';
 
+    // Phase 62: グループチャネル判定（Slack/CWでチャネル名があればグループ）
+    const isGroupChannel = (originalMessage.channel === 'slack' && !!originalMessage.metadata?.slackChannel)
+      || (originalMessage.channel === 'chatwork' && !!originalMessage.metadata?.chatworkRoomId);
+
     const result = await generateReplyDraft(
       originalMessage,
       instruction,
@@ -158,6 +162,7 @@ export async function POST(request: NextRequest) {
         contactContext: contactContext || undefined,
         recentMessages,
         threadContext,
+        isGroupChannel, // Phase 62
       },
       emailSignature,
       userId || undefined

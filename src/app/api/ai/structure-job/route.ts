@@ -16,6 +16,8 @@ export async function POST(request: NextRequest) {
     const {
       channel, from, subject, body, jobType, messageId,
       consultQuestion, consultTargetName, consultTargetContactId,
+      isGroupChannel, // Phase 62: グループチャネルフラグ
+      senderAddress, // Phase 62: 送信者アドレス（Chatwork [To:xxx] 用）
     } = await request.json();
 
     if (!body) {
@@ -28,7 +30,7 @@ export async function POST(request: NextRequest) {
     // ジョブタイプ別の処理
     switch (jobType) {
       case 'schedule':
-        return await handleSchedule(userId, messageContent, senderName, subject, body, messageId, channel);
+        return await handleSchedule(userId, messageContent, senderName, subject, body, messageId, channel, isGroupChannel, senderAddress);
       case 'consult':
         return await handleConsult(userId, messageContent, senderName, subject, body, messageId, consultQuestion, consultTargetName);
       case 'save_to_drive':
@@ -47,7 +49,8 @@ export async function POST(request: NextRequest) {
 // ===== 日程調整 =====
 async function handleSchedule(
   userId: string, messageContent: string, senderName: string,
-  subject: string, body: string, messageId: string, channel?: string
+  subject: string, body: string, messageId: string, channel?: string,
+  isGroupChannel?: boolean, senderAddress?: string
 ) {
   // 1. カレンダー空き時間を取得（翌営業日〜1週間、10:00-19:00）
   let freeSlots: string[] = [];
@@ -136,6 +139,8 @@ async function handleSchedule(
 
 返信者の名前は「${userName || '（名前）'}」です。
 ${isEmail && emailSignature ? '署名は別途自動付与されるので、締め文に名前や署名を含めないでください。' : !isEmail ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}
+${isGroupChannel && channel === 'slack' ? `これはSlackグループチャネルへの投稿です。全体に向けたトーンで、必要に応じて@${senderName}をメンションしてください。` : ''}
+${isGroupChannel && channel === 'chatwork' ? `これはChatworkグループルームへの投稿です。冒頭に[To:${senderAddress || ''}]${senderName}さんを付けてください。全体に向けたトーンで書いてください。` : ''}
 ${writingStylePrompt ? '\n【重要】以下のユーザーの過去の送信スタイルに合わせた文体で書いてください。' + writingStylePrompt : ''}${personalizedPrompt}
 
 必ず以下のJSON形式で返してください:

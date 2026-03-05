@@ -2062,10 +2062,16 @@ async function handleCreateJobIntent(
     emailSignature = await getServerUserEmailSignature();
   } catch { /* ignore */ }
 
+  // Phase 62: グループチャネル判定
+  const msgMetadata = (targetMsg.metadata || {}) as Record<string, unknown>;
+  const isGroupChannel = (targetMsg.channel === 'slack' && !!msgMetadata.slackChannel)
+    || (targetMsg.channel === 'chatwork' && !!msgMetadata.chatworkRoomId);
+
   const draftResult = await generateReplyDraft(unifiedMsg, undefined, {
     contactContext,
     recentMessages,
     threadContext: '',
+    isGroupChannel, // Phase 62
   }, emailSignature, userId);
 
   const draftText = draftResult.draft || '';

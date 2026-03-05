@@ -85,6 +85,7 @@ export interface ReplyContext {
   };
   recentMessages?: string[];
   threadContext?: string;
+  isGroupChannel?: boolean; // Phase 62: Slack/CWグループチャネルかどうか
 }
 
 /**
@@ -114,11 +115,18 @@ export async function generateReplyDraft(
       writingStylePrompt = await getUserWritingStyle(userId, message.channel);
     }
 
+    // --- Phase 62: グループチャネル判定 ---
+    const isGroup = context?.isGroupChannel || false;
+
     // --- チャネル別のトーン指示 ---
     const channelTone: Record<string, string> = {
       email: 'フォーマルなビジネスメール。適切な挨拶・締めの言葉を含める。' + (emailSignature ? '署名は別途自動付与されるので、末尾に名前や署名を書かないでください。' : ''),
-      slack: 'やや柔軟でカジュアル。適度にフレンドリーに。長い挨拶は不要。末尾に名前や署名を書かないでください。',
-      chatwork: '標準的なビジネストーン。簡潔で読みやすく。末尾に名前や署名を書かないでください。',
+      slack: isGroup
+        ? 'Slackグループチャネルへの投稿。全体に向けたトーンで書く。必要なら送信者を@メンションで指名する（例: @名前）。長い挨拶は不要。末尾に名前や署名を書かないでください。'
+        : 'やや柔軟でカジュアル。適度にフレンドリーに。長い挨拶は不要。末尾に名前や署名を書かないでください。',
+      chatwork: isGroup
+        ? 'Chatworkグループルームへの投稿。全体に向けたトーンで書く。冒頭に[To:送信者のアカウントID]を付ける。長い挨拶は不要。末尾に名前や署名を書かないでください。'
+        : '標準的なビジネストーン。簡潔で読みやすく。末尾に名前や署名を書かないでください。',
     };
 
     // --- コンタクト情報からの指示を構築 ---
