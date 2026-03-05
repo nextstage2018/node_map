@@ -99,6 +99,7 @@ type Intent =
   | 'task_negotiation'      // Phase 56c: タスク修正提案・調整
   | 'consultations'         // Phase 58: 社内相談確認
   | 'link_channel'          // Phase A: チャンネル→プロジェクト紐づけ
+  | 'task_external_resource' // Phase E: タスクに外部資料を取り込み
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -150,6 +151,11 @@ function classifyIntent(message: string): Intent {
   if ((m.includes('納期') || m.includes('期限') || m.includes('締め切り')) && (m.includes('変更') || m.includes('延') || m.includes('前倒') || m.includes('ずらし'))) return 'task_negotiation';
   if (m.includes('優先度') && (m.includes('変更') || m.includes('上げ') || m.includes('下げ') || m.includes('変え'))) return 'task_negotiation';
   if (m.includes('担当') && (m.includes('変更') || m.includes('変え') || m.includes('替え'))) return 'task_negotiation';
+
+  // Phase E: タスクに外部資料を取り込み（「タスクに資料を追加」「外部資料を取り込み」「リサーチ結果をタスクに」）
+  if (m.includes('外部資料') || m.includes('外部ai') || m.includes('deep research')) return 'task_external_resource';
+  if (m.includes('タスク') && (m.includes('資料') || m.includes('リサーチ') || m.includes('取り込')) && (m.includes('追加') || m.includes('取り込') || m.includes('アップロード') || m.includes('貼り付') || m.includes('添付'))) return 'task_external_resource';
+  if ((m.includes('壁打ち') || m.includes('ai会話')) && (m.includes('資料') || m.includes('参考') || m.includes('取り込'))) return 'task_external_resource';
 
   // タスク作成（「タスクを作成」「タスクを追加」「新しいタスク」「タスクとして登録」）
   if (m.includes('タスク') && (m.includes('作成') || m.includes('追加') || m.includes('作って') || m.includes('登録') || m.includes('新規') || m.includes('新しい'))) return 'create_task';
@@ -1349,6 +1355,35 @@ async function fetchDataAndBuildCards(
         await handleTaskProgressIntent(supabase, userId, userMessage, tasks, cards, parts);
       } catch (taskError) {
         console.error('[Secretary API] タスク進行エラー:', taskError);
+      }
+    }
+
+    // Phase E: タスクに外部資料を取り込み
+    if (intent === 'task_external_resource') {
+      try {
+        // 進行中または構想中のタスク一覧を表示して、取り込み先を選択させる
+        const activeTasks = tasks.filter(t => ['todo', 'in_progress'].includes(t.status));
+        if (activeTasks.length === 0) {
+          parts.push('\n\n【情報】現在、外部資料を取り込めるアクティブなタスクがありません。先にタスクを作成してください。');
+        } else {
+          cards.push({
+            type: 'task_external_resource',
+            data: {
+              tasks: activeTasks.map(t => ({
+                id: t.id,
+                title: t.title,
+                status: t.status,
+                phase: t.phase,
+                projectId: t.project_id,
+              })),
+              message: '外部資料を取り込むタスクを選んでください。タスク詳細画面の「📚 外部資料 → + 取り込み」から追加できます。',
+            },
+          });
+          parts.push('\n\n外部AI（Deep Research等）の成果物をタスクに取り込んで、壁打ちに活用できます。以下のタスクから取り込み先を選んでください。');
+        }
+      } catch (extError) {
+        console.error('[Secretary API] 外部資料intent エラー:', extError);
+        parts.push('\n\n外部資料の取り込み準備中にエラーが発生しました。');
       }
     }
 

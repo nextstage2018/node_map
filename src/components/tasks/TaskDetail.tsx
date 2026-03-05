@@ -11,6 +11,7 @@ import {
 import { formatRelativeTime, cn } from '@/lib/utils';
 import TaskAiChat from './TaskAiChat';
 import TaskFileUploadPanel, { TaskFileInfo } from './TaskFileUploadPanel';
+import ExternalResourcePanel, { ExternalResource } from './ExternalResourcePanel';
 
 interface AttachedFile {
   id: string;
@@ -86,6 +87,9 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
   }>({ initialGoal: null, finalLanding: null });
   const [attachedFiles, setAttachedFiles] = useState<AttachedFile[]>([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
+  // Phase E: 外部資料
+  const [externalResources, setExternalResources] = useState<ExternalResource[]>([]);
+  const [showExternalResourcePanel, setShowExternalResourcePanel] = useState(false);
 
   // Phase 51a: 関連ビジネスイベント
   const [relatedEvents, setRelatedEvents] = useState<{ id: string; title: string; event_type: string; event_date: string }[]>([]);
@@ -127,6 +131,30 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
     fetch(`/api/tasks/${task.id}/files`)
       .then(r => r.json())
       .then(d => { if (d.success) setAttachedFiles(d.data || []); })
+      .catch(() => {});
+  }, [task?.id]);
+
+  // Phase E: 外部資料一覧を取得
+  useEffect(() => {
+    if (!task?.id) { setExternalResources([]); return; }
+    setShowExternalResourcePanel(false);
+    fetch(`/api/tasks/${task.id}/external-resources`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          setExternalResources((d.data || []).map((r: any) => ({
+            id: r.id,
+            taskId: r.task_id,
+            resourceType: r.resource_type,
+            title: r.title,
+            contentLength: r.content_length,
+            sourceUrl: r.source_url,
+            fileName: r.file_name,
+            fileMimeType: r.file_mime_type,
+            createdAt: r.created_at,
+          })));
+        }
+      })
       .catch(() => {});
   }, [task?.id]);
 
@@ -287,6 +315,23 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
       created_at: new Date().toISOString(),
     }, ...prev]);
     setShowFileUpload(false);
+  };
+
+  // Phase E: 外部資料追加
+  const handleExternalResourceAdded = (resource: ExternalResource) => {
+    setExternalResources(prev => [resource, ...prev]);
+    setShowExternalResourcePanel(false);
+  };
+
+  // Phase E: 外部資料削除
+  const handleRemoveExternalResource = async (resourceId: string) => {
+    if (!task) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/external-resources?resourceId=${resourceId}`, {
+        method: 'DELETE',
+      });
+      setExternalResources(prev => prev.filter(r => r.id !== resourceId));
+    } catch { /* ignore */ }
   };
 
   // Phase 50: ファイルをタスクから切り離し
@@ -719,6 +764,62 @@ export default function TaskDetail({ task, onUpdate, onRefresh, onDelete }: Task
               <p className="text-[10px] text-slate-300">プロジェクトを設定するとファイルを添付できます</p>
             </div>
           )}
+
+          {/* Phase E: 外部資料セクション */}
+          <div className="border-t border-slate-50">
+            <div className="px-4 py-1.5 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-slate-400">
+                📚 外部資料{externalResources.length > 0 && ` (${externalResources.length})`}
+              </span>
+              <button
+                onClick={() => setShowExternalResourcePanel(!showExternalResourcePanel)}
+                className="text-[10px] px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+              >
+                {showExternalResourcePanel ? '閉じる' : '+ 取り込み'}
+              </button>
+            </div>
+
+            {/* 外部資料アップロードパネル */}
+            {showExternalResourcePanel && (
+              <ExternalResourcePanel
+                taskId={task.id}
+                onResourceAdded={handleExternalResourceAdded}
+                onClose={() => setShowExternalResourcePanel(false)}
+              />
+            )}
+
+            {/* 外部資料リスト */}
+            {externalResources.length > 0 && (
+              <div className="px-4 py-1.5 space-y-1">
+                {externalResources.map(res => (
+                  <div key={res.id} className="flex items-center gap-2 p-1.5 bg-slate-50 rounded-lg border border-slate-100 text-xs group">
+                    <span className="shrink-0 text-[10px]">
+                      {res.resourceType === 'text' ? '📝' : res.resourceType === 'file' ? '📄' : '🔗'}
+                    </span>
+                    <span className="flex-1 text-slate-700 truncate min-w-0">
+                      {res.title}
+                    </span>
+                    <span className="text-[9px] text-slate-400 shrink-0">
+                      {res.contentLength ? `${(res.contentLength / 1000).toFixed(1)}K文字` : ''}
+                    </span>
+                    <button
+                      onClick={() => handleRemoveExternalResource(res.id)}
+                      className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"
+                      title="外部資料を削除"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {externalResources.length === 0 && !showExternalResourcePanel && (
+              <div className="px-4 pb-2">
+                <p className="text-[10px] text-slate-300">Deep Research等の外部AI成果物を取り込んで壁打ちに活用できます</p>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

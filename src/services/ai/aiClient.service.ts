@@ -385,6 +385,7 @@ export interface TaskChatContext {
   organizationMemo?: string;
   projectDescription?: string;
   memberNames?: string[];
+  externalResourcesContext?: string; // Phase E: 外部資料コンテキスト
 }
 
 /**
@@ -565,7 +566,10 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
       // 取得失敗時は無視
     }
 
-    const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}\n\n${contextParts.join('\n')}${projectContextStr}${personalizedStr}`;
+    // Phase E: 外部資料コンテキスト注入
+    const externalResourcesStr = projectContext?.externalResourcesContext || '';
+
+    const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}\n\n${contextParts.join('\n')}${projectContextStr}${externalResourcesStr}${personalizedStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
     const messages = [

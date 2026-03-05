@@ -42,7 +42,8 @@ export type CardType =
   | 'contact_search_result' // Phase 53c: コンタクト検索結果
   | 'org_form'           // Phase 53c: 組織作成フォーム
   | 'project_form'       // Phase 53c: プロジェクト作成フォーム
-  | 'task_negotiation';  // Phase 56c: タスク修正提案・調整
+  | 'task_negotiation'   // Phase 56c: タスク修正提案・調整
+  | 'task_external_resource'; // Phase E: タスク外部資料取り込み
 
 // カードデータ共通
 export interface CardData {
@@ -1977,6 +1978,12 @@ export function CardRenderer({
           onDismiss={(taskId) => onAction?.('dismiss_task_negotiation', { taskId })}
         />
       );
+    case 'task_external_resource':
+      return (
+        <TaskExternalResourceCard
+          data={card.data}
+        />
+      );
     case 'consultation_list':
       return (
         <ConsultationListCard
@@ -3066,6 +3073,74 @@ export function ProjectFormCard({
         >
           {isSubmitting ? '作成中...' : '✅ 作成する'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// Phase E: タスク外部資料取り込みカード
+// ========================================
+interface TaskExternalResourceData {
+  tasks: Array<{
+    id: string;
+    title: string;
+    status: string;
+    phase: string;
+    projectId: string | null;
+  }>;
+  message: string;
+}
+
+function TaskExternalResourceCard({ data }: { data: TaskExternalResourceData }) {
+  const statusLabel: Record<string, string> = {
+    todo: '未着手',
+    in_progress: '進行中',
+  };
+  const phaseLabel: Record<string, string> = {
+    ideation: '構想',
+    progress: '進行',
+    result: '結果',
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-indigo-200 shadow-sm overflow-hidden">
+      <div className="px-4 py-3 bg-indigo-50 border-b border-indigo-100">
+        <div className="flex items-center gap-2">
+          <FileText className="w-4 h-4 text-indigo-500" />
+          <span className="text-sm font-semibold text-indigo-800">外部資料の取り込み</span>
+        </div>
+        <p className="text-xs text-indigo-600 mt-1">{data.message}</p>
+      </div>
+
+      <div className="divide-y divide-slate-100">
+        {data.tasks.map(task => (
+          <a
+            key={task.id}
+            href="/tasks"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-900 truncate">{task.title}</div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-slate-400">
+                  {statusLabel[task.status] || task.status}
+                </span>
+                <span className="text-[10px] text-slate-300">|</span>
+                <span className="text-[10px] text-slate-400">
+                  {phaseLabel[task.phase] || task.phase}フェーズ
+                </span>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-slate-300" />
+          </a>
+        ))}
+      </div>
+
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-100">
+        <p className="text-[10px] text-slate-400">
+          📚 タスク詳細画面の「外部資料 → + 取り込み」からテキスト・ファイル・URLを追加できます
+        </p>
       </div>
     </div>
   );

@@ -1258,6 +1258,45 @@ CREATE INDEX idx_secretary_conversations_created_at ON secretary_conversations(c
 - 秘書チャット開く度に、過去15-30件の会話をDBから読み込み→ Claude API のコンテキストに注入
 - UI は毎回ダッシュボード表示。過去会話は復元しない（テキスト形式での UI レンダリングなし）
 
+### task_external_resources（Phase E: タスク外部資料）
+
+**目的**: 外部AI成果物（Deep Research等）をタスクに取り込み、AI会話コンテキストとして活用
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE task_external_resources (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
+  resource_type TEXT NOT NULL CHECK (resource_type IN ('text', 'file', 'url')),
+  title TEXT NOT NULL,
+  content TEXT,
+  source_url TEXT,
+  file_name TEXT,
+  file_mime_type TEXT,
+  content_length INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_task_external_resources_task_id ON task_external_resources(task_id);
+CREATE INDEX idx_task_external_resources_user_id ON task_external_resources(user_id);
+```
+
+#### 注意事項
+
+- id は UUID 型（自動生成）
+- task_id の FK CASCADE: タスク削除時に外部資料も自動削除
+- resource_type: 'text'（テキストペースト）/ 'file'（ファイル内容）/ 'url'（URL参考資料）
+- content: テキスト内容（最大50,000文字で切り詰め）
+- AI会話コンテキスト注入時は各資料最大3,000文字に制限（トークン節約）
+- 秘書AIの `task_external_resource` intentからもタスク一覧表示→取り込み導線あり
+
 ---
 
 ## 8. ビジネスイベント・分析テーブル
@@ -1437,7 +1476,8 @@ users (Supabase auth)
   │     │  ├─ thought_task_nodes (task_id)
   │     │  ├─ thought_edges (task_id)
   │     │  ├─ thought_snapshots (task_id)
-  │     │  └─ drive_documents (task_id)
+  │     │  ├─ drive_documents (task_id)
+  │     │  └─ task_external_resources (task_id) [Phase E]
   │     ├─ seeds (project_id) [廃止予定]
   │     │  ├─ seed_conversations (seed_id)
   │     │  ├─ thought_task_nodes (seed_id)

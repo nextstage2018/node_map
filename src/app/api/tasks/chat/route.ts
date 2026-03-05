@@ -86,6 +86,35 @@ export async function POST(request: NextRequest) {
       console.error('[Tasks Chat] パーソナライズ取得エラー（続行）:', e);
     }
 
+    // Phase E: 外部資料コンテキストを取得（タスクに紐づく外部AI成果物等）
+    try {
+      const sbExt = getServerSupabase() || getSupabase();
+      if (sbExt) {
+        const { data: extResources } = await sbExt
+          .from('task_external_resources')
+          .select('title, resource_type, content, source_url, content_length, created_at')
+          .eq('task_id', body.taskId)
+          .order('created_at', { ascending: true });
+        if (extResources && extResources.length > 0) {
+          // 各資料の内容を結合（トークン節約のため各資料最大3000文字に制限）
+          const MAX_PER_RESOURCE = 3000;
+          const resourceTexts = extResources.map((r: any, i: number) => {
+            const typeLabel = r.resource_type === 'text' ? 'テキスト' :
+              r.resource_type === 'file' ? `ファイル（${r.source_url || r.title}）` :
+              `URL（${r.source_url || r.title}）`;
+            const truncatedContent = r.content && r.content.length > MAX_PER_RESOURCE
+              ? r.content.substring(0, MAX_PER_RESOURCE) + '...(省略)'
+              : (r.content || '(内容なし)');
+            return `### 資料${i + 1}: ${r.title}（${typeLabel}）\n${truncatedContent}`;
+          }).join('\n\n---\n\n');
+          chatContext.externalResourcesContext =
+            `\n\n## 外部資料（ユーザーがこのタスクに取り込んだ参考資料。壁打ちのコンテキストとして活用すること）\n\n${resourceTexts}`;
+        }
+      }
+    } catch (e) {
+      console.error('[Tasks Chat] 外部資料コンテキスト取得エラー（続行）:', e);
+    }
+
     // Phase 61②: 関連する社内相談コンテキストを取得
     try {
       const sb2 = getServerSupabase() || getSupabase();
