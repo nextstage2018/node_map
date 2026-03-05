@@ -63,7 +63,7 @@ export default function InboxPage() {
     <AppLayout>
       <ContextBar
         title={filter === 'sent' ? '送信済み' : 'インボックス'}
-        subtitle="メール・Slack・Chatworkの統合受信箱"
+        subtitle="Slack・Chatworkの統合受信箱"
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -99,8 +99,8 @@ export default function InboxPage() {
           onFilterChange={setFilter}
         />
         <div className="flex flex-1 overflow-hidden">
-          {/* メッセージ一覧 */}
-          <div className="w-96 border-r border-slate-200 flex flex-col overflow-hidden">
+          {/* Phase UI-4: メッセージ一覧 — nm-*配色統一 */}
+          <div className="w-96 border-r border-nm-border flex flex-col overflow-hidden bg-white">
             {error && (
               <div className="p-3 bg-red-50 text-red-700 text-sm shrink-0 border-b border-red-200">
                 {error}
@@ -150,9 +150,9 @@ export default function InboxPage() {
             )}
           </div>
 
-          {/* Phase B: 過去のやり取り変遷パネル（右カラム） */}
+          {/* Phase UI-4: 過去のやり取り変遷パネル（右カラム）— nm-*配色統一 */}
           {selectedGroup && selectedGroup.latestMessage && selectedGroup.latestMessage.direction !== 'sent' && (
-            <div className="w-72 border-l border-slate-200 flex-col overflow-hidden hidden xl:flex">
+            <div className="w-72 border-l border-nm-border flex-col overflow-hidden hidden xl:flex bg-nm-bg">
               <ContactHistoryPanel
                 fromAddress={selectedGroup.latestMessage.from.address}
                 fromName={selectedGroup.latestMessage.from.name}
