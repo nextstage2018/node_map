@@ -31,13 +31,16 @@ export default function MessageList({
   isLoadingMore,
   hasMore,
 }: MessageListProps) {
-  // Phase UI-4: 'sent' フィルタ対応（メール除外済み）
+  // Phase UI-4: 全フィルタでメール(email/gmail)を完全除外
+  const nonEmailGroups = messageGroups.filter(
+    (g) => g.channel !== 'email' && g.channel !== 'gmail'
+  );
   const filteredGroups =
     filter === 'all'
-      ? messageGroups.filter((g) => g.channel !== 'email')
+      ? nonEmailGroups
       : filter === 'sent'
-        ? messageGroups.filter((g) => g.messages.some((m) => m.direction === 'sent'))
-        : messageGroups.filter((g) => g.channel === filter);
+        ? nonEmailGroups.filter((g) => g.messages.some((m) => m.direction === 'sent'))
+        : nonEmailGroups.filter((g) => g.channel === filter);
 
   // Phase UI-4: メールフィルタ完全非表示。「すべて」「Slack」「Chatwork」「送信済み」の4つのみ
   const filters: { value: ChannelType | 'all' | 'sent'; label: string; icon?: string }[] = [

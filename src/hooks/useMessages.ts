@@ -203,25 +203,29 @@ export function useMessages() {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [fetchMessages]);
 
-  // グループ化されたメッセージ
-  const messageGroups = useMemo(() => groupMessages(messages), [messages]);
+  // Phase UI-4: メール(email/gmail)を根本的に除外してからグループ化
+  const nonEmailMessages = useMemo(
+    () => messages.filter((m) => m.channel !== 'email' && m.channel !== 'gmail'),
+    [messages]
+  );
+  const messageGroups = useMemo(() => groupMessages(nonEmailMessages), [nonEmailMessages]);
 
-  // チャネルごとのメッセージ数
+  // Phase UI-4: チャネルごとのメッセージ数（メール除外済み）
   const messageCounts: Record<ChannelType, number> = {
-    email: messages.filter((m) => m.channel === 'email').length,
-    slack: messages.filter((m) => m.channel === 'slack').length,
-    chatwork: messages.filter((m) => m.channel === 'chatwork').length,
+    email: 0,
+    slack: nonEmailMessages.filter((m) => m.channel === 'slack').length,
+    chatwork: nonEmailMessages.filter((m) => m.channel === 'chatwork').length,
   };
 
-  // チャネルごとの未読数
+  // Phase UI-4: チャネルごとの未読数（メール除外済み）
   const unreadCounts: Record<ChannelType, number> = {
-    email: messages.filter((m) => m.channel === 'email' && !m.isRead).length,
-    slack: messages.filter((m) => m.channel === 'slack' && !m.isRead).length,
-    chatwork: messages.filter((m) => m.channel === 'chatwork' && !m.isRead).length,
+    email: 0,
+    slack: nonEmailMessages.filter((m) => m.channel === 'slack' && !m.isRead).length,
+    chatwork: nonEmailMessages.filter((m) => m.channel === 'chatwork' && !m.isRead).length,
   };
 
-  // Phase 38: 送信済みメッセージ数
-  const sentCount = messages.filter((m) => m.direction === 'sent').length;
+  // Phase 38: 送信済みメッセージ数（メール除外済み）
+  const sentCount = nonEmailMessages.filter((m) => m.direction === 'sent').length;
 
   // 強制更新（更新ボタン用）
   const forceRefresh = useCallback(() => {
