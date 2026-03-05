@@ -58,6 +58,25 @@ export const APP_NAME = 'NodeMap';
 
 export const ITEMS_PER_PAGE = 50;
 
+// ===== Phase A: 共通ルール =====
+
+// 営業時間ルール（全カレンダー・日程調整に適用）
+export const BUSINESS_HOURS = {
+  weekdayStart: 10,  // 10:00
+  weekdayEnd: 19,    // 19:00
+} as const;
+
+// カレンダー命名ルール
+export const CALENDAR_PREFIX = {
+  task: '[NM-Task]',
+  job: '[NM-Job]',
+} as const;
+
+// NodeMap予定かどうかを判定するヘルパー
+export function isNodeMapEvent(summary: string): boolean {
+  return summary.startsWith(CALENDAR_PREFIX.task) || summary.startsWith(CALENDAR_PREFIX.job);
+}
+
 // ===== Phase 2: タスク関連定数 =====
 
 export const TASK_STATUS_CONFIG = {

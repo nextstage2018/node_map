@@ -68,13 +68,12 @@ async function handleSchedule(
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 7);
 
+    // Phase A: デフォルト営業時間（10:00-19:00）が定数で定義済みのためパラメータ省略
     const slots = await findSlots(
       userId,
       startDate.toISOString(),
       endDate.toISOString(),
-      60,   // slotDurationMinutes
-      10,   // workingHoursStart
-      19    // workingHoursEnd
+      60    // slotDurationMinutes
     );
 
     if (slots && slots.length > 0) {

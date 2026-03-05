@@ -97,6 +97,7 @@ type Intent =
   | 'search_contact'        // Phase 53c: コンタクト検索
   | 'task_negotiation'      // Phase 56c: タスク修正提案・調整
   | 'consultations'         // Phase 58: 社内相談確認
+  | 'link_channel'          // Phase A: チャンネル→プロジェクト紐づけ
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -247,6 +248,10 @@ function classifyIntent(message: string): Intent {
 
   // Phase 53c: プロジェクト作成
   if (m.includes('プロジェクト') && (m.includes('作成') || m.includes('追加') || m.includes('新規') || m.includes('新しい') || m.includes('作って') || m.includes('立ち上げ'))) return 'create_project';
+
+  // Phase A: チャンネル→プロジェクト紐づけ
+  if (m.includes('チャンネル') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('リンク') || m.includes('関連付') || m.includes('結び'))) return 'link_channel';
+  if (m.includes('ルーム') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('プロジェクト'))) return 'link_channel';
 
   return 'general';
 }
@@ -1920,6 +1925,37 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     }
 
     // ========================================
+    // Phase A: チャンネル→プロジェクト紐づけ
+    // ========================================
+    if (intent === 'link_channel') {
+      try {
+        // プロジェクト一覧を取得してカード表示
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id')
+          .eq('user_id', userId)
+          .order('name');
+
+        // メッセージからチャンネル名/IDを推定
+        let channelHint = '';
+        const channelMatch = userMessage.match(/[「『#](.+?)[」』\s]/);
+        if (channelMatch) channelHint = channelMatch[1];
+
+        cards.push({
+          type: 'channel_link_form',
+          data: {
+            channelHint,
+            projects: (projects || []).map((p: { id: string; name: string }) => ({ id: p.id, name: p.name })),
+          },
+        });
+        parts.push('\n\n【チャンネル紐づけ】\nプロジェクトとチャンネルの紐づけフォームを表示しました。Slack/Chatworkのチャンネル・ルームとプロジェクトを紐づけると、メッセージが自動的にプロジェクトに関連付けられます。');
+      } catch (err) {
+        console.error('[Agent] Channel link form error:', err);
+        parts.push('\n\nチャンネル紐づけの準備に失敗しました。');
+      }
+    }
+
+    // ========================================
     // Phase 52: 組織レコメンド
     // ========================================
     if (intent === 'setup_organization' || intent === 'briefing') {
@@ -2505,6 +2541,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - 週間活動要約（AI生成の週次レポート）
 - 思考マップ・ナレッジの参照
 - タスク修正提案・調整（「○○のタスクの納期を変更したい」→修正リクエスト記録→AI調整案生成→承認→タスク自動修正）
+- チャンネル紐づけ（「このチャンネルをプロジェクトに紐づけて」→ Slack/Chatworkのチャンネルをプロジェクトに関連付け）
 
 ## コンタクト・組織・プロジェクトの管理
 ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:
@@ -2619,6 +2656,17 @@ export async function POST(request: NextRequest) {
       personalizedCtx = await buildPersonalizedContext(userId);
     } catch (e) {
       console.error('[Secretary Chat] パーソナライズ取得エラー:', e);
+    }
+
+    // Phase A: 伸二メソッド思考プリセット（ビジネス相談・タスク関連intentのみ適用。事務的intentには適用しない）
+    const businessIntents: Intent[] = ['task_progress', 'general', 'thought_map', 'knowledge_structuring', 'knowledge_reuse', 'pattern_analysis', 'consultations'];
+    if (businessIntents.includes(intent)) {
+      try {
+        const { getShinjiMethodPrompt } = await import('@/services/ai/personalizedContext.service');
+        personalizedCtx += getShinjiMethodPrompt();
+      } catch {
+        // 取得失敗時は無視
+      }
     }
 
     // システムプロンプト構築
@@ -2762,6 +2810,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'プロジェクト作成フォームを表示しました。情報を入力して「作成する」を押してください。'
         : 'プロジェクト作成の準備に失敗しました。もう一度お試しください。';
+    case 'link_channel':
+      return hasCards
+        ? 'チャンネル紐づけフォームを表示しました。Slack/Chatworkのチャンネルとプロジェクトを選択して紐づけてください。'
+        : 'チャンネル紐づけの準備に失敗しました。もう一度お試しください。';
     default:
       return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }

@@ -24,7 +24,7 @@ OAuth (gmail service name)
 日程調整返信
   → scheduleMode=true を POST /api/ai/draft-reply に渡す
     → isCalendarConnected() チェック
-      → OK: findFreeSlots(7日) で営業時間(9-18)内の空き時間取得
+      → OK: findFreeSlots(7日) で営業時間(10-19)内の空き時間取得
         → AI プロンプトに空き時間テキスト注入
       → NG: フォールバック「相手に候補日を聞く」形式
 ```
@@ -33,12 +33,15 @@ OAuth (gmail service name)
 
 1. **終日予定は除外** - `isAllDay === true` なら busySlots に追加しない（時刻情報がないため）
 2. **calendar_event_id 二重カウント防止** - NodeMap ブロックで `!b.calendarEventId` でフィルタ
-3. **営業時間終了日除外** - `if (dayEndMs <= nowMs) continue` で当日営業時間終了済みならスキップ
-4. **現在時刻以降のみ** - `let cursor = Math.max(dayStartMs, nowMs)` で過去時間を除外
-5. **土日は除外** - `dayOfWeek === 0 || 6` でスキップ
-6. **API 失敗がメイン処理をブロックしない** - タスク/ジョブ作成は続行、カレンダーはログのみ
-7. **トークン リフレッシュ失敗は許容** - 既存トークン返却で処理継続
-8. **isCalendarConnected() 必須** - Calendar API 前に `token.scope.includes('calendar')` で確認
+3. **営業時間 10:00-19:00（Phase A）** - `BUSINESS_HOURS.weekdayStart=10`, `weekdayEnd=19`。AI出力でもこの範囲のみ候補に出す
+4. **営業時間終了日除外** - `if (dayEndMs <= nowMs) continue` で当日営業時間終了済みならスキップ
+5. **現在時刻以降のみ** - `let cursor = Math.max(dayStartMs, nowMs)` で過去時間を除外
+6. **土日は除外** - `dayOfWeek === 0 || 6` でスキップ
+7. **[NM-Task]/[NM-Job]予定はスキップ（Phase A）** - `isNodeMapEvent(summary)` で判定。NodeMap自身が作った予定は空きとみなす
+8. **カレンダー命名ルール（Phase A）** - タスク予定は `[NM-Task] タスク名`、ジョブ予定は `[NM-Job] ジョブ名` で作成
+9. **API 失敗がメイン処理をブロックしない** - タスク/ジョブ作成は続行、カレンダーはログのみ
+10. **トークン リフレッシュ失敗は許容** - 既存トークン返却で処理継続
+11. **isCalendarConnected() 必須** - Calendar API 前に `token.scope.includes('calendar')` で確認
 
 ### テストチェックリスト
 - [ ] `getGoogleToken()` トークン取得・キャッシュ確認
@@ -479,6 +482,33 @@ sendChatworkMessage(roomId, body)                     // → Promise<boolean>
 - **buildPersonalizedContext()** で性格タイプ・応答スタイル・思考傾向・オーナー方針を注入
 - **getUserWritingStyle()** で過去送信 10 件から文体学習
 - すべての AI エンドポイントに適用
+
+### Phase A: 営業時間ルール
+- **営業日**: 平日のみ（土日祝は除外）
+- **営業時間**: 10:00〜19:00（`BUSINESS_HOURS` 定数で管理）
+- **AI出力制限**: 10:00より前、19:00以降の時間帯を候補に出さない
+- **ユーザー裁量**: 出力後にユーザーが手動変更するのは自由
+- **適用箇所**: `findFreeSlots()` / 秘書AI日程調整 / 返信下書き（scheduleMode）/ タスク予定登録
+
+### Phase A: カレンダー命名ルール
+- **タスク予定**: `[NM-Task] タスク名`（`CALENDAR_PREFIX.task`）
+- **ジョブ予定**: `[NM-Job] ジョブ名`（`CALENDAR_PREFIX.job`）
+- **空き検索時**: `[NM-Task]`/`[NM-Job]` プレフィックス付き予定はスキップ（空きとみなす）
+- **判定関数**: `isNodeMapEvent(summary)` で判定（`src/lib/constants.ts`）
+
+### Phase A: 1チャンネル＝1プロジェクト
+- **原則**: 1つのチャットグループ/チャンネル = 1つのプロジェクト
+- **対象**: Slack/Chatworkのグループチャンネル
+- **例外**: メール・LINEなど1:1のやり取りは手動紐づけ
+- **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
+- **秘書intent**: `link_channel` で「このチャンネルを○○プロジェクトに紐づけて」に対応
+
+### Phase A: 伸二メソッド思考プリセット
+- **getShinjiMethodPrompt()** で思考フレームワークを生成
+- **適用対象**: タスクAI会話（全フェーズ）、秘書チャット（ビジネス相談系intentのみ）
+- **非適用**: 事務的intent（日程調整・インボックス要約等）
+- **フレームワーク**: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
+- **対話スタイル**: 壁打ち型。「そもそも」「構造で見ると」等の表現
 
 ---
 

@@ -3,6 +3,7 @@
 
 import { createServerClient } from '@/lib/supabase';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { CALENDAR_PREFIX } from '@/lib/constants';
 import {
   createEvent,
   isCalendarConnected,
@@ -63,7 +64,7 @@ export async function syncTaskToCalendar(
   // 既にカレンダー登録済みなら更新
   if (task.calendar_event_id) {
     return updateCalendarEvent(task.calendar_event_id, userId, {
-      summary: `[NodeMap] ${task.title}`,
+      summary: `${CALENDAR_PREFIX.task} ${task.title}`,
       description: task.description || undefined,
       start: task.scheduled_start,
       end: task.scheduled_end,
@@ -107,7 +108,7 @@ export async function syncJobToCalendar(
 
   if (job.calendar_event_id) {
     return updateCalendarEvent(job.calendar_event_id, userId, {
-      summary: `[NodeMap] ${job.title}`,
+      summary: `${CALENDAR_PREFIX.job} ${job.title}`,
       description: job.description || undefined,
       start: job.scheduled_start,
       end: job.scheduled_end,
@@ -139,8 +140,10 @@ async function createCalendarEventForSource(
   }
 
   try {
+    // Phase A: ソース種別に応じた命名プレフィックス
+    const prefix = params.sourceType === 'job' ? CALENDAR_PREFIX.job : CALENDAR_PREFIX.task;
     const event = await createEventWithExtendedProps(params.userId, {
-      summary: `[NodeMap] ${params.title}`,
+      summary: `${prefix} ${params.title}`,
       description: params.description,
       start: params.scheduledStart,
       end: params.scheduledEnd,
@@ -423,7 +426,7 @@ export async function syncGroupTaskToMembers(
       if (member.calendar_event_id) {
         // 既存予定を更新
         const result = await updateCalendarEvent(member.calendar_event_id, member.user_id, {
-          summary: `[NodeMap] ${task.title}`,
+          summary: `${CALENDAR_PREFIX.task} ${task.title}`,
           description: task.description || undefined,
           start: task.scheduled_start,
           end: task.scheduled_end,

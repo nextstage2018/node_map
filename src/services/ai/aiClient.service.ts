@@ -555,7 +555,17 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
     if ((task as any).dueDate) contextParts.push(`- 期限: ${(task as any).dueDate}`);
 
     const personalizedStr = projectContext?.personalizedContext || '';
-    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}${projectContextStr}${personalizedStr}`;
+
+    // Phase A: 伸二メソッド思考プリセット注入（タスクAI会話全フェーズ）
+    let shinjiMethodStr = '';
+    try {
+      const { getShinjiMethodPrompt } = await import('@/services/ai/personalizedContext.service');
+      shinjiMethodStr = getShinjiMethodPrompt();
+    } catch {
+      // 取得失敗時は無視
+    }
+
+    const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}\n\n${contextParts.join('\n')}${projectContextStr}${personalizedStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
     const messages = [

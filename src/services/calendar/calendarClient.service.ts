@@ -2,6 +2,7 @@
 // 予定取得・作成・空き時間検索
 
 import { createServerClient } from '@/lib/supabase';
+import { BUSINESS_HOURS, isNodeMapEvent } from '@/lib/constants';
 
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
@@ -241,8 +242,8 @@ export async function findFreeSlots(
   startDate: string,
   endDate: string,
   slotDurationMinutes = 60,
-  workingHoursStart = 9,
-  workingHoursEnd = 18
+  workingHoursStart = BUSINESS_HOURS.weekdayStart,
+  workingHoursEnd = BUSINESS_HOURS.weekdayEnd
 ): Promise<FreeSlot[]> {
   try {
     // 1. Google Calendar の予定を取得
@@ -262,9 +263,11 @@ export async function findFreeSlots(
     // 3. 全ての busy スロットを統合
     const busySlots: { start: number; end: number }[] = [];
 
-    // Google Calendar イベント
+    // Google Calendar イベント（[NM-Task]/[NM-Job]プレフィックス付きはスキップ＝空きとみなす）
     for (const e of events) {
       if (e.isAllDay) continue;
+      // Phase A: NodeMap自身が作った予定は空きとして扱う
+      if (isNodeMapEvent(e.summary)) continue;
       busySlots.push({
         start: new Date(e.start).getTime(),
         end: new Date(e.end).getTime(),

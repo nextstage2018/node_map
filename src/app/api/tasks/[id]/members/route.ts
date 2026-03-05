@@ -117,8 +117,9 @@ export async function POST(
         const { isCalendarConnected, createEvent } = await import('@/services/calendar/calendarClient.service');
         const connected = await isCalendarConnected(memberUserId);
         if (connected) {
+          const { CALENDAR_PREFIX } = await import('@/lib/constants');
           const event = await createEvent(memberUserId, {
-            summary: `[NodeMap] ${task.title}`,
+            summary: `${CALENDAR_PREFIX.task} ${task.title}`,
             description: task.description || undefined,
             start: task.scheduled_start,
             end: task.scheduled_end,
