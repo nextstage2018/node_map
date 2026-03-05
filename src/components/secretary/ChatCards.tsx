@@ -1,4 +1,4 @@
-// Phase A-1: 秘書AI会話内インラインカード
+// Phase UI-3: 秘書AI会話内インラインカード（統一デザイン）
 'use client';
 
 import { useState } from 'react';
@@ -10,6 +10,87 @@ import {
   FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles, ListChecks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+// ========================================
+// Phase UI-3: 統一カードラッパー
+// 左ボーダー色ルール:
+//   blue: 情報系（ブリーフィング、一覧表示）
+//   green: 完了系（タスク作成完了、承認完了）
+//   yellow: 要対応（ジョブ承認、返信下書き）
+//   red: 緊急（期限超過、重要メッセージ）
+//   slate: デフォルト
+// ========================================
+export type CardAccentColor = 'blue' | 'green' | 'yellow' | 'red' | 'slate';
+
+const accentStyles: Record<CardAccentColor, string> = {
+  blue: 'border-l-blue-500',
+  green: 'border-l-green-500',
+  yellow: 'border-l-amber-500',
+  red: 'border-l-red-500',
+  slate: 'border-l-slate-300',
+};
+
+// カード種別→アクセント色のマッピング
+const cardAccentMap: Partial<Record<CardType, CardAccentColor>> = {
+  inbox_summary: 'blue',
+  message_detail: 'blue',
+  briefing_summary: 'blue',
+  calendar_events: 'blue',
+  document_list: 'blue',
+  business_summary: 'blue',
+  contact_search_result: 'blue',
+  pattern_insights: 'blue',
+  task_progress: 'blue',
+  navigate: 'blue',
+
+  task_created: 'green',
+  action_result: 'green',  // 動的に判定（失敗時はred）
+  storage_confirmation: 'green',
+
+  job_approval: 'yellow',
+  reply_draft: 'yellow',
+  file_intake: 'yellow',
+  knowledge_proposal: 'yellow',
+  org_recommendation: 'yellow',
+  task_negotiation: 'yellow',
+  business_event_form: 'yellow',
+  task_form: 'yellow',
+  contact_form: 'yellow',
+  org_form: 'yellow',
+  project_form: 'yellow',
+
+  deadline_alert: 'red',
+  task_resume: 'blue',
+  task_external_resource: 'blue',
+};
+
+export function UnifiedCardWrapper({
+  type,
+  children,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data,
+}: {
+  type: CardType;
+  children: React.ReactNode;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: any;
+}) {
+  // action_resultは成功/失敗で色を動的に変更
+  let accent: CardAccentColor = cardAccentMap[type] || 'slate';
+  if (type === 'action_result' && data) {
+    accent = data.success ? 'green' : 'red';
+  }
+
+  return (
+    <div className={cn(
+      'border-l-4 rounded-xl overflow-hidden shadow-nm-sm my-2',
+      'border border-slate-200 bg-white',
+      accentStyles[accent]
+    )}>
+      {children}
+    </div>
+  );
+}
 
 // ========================================
 // カード共通の型定義
@@ -100,7 +181,7 @@ export function InboxSummaryCard({
   onSelectMessage?: (id: string) => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center gap-2">
         <Mail className="w-4 h-4 text-blue-600" />
         <span className="text-xs font-semibold text-slate-700">新着メッセージ {items.length}件</span>
@@ -165,7 +246,7 @@ export function MessageDetailCard({
     : bodyText;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-3 bg-slate-50 border-b border-slate-100">
         <div className="flex items-center gap-2 mb-1">
           <ChannelIcon channel={message.channel} className="w-4 h-4 text-slate-500" />
@@ -282,7 +363,7 @@ export function JobApprovalCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
         <Zap className="w-4 h-4 text-amber-600" />
         <span className="text-xs font-semibold text-amber-800">{job.title}</span>
@@ -385,7 +466,7 @@ export function TaskCreatedCard({ task }: { task: TaskCreatedData }) {
   const priorityLabels = { high: '高', medium: '中', low: '低' };
 
   return (
-    <div className="bg-white rounded-xl border border-green-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-green-50 border-b border-green-100 flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-600" />
         <span className="text-xs font-semibold text-green-800">タスク登録完了</span>
@@ -435,7 +516,7 @@ export function TaskResumeCard({
   onResume?: (taskId: string) => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-3 flex items-start gap-3">
         <CheckSquare className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -514,7 +595,7 @@ export function TaskFormCard({
 
   if (submitted) {
     return (
-      <div className="bg-white rounded-xl border border-green-200 overflow-hidden shadow-sm my-2">
+      <div className="overflow-hidden">
         <div className="px-4 py-3 flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-green-600" />
           <span className="text-sm font-medium text-green-800">タスク「{title}」を作成しました</span>
@@ -530,7 +611,7 @@ export function TaskFormCard({
   ];
 
   return (
-    <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
         <CheckSquare className="w-4 h-4 text-blue-600" />
         <span className="text-xs font-semibold text-blue-800">タスク作成</span>
@@ -678,7 +759,7 @@ export function TaskProgressCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-indigo-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CheckSquare className="w-4 h-4 text-indigo-600" />
@@ -762,7 +843,7 @@ export function NavigateCard({ nav }: { nav: NavigateData }) {
   return (
     <a
       href={nav.href}
-      className="flex items-center gap-3 bg-white rounded-xl border border-slate-200 px-4 py-3 my-2 hover:bg-slate-50 transition-colors shadow-sm"
+      className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors"
     >
       <ExternalLink className="w-4 h-4 text-blue-600 shrink-0" />
       <div className="flex-1 min-w-0">
@@ -788,10 +869,10 @@ interface ActionResultData {
 export function ActionResultCard({ result }: { result: ActionResultData }) {
   return (
     <div className={cn(
-      'rounded-xl border px-4 py-3 my-2 flex items-start gap-3 shadow-sm',
+      'px-4 py-3 flex items-start gap-3',
       result.success
-        ? 'bg-green-50 border-green-200'
-        : 'bg-red-50 border-red-200'
+        ? 'bg-green-50'
+        : 'bg-red-50'
     )}>
       {result.success
         ? <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
@@ -849,7 +930,7 @@ export function ReplyDraftCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
         <Send className="w-4 h-4 text-blue-600" />
         <span className="text-xs font-semibold text-blue-800">
@@ -941,7 +1022,7 @@ interface BriefingSummaryData {
 
 export function BriefingSummaryCard({ summary }: { summary: BriefingSummaryData }) {
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 overflow-hidden shadow-sm my-2">
+    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 overflow-hidden">
       <div className="px-4 py-3 border-b border-blue-100 flex items-center gap-2">
         <TrendingUp className="w-4 h-4 text-blue-600" />
         <span className="text-xs font-semibold text-blue-800">{summary.date} のブリーフィング</span>
@@ -1078,7 +1159,7 @@ interface CalendarEventsData {
 
 export function CalendarEventsCard({ calendar }: { calendar: CalendarEventsData }) {
   return (
-    <div className="bg-white rounded-xl border border-purple-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
         <Calendar className="w-4 h-4 text-purple-600" />
         <span className="text-xs font-semibold text-purple-800">{calendar.date}の予定 {calendar.events.length}件</span>
@@ -1159,7 +1240,7 @@ export function DeadlineAlertCard({
   const soonItems = deadlines.items.filter(d => d.urgency === 'soon');
 
   return (
-    <div className="bg-white rounded-xl border border-amber-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 text-amber-600" />
         <span className="text-xs font-semibold text-amber-800">期限アラート {deadlines.items.length}件</span>
@@ -1233,7 +1314,7 @@ function DocumentListCard({
   onShare?: (docId: string) => void;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="overflow-hidden">
       <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
         <FileText className="w-4 h-4 text-blue-600" />
         <span className="text-sm font-medium text-blue-800">ドキュメント（{totalCount}件）</span>
@@ -1386,7 +1467,7 @@ export function FileIntakeCard({
   const pendingFiles = files.filter(f => !approvedIds.has(f.id) && !rejectedIds.has(f.id));
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FolderInput className="w-4 h-4 text-amber-600" />
@@ -1619,7 +1700,7 @@ function TaskNegotiationCard({
   const [showAdjustment, setShowAdjustment] = useState(false);
 
   return (
-    <div className="bg-white rounded-xl border border-orange-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-orange-50 border-b border-orange-100 flex items-center gap-2">
         <Edit3 className="w-4 h-4 text-orange-600" />
         <span className="text-xs font-semibold text-orange-800">タスク修正提案</span>
@@ -1765,7 +1846,7 @@ export function ConsultationListCard({
   };
 
   return (
-    <div className="bg-purple-50 rounded-xl border border-purple-200 overflow-hidden shadow-sm my-2">
+    <div className="bg-purple-50 overflow-hidden">
       <div className="px-4 py-3 border-b border-purple-100 flex items-center gap-2">
         <MessageCircle className="w-4 h-4 text-purple-600" />
         <span className="text-xs font-semibold text-purple-800">あなた宛ての社内相談（{consultations.length}件）</span>
@@ -1813,16 +1894,20 @@ export function CardRenderer({
   // 防御: card.dataがnull/undefinedの場合は描画しない
   if (!card || !card.type || !card.data) return null;
 
+  // Phase UI-3: 内部カードをレンダリングしてUnifiedCardWrapperで包む
+  let inner: React.ReactNode = null;
+
   switch (card.type) {
     case 'inbox_summary':
-      return (
+      inner = (
         <InboxSummaryCard
           items={card.data.items || []}
           onSelectMessage={(id) => onAction?.('select_message', { id })}
         />
       );
+      break;
     case 'message_detail':
-      return (
+      inner = (
         <MessageDetailCard
           message={card.data}
           onReply={() => onAction?.('reply', card.data)}
@@ -1830,8 +1915,9 @@ export function CardRenderer({
           onCreateTask={() => onAction?.('create_task', card.data)}
         />
       );
+      break;
     case 'job_approval':
-      return (
+      inner = (
         <JobApprovalCard
           job={card.data}
           onApprove={(editedDraft?: string) => onAction?.('approve_job', { ...card.data, editedDraft })}
@@ -1839,8 +1925,9 @@ export function CardRenderer({
           onReject={() => onAction?.('reject_job', card.data)}
         />
       );
+      break;
     case 'reply_draft':
-      return (
+      inner = (
         <ReplyDraftCard
           reply={card.data}
           onApprove={(data) => onAction?.('send_reply', data)}
@@ -1848,55 +1935,66 @@ export function CardRenderer({
           onReject={() => onAction?.('reject_reply', card.data)}
         />
       );
+      break;
     case 'task_created':
-      return <TaskCreatedCard task={card.data} />;
+      inner = <TaskCreatedCard task={card.data} />;
+      break;
     case 'task_resume':
-      return (
+      inner = (
         <TaskResumeCard
           task={card.data}
           onResume={(taskId) => onAction?.('resume_task', { taskId })}
         />
       );
+      break;
     case 'task_form':
-      return (
+      inner = (
         <TaskFormCard
           data={card.data}
           onSubmit={(taskData) => onAction?.('submit_task_form', taskData)}
         />
       );
+      break;
     case 'task_progress':
-      return (
+      inner = (
         <TaskProgressCard
           data={card.data}
           onResume={(taskId) => onAction?.('resume_task', { taskId })}
           onSendMessage={(taskId, message) => onAction?.('task_chat', { taskId, message, phase: card.data.phase || 'ideation' })}
         />
       );
+      break;
     case 'navigate':
-      return <NavigateCard nav={card.data} />;
+      inner = <NavigateCard nav={card.data} />;
+      break;
     case 'action_result':
-      return <ActionResultCard result={card.data} />;
+      inner = <ActionResultCard result={card.data} />;
+      break;
     case 'briefing_summary':
-      return <BriefingSummaryCard summary={card.data} />;
+      inner = <BriefingSummaryCard summary={card.data} />;
+      break;
     case 'calendar_events':
-      return <CalendarEventsCard calendar={card.data} />;
+      inner = <CalendarEventsCard calendar={card.data} />;
+      break;
     case 'deadline_alert':
-      return (
+      inner = (
         <DeadlineAlertCard
           deadlines={card.data}
           onClickItem={(id, type) => onAction?.('click_deadline', { id, type })}
         />
       );
+      break;
     case 'document_list':
-      return (
+      inner = (
         <DocumentListCard
           documents={card.data.documents || []}
           totalCount={card.data.totalCount || 0}
           onShare={(docId) => onAction?.('share_document', { docId })}
         />
       );
+      break;
     case 'file_intake':
-      return (
+      inner = (
         <FileIntakeCard
           files={card.data.files || []}
           totalCount={card.data.totalCount || 0}
@@ -1905,72 +2003,82 @@ export function CardRenderer({
           onApproveAll={() => onAction?.('approve_all_files', {})}
         />
       );
+      break;
     case 'storage_confirmation':
-      return (
+      inner = (
         <StorageConfirmationCard
           data={card.data}
           onConfirm={(storeData) => onAction?.('confirm_storage', storeData)}
         />
       );
+      break;
     case 'business_summary':
-      return (
+      inner = (
         <BusinessSummaryCard
           data={card.data}
         />
       );
+      break;
     case 'business_event_form':
-      return (
+      inner = (
         <BusinessEventFormCard
           data={card.data}
           onCreate={(eventData) => onAction?.('create_business_event', eventData)}
           onCancel={() => onAction?.('cancel_event_creation', {})}
         />
       );
+      break;
     case 'knowledge_proposal':
-      return (
+      inner = (
         <KnowledgeProposalCard
           data={card.data}
           onApprove={(proposalId) => onAction?.('approve_knowledge_proposal', { proposalId })}
           onReject={(proposalId) => onAction?.('reject_knowledge_proposal', { proposalId })}
         />
       );
+      break;
     case 'org_recommendation':
-      return (
+      inner = (
         <OrgRecommendationCard
           data={card.data}
           onSetup={(candidate, rel) => onAction?.('create_org', { candidate, relationship: rel })}
           onSkip={(domain) => onAction?.('skip_org', { domain })}
         />
       );
+      break;
     case 'contact_form':
-      return (
+      inner = (
         <ContactFormCard
           data={card.data}
           onSubmit={(contactData) => onAction?.('submit_contact_form', contactData)}
         />
       );
+      break;
     case 'contact_search_result':
-      return (
+      inner = (
         <ContactSearchResultCard
           data={card.data}
         />
       );
+      break;
     case 'org_form':
-      return (
+      inner = (
         <OrgFormCard
           data={card.data}
           onSubmit={(orgData) => onAction?.('submit_org_form', orgData)}
         />
       );
+      break;
     case 'project_form':
-      return (
+      inner = (
         <ProjectFormCard
           data={card.data}
           onSubmit={(projData) => onAction?.('submit_project_form', projData)}
         />
       );
+      break;
     case 'task_negotiation':
-      return (
+      inner = (
         <TaskNegotiationCard
           data={card.data}
           onGenerateAdjustment={(taskId) => onAction?.('generate_task_adjustment', { taskId })}
@@ -1978,22 +2086,32 @@ export function CardRenderer({
           onDismiss={(taskId) => onAction?.('dismiss_task_negotiation', { taskId })}
         />
       );
+      break;
     case 'task_external_resource':
-      return (
+      inner = (
         <TaskExternalResourceCard
           data={card.data}
         />
       );
+      break;
     case 'consultation_list':
-      return (
+      inner = (
         <ConsultationListCard
           consultations={card.data.consultations || []}
           onAnswer={(consultationId, answer) => onAction?.('answer_consultation', { consultationId, answer })}
         />
       );
+      break;
     default:
       return null;
   }
+
+  // Phase UI-3: 統一カードラッパーで包む
+  return (
+    <UnifiedCardWrapper type={card.type} data={card.data}>
+      {inner}
+    </UnifiedCardWrapper>
+  );
 }
 
 // ========================================
@@ -2321,7 +2439,7 @@ function BusinessEventFormCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm my-2">
+    <div className="overflow-hidden">
       <div className="px-4 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <FileText className="w-4 h-4 text-blue-600" />

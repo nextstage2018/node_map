@@ -1,46 +1,15 @@
-// Phase A-1: 秘書AIメインチャットコンポーネント
+// Phase UI-3: 秘書AIメインチャットコンポーネント（全面リデザイン）
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, Send, Loader2, Trash2,
-  Inbox, CheckSquare, Zap, GitBranch, MessageSquare,
-  ClipboardList, Sun, Sparkles, Calendar, FolderInput,
-  Paperclip, Upload, X, FileText, ChevronDown, Building2,
-  UserPlus, FolderPlus,
+  Paperclip, Upload, X, FileText, ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
-
-// ========================================
-// サジェストチップ定義
-// ========================================
-interface SuggestChip {
-  label: string;
-  icon: React.ReactNode;
-  message: string;         // チップ押下時に送信する文言
-  category: 'inbox' | 'task' | 'job' | 'map' | 'log' | 'general';
-}
-
-const SUGGEST_CHIPS: SuggestChip[] = [
-  { label: '今日やること', icon: <Sun className="w-3.5 h-3.5" />, message: '今日の状況を教えて', category: 'general' },
-  { label: 'プロジェクトを確認', icon: <ClipboardList className="w-3.5 h-3.5" />, message: 'プロジェクト一覧を見せて', category: 'log' },
-  { label: 'タスクを作成', icon: <CheckSquare className="w-3.5 h-3.5" />, message: '新しいタスクを作成したい', category: 'task' },
-  { label: 'タスクを進める', icon: <CheckSquare className="w-3.5 h-3.5" />, message: 'タスクを進めたい', category: 'task' },
-  { label: '新着メッセージ', icon: <Inbox className="w-3.5 h-3.5" />, message: '新着メッセージを見せて', category: 'inbox' },
-  { label: '対応が必要なこと', icon: <Zap className="w-3.5 h-3.5" />, message: '対応が必要なことは？', category: 'job' },
-  { label: '今日の予定', icon: <Calendar className="w-3.5 h-3.5" />, message: '今日の予定を教えて', category: 'general' },
-  { label: '空き時間を探す', icon: <Calendar className="w-3.5 h-3.5" />, message: '今週の空き時間を教えて', category: 'general' },
-  { label: '届いたファイル確認', icon: <FolderInput className="w-3.5 h-3.5" />, message: '届いたファイルを確認したい', category: 'general' },
-  { label: '活動要約', icon: <ClipboardList className="w-3.5 h-3.5" />, message: '今週の活動要約を見せて', category: 'log' },
-  { label: '思考マップ', icon: <GitBranch className="w-3.5 h-3.5" />, message: '思考マップを見たい', category: 'map' },
-  { label: '相談を確認', icon: <MessageSquare className="w-3.5 h-3.5" />, message: '社内相談を確認して', category: 'general' },
-  { label: 'ナレッジ提案', icon: <Sparkles className="w-3.5 h-3.5" />, message: 'ナレッジの構造化提案を見せて', category: 'general' },
-  { label: 'タスク修正を調整', icon: <CheckSquare className="w-3.5 h-3.5" />, message: 'タスクの修正提案を確認して', category: 'task' },
-  { label: '組織を整理', icon: <Building2 className="w-3.5 h-3.5" />, message: '未登録の組織を確認して', category: 'general' },
-  { label: 'コンタクト追加', icon: <UserPlus className="w-3.5 h-3.5" />, message: '新しいコンタクトを登録したい', category: 'general' },
-  { label: 'プロジェクト作成', icon: <FolderPlus className="w-3.5 h-3.5" />, message: '新しいプロジェクトを作成したい', category: 'log' },
-];
+import WelcomeDashboard from './WelcomeDashboard';
+import { QuickActionBar } from './QuickActions';
 
 // ========================================
 // メッセージ用ユニークID生成
@@ -1504,22 +1473,22 @@ export default function SecretaryChat() {
   }, [sendMessage]);
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col bg-gradient-to-b from-slate-50 to-white">
+    <div className="flex-1 overflow-hidden flex flex-col bg-nm-bg">
       {/* ヘッダー */}
-      <div className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0">
+      <div className="h-14 bg-white border-b border-nm-border flex items-center justify-between px-6 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-nm-sm">
             <Bot className="w-4 h-4 text-white" />
           </div>
           <div>
-            <h1 className="text-sm font-bold text-slate-900">秘書</h1>
-            <p className="text-[10px] text-slate-400">NodeMap パーソナルアシスタント</p>
+            <h1 className="text-sm font-bold text-nm-text">秘書</h1>
+            <p className="text-[10px] text-nm-text-muted">NodeMap パーソナルアシスタント</p>
           </div>
         </div>
         {messages.length > 0 && (
           <button
             onClick={handleClear}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-nm-text-muted hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
           >
             <Trash2 className="w-3.5 h-3.5" />
             クリア
@@ -1530,42 +1499,8 @@ export default function SecretaryChat() {
       {/* チャットエリア */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 && !isLoading ? (
-          // ダッシュボード（初期画面）
-          <div className="max-w-2xl mx-auto py-4">
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg mb-3 mx-auto">
-                <Sparkles className="w-7 h-7 text-white" />
-              </div>
-              <p className="text-lg font-bold text-slate-800">何をしましょうか？</p>
-              <p className="text-xs text-slate-400 mt-1">タップするか、自由に話しかけてください</p>
-            </div>
-            {/* メインアクション（大きめカード） */}
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {SUGGEST_CHIPS.slice(0, 4).map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => sendMessage(chip.message)}
-                  className="flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300 transition-all shadow-sm text-left"
-                >
-                  <span className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">{chip.icon}</span>
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-            {/* その他アクション（小さめチップ） */}
-            <div className="flex flex-wrap gap-1.5">
-              {SUGGEST_CHIPS.slice(4).map((chip) => (
-                <button
-                  key={chip.label}
-                  onClick={() => sendMessage(chip.message)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
-                >
-                  {chip.icon}
-                  {chip.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          // Phase UI-3: ウェルカムダッシュボード
+          <WelcomeDashboard onSendMessage={sendMessage} />
         ) : (
           // メッセージ一覧
           <div className="max-w-3xl mx-auto space-y-4">
@@ -1574,17 +1509,17 @@ export default function SecretaryChat() {
                 {/* テキストバブル */}
                 <div className={cn('flex gap-3', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                   {msg.role === 'assistant' && (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
-                      <Bot className="w-4 h-4 text-white" />
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-nm-sm mt-1">
+                      <Bot className="w-3.5 h-3.5 text-white" />
                     </div>
                   )}
                   {msg.content && (
                     <div
                       className={cn(
-                        'max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm',
+                        'max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap',
                         msg.role === 'user'
-                          ? 'bg-blue-600 text-white rounded-br-md'
-                          : 'bg-white text-slate-800 border border-slate-200 rounded-bl-md'
+                          ? 'bg-blue-600 text-white rounded-2xl rounded-br-md shadow-nm-sm'
+                          : 'bg-white text-nm-text border border-nm-border rounded-2xl rounded-bl-md shadow-nm-sm'
                       )}
                     >
                       {linkifyText(msg.content, msg.role === 'user')}
@@ -1593,7 +1528,7 @@ export default function SecretaryChat() {
                 </div>
                 {/* インラインカード */}
                 {msg.cards && msg.cards.length > 0 && (
-                  <div className="ml-11 mt-2 space-y-2">
+                  <div className="ml-10 mt-2 space-y-2">
                     {msg.cards.map((card: CardData, idx: number) => (
                       <CardRenderer
                         key={`${msg.id}-card-${idx}`}
@@ -1609,10 +1544,10 @@ export default function SecretaryChat() {
             {/* ローディング */}
             {isLoading && (
               <div className="flex justify-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
-                  <Bot className="w-4 h-4 text-white" />
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-nm-sm mt-1">
+                  <Bot className="w-3.5 h-3.5 text-white" />
                 </div>
-                <div className="px-4 py-3 rounded-2xl bg-white border border-slate-200 text-slate-400 text-sm flex items-center gap-2 rounded-bl-md shadow-sm">
+                <div className="px-4 py-2.5 rounded-2xl bg-white border border-nm-border text-nm-text-muted text-sm flex items-center gap-2 rounded-bl-md shadow-nm-sm">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>考え中...</span>
                 </div>
@@ -1624,22 +1559,9 @@ export default function SecretaryChat() {
         )}
       </div>
 
-      {/* サジェストチップ（会話中） */}
+      {/* Phase UI-3: クイックアクション（会話中） */}
       {messages.length > 0 && !isLoading && (
-        <div className="px-4 pb-2 shrink-0">
-          <div className="max-w-3xl mx-auto flex flex-wrap gap-1.5">
-            {SUGGEST_CHIPS.slice(0, 4).map((chip) => (
-              <button
-                key={chip.label}
-                onClick={() => sendMessage(chip.message)}
-                className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-white border border-slate-200 rounded-full hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-all"
-              >
-                {chip.icon}
-                {chip.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <QuickActionBar onSendMessage={sendMessage} />
       )}
 
       {/* ファイルアップロードパネル */}
@@ -1650,16 +1572,16 @@ export default function SecretaryChat() {
         />
       )}
 
-      {/* 入力エリア */}
-      <div className="border-t border-slate-200 bg-white px-4 py-3 shrink-0">
+      {/* Phase UI-3: 入力エリア改善 */}
+      <div className="border-t border-nm-border bg-white px-4 py-3 shrink-0">
         <div className="max-w-3xl mx-auto flex items-end gap-2">
           <button
             onClick={() => setShowUploadPanel(!showUploadPanel)}
             className={cn(
-              'shrink-0 w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
+              'shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors',
               showUploadPanel
-                ? 'bg-blue-100 text-blue-600'
-                : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'
+                ? 'bg-nm-primary-light text-nm-primary'
+                : 'text-nm-text-muted hover:text-nm-primary hover:bg-nm-primary-light'
             )}
             title="ファイルをアップロード"
           >
@@ -1669,9 +1591,9 @@ export default function SecretaryChat() {
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="秘書に話しかける...（送信ボタンで送信）"
+            placeholder="何でも聞いてください..."
             rows={1}
-            className="flex-1 resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-slate-50"
+            className="flex-1 resize-none rounded-2xl border border-nm-border px-4 py-2.5 text-sm text-nm-text placeholder:text-nm-text-muted focus:outline-none focus:ring-2 focus:ring-nm-primary focus:border-nm-primary transition-colors bg-nm-bg"
             style={{ maxHeight: '120px' }}
             onInput={(e) => {
               const target = e.target as HTMLTextAreaElement;
@@ -1682,7 +1604,7 @@ export default function SecretaryChat() {
           <button
             onClick={() => sendMessage(input)}
             disabled={!input.trim() || isLoading}
-            className="shrink-0 w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+            className="shrink-0 w-10 h-10 rounded-full bg-nm-primary text-white flex items-center justify-center hover:bg-nm-primary-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-nm-sm"
           >
             <Send className="w-4 h-4" />
           </button>
