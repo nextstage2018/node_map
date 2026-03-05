@@ -1,11 +1,13 @@
-// Phase 45c+57: ビジネスイベント自動蓄積 Cron Job
+// Phase 45c+57+D: ビジネスイベント自動蓄積 Cron Job
 // inbox_messages（送受信）からビジネスイベントを自動生成
 // 重複防止: source_message_id で既存チェック
 // Phase 57: ビジネスイベントからキーワード抽出追加
+// Phase D: channelProjectLink サービスを使ったプロジェクト自動紐づけ
 // 日次実行（vercel.json で設定）
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
+import { resolveProjectFromMessage } from '@/services/inbox/channelProjectLink.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -116,25 +118,33 @@ export async function GET(request: NextRequest) {
         const bodyPreview = msg.body ? String(msg.body).replace(/\n/g, ' ').slice(0, 200) : '';
         const content = bodyPreview || '（本文なし）';
 
-        // プロジェクト推定（チャネルベース）
+        // Phase D: channelProjectLink サービスでプロジェクト自動推定
         let projectId: string | null = null;
-        const channelId = msg.channel === 'slack'
-          ? (metadata.slackChannel || metadata.channel_id || '') as string
-          : msg.channel === 'chatwork'
-            ? (metadata.chatworkRoomId || metadata.room_id || '') as string
-            : '';
+        try {
+          const match = await resolveProjectFromMessage(msg.channel, metadata);
+          if (match) {
+            projectId = match.projectId;
+          }
+        } catch {
+          // フォールバック: 手動でチャネルIDから検索
+          const channelId = msg.channel === 'slack'
+            ? (metadata.slackChannel || metadata.channel_id || '') as string
+            : msg.channel === 'chatwork'
+              ? (metadata.chatworkRoomId || metadata.room_id || '') as string
+              : '';
 
-        if (channelId) {
-          const serviceName = msg.channel === 'slack' ? 'slack' : 'chatwork';
-          const { data: projChannel } = await supabase
-            .from('project_channels')
-            .select('project_id')
-            .eq('service_name', serviceName)
-            .eq('channel_identifier', channelId)
-            .limit(1);
+          if (channelId) {
+            const serviceName = msg.channel === 'slack' ? 'slack' : 'chatwork';
+            const { data: projChannel } = await supabase
+              .from('project_channels')
+              .select('project_id')
+              .eq('service_name', serviceName)
+              .eq('channel_identifier', channelId)
+              .limit(1);
 
-          if (projChannel && projChannel.length > 0) {
-            projectId = projChannel[0].project_id;
+            if (projChannel && projChannel.length > 0) {
+              projectId = projChannel[0].project_id;
+            }
           }
         }
 

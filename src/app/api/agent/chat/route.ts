@@ -946,7 +946,7 @@ async function fetchDataAndBuildCards(
       }
     }
 
-    // プロジェクト一覧
+    // プロジェクト一覧（Phase D: 組織詳細ページのプロジェクトタブへ誘導）
     if (intent === 'projects') {
       try {
         const { data: projectList } = await supabase
@@ -956,28 +956,61 @@ async function fetchDataAndBuildCards(
           .order('created_at', { ascending: false });
 
         if (projectList && projectList.length > 0) {
+          // 組織別にグルーピング
+          const byOrg = new Map<string, { orgName: string; orgId: string; count: number }>();
+          let noOrgCount = 0;
+          for (const p of projectList) {
+            const orgData = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations
+              ? p.organizations as { name: string }
+              : null;
+            if (p.organization_id && orgData) {
+              const existing = byOrg.get(p.organization_id);
+              if (existing) {
+                existing.count++;
+              } else {
+                byOrg.set(p.organization_id, { orgName: orgData.name, orgId: p.organization_id, count: 1 });
+              }
+            } else {
+              noOrgCount++;
+            }
+          }
+
           const projectLines = projectList.map((p: { name: string; status: string; organizations?: { name: string } | null }) => {
             const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
             return `- ${p.name}（${p.status || 'active'}）${orgName ? `[${orgName}]` : ''}`;
           }).join('\n');
           parts.push(`\n\n【プロジェクト一覧（${projectList.length}件）】\n${projectLines}`);
 
-          cards.push({
-            type: 'navigate',
-            data: {
-              href: '/business-log',
-              label: 'ビジネスログでプロジェクトを管理',
-              description: `${projectList.length}件のプロジェクトがあります`,
-            },
-          });
+          // Phase D: 組織別にナビゲーションカードを出す
+          for (const [, orgGroup] of byOrg) {
+            cards.push({
+              type: 'navigate',
+              data: {
+                href: `/organizations/${orgGroup.orgId}`,
+                label: `${orgGroup.orgName} のプロジェクト`,
+                description: `${orgGroup.count}件のプロジェクト — 組織詳細のプロジェクトタブで確認`,
+              },
+            });
+          }
+          // 組織未所属があればビジネスログへ
+          if (noOrgCount > 0) {
+            cards.push({
+              type: 'navigate',
+              data: {
+                href: '/business-log',
+                label: 'ビジネスログでプロジェクトを管理',
+                description: `組織未所属のプロジェクト: ${noOrgCount}件`,
+              },
+            });
+          }
         } else {
-          parts.push('\n\n【プロジェクト】\nプロジェクトはまだ登録されていません。ビジネスログ画面から新規プロジェクトを作成できます。');
+          parts.push('\n\n【プロジェクト】\nプロジェクトはまだ登録されていません。組織詳細ページのプロジェクトタブから新規プロジェクトを作成できます。');
           cards.push({
             type: 'navigate',
             data: {
-              href: '/business-log',
-              label: 'ビジネスログでプロジェクトを作成',
-              description: '新しいプロジェクトを作成します',
+              href: '/organizations',
+              label: '組織一覧からプロジェクトを作成',
+              description: '組織を選択してプロジェクトタブからプロジェクトを追加できます',
             },
           });
         }

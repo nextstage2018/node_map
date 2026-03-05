@@ -550,6 +550,26 @@ sendChatworkMessage(roomId, body)                     // → Promise<boolean>
 - **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
 - **秘書intent**: `link_channel` で「このチャンネルを○○プロジェクトに紐づけて」に対応
 
+### Phase D: 組織・ビジネスログUI統合
+- **組織詳細ページに「プロジェクト」タブを追加**
+  - 階層: 組織 > プロジェクト > タスク ｜ ドキュメント ｜ ビジネスログ（並列）
+  - 組織詳細ページの4つ目のタブとして実装（基本情報 / チャネル / メンバー / プロジェクト）
+  - プロジェクト選択後のサブタブ: タスク / ドキュメント / ビジネスログ
+  - コンポーネント: `src/components/organizations/ProjectsTab.tsx`
+- **未紐づけチャネル通知**
+  - 組織チャネルのうち `project_channels` に未登録のSlack/CWチャネルを警告表示
+  - API: `GET /api/organizations/[id]/unlinked-channels`
+  - プロジェクトタブ上部に紐づけUIを表示（プロジェクト選択→即紐づけ）
+- **1チャンネル＝1プロジェクト自動紐づけ強化**
+  - sync-business-events Cronで `resolveProjectFromMessage()` サービスを呼び出し
+  - Phase A の `channelProjectLink.service.ts` を実際のCronに統合
+- **ビジネスログの位置づけ明確化**
+  - ビジネスログはプロジェクト詳細のタブとして組織ページ内に統合
+  - 独立ページ `/business-log` は引き続き残す（全体ダッシュボード用途）
+- **秘書AI改善**
+  - `projects` インテント: 組織別にグルーピングしてナビゲーションカードを表示
+  - 組織詳細ページへ直接リンク（ビジネスログページではなく）
+
 ### Phase A: 伸二メソッド思考プリセット
 - **getShinjiMethodPrompt()** で思考フレームワークを生成
 - **適用対象**: タスクAI会話（全フェーズ）、秘書チャット（ビジネス相談系intentのみ）

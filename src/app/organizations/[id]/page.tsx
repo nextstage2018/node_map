@@ -1,14 +1,16 @@
-// Phase 37: 組織詳細ページ（基本情報・チャネル・メンバー 3タブ）
+// Phase D: 組織詳細ページ（基本情報・チャネル・メンバー・プロジェクト 4タブ）
+// Phase 37 → Phase D: プロジェクトタブ追加（組織 > プロジェクト > タスク|ドキュメント|ビジネスログ）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Building2, ArrowLeft, Globe, Save, Hash, Mail, MessageSquare,
-  Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2
+  Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2, FolderOpen,
 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
+import ProjectsTab from '@/components/organizations/ProjectsTab';
 
 // ========================================
 // 型定義
@@ -115,7 +117,7 @@ export default function OrganizationDetailPage() {
   const orgId = params.id as string;
 
   // タブ
-  const [activeTab, setActiveTab] = useState<'info' | 'channels' | 'members'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'channels' | 'members' | 'projects'>('info');
 
   // 組織情報
   const [org, setOrg] = useState<Organization | null>(null);
@@ -514,6 +516,7 @@ export default function OrganizationDetailPage() {
               { key: 'info' as const, label: '基本情報', icon: Building2 },
               { key: 'channels' as const, label: 'チャネル', icon: Link2 },
               { key: 'members' as const, label: 'メンバー', icon: Users },
+              { key: 'projects' as const, label: 'プロジェクト', icon: FolderOpen },
             ].map(tab => (
               <button
                 key={tab.key}
@@ -949,6 +952,11 @@ export default function OrganizationDetailPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* ===== プロジェクトタブ ===== */}
+          {activeTab === 'projects' && org && (
+            <ProjectsTab orgId={orgId} orgName={org.name} />
           )}
         </div>
       </div>
