@@ -1,4 +1,4 @@
-// Phase 25: 設定画面 — チャネル購読設定を追加
+// Phase 25 + Phase 60: 設定画面 — 機能説明 + Google連携名称 + プロフィール拡充
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -11,6 +11,20 @@ import Button from '@/components/ui/Button';
 import { LoadingState } from '@/components/ui/EmptyState';
 import ProjectTypeManager from '@/components/settings/ProjectTypeManager';
 
+// ========================================
+// 🔰 機能ガイドコンポーネント
+// ========================================
+function FeatureGuide({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4">
+      <div className="flex items-start gap-2">
+        <span className="text-lg shrink-0">🔰</span>
+        <div className="text-sm text-slate-700 leading-relaxed">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 // Chatwork用のトークン入力フォーム設定（Gmail/SlackはOAuth）
 const CHATWORK_FORM_CONFIG = {
   label: 'Chatwork',
@@ -19,6 +33,34 @@ const CHATWORK_FORM_CONFIG = {
     { key: 'account_name', label: 'アカウント名', type: 'text', placeholder: 'your_account' },
   ],
 };
+
+// 16personalities タイプ一覧
+const PERSONALITY_TYPES = [
+  { value: '', label: '未設定' },
+  { value: 'INTJ', label: 'INTJ（建築家）' },
+  { value: 'INTP', label: 'INTP（論理学者）' },
+  { value: 'ENTJ', label: 'ENTJ（指揮官）' },
+  { value: 'ENTP', label: 'ENTP（討論者）' },
+  { value: 'INFJ', label: 'INFJ（提唱者）' },
+  { value: 'INFP', label: 'INFP（仲介者）' },
+  { value: 'ENFJ', label: 'ENFJ（主人公）' },
+  { value: 'ENFP', label: 'ENFP（運動家）' },
+  { value: 'ISTJ', label: 'ISTJ（管理者）' },
+  { value: 'ISFJ', label: 'ISFJ（擁護者）' },
+  { value: 'ESTJ', label: 'ESTJ（幹部）' },
+  { value: 'ESFJ', label: 'ESFJ（領事）' },
+  { value: 'ISTP', label: 'ISTP（巨匠）' },
+  { value: 'ISFP', label: 'ISFP（冒険家）' },
+  { value: 'ESTP', label: 'ESTP（起業家）' },
+  { value: 'ESFP', label: 'ESFP（エンターテイナー）' },
+];
+
+// AI応答スタイル
+const AI_RESPONSE_STYLES = [
+  { value: 'concise', label: '端的重視', description: '結論ファースト。要点のみ簡潔に回答' },
+  { value: 'normal', label: '通常', description: 'バランスの取れた応答' },
+  { value: 'detailed', label: '補足説明重視', description: '背景や理由も丁寧に説明' },
+];
 
 // チャンネル認証カード
 function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke, authLabel, onConfigureChannels, subscriptionCount }: {
@@ -111,6 +153,8 @@ export default function SettingsPage() {
     timezone: 'Asia/Tokyo',
     language: 'ja',
     emailSignature: '',
+    personalityType: '',
+    aiResponseStyle: 'normal',
   });
 
   // 通知設定
@@ -178,7 +222,15 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/profile');
       const data = await res.json();
       if (data.success && data.data) {
-        setProfile(data.data);
+        setProfile({
+          displayName: data.data.displayName || '',
+          email: data.data.email || '',
+          timezone: data.data.timezone || 'Asia/Tokyo',
+          language: data.data.language || 'ja',
+          emailSignature: data.data.emailSignature || '',
+          personalityType: data.data.personalityType || '',
+          aiResponseStyle: data.data.aiResponseStyle || 'normal',
+        });
       }
     } catch (e) {
       console.error('プロフィール読み込みエラー:', e);
@@ -228,12 +280,12 @@ export default function SettingsPage() {
       window.history.replaceState({}, '', '/settings');
     } else if (errorParam) {
       const errorMessages: Record<string, string> = {
-        gmail_denied: 'Gmailの認証が拒否されました',
-        gmail_invalid: 'Gmailの認証パラメータが不正です',
-        gmail_not_configured: 'Gmail OAuth設定が未完了です',
-        gmail_token_failed: 'Gmailのトークン取得に失敗しました（リダイレクトURIの不一致の可能性）',
-        gmail_save_failed: 'Gmailトークンのデータベース保存に失敗しました',
-        gmail_callback_failed: 'Gmailの認証コールバックでエラーが発生しました',
+        gmail_denied: 'Google認証が拒否されました',
+        gmail_invalid: 'Google認証パラメータが不正です',
+        gmail_not_configured: 'Google OAuth設定が未完了です',
+        gmail_token_failed: 'Googleのトークン取得に失敗しました（リダイレクトURIの不一致の可能性）',
+        gmail_save_failed: 'Googleトークンのデータベース保存に失敗しました',
+        gmail_callback_failed: 'Google認証コールバックでエラーが発生しました',
         slack_denied: 'Slackの認証が拒否されました',
         slack_token_failed: 'Slackのトークン取得に失敗しました',
         slack_save_failed: 'Slackトークンのデータベース保存に失敗しました',
@@ -291,7 +343,7 @@ export default function SettingsPage() {
 
   // チャンネル認証解除
   const handleRevoke = async (serviceName: string) => {
-    const labels: Record<string, string> = { gmail: 'Gmail', slack: 'Slack', chatwork: 'Chatwork' };
+    const labels: Record<string, string> = { gmail: 'Google連携', slack: 'Slack', chatwork: 'Chatwork' };
     if (!confirm(labels[serviceName] + ' の接続を解除しますか？')) return;
     setLoading(true);
     try {
@@ -401,21 +453,23 @@ export default function SettingsPage() {
             ))}
           </div>
 
+          {/* ============================================ */}
           {/* チャンネル接続タブ */}
+          {/* ============================================ */}
           {activeTab === 'channels' && (
             <div className="space-y-6">
-              <Card variant="flat" padding="md" className="bg-blue-50 border border-blue-200">
-                <p className="text-sm text-slate-700">
-                  Gmail・Slackはボタンを押すだけで連携できます。ChatworkはAPIトークンを入力してください。
-                  接続後、「取得対象チャネル設定」で取得するチャネルを選択できます。
-                </p>
-              </Card>
+              <FeatureGuide>
+                <p className="font-medium mb-1">チャンネル接続</p>
+                <p>Gmail・Slack・Chatworkを連携すると、各サービスのメッセージがインボックスに表示されます。
+                Google連携ではメール・カレンダー・Driveを一括で利用できます。
+                接続後、「取得対象チャネル設定」で表示するチャネルを絞り込めます（未設定の場合は全メッセージを表示）。</p>
+              </FeatureGuide>
 
-              {/* Gmail（OAuth） */}
+              {/* Google連携（OAuth） — Gmail / Calendar / Drive */}
               <ChannelAuthCard
                 channel="gmail"
-                label="Gmail"
-                icon="📧"
+                label="Google連携"
+                icon="🔗"
                 isConnected={channels.gmail.connected}
                 accountName={channels.gmail.accountName}
                 onAuth={handleGmailAuth}
@@ -425,53 +479,28 @@ export default function SettingsPage() {
                 subscriptionCount={subscriptionCounts.gmail}
               />
 
-              {/* カレンダー再認証バナー: Gmail接続済みだがカレンダースコープがない場合 */}
-              {channels.gmail.connected && !channels.gmail.hasCalendarScope && (
-                <Card variant="flat" padding="md" className="bg-amber-50 border border-amber-200 -mt-2">
-                  <div className="flex items-start gap-3">
-                    <span className="text-xl shrink-0">📅</span>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-amber-800 mb-1">
-                        カレンダー連携が必要です
-                      </h4>
-                      <p className="text-xs text-amber-700 mb-3">
-                        秘書AIのカレンダー機能（今日の予定表示・空き時間検索・予定作成）を使うには、
-                        Gmailを再連携してカレンダーへのアクセス権を追加してください。
-                      </p>
-                      <Button
-                        onClick={handleGmailAuth}
-                        variant="primary"
-                        size="sm"
-                      >
-                        📅 カレンダー権限を追加して再連携
-                      </Button>
+              {/* Google連携の機能一覧（接続済みの場合） */}
+              {channels.gmail.connected && (
+                <Card variant="flat" padding="md" className="bg-slate-50 border border-slate-200 -mt-2">
+                  <p className="text-xs font-medium text-slate-600 mb-2">Google連携で利用できる機能</p>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded ${channels.gmail.connected ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
+                      <span>📧</span> <span>メール</span> <span className="ml-auto">✓</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded ${channels.gmail.hasCalendarScope ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                      <span>📅</span> <span>カレンダー</span> <span className="ml-auto">{channels.gmail.hasCalendarScope ? '✓' : '要再連携'}</span>
+                    </div>
+                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded ${channels.gmail.hasDriveScope ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'}`}>
+                      <span>📁</span> <span>Drive</span> <span className="ml-auto">{channels.gmail.hasDriveScope ? '✓' : '要再連携'}</span>
                     </div>
                   </div>
-                </Card>
-              )}
-
-              {/* Drive再認証バナー: Gmail接続済みだがDriveスコープがない場合 */}
-              {channels.gmail.connected && !channels.gmail.hasDriveScope && (
-                <Card variant="flat" padding="md" className="bg-blue-50 border border-blue-200 -mt-2">
-                  <div className="flex items-start gap-3">
-                    <span className="text-xl shrink-0">📁</span>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-medium text-blue-800 mb-1">
-                        Google Drive連携が必要です
-                      </h4>
-                      <p className="text-xs text-blue-700 mb-3">
-                        メッセージの添付ファイル自動保存・ドキュメント管理機能を使うには、
-                        Gmailを再連携してGoogle Driveへのアクセス権を追加してください。
-                      </p>
-                      <Button
-                        onClick={handleGmailAuth}
-                        variant="primary"
-                        size="sm"
-                      >
-                        📁 Drive権限を追加して再連携
+                  {(!channels.gmail.hasCalendarScope || !channels.gmail.hasDriveScope) && (
+                    <div className="mt-3">
+                      <Button onClick={handleGmailAuth} variant="primary" size="sm">
+                        不足している権限を追加して再連携
                       </Button>
                     </div>
-                  </div>
+                  )}
                 </Card>
               )}
 
@@ -544,10 +573,14 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              {/* Phase 25: データ取得ルール説明 */}
+              {/* データ取得ルール説明 */}
               <Card variant="flat" padding="md" className="bg-slate-50 border border-slate-200 mt-2">
                 <h3 className="text-sm font-medium text-slate-900 mb-3">データ取得ルール</h3>
                 <ul className="text-xs text-slate-600 space-y-2">
+                  <li className="flex gap-2">
+                    <span className="shrink-0">•</span>
+                    <span>接続するとメッセージは自動的にDBに取り込まれます</span>
+                  </li>
                   <li className="flex gap-2">
                     <span className="shrink-0">•</span>
                     <span>初回接続時は過去30日分のメッセージを取得します</span>
@@ -558,23 +591,40 @@ export default function SettingsPage() {
                   </li>
                   <li className="flex gap-2">
                     <span className="shrink-0">•</span>
-                    <span>チャネルが未選択の場合、そのサービスのメッセージは取得されません</span>
+                    <span>「取得対象チャネル設定」で表示するチャネルを絞り込めます（未設定＝全表示）</span>
                   </li>
                 </ul>
               </Card>
             </div>
           )}
 
+          {/* ============================================ */}
           {/* プロジェクト種別タブ */}
+          {/* ============================================ */}
           {activeTab === 'project-types' && (
             <div className="max-w-2xl">
+              <FeatureGuide>
+                <p className="font-medium mb-1">プロジェクト種別</p>
+                <p>プロジェクト作成時に種別を選択すると、事前定義されたタスクテンプレートが自動生成されます。
+                種別（親）にタスク（子）を登録する階層構造です。
+                タスクの説明欄に業務内容を記載すると、AI会話時にコンテキストとして活用されます。</p>
+              </FeatureGuide>
               <ProjectTypeManager />
             </div>
           )}
 
+          {/* ============================================ */}
           {/* プロフィールタブ */}
+          {/* ============================================ */}
           {activeTab === 'profile' && (
             <Card variant="outlined" padding="lg" className="max-w-2xl">
+              <FeatureGuide>
+                <p className="font-medium mb-1">プロフィール</p>
+                <p>あなたの情報を設定すると、AIがよりカスタマイズされた応答を行います。
+                性格タイプやAI応答スタイルはAI秘書の会話スタイルに反映されます。
+                メール署名はメール返信時に自動挿入されます（Slack・Chatworkでは使用されません）。</p>
+              </FeatureGuide>
+
               <div className="space-y-5">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">表示名</label>
@@ -595,6 +645,55 @@ export default function SettingsPage() {
                   />
                   <p className="text-xs text-slate-500 mt-1.5">メールアドレスはログイン情報から取得されます</p>
                 </div>
+
+                {/* Phase 60: 16personalities */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">性格タイプ（16personalities）</label>
+                  <select
+                    value={profile.personalityType}
+                    onChange={(e) => setProfile({ ...profile, personalityType: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {PERSONALITY_TYPES.map(pt => (
+                      <option key={pt.value} value={pt.value}>{pt.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1.5">
+                    AIがあなたの特性に合わせたコミュニケーションを行うために使用します。
+                    <a href="https://www.16personalities.com/ja" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline ml-1">診断はこちら</a>
+                  </p>
+                </div>
+
+                {/* Phase 60: AI応答スタイル */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">AI応答スタイル</label>
+                  <div className="space-y-2">
+                    {AI_RESPONSE_STYLES.map(style => (
+                      <label
+                        key={style.value}
+                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          profile.aiResponseStyle === style.value
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="aiResponseStyle"
+                          value={style.value}
+                          checked={profile.aiResponseStyle === style.value}
+                          onChange={(e) => setProfile({ ...profile, aiResponseStyle: e.target.value })}
+                          className="text-blue-600"
+                        />
+                        <div>
+                          <span className="text-sm font-medium text-slate-900">{style.label}</span>
+                          <p className="text-xs text-slate-500">{style.description}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5">タイムゾーン</label>
                   <select
@@ -644,7 +743,9 @@ export default function SettingsPage() {
             </Card>
           )}
 
+          {/* ============================================ */}
           {/* 通知設定タブ */}
+          {/* ============================================ */}
           {activeTab === 'notifications' && (
             <Card variant="outlined" padding="lg" className="max-w-2xl">
               <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -662,11 +763,12 @@ export default function SettingsPage() {
           {/* Phase 30b: 初回セットアップタブ */}
           {activeTab === 'setup' && (
             <Card variant="outlined" padding="lg" className="max-w-2xl">
+              <FeatureGuide>
+                <p className="font-medium mb-1">初回セットアップ</p>
+                <p>自社の情報、チームメンバー、プロジェクトを一括で登録できます。
+                セットアップ完了後は、組織ページやコンタクトページからメンバーの追加・管理ができます。</p>
+              </FeatureGuide>
               <div className="space-y-5">
-                <p className="text-sm text-slate-700">
-                  自社の情報、チームメンバー、プロジェクトを一括で登録できます。
-                  初めてNodeMapを使う方はこちらからセットアップを開始してください。
-                </p>
                 <Button
                   onClick={() => setShowSetupWizard(true)}
                   variant="primary"

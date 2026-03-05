@@ -343,16 +343,21 @@ export default function ProjectTypeManager() {
                     />
                   ) : (
                     <div className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-slate-50 group">
-                      <div className="flex items-center gap-3 text-sm">
-                        <span className="text-slate-700">{tmpl.title}</span>
-                        {tmpl.estimatedHours && (
-                          <span className="text-xs text-slate-400">
-                            {tmpl.estimatedHours}h
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-slate-700">{tmpl.title}</span>
+                          {tmpl.estimatedHours && (
+                            <span className="text-xs text-slate-400">
+                              {tmpl.estimatedHours}h
+                            </span>
+                          )}
+                          <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                            {formatRecurrence(tmpl.recurrenceType, tmpl.recurrenceDay)}
                           </span>
+                        </div>
+                        {tmpl.description && (
+                          <p className="text-xs text-slate-400 mt-0.5 truncate">{tmpl.description}</p>
                         )}
-                        <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                          {formatRecurrence(tmpl.recurrenceType, tmpl.recurrenceDay)}
-                        </span>
                       </div>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
@@ -486,6 +491,13 @@ function TemplateFormRow({
           className="w-20 px-2 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
+      <textarea
+        value={form.description}
+        onChange={(e) => onChange({ ...form, description: e.target.value })}
+        placeholder="説明（AI会話でコンテキストとして活用されます）"
+        rows={2}
+        className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+      />
       <div className="flex gap-2">
         <select
           value={form.recurrenceType}

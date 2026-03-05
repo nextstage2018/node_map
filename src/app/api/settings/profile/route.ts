@@ -57,6 +57,8 @@ export async function GET() {
         language: metadata.language || 'ja',
         avatarUrl: metadata.avatar_url || null,
         emailSignature: metadata.email_signature || '',
+        personalityType: metadata.personality_type || '',
+        aiResponseStyle: metadata.ai_response_style || 'normal',
       },
     });
   } catch (error) {
@@ -73,7 +75,7 @@ export async function PUT(req: Request) {
   try {
     const userId = await getServerUserId();
     const body = await req.json();
-    const { displayName, timezone, language, avatarUrl, emailSignature } = body;
+    const { displayName, timezone, language, avatarUrl, emailSignature, personalityType, aiResponseStyle } = body;
 
     // デモモード
     if (userId === 'demo-user-001' || !supabaseUrl || !supabaseAnonKey) {
@@ -83,6 +85,8 @@ export async function PUT(req: Request) {
       if (language !== undefined) demoProfiles[userId].language = language;
       if (avatarUrl !== undefined) demoProfiles[userId].avatarUrl = avatarUrl;
       if (emailSignature !== undefined) demoProfiles[userId].emailSignature = emailSignature;
+      if (personalityType !== undefined) demoProfiles[userId].personalityType = personalityType;
+      if (aiResponseStyle !== undefined) demoProfiles[userId].aiResponseStyle = aiResponseStyle;
 
       return NextResponse.json({
         success: true,
@@ -100,6 +104,8 @@ export async function PUT(req: Request) {
     if (language !== undefined) updateData.language = language;
     if (avatarUrl !== undefined) updateData.avatar_url = avatarUrl;
     if (emailSignature !== undefined) updateData.email_signature = emailSignature;
+    if (personalityType !== undefined) updateData.personality_type = personalityType;
+    if (aiResponseStyle !== undefined) updateData.ai_response_style = aiResponseStyle;
 
     const { data, error } = await client.auth.updateUser({
       data: updateData,
@@ -124,6 +130,8 @@ export async function PUT(req: Request) {
         language: metadata.language || 'ja',
         avatarUrl: metadata.avatar_url || null,
         emailSignature: metadata.email_signature || '',
+        personalityType: metadata.personality_type || '',
+        aiResponseStyle: metadata.ai_response_style || 'normal',
       },
     });
   } catch (error) {
