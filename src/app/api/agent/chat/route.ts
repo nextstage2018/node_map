@@ -2444,7 +2444,7 @@ function priorityLabel(priority: string): string {
 // ========================================
 // システムプロンプト
 // ========================================
-function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boolean): string {
+function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boolean, personalizedContext?: string): string {
   const today = new Date().toLocaleDateString('ja-JP', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'long',
   });
@@ -2545,7 +2545,8 @@ ${intent === 'calendar'
 ${today}
 
 ## ユーザーのデータ
-${contextSummary || '（データなし）'}`;
+${contextSummary || '（データなし）'}
+${personalizedContext || ''}`;
 }
 
 // ========================================
@@ -2605,8 +2606,17 @@ export async function POST(request: NextRequest) {
     );
     conversationHistory.push({ role: 'user' as const, content: message });
 
+    // Phase 61: パーソナライズコンテキスト取得
+    let personalizedCtx = '';
+    try {
+      const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+      personalizedCtx = await buildPersonalizedContext(userId);
+    } catch (e) {
+      console.error('[Secretary Chat] パーソナライズ取得エラー:', e);
+    }
+
     // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(contextText, intent, cards.length > 0);
+    const systemPrompt = buildSystemPrompt(contextText, intent, cards.length > 0, personalizedCtx);
 
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });

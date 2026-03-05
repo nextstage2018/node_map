@@ -163,6 +163,19 @@ ${context.recentMessages.join('\n')}`;
       systemPrompt += writingStylePrompt;
     }
 
+    // Phase 61: パーソナライズコンテキスト注入
+    if (userId) {
+      try {
+        const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+        const personalizedCtx = await buildPersonalizedContext(userId);
+        if (personalizedCtx) {
+          systemPrompt += personalizedCtx;
+        }
+      } catch (e) {
+        console.error('[ReplyDraft] パーソナライズコンテキスト取得エラー:', e);
+      }
+    }
+
     // --- ユーザープロンプト ---
     let userPrompt = `以下のメッセージに対する返信を下書きしてください。
 
@@ -358,6 +371,7 @@ function getDemoThreadSummary(subject: string, threadMessages: ThreadMessage[]):
  * タスクAI会話に渡すプロジェクト外周コンテキスト
  */
 export interface TaskChatContext {
+  personalizedContext?: string;
   projectName?: string;
   organizationName?: string;
   organizationMemo?: string;
@@ -532,7 +546,8 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
     if (task.seedId) contextParts.push(`- ※このタスクは「種ボックス」のアイデアから生まれたものです。種での検討内容が構想メモに反映されています。`);
     if ((task as any).dueDate) contextParts.push(`- 期限: ${(task as any).dueDate}`);
 
-    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}${projectContextStr}`;
+    const personalizedStr = projectContext?.personalizedContext || '';
+    const systemPrompt = `${phaseInstructions[phase]}\n\n${contextParts.join('\n')}${projectContextStr}${personalizedStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
     const messages = [

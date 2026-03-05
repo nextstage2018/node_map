@@ -116,3 +116,31 @@ export async function getServerUserEmail(): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Phase 61: サーバーサイドでログインユーザーのAIプロフィール情報を取得する
+ */
+export async function getServerUserProfile(): Promise<{
+  personalityType?: string;
+  aiResponseStyle?: string;
+} | null> {
+  if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
+    return null;
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const supabase = createRouteHandlerClient({ cookies: () => cookieStore });
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error || !user) return null;
+
+    const meta = user.user_metadata || {};
+    return {
+      personalityType: meta.personality_type || undefined,
+      aiResponseStyle: meta.ai_response_style || undefined,
+    };
+  } catch {
+    return null;
+  }
+}

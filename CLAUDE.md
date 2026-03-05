@@ -1995,3 +1995,78 @@ SUPABASE_SERVICE_ROLE_KEY=
 ANTHROPIC_API_KEY=
 CRON_SECRET=
 ```
+
+---
+
+## Phase 61 実装内容（AI会話パーソナライズ）
+
+### 概要
+全AIエンドポイントにユーザー個別のパーソナライズコンテキストを注入。①プロフィール（性格タイプ・応答スタイル）、②社内相談結果、③思考傾向分析＋オーナー方針の3つを統合。
+
+### DBマイグレーション（要Supabase実行）
+```sql
+-- 062_phase61_thinking_tendencies.sql
+CREATE TABLE IF NOT EXISTS user_thinking_tendencies (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  analysis_date DATE NOT NULL,
+  tendency_summary TEXT,
+  thinking_patterns TEXT[],
+  decision_style TEXT,
+  risk_tolerance TEXT,
+  collaboration_style TEXT,
+  owner_policy_text TEXT,
+  ai_analysis_raw JSONB,
+  source_stats JSONB,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(user_id, analysis_date)
+);
+```
+
+### 新規ファイル
+- `supabase/migrations/062_phase61_thinking_tendencies.sql` — 思考傾向テーブル
+- `src/services/ai/personalizedContext.service.ts` — パーソナライズコンテキスト構築（16性格タイプ＋3応答スタイル＋思考傾向＋オーナー方針）
+- `src/services/analytics/thinkingTendency.service.ts` — 思考傾向分析エンジン（5データソース並列収集→Claude分析）
+- `src/app/api/cron/analyze-thinking-tendency/route.ts` — 日次Cron（毎日4:00）
+- `src/app/api/settings/thinking-tendency/route.ts` — 傾向取得(GET)/手動分析(POST)/方針編集(PUT)
+
+### 変更ファイル
+- `src/lib/serverAuth.ts` — getServerUserProfile() 追加
+- `src/services/ai/aiClient.service.ts` — generateReplyDraft＋generateTaskChat にパーソナライズ注入
+- `src/app/api/tasks/chat/route.ts` — パーソナライズ＋社内相談コンテキスト②
+- `src/app/api/agent/chat/route.ts` — buildSystemPromptにpersonalizedContext引数追加
+- `src/app/api/seeds/chat/route.ts` — systemPromptにパーソナライズ追加
+- `src/app/api/consultations/route.ts` — AI返信生成にパーソナライズ追加
+- `src/app/api/ai/structure-job/route.ts` — schedule handlerにパーソナライズ追加
+- `src/app/api/memos/[id]/convert/route.ts` — メモ→タスク変換にパーソナライズ追加
+- `src/app/api/thought-map/replay/route.ts` — 思考リプレイにパーソナライズ追加
+- `vercel.json` — analyze-thinking-tendency Cron追加
+
+### パーソナライズ注入の仕組み
+```
+buildPersonalizedContext(userId)
+  → 1. プロフィール: auth.admin.getUserById → personality_type / ai_response_style
+  → 2. 思考傾向: user_thinking_tendencies → tendency_summary（最新1件）
+  → 3. オーナー方針: ENV_TOKEN_OWNER_ID != userId → owner_policy_text 注入
+  → 返り値: "## パーソナライズコンテキスト..." テキスト（空なら空文字列）
+```
+
+### 注入対象エンドポイント（10箇所）
+| エンドポイント | 注入方式 |
+|---|---|
+| generateReplyDraft | userId→systemPrompt末尾 |
+| generateTaskChat | TaskChatContext.personalizedContext→systemPrompt末尾 |
+| /api/tasks/chat | chatContext + 相談コンテキスト② |
+| /api/agent/chat | buildSystemPrompt第4引数 |
+| /api/seeds/chat | systemPrompt末尾 |
+| /api/consultations | system末尾 |
+| /api/ai/structure-job | schedule handler system末尾 |
+| /api/memos/[id]/convert | system末尾 |
+| /api/thought-map/replay | systemPrompt末尾 |
+| /api/cron/analyze-thinking-tendency | 分析実行（注入元データ生成） |
+
+### 重要な実装ノート
+- **auth.admin.getUserById**: personalizedContext.service.tsでSUPABASE_SERVICE_ROLE_KEYを使用
+- **ENV_TOKEN_OWNER_ID**: 既存環境変数を再利用（オーナー識別）
+- **エラー許容**: パーソナライズ取得失敗は全箇所でcatch→続行
+- **データ不足時フォールバック**: ノード3個未満かつ会話5件未満は分析スキップ

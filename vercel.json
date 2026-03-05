@@ -45,6 +45,10 @@
     {
       "path": "/api/cron/sync-calendar-events",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/analyze-thinking-tendency",
+      "schedule": "0 4 * * *"
     }
   ]
 }

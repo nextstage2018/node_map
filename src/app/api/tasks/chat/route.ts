@@ -6,6 +6,7 @@ import { EdgeService } from '@/services/nodemap/edgeClient.service';
 import { ClusterService } from '@/services/nodemap/clusterClient.service';
 import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { TaskAiChatRequest, NodeData } from '@/lib/types';
+import { buildPersonalizedContext } from '@/services/ai/personalizedContext.service';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
@@ -73,6 +74,40 @@ export async function POST(request: NextRequest) {
       } catch (ctxErr) {
         console.error('[Tasks Chat] コンテキスト取得エラー（続行）:', ctxErr);
       }
+    }
+
+    // Phase 61: パーソナライズコンテキスト取得
+    try {
+      const personalizedCtx = await buildPersonalizedContext(userId);
+      if (personalizedCtx) {
+        chatContext.personalizedContext = personalizedCtx;
+      }
+    } catch (e) {
+      console.error('[Tasks Chat] パーソナライズ取得エラー（続行）:', e);
+    }
+
+    // Phase 61②: 関連する社内相談コンテキストを取得
+    try {
+      const sb2 = getServerSupabase() || getSupabase();
+      if (sb2 && task.projectId) {
+        // タスクに関連するジョブ経由の相談結果を取得
+        const { data: relatedConsultations } = await sb2
+          .from('consultations')
+          .select('question, answer, thread_summary, created_at')
+          .eq('status', 'answered')
+          .not('answer', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (relatedConsultations && relatedConsultations.length > 0) {
+          const consultTexts = relatedConsultations.map((c: any) =>
+            `Q: ${c.question}\nA: ${c.answer}`
+          ).join('\n---\n');
+          chatContext.personalizedContext = (chatContext.personalizedContext || '') +
+            `\n\n## 関連する社内相談結果（参考情報）\n${consultTexts}`;
+        }
+      }
+    } catch (e) {
+      console.error('[Tasks Chat] 相談コンテキスト取得エラー（続行）:', e);
     }
 
     // AI応答を生成（Phase 17: タグ分類も同時実行）

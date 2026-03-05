@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
 
-    const systemPrompt = `あなたは「思考リプレイ」のガイドです。
+    let systemPrompt = `あなたは「思考リプレイ」のガイドです。
 以下は、あるユーザーが過去に取り組んだタスクの記録です。
 この記録を元に、ユーザーの過去の思考プロセスや意思決定について質問に答えてください。
 
@@ -114,6 +114,15 @@ ${taskContext}
       }
     }
     messages.push({ role: 'user', content: message });
+
+    // Phase 61: パーソナライズコンテキスト注入
+    try {
+      const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+      const personalizedCtx = await buildPersonalizedContext(viewerId);
+      if (personalizedCtx) {
+        systemPrompt += personalizedCtx;
+      }
+    } catch { /* ignore */ }
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-5-20250929',

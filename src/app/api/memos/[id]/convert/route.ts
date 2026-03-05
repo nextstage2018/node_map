@@ -61,6 +61,14 @@ export async function POST(
       try {
         const { default: Anthropic } = await import('@anthropic-ai/sdk');
         const client = new Anthropic({ apiKey });
+
+        // Phase 61: パーソナライズコンテキスト注入
+        let personalizedCtx = '';
+        try {
+          const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+          personalizedCtx = await buildPersonalizedContext(userId);
+        } catch { /* ignore */ }
+
         const response = await client.messages.create({
           model: 'claude-sonnet-4-5-20250929',
           max_tokens: 600,
@@ -78,7 +86,7 @@ export async function POST(
 - titleは動詞で始める具体的なアクション（例: 「○○を調査する」「△△の提案書を作成する」）
 - descriptionにはメモの核心とAI会話で深掘りした内容を自然にまとめる
 - priorityはメモの内容から判断（緊急性・重要性が高ければhigh）
-- 日本語で出力`,
+- 日本語で出力${personalizedCtx}`,
           messages: [{
             role: 'user',
             content: `メモ:\n${memo.content}${conversationText ? `\n\nAI会話:\n${conversationText}` : ''}`,

@@ -111,6 +111,13 @@ async function handleSchedule(
     writingStylePrompt = await getUserWritingStyle(userId, channel || 'email');
   } catch { /* ignore */ }
 
+  // Phase 61: パーソナライズコンテキスト取得
+  let personalizedPrompt = '';
+  try {
+    const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+    personalizedPrompt = await buildPersonalizedContext(userId);
+  } catch { /* ignore */ }
+
   // 3. 空き日程テキストをコード側で組み立て（AIに絞り込ませない）
   const slotsListText = freeSlots.length > 0
     ? freeSlots.map(s => `・${s}`).join('\n')
@@ -129,7 +136,7 @@ async function handleSchedule(
 
 返信者の名前は「${userName || '（名前）'}」です。
 ${isEmail && emailSignature ? '署名は別途自動付与されるので、締め文に名前や署名を含めないでください。' : !isEmail ? '末尾に名前や署名を書かないでください（チャットツールのため不要です）。' : ''}
-${writingStylePrompt ? '\n【重要】以下のユーザーの過去の送信スタイルに合わせた文体で書いてください。' + writingStylePrompt : ''}
+${writingStylePrompt ? '\n【重要】以下のユーザーの過去の送信スタイルに合わせた文体で書いてください。' + writingStylePrompt : ''}${personalizedPrompt}
 
 必ず以下のJSON形式で返してください:
 {

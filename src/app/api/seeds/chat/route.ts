@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     conversationHistory.push({ role: 'user' as const, content: message });
 
     // Phase 31: 種の内容をシステムプロンプトに含めてClaude APIで応答
-    const systemPrompt = `あなたはアイデア整理の専門家です。ユーザーが記録した「種（アイデアのメモ）」を一緒に深掘りし、具体的なアクションに落とし込む手助けをします。
+    let systemPrompt = `あなたはアイデア整理の専門家です。ユーザーが記録した「種（アイデアのメモ）」を一緒に深掘りし、具体的なアクションに落とし込む手助けをします。
 
 以下のルールに従ってください:
 - 日本語で簡潔に回答する
@@ -123,6 +123,17 @@ export async function POST(request: NextRequest) {
 - 回答は200文字以内を目安にする
 
 種の内容: "${body.seedContent || '（未取得）'}"`;
+
+    // Phase 61: パーソナライズコンテキスト注入
+    try {
+      const { buildPersonalizedContext } = await import('@/services/ai/personalizedContext.service');
+      const personalizedCtx = await buildPersonalizedContext(userId);
+      if (personalizedCtx) {
+        systemPrompt += personalizedCtx;
+      }
+    } catch (e) {
+      console.error('[Seeds Chat] パーソナライズ取得エラー:', e);
+    }
 
     const { default: Anthropic } = await import('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey });
