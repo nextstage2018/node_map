@@ -1,6 +1,6 @@
 # NodeMap データフロー・システム構成図
 
-最終更新: 2026-03-02
+最終更新: 2026-03-05
 
 ---
 
@@ -74,6 +74,7 @@ NodeMapは「情報を受け取り → 整理し → 活用する」ビジネス
 | テーブル | 役割 | 主なカラム |
 |---|---|---|
 | user_service_tokens | 外部サービスのOAuthトークン | user_id, service_name(gmail/slack/chatwork), access_token, refresh_token, scope |
+| user_thinking_tendencies | ユーザー思考傾向分析 | user_id, analysis_date, tendency_summary, thinking_patterns(TEXT[]), decision_style, risk_tolerance, owner_policy_text |
 
 ---
 
@@ -342,6 +343,8 @@ findFreeSlots()（営業時間9-18、土日除外で空き枠を計算）
 | sync-business-events | 毎日1:00 | メッセージ→ビジネスイベント | inbox_messages | business_events |
 | summarize-business-log | 毎週月曜2:00 | AI週間活動要約 | business_events | business_events（要約） |
 | cluster-knowledge-weekly | 毎週月曜2:30 | ナレッジAIクラスタリング | knowledge_master_entries | knowledge_clustering_proposals |
+| compute-patterns | 毎日3:00 | コンタクトパターン分析 | inbox_messages + contact_persons | contact_patterns |
+| analyze-thinking-tendency | 毎日4:00 | ユーザー思考傾向AI分析 | thought_task_nodes + task_conversations + thought_snapshots | user_thinking_tendencies |
 
 ---
 
@@ -367,6 +370,12 @@ findFreeSlots()（営業時間9-18、土日除外で空き枠を計算）
 | knowledge_structuring | ナレッジ＋提案/整理 | KnowledgeProposalCard | knowledge_clustering_proposals |
 | thought_map | 思考、マップ | NavigateCard | （遷移のみ） |
 | business_log | ログ、ビジネス | NavigateCard | （遷移のみ） |
+| create_contact | コンタクト＋登録/追加 | ContactFormCard | contact_persons |
+| create_task | タスクを作成、新しいタスク | TaskFormCard | tasks |
+| task_progress | タスクを進めたい | TaskProgressCard | tasks + task_conversations |
+| create_calendar_event | 予定＋追加/登録 | （テキスト応答） | Google Calendar |
+| create_drive_folder | フォルダ＋作成 | （テキスト応答） | Google Drive + projects |
+| consultations | 相談、未回答 | ConsultationCard | consultations + jobs |
 
 ---
 
