@@ -750,9 +750,13 @@ function InboxActionButtons({ message }: { message: UnifiedMessage }) {
 function MessageInlineActions({
   message,
   onReply,
+  onScheduleReply,
+  compact,
 }: {
   message: UnifiedMessage;
   onReply: () => void;
+  onScheduleReply?: () => void;
+  compact?: boolean; // メール下部チップ用（余白調整）
 }) {
   const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -761,9 +765,6 @@ function MessageInlineActions({
   const [consultTarget, setConsultTarget] = useState('');
   const [consultTargetId, setConsultTargetId] = useState('');
   const [internalMembers, setInternalMembers] = useState<{id: string; name: string; linkedUserId?: string}[]>([]);
-
-  const isGroupChannel = (message.channel === 'slack' && !!message.metadata?.slackChannel)
-    || (message.channel === 'chatwork' && !!message.metadata?.chatworkRoomId);
 
   const fetchInternalMembers = useCallback(async () => {
     try {
@@ -782,42 +783,26 @@ function MessageInlineActions({
     } catch { /* ignore */ }
   }, []);
 
-  const createJob = async (jobType: string) => {
+  // Drive保存: 即時実行（ジョブ不要）
+  const saveToDrive = async () => {
     setIsCreating(true);
-    const targetName = message.from?.name || '';
-    const targetAddress = message.from?.address || '';
     try {
-      const aiRes = await fetch('/api/ai/structure-job', {
+      const res = await fetch('/api/drive/store-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          channel: message.channel, from: message.from?.name || '',
-          subject: message.subject || '', body: message.body,
-          jobType, messageId: message.id, isGroupChannel,
-          senderAddress: message.from?.address || '',
-        }),
-      });
-      const aiJson = await aiRes.json();
-      const structured = aiJson.success ? aiJson.data : {
-        title: message.subject || message.body.slice(0, 30), description: message.body.slice(0, 100),
-      };
-      const res = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: structured.title, description: structured.description,
-          type: jobType, sourceMessageId: message.id, sourceChannel: message.channel,
-          aiDraft: structured.aiDraft, replyToMessageId: message.id,
-          targetAddress, targetName, executionMetadata: message.metadata || {},
+          messageId: message.id,
+          channel: message.channel,
+          subject: message.subject || '',
+          body: message.body?.slice(0, 200),
+          fromName: message.from?.name || '',
+          fromAddress: message.from?.address || '',
         }),
       });
       const json = await res.json();
-      const labels: Record<string, string> = {
-        schedule: '📅 日程調整ジョブを作成', save_to_drive: '📁 Driveに保存', todo: '📌 後でやるに追加',
-      };
       setResult(json.success
-        ? { type: 'success', text: labels[jobType] || 'ジョブに追加' }
-        : { type: 'error', text: json.error || '作成に失敗' });
+        ? { type: 'success', text: '📁 Driveに保存しました' }
+        : { type: 'error', text: json.error || '保存に失敗' });
     } catch {
       setResult({ type: 'error', text: '通信エラー' });
     } finally {
@@ -826,6 +811,7 @@ function MessageInlineActions({
     }
   };
 
+  // タスク化: 即時実行
   const createTask = async () => {
     setIsCreating(true);
     try {
@@ -864,6 +850,7 @@ function MessageInlineActions({
     }
   };
 
+  // 社内相談: ジョブ経由（非同期で回答待ちが必要）
   const handleConsultSubmit = async () => {
     if (!consultQuestion.trim()) return;
     setShowConsultForm(false);
@@ -908,7 +895,7 @@ function MessageInlineActions({
 
   if (result) {
     return (
-      <div className="mt-2">
+      <div className={compact ? '' : 'mt-2'}>
         <span className={cn('inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full',
           result.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'
         )}>
@@ -919,19 +906,18 @@ function MessageInlineActions({
   }
 
   if (isCreating) {
-    return <div className="mt-2"><span className="text-xs text-slate-400 animate-pulse">⏳ 処理中...</span></div>;
+    return <div className={compact ? '' : 'mt-2'}><span className="text-xs text-slate-400 animate-pulse">⏳ 処理中...</span></div>;
   }
 
   const btnCls = "text-[11px] px-2.5 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors whitespace-nowrap";
 
   return (
-    <div className="mt-2 space-y-2">
+    <div className={cn(compact ? 'space-y-2' : 'mt-2 space-y-2')}>
       <div className="flex flex-wrap gap-1">
         <button onClick={onReply} className={btnCls}>↩ 返信</button>
-        <button onClick={() => createJob('schedule')} className={btnCls}>📅 日程調整</button>
+        <button onClick={onScheduleReply || onReply} className={btnCls}>📅 日程調整</button>
         <button onClick={() => { fetchInternalMembers(); setShowConsultForm(true); }} className={btnCls}>💬 相談</button>
-        <button onClick={() => createJob('save_to_drive')} className={btnCls}>📁 Drive</button>
-        <button onClick={() => createJob('todo')} className={btnCls}>📌 後で</button>
+        <button onClick={saveToDrive} className={btnCls}>📁 Drive</button>
         <button onClick={createTask} className={btnCls}>📋 タスク</button>
       </div>
       {showConsultForm && (
@@ -1290,6 +1276,7 @@ function GroupDetail({
   const latestMessage = group.latestMessage;
   const groupEndRef = useRef<HTMLDivElement>(null);
   const [selectedMsgId, setSelectedMsgId] = useState<string | null>(null);
+  const [replyDraftHint, setReplyDraftHint] = useState<string | undefined>(undefined);
 
   // 最新メッセージに自動スクロール
   useEffect(() => {
@@ -1301,9 +1288,17 @@ function GroupDetail({
   // グループ変更時に選択リセット
   useEffect(() => {
     setSelectedMsgId(null);
+    setReplyDraftHint(undefined);
   }, [group.groupKey]);
 
   const handleReplyFromBubble = () => {
+    setReplyDraftHint(undefined);
+    onToggleReply();
+    setSelectedMsgId(null);
+  };
+
+  const handleScheduleReplyFromBubble = () => {
+    setReplyDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。');
     onToggleReply();
     setSelectedMsgId(null);
   };
@@ -1349,6 +1344,7 @@ function GroupDetail({
             isSelected={selectedMsgId === msg.id}
             onSelect={() => setSelectedMsgId(selectedMsgId === msg.id ? null : msg.id)}
             onReply={handleReplyFromBubble}
+            onScheduleReply={handleScheduleReplyFromBubble}
           />
         ))}
         <div ref={groupEndRef} />
@@ -1357,7 +1353,7 @@ function GroupDetail({
       {/* 返信フォーム（バブルから「返信」選択時のみ表示） */}
       {showReply && (
         <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <ReplyForm message={latestMessage} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
+          <ReplyForm message={latestMessage} onClose={() => { onCloseReply(); setReplyDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={replyDraftHint} />
         </div>
       )}
     </div>
@@ -1372,11 +1368,13 @@ function ConversationBubble({
   isSelected,
   onSelect,
   onReply,
+  onScheduleReply,
 }: {
   message: UnifiedMessage;
   isSelected?: boolean;
   onSelect?: () => void;
   onReply?: () => void;
+  onScheduleReply?: () => void;
 }) {
   // Phase 38: direction フィールドまたは名前で送受信を判定
   const isOwn = message.direction === 'sent' || message.from.name === 'あなた' || message.from.name === 'Me';
@@ -1422,7 +1420,7 @@ function ConversationBubble({
         </div>
         {/* 選択時：インラインアクション */}
         {isSelected && !isOwn && onReply && (
-          <MessageInlineActions message={message} onReply={onReply} />
+          <MessageInlineActions message={message} onReply={onReply} onScheduleReply={onScheduleReply} />
         )}
       </div>
     </div>
@@ -1455,6 +1453,7 @@ function EmailThreadDetail({
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [summaryError, setSummaryError] = useState(false);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const [emailDraftHint, setEmailDraftHint] = useState<string | undefined>(undefined);
 
   const fetchSummary = useCallback(async () => {
     if (threadMessages.length < 2) return;
@@ -1555,9 +1554,6 @@ function EmailThreadDetail({
       {onBlock && <SpamWarningBanner message={message} onBlock={onBlock} />}
       {blockBanner}
 
-      {/* AIタスク化提案 */}
-      <AiTaskSuggestionBanner message={message} />
-
       {/* 添付ファイル（メールスレッド） */}
       {message.attachments && message.attachments.length > 0 && (
         <div className="px-6 py-3 border-t border-slate-200">
@@ -1565,55 +1561,52 @@ function EmailThreadDetail({
         </div>
       )}
 
-      {/* 会話一覧（古い順・相手メッセージクリックでアクション表示） */}
+      {/* 会話一覧（古い順） */}
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {threadMessages.map((msg, idx) => {
-          const isLast = idx === threadMessages.length - 1;
-          return (
-            <div key={msg.id}>
-              <div className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}>
-                <div
-                  className={cn(
-                    'max-w-[85%] rounded-2xl px-4 py-3 transition-all',
-                    msg.isOwn
-                      ? 'bg-blue-600 text-white rounded-br-sm'
-                      : 'bg-slate-100 text-slate-800 rounded-bl-sm',
-                    !msg.isOwn && isLast && 'ring-2 ring-blue-400'
-                  )}
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={cn('text-xs font-semibold', msg.isOwn ? 'text-blue-100' : 'text-slate-500')}>
-                      {msg.isOwn ? 'あなた' : msg.from.name}
-                    </span>
-                    <span className={cn('text-[10px]', msg.isOwn ? 'text-blue-200' : 'text-slate-400')}>
-                      {msg.timestamp}
-                    </span>
-                  </div>
-                  {message.channel === 'chatwork' ? (
-                    <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
-                  ) : (
-                    <p className="whitespace-pre-wrap leading-relaxed text-[13px]">{msg.body}</p>
-                  )}
+        {threadMessages.map((msg) => (
+          <div key={msg.id}>
+            <div className={cn('flex', msg.isOwn ? 'justify-end' : 'justify-start')}>
+              <div
+                className={cn(
+                  'max-w-[85%] rounded-2xl px-4 py-3',
+                  msg.isOwn
+                    ? 'bg-blue-600 text-white rounded-br-sm'
+                    : 'bg-slate-100 text-slate-800 rounded-bl-sm',
+                )}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={cn('text-xs font-semibold', msg.isOwn ? 'text-blue-100' : 'text-slate-500')}>
+                    {msg.isOwn ? 'あなた' : msg.from.name}
+                  </span>
+                  <span className={cn('text-[10px]', msg.isOwn ? 'text-blue-200' : 'text-slate-400')}>
+                    {msg.timestamp}
+                  </span>
                 </div>
+                {message.channel === 'chatwork' ? (
+                  <ChatworkBody body={msg.body} className="text-[13px]" isOwn={msg.isOwn} />
+                ) : (
+                  <p className="whitespace-pre-wrap leading-relaxed text-[13px]">{msg.body}</p>
+                )}
               </div>
-              {/* 最後の相手メッセージにアクション表示 */}
-              {!msg.isOwn && isLast && (
-                <div className="ml-0 mt-0">
-                  <MessageInlineActions message={message} onReply={onToggleReply} />
-                </div>
-              )}
             </div>
-          );
-        })}
+          </div>
+        ))}
         <div ref={threadEndRef} />
       </div>
 
-      {/* 返信フォーム（アクションから「返信」選択時のみ表示） */}
-      {showReply && (
-        <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
-        </div>
-      )}
+      {/* メール下部: 固定アクションチップ + 返信フォーム */}
+      <div className="border-t border-slate-200 bg-slate-50">
+        {!showReply && message.direction !== 'sent' && (
+          <div className="px-4 py-3">
+            <MessageInlineActions message={message} onReply={() => { setEmailDraftHint(undefined); onToggleReply(); }} onScheduleReply={() => { setEmailDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。'); onToggleReply(); }} compact />
+          </div>
+        )}
+        {showReply && (
+          <div className="p-4">
+            <ReplyForm message={message} onClose={() => { onCloseReply(); setEmailDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={emailDraftHint} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1645,6 +1638,8 @@ function SingleMessageDetail({
 }) {
   const hasThread = message.threadMessages && message.threadMessages.length > 0;
   const singleThreadEndRef = useRef<HTMLDivElement>(null);
+  const [singleDraftHint, setSingleDraftHint] = useState<string | undefined>(undefined);
+  const isOwnMessage = message.from.name === 'あなた' || message.from.name === 'Me' || message.direction === 'sent';
 
   // スレッド履歴の最新メッセージに自動スクロール
   useEffect(() => {
@@ -1698,7 +1693,7 @@ function SingleMessageDetail({
       {/* Phase 51a: タスク化済みバックリンク */}
       <TaskLinkedBadge messageId={message.id} />
 
-      {/* 本文（クリックでアクション表示） */}
+      {/* 本文 */}
       <div className="flex-1 overflow-y-auto p-6">
         {message.channel === 'chatwork' ? (
           <ChatworkBody body={message.body} />
@@ -1712,13 +1707,6 @@ function SingleMessageDetail({
         {/* 添付ファイル */}
         {message.attachments && message.attachments.length > 0 && (
           <AttachmentList attachments={message.attachments} />
-        )}
-
-        {/* インラインアクション（自分のメッセージでなければ表示） */}
-        {message.from.name !== 'あなた' && message.from.name !== 'Me' && message.direction !== 'sent' && (
-          <div className="mt-4 pt-4 border-t border-slate-200">
-            <MessageInlineActions message={message} onReply={onToggleReply} />
-          </div>
         )}
       </div>
 
@@ -1758,12 +1746,19 @@ function SingleMessageDetail({
         </div>
       )}
 
-      {/* 返信フォーム（アクションから「返信」選択時のみ表示） */}
-      {showReply && (
-        <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <ReplyForm message={message} onClose={onCloseReply} onSentMessage={onSentMessage} autoAiDraft />
-        </div>
-      )}
+      {/* メール下部: 固定アクションチップ + 返信フォーム */}
+      <div className="border-t border-slate-200 bg-slate-50">
+        {!showReply && !isOwnMessage && (
+          <div className="px-4 py-3">
+            <MessageInlineActions message={message} onReply={() => { setSingleDraftHint(undefined); onToggleReply(); }} onScheduleReply={() => { setSingleDraftHint('日程調整の返信を作成してください。相手の都合を確認し、候補日時を提案する内容にしてください。'); onToggleReply(); }} compact />
+          </div>
+        )}
+        {showReply && (
+          <div className="p-4">
+            <ReplyForm message={message} onClose={() => { onCloseReply(); setSingleDraftHint(undefined); }} onSentMessage={onSentMessage} autoAiDraft draftHint={singleDraftHint} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

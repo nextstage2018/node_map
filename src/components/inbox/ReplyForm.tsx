@@ -10,6 +10,7 @@ interface ReplyFormProps {
   onClose: () => void;
   onSentMessage?: (msg: UnifiedMessage) => void;
   autoAiDraft?: boolean;
+  draftHint?: string; // AI下書き生成時の追加指示（例: '日程調整の返信を作成'）
 }
 
 interface SuggestItem {
@@ -239,7 +240,7 @@ function RecipientInput({
  * Slack: メンション追加可能
  * Chatwork: 宛先指定可能
  */
-export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft = false }: ReplyFormProps) {
+export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft = false, draftHint }: ReplyFormProps) {
   const [replyText, setReplyText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isDrafting, setIsDrafting] = useState(false);
@@ -319,7 +320,7 @@ export default function ReplyForm({ message, onClose, onSentMessage, autoAiDraft
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           originalMessage: message,
-          instruction: instruction || undefined,
+          instruction: instruction || draftHint || undefined,
         }),
       });
       const data = await res.json();
