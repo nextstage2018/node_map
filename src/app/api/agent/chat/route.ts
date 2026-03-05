@@ -101,6 +101,9 @@ type Intent =
   | 'link_channel'          // Phase A: チャンネル→プロジェクト紐づけ
   | 'task_external_resource' // Phase E: タスクに外部資料を取り込み
   | 'knowledge_nodes'       // Phase F: 期間別ナレッジノード表示
+  | 'settings_change'       // Phase G: 設定変更（メール休眠ON/OFF等）
+  | 'org_projects'          // Phase G: 特定組織のプロジェクト一覧
+  | 'project_tasks'         // Phase G: 特定プロジェクトのタスク一覧
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -143,6 +146,12 @@ function classifyIntent(message: string): Intent {
   // メッセージ
   if (m.includes('メッセージ') || m.includes('メール') || m.includes('新着') || m.includes('受信')) return 'inbox';
   if (m.includes('誰から') || m.includes('連絡')) return 'inbox';
+
+  // Phase G: 特定組織のプロジェクト一覧（「○○組織のプロジェクト」「○○社のプロジェクト」）— projectsより先に判定
+  if ((m.includes('組織') || m.includes('社') || m.includes('会社')) && m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('見せて') || m.includes('見たい') || m.includes('確認') || m.includes('リスト') || m.includes('の'))) return 'org_projects';
+
+  // Phase G: 特定プロジェクトのタスク一覧（「○○プロジェクトのタスク」）— tasksより先に判定
+  if (m.includes('プロジェクト') && (m.includes('タスク') || m.includes('やること'))) return 'project_tasks';
 
   // プロジェクト一覧
   if (m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('リスト') || m.includes('確認') || m.includes('見せて') || m.includes('見たい'))) return 'projects';
@@ -264,6 +273,11 @@ function classifyIntent(message: string): Intent {
 
   // Phase 53c: プロジェクト作成
   if (m.includes('プロジェクト') && (m.includes('作成') || m.includes('追加') || m.includes('新規') || m.includes('新しい') || m.includes('作って') || m.includes('立ち上げ'))) return 'create_project';
+
+  // Phase G: 設定変更（「メール休眠」「設定を変更」「メールをオフ」「通知設定」等）
+  if (m.includes('設定') && (m.includes('変更') || m.includes('変え') || m.includes('切り替え') || m.includes('オン') || m.includes('オフ') || m.includes('有効') || m.includes('無効'))) return 'settings_change';
+  if (m.includes('メール') && (m.includes('休眠') || m.includes('無効') || m.includes('オフ') || m.includes('オン') || m.includes('有効') || m.includes('停止') || m.includes('再開'))) return 'settings_change';
+  if (m.includes('通知') && (m.includes('設定') || m.includes('変更') || m.includes('オフ') || m.includes('オン'))) return 'settings_change';
 
   // Phase A: チャンネル→プロジェクト紐づけ
   if (m.includes('チャンネル') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('リンク') || m.includes('関連付') || m.includes('結び'))) return 'link_channel';
@@ -1121,16 +1135,103 @@ async function fetchDataAndBuildCards(
       }
     }
 
-    // ビジネスログ → NavigateCard
+    // ビジネスログ（Phase G: プロジェクト別の詳細閲覧対応）
     if (intent === 'business_log') {
-      cards.push({
-        type: 'navigate',
-        data: {
-          href: '/business-log',
-          label: 'ビジネスログを開く',
-          description: 'プロジェクトごとの活動履歴を閲覧',
-        },
-      });
+      try {
+        // ユーザーメッセージからプロジェクト名を抽出して特定プロジェクトのログを表示
+        const { data: userProjects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id, organizations(name)')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false });
+
+        let matchedProject: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null } | null = null;
+        if (userProjects) {
+          for (const p of userProjects) {
+            if (userMessage.includes(p.name)) {
+              matchedProject = p;
+              break;
+            }
+          }
+        }
+
+        if (matchedProject) {
+          // 特定プロジェクトのビジネスイベントを取得
+          const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+          const { data: events } = await supabase
+            .from('business_events')
+            .select('id, title, event_type, description, created_at, contact_id, contact_persons(name)')
+            .eq('project_id', matchedProject.id)
+            .eq('user_id', userId)
+            .gte('created_at', thirtyDaysAgo)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          if (events && events.length > 0) {
+            const eventLines = events.map((e: { title: string; event_type: string; created_at: string; contact_persons?: { name: string } | null }) => {
+              const contactName = e.contact_persons && typeof e.contact_persons === 'object' && 'name' in e.contact_persons ? (e.contact_persons as { name: string }).name : '';
+              const dateStr = new Date(e.created_at).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
+              return `- [${dateStr}] ${e.title}（${e.event_type}）${contactName ? ` — ${contactName}` : ''}`;
+            }).join('\n');
+            parts.push(`\n\n【${matchedProject.name} のビジネスログ（直近30日・${events.length}件）】\n${eventLines}`);
+          } else {
+            parts.push(`\n\n【${matchedProject.name} のビジネスログ】\n直近30日間のイベントはありません。`);
+          }
+
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: `/business-log?project=${matchedProject.id}`,
+              label: `${matchedProject.name} のビジネスログ`,
+              description: 'ビジネスログ画面でさらに詳しく確認',
+            },
+          });
+        } else {
+          // プロジェクト指定なし → プロジェクト別サマリー表示
+          if (userProjects && userProjects.length > 0) {
+            const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            const { data: recentEvents } = await supabase
+              .from('business_events')
+              .select('project_id')
+              .eq('user_id', userId)
+              .gte('created_at', sevenDaysAgo);
+
+            const eventCounts: Record<string, number> = {};
+            if (recentEvents) {
+              for (const ev of recentEvents) {
+                if (ev.project_id) {
+                  eventCounts[ev.project_id] = (eventCounts[ev.project_id] || 0) + 1;
+                }
+              }
+            }
+
+            const projectLines = userProjects.slice(0, 10).map((p: { id: string; name: string }) => {
+              const count = eventCounts[p.id] || 0;
+              return `- ${p.name}: ${count}件（7日間）`;
+            }).join('\n');
+            parts.push(`\n\n【プロジェクト別ビジネスログ（7日間）】\n${projectLines}\n\n特定プロジェクトの詳細は「○○のビジネスログ」と聞いてください。`);
+          }
+
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/business-log',
+              label: 'ビジネスログを開く',
+              description: 'プロジェクトごとの活動履歴を閲覧',
+            },
+          });
+        }
+      } catch (blErr) {
+        console.error('[Agent] Business log detail error:', blErr);
+        cards.push({
+          type: 'navigate',
+          data: {
+            href: '/business-log',
+            label: 'ビジネスログを開く',
+            description: 'プロジェクトごとの活動履歴を閲覧',
+          },
+        });
+      }
     }
 
     // カレンダー予定作成
@@ -2094,6 +2195,273 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     }
 
     // ========================================
+    // Phase G: 設定変更（メール休眠ON/OFF等）
+    // ========================================
+    if (intent === 'settings_change') {
+      try {
+        const ml = userMessage.toLowerCase();
+
+        // メール休眠のON/OFF操作
+        if (ml.includes('メール')) {
+          const wantEnable = ml.includes('オン') || ml.includes('有効') || ml.includes('再開') || ml.includes('復帰');
+          const wantDisable = ml.includes('オフ') || ml.includes('無効') || ml.includes('休眠') || ml.includes('停止');
+
+          const currentStatus = EMAIL_ENABLED;
+
+          if (wantDisable) {
+            parts.push(`\n\n【設定: メール機能】\n現在のメール機能: ${currentStatus ? '有効' : '無効（休眠中）'}\n\nメール機能を休眠にするには、環境変数 \`EMAIL_ENABLED=false\` を設定します。\n設定画面から変更できます。`);
+          } else if (wantEnable) {
+            parts.push(`\n\n【設定: メール機能】\n現在のメール機能: ${currentStatus ? '有効' : '無効（休眠中）'}\n\nメール機能を有効にするには、環境変数 \`EMAIL_ENABLED=true\` を設定します。\n設定画面から変更できます。`);
+          } else {
+            parts.push(`\n\n【設定: メール機能】\n現在のステータス: ${currentStatus ? '有効' : '無効（休眠中）'}\n「メールをオフにして」「メールを再開して」で切り替えを案内します。`);
+          }
+
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/settings',
+              label: '設定画面を開く',
+              description: 'メール機能の有効/無効を切り替え',
+            },
+          });
+        } else {
+          // その他の設定変更
+          // 現在の設定状態を表示
+          const settingItems = [
+            `メール機能: ${EMAIL_ENABLED ? '有効' : '休眠中'}`,
+            'Slack連携: ' + (process.env.SLACK_BOT_TOKEN ? '接続済み' : '未設定'),
+            'Chatwork連携: ' + (process.env.CHATWORK_API_TOKEN ? '接続済み' : '未設定'),
+            'カレンダー連携: 設定画面で確認',
+          ];
+          parts.push(`\n\n【現在の設定】\n${settingItems.map(s => `- ${s}`).join('\n')}\n\n設定の変更は設定画面から行えます。「メールをオフにして」「メールを再開して」等、具体的な指示も受け付けます。`);
+
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/settings',
+              label: '設定画面を開く',
+              description: '各種設定の確認と変更',
+            },
+          });
+        }
+      } catch (settingsErr) {
+        console.error('[Agent] Settings change error:', settingsErr);
+        parts.push('\n\n設定情報の取得に失敗しました。設定画面から直接ご確認ください。');
+        cards.push({
+          type: 'navigate',
+          data: { href: '/settings', label: '設定画面を開く', description: '各種設定の確認と変更' },
+        });
+      }
+    }
+
+    // ========================================
+    // Phase G: 特定組織のプロジェクト一覧
+    // ========================================
+    if (intent === 'org_projects') {
+      try {
+        // 組織一覧を取得
+        const { data: orgs } = await supabase
+          .from('organizations')
+          .select('id, name, domain')
+          .order('name');
+
+        // ユーザーメッセージから組織名を特定
+        let matchedOrg: { id: string; name: string; domain: string | null } | null = null;
+        if (orgs) {
+          for (const o of orgs) {
+            if (userMessage.includes(o.name)) {
+              matchedOrg = o;
+              break;
+            }
+          }
+          // 部分一致でも試行
+          if (!matchedOrg) {
+            for (const o of orgs) {
+              const shortName = o.name.replace(/(株式会社|合同会社|有限会社|Inc\.|Co\.,? Ltd\.?)/gi, '').trim();
+              if (shortName && userMessage.includes(shortName)) {
+                matchedOrg = o;
+                break;
+              }
+            }
+          }
+        }
+
+        if (matchedOrg) {
+          // 特定組織のプロジェクト一覧を取得
+          const { data: orgProjects } = await supabase
+            .from('projects')
+            .select('id, name, status, created_at')
+            .eq('organization_id', matchedOrg.id)
+            .eq('user_id', userId)
+            .order('updated_at', { ascending: false });
+
+          if (orgProjects && orgProjects.length > 0) {
+            const projectLines = orgProjects.map((p: { name: string; status: string }) =>
+              `- ${p.name}（${p.status || 'active'}）`
+            ).join('\n');
+            parts.push(`\n\n【${matchedOrg.name} のプロジェクト（${orgProjects.length}件）】\n${projectLines}\n\n特定プロジェクトのタスクは「○○プロジェクトのタスク」と聞いてください。`);
+
+            // 各プロジェクトへのナビゲーションカード
+            for (const p of orgProjects.slice(0, 5)) {
+              cards.push({
+                type: 'navigate',
+                data: {
+                  href: `/tasks?project=${p.id}`,
+                  label: `${p.name} のタスク`,
+                  description: `プロジェクトのタスク一覧を表示`,
+                },
+              });
+            }
+          } else {
+            parts.push(`\n\n【${matchedOrg.name}】\nプロジェクトはまだ登録されていません。`);
+          }
+
+          // 組織詳細へのナビゲーション
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: `/organizations/${matchedOrg.id}`,
+              label: `${matchedOrg.name} の詳細`,
+              description: '組織詳細ページでプロジェクト・コンタクトを管理',
+            },
+          });
+        } else {
+          // 組織名が特定できない → 組織一覧を表示
+          if (orgs && orgs.length > 0) {
+            const orgLines = orgs.map((o: { name: string }) => `- ${o.name}`).join('\n');
+            parts.push(`\n\n【組織一覧】\n${orgLines}\n\nどの組織のプロジェクトを見たいですか？「○○のプロジェクト一覧」と指定してください。`);
+          } else {
+            parts.push('\n\n【組織】\n組織はまだ登録されていません。「組織を登録」で新規作成できます。');
+          }
+          cards.push({
+            type: 'navigate',
+            data: {
+              href: '/organizations',
+              label: '組織一覧を開く',
+              description: '組織の一覧から選択してプロジェクトを確認',
+            },
+          });
+        }
+      } catch (orgProjErr) {
+        console.error('[Agent] Org projects error:', orgProjErr);
+        parts.push('\n\n組織のプロジェクト情報の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // Phase G: 特定プロジェクトのタスク一覧
+    // ========================================
+    if (intent === 'project_tasks') {
+      try {
+        // プロジェクト一覧を取得
+        const { data: userProjects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id, organizations(name)')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false });
+
+        // ユーザーメッセージからプロジェクト名を特定
+        let matchedProject: { id: string; name: string } | null = null;
+        if (userProjects) {
+          for (const p of userProjects) {
+            if (userMessage.includes(p.name)) {
+              matchedProject = { id: p.id, name: p.name };
+              break;
+            }
+          }
+        }
+
+        if (matchedProject) {
+          // 特定プロジェクトのタスクを取得
+          const { data: projectTasks } = await supabase
+            .from('tasks')
+            .select('id, title, status, priority, phase, due_date, updated_at')
+            .eq('project_id', matchedProject.id)
+            .eq('user_id', userId)
+            .order('status')
+            .order('priority', { ascending: false })
+            .order('due_date', { ascending: true });
+
+          if (projectTasks && projectTasks.length > 0) {
+            const statusGroups: Record<string, typeof projectTasks> = {};
+            for (const t of projectTasks) {
+              if (!statusGroups[t.status]) statusGroups[t.status] = [];
+              statusGroups[t.status].push(t);
+            }
+
+            const statusLabels: Record<string, string> = {
+              todo: '未着手',
+              in_progress: '進行中',
+              proposed: '提案中',
+              done: '完了',
+            };
+
+            const taskLines: string[] = [];
+            for (const [status, tasks_list] of Object.entries(statusGroups)) {
+              const label = statusLabels[status] || status;
+              taskLines.push(`\n[${label}]`);
+              for (const t of tasks_list.slice(0, 5)) {
+                const dueStr = t.due_date ? ` 期限:${t.due_date}` : '';
+                const priStr = t.priority === 'high' ? ' ⚡' : '';
+                taskLines.push(`- ${t.title}${priStr}${dueStr}`);
+              }
+              if (tasks_list.length > 5) {
+                taskLines.push(`  …他${tasks_list.length - 5}件`);
+              }
+            }
+
+            parts.push(`\n\n【${matchedProject.name} のタスク（${projectTasks.length}件）】${taskLines.join('\n')}`);
+
+            // タスク画面へのナビゲーション
+            cards.push({
+              type: 'navigate',
+              data: {
+                href: `/tasks?project=${matchedProject.id}`,
+                label: `${matchedProject.name} のタスク一覧`,
+                description: `タスク画面で詳細を管理`,
+              },
+            });
+
+            // 進行中タスクの個別カード
+            const activeTasks = projectTasks.filter(t => t.status !== 'done');
+            for (const t of activeTasks.slice(0, 3)) {
+              cards.push({
+                type: 'task_resume',
+                data: {
+                  id: t.id,
+                  title: t.title,
+                  status: t.status,
+                  lastActivity: formatRelativeTime(t.updated_at),
+                  remainingItems: [
+                    `フェーズ: ${phaseLabel(t.phase)}`,
+                    `優先度: ${priorityLabel(t.priority)}`,
+                    ...(t.due_date ? [`期限: ${t.due_date}`] : []),
+                  ],
+                },
+              });
+            }
+          } else {
+            parts.push(`\n\n【${matchedProject.name}】\nタスクはまだ登録されていません。「タスクを作成して」で新しいタスクを追加できます。`);
+          }
+        } else {
+          // プロジェクトが特定できない → 一覧表示
+          if (userProjects && userProjects.length > 0) {
+            const projLines = userProjects.slice(0, 10).map((p: { name: string; organizations?: { name: string } | null }) => {
+              const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
+              return `- ${p.name}${orgName ? `（${orgName}）` : ''}`;
+            }).join('\n');
+            parts.push(`\n\n【プロジェクト一覧】\n${projLines}\n\nどのプロジェクトのタスクを見たいですか？「○○プロジェクトのタスク」と指定してください。`);
+          } else {
+            parts.push('\n\nプロジェクトがまだ登録されていません。「プロジェクトを作成して」で新規作成できます。');
+          }
+        }
+      } catch (projTaskErr) {
+        console.error('[Agent] Project tasks error:', projTaskErr);
+        parts.push('\n\nプロジェクトのタスク情報の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
     // Phase A: チャンネル→プロジェクト紐づけ
     // ========================================
     if (intent === 'link_channel') {
@@ -2711,6 +3079,10 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - 思考マップ・ナレッジの参照
 - タスク修正提案・調整（「○○のタスクの納期を変更したい」→修正リクエスト記録→AI調整案生成→承認→タスク自動修正）
 - チャンネル紐づけ（「このチャンネルをプロジェクトに紐づけて」→ Slack/Chatworkのチャンネルをプロジェクトに関連付け）
+- 設定変更（「メールをオフにして」→メール休眠化の案内、「設定を確認」→現在の設定状態表示）
+- 組織→プロジェクト階層ナビ（「○○組織のプロジェクト」→特定組織のPJ一覧→各PJのタスクへ遷移）
+- プロジェクト→タスク階層ナビ（「○○プロジェクトのタスク」→特定PJのタスク一覧をステータス別表示）
+- ビジネスログ詳細閲覧（「○○のビジネスログ」→特定プロジェクトの直近30日イベント詳細）
 
 ## コンタクト・組織・プロジェクトの管理
 ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:
@@ -2987,6 +3359,18 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'チャンネル紐づけフォームを表示しました。Slack/Chatworkのチャンネルとプロジェクトを選択して紐づけてください。'
         : 'チャンネル紐づけの準備に失敗しました。もう一度お試しください。';
+    case 'settings_change':
+      return hasCards
+        ? '設定情報を表示しました。設定画面で変更を行えます。'
+        : '設定画面を開いて、各種設定を確認・変更してください。';
+    case 'org_projects':
+      return hasCards
+        ? '組織のプロジェクト一覧を表示しました。各プロジェクトのタスクもここから確認できます。'
+        : '組織のプロジェクト情報が見つかりませんでした。組織名を指定してもう一度お試しください。';
+    case 'project_tasks':
+      return hasCards
+        ? 'プロジェクトのタスク一覧を表示しました。カードからタスクの詳細を確認できます。'
+        : 'プロジェクトのタスクが見つかりませんでした。プロジェクト名を指定してもう一度お試しください。';
     default:
       return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }
