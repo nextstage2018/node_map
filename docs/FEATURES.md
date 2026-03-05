@@ -527,6 +527,16 @@ My Knowledge Panel
   → FK CASCADE で子レコード自動削除
 ```
 
+### Phase F: 期間別ノード表示
+- **目的**: ナレッジの蓄積感をリアルタイムに可視化し「こんなこと考えたんだな」という気づきを促す
+- **UI**: マイナレッジパネルに「今日」「今週」「今月」「全期間」の4タブフィルター（デフォルト: 今日）
+- **API**: `/api/nodes/my-keywords?period=today|week|month|all` — `today` を新規追加（Phase F）
+- **期間計算**: today=当日0:00〜、week=今週月曜0:00〜、month=今月1日0:00〜、all=制限なし
+- **秘書AI対応**: `knowledge_nodes` intent 追加 — 「今日のノード」「今週のナレッジ」「考えたこと」等で発火
+  - ユーザーメッセージから期間を自動推定（「今日」→today、「今週」→week、「今月」→month、その他→today）
+  - ノード一覧をテキストで返却 + ナレッジ画面へのナビゲーションカード表示
+- **基本構造は維持**: 活動→自動蓄積→自動分類→ユーザーごとノード登録の導線は変更なし。Cron頻度も変えない
+
 ### 重要ルール / DO NOT
 
 1. **knowledge_master_entries.id 自動生成頼らない** - TEXT 型・自動生成なし、手動生成で POST 必須
@@ -542,7 +552,9 @@ My Knowledge Panel
 - [ ] AI クラスタリング: 毎週月曜実行、50+ 未確認で提案、proposal status='pending' で秘書に表示
 - [ ] 提案承認: domain/field 自動作成、エントリ field_id / domain_id 更新、同週の別提案自動却下
 - [ ] TagCloud: /api/nodes/this-week から週間キーワード、frequency でフォントサイズ
-- [ ] My Knowledge: period フィルタ、ドメイン別ツリー、relatedTaskCount バッジ
+- [ ] My Knowledge: period フィルタ（today/week/month/all）、ドメイン別ツリー、relatedTaskCount バッジ
+- [ ] Phase F 期間別ノード: today フィルタが正しく当日のみ表示、デフォルト=today
+- [ ] Phase F 秘書AI: 「今日のノード」「今週のナレッジ」等で knowledge_nodes intent 発火、期間推定正確
 - [ ] CRUD: 領域・分野・キーワード作成・編集・削除、FK CASCADE で子自動削除
 
 ---

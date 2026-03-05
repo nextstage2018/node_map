@@ -1,6 +1,6 @@
-// Phase 57: マイナレッジ API
+// Phase 57 + Phase F: マイナレッジ API
 // ログインユーザーのキーワードをカテゴリ別に集約して返す
-// period=week|month|all で期間フィルタ
+// period=today|week|month|all で期間フィルタ（Phase F: todayを追加）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -22,11 +22,13 @@ export async function GET(request: NextRequest) {
   const period = searchParams.get('period') || 'all'; // week | month | all
 
   try {
-    // 期間フィルタ計算
+    // 期間フィルタ計算（Phase F: todayを追加）
     let sinceDate: Date | null = null;
     const now = new Date();
 
-    if (period === 'week') {
+    if (period === 'today') {
+      sinceDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (period === 'week') {
       sinceDate = new Date(now);
       const dayOfWeek = now.getDay();
       const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;

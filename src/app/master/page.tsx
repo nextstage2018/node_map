@@ -1,4 +1,4 @@
-// Phase 46+47+57: ナレッジ — 個人知識地図 + CRUD UI + 未確認ノード管理 + 提案履歴
+// Phase 46+47+57+F: ナレッジ — 個人知識地図 + CRUD UI + 未確認ノード管理 + 提案履歴 + 期間別ノード表示
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -31,7 +31,7 @@ interface ProposalHistoryItem {
 }
 
 type MasterTab = 'hierarchy' | 'proposals';
-type Period = 'week' | 'month' | 'all';
+type Period = 'today' | 'week' | 'month' | 'all';
 
 export default function MasterPage() {
   const [hierarchy, setHierarchy] = useState<KnowledgeHierarchy | null>(null);
@@ -41,7 +41,7 @@ export default function MasterPage() {
   const [activeTab, setActiveTab] = useState<MasterTab>('hierarchy');
   const [proposals, setProposals] = useState<ProposalHistoryItem[]>([]);
   const [pendingProposalCount, setPendingProposalCount] = useState(0);
-  const [knowledgePeriod, setKnowledgePeriod] = useState<Period>('all');
+  const [knowledgePeriod, setKnowledgePeriod] = useState<Period>('today');
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);

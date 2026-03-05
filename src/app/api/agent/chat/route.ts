@@ -100,6 +100,7 @@ type Intent =
   | 'consultations'         // Phase 58: 社内相談確認
   | 'link_channel'          // Phase A: チャンネル→プロジェクト紐づけ
   | 'task_external_resource' // Phase E: タスクに外部資料を取り込み
+  | 'knowledge_nodes'       // Phase F: 期間別ナレッジノード表示
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -194,6 +195,14 @@ function classifyIntent(message: string): Intent {
   if (m.includes('ドライブ') || m.includes('google drive') || m.includes('drive')) return 'documents';
   if (m.includes('ファイル') || m.includes('資料') || m.includes('ドキュメント') || m.includes('書類')) return 'documents';
   if (m.includes('添付') && (m.includes('一覧') || m.includes('見') || m.includes('検索'))) return 'documents';
+
+  // Phase F: 期間別ナレッジノード表示（「今日のノード」「今週のナレッジ」「今月のキーワード」「最近考えたこと」）
+  if (m.includes('今日') && (m.includes('ノード') || m.includes('ナレッジ') || m.includes('キーワード'))) return 'knowledge_nodes';
+  if (m.includes('今週') && (m.includes('ノード') || m.includes('ナレッジ') || m.includes('キーワード'))) return 'knowledge_nodes';
+  if (m.includes('今月') && (m.includes('ノード') || m.includes('ナレッジ') || m.includes('キーワード'))) return 'knowledge_nodes';
+  if ((m.includes('ナレッジ') || m.includes('ノード') || m.includes('キーワード')) && (m.includes('見せて') || m.includes('表示') || m.includes('一覧') || m.includes('教えて'))) return 'knowledge_nodes';
+  if (m.includes('考えたこと') || m.includes('何を考え')) return 'knowledge_nodes';
+  if (m.includes('蓄積') && (m.includes('ナレッジ') || m.includes('ノード') || m.includes('キーワード'))) return 'knowledge_nodes';
 
   // ナレッジ構造化提案（thought_mapより先に判定）
   if (m.includes('ナレッジ') && (m.includes('提案') || m.includes('構造') || m.includes('整理') || m.includes('分類'))) return 'knowledge_structuring';
@@ -949,6 +958,92 @@ async function fetchDataAndBuildCards(
       } catch (err) {
         console.error('[Agent] Knowledge structuring error:', err);
         parts.push('ナレッジ提案の取得に失敗しました。');
+      }
+    }
+
+    // Phase F: 期間別ナレッジノード表示
+    if (intent === 'knowledge_nodes') {
+      try {
+        // ユーザーメッセージから期間を推定
+        const ml = userMessage.toLowerCase();
+        let knPeriod = 'today';
+        if (ml.includes('今週')) knPeriod = 'week';
+        else if (ml.includes('今月')) knPeriod = 'month';
+        else if (ml.includes('全') || ml.includes('すべて') || ml.includes('全部')) knPeriod = 'all';
+
+        const periodLabels: Record<string, string> = { today: '今日', week: '今週', month: '今月', all: '全期間' };
+
+        // 期間フィルタ計算
+        let sinceDate: Date | null = null;
+        const nowKn = new Date();
+
+        if (knPeriod === 'today') {
+          sinceDate = new Date(nowKn.getFullYear(), nowKn.getMonth(), nowKn.getDate());
+        } else if (knPeriod === 'week') {
+          sinceDate = new Date(nowKn);
+          const dayOfWeek = nowKn.getDay();
+          const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          sinceDate.setDate(nowKn.getDate() + diff);
+          sinceDate.setHours(0, 0, 0, 0);
+        } else if (knPeriod === 'month') {
+          sinceDate = new Date(nowKn.getFullYear(), nowKn.getMonth(), 1);
+        }
+
+        // thought_task_nodes を取得
+        let knQuery = supabase
+          .from('thought_task_nodes')
+          .select('node_id, task_id, seed_id, message_id, knowledge_master_entries(id, label, field_id)')
+          .eq('user_id', userId);
+
+        if (sinceDate) {
+          knQuery = knQuery.gte('created_at', sinceDate.toISOString());
+        }
+
+        const { data: knNodeRows } = await knQuery;
+
+        if (knNodeRows && knNodeRows.length > 0) {
+          // node_idで重複排除＋集計
+          const knAggMap = new Map<string, { label: string; taskCount: number; messageCount: number }>();
+
+          for (const row of knNodeRows) {
+            const entry = (row as any).knowledge_master_entries;
+            if (!entry || !entry.label) continue;
+            const nodeId = row.node_id;
+            if (!knAggMap.has(nodeId)) {
+              knAggMap.set(nodeId, { label: entry.label, taskCount: 0, messageCount: 0 });
+            }
+            const agg = knAggMap.get(nodeId)!;
+            if (row.task_id || row.seed_id) agg.taskCount++;
+            if (row.message_id) agg.messageCount++;
+          }
+
+          const knNodes = Array.from(knAggMap.values())
+            .sort((a, b) => (b.taskCount + b.messageCount) - (a.taskCount + a.messageCount));
+
+          const nodeList = knNodes.map(n => {
+            const badges = [];
+            if (n.taskCount > 0) badges.push(`タスク${n.taskCount}`);
+            if (n.messageCount > 0) badges.push(`メッセージ${n.messageCount}`);
+            return `- ${n.label}${badges.length > 0 ? `（${badges.join('・')}）` : ''}`;
+          }).join('\n');
+
+          parts.push(`\n\n【${periodLabels[knPeriod]}のナレッジノード（${knNodes.length}件）】\n${nodeList}`);
+        } else {
+          parts.push(`${periodLabels[knPeriod]}のナレッジノードはまだありません。タスクやメッセージのAI会話を進めると自動的に蓄積されます。`);
+        }
+
+        // ナレッジ画面へのナビゲーション
+        cards.push({
+          type: 'navigate',
+          data: {
+            href: '/master',
+            label: 'ナレッジ画面を開く',
+            description: `${periodLabels[knPeriod]}のノードをナレッジ画面で詳しく確認`,
+          },
+        });
+      } catch (err) {
+        console.error('[Agent] Knowledge nodes error:', err);
+        parts.push('ナレッジノードの取得に失敗しました。');
       }
     }
 
@@ -2733,7 +2828,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Phase A: 伸二メソッド思考プリセット（ビジネス相談・タスク関連intentのみ適用。事務的intentには適用しない）
-    const businessIntents: Intent[] = ['task_progress', 'general', 'thought_map', 'knowledge_structuring', 'knowledge_reuse', 'pattern_analysis', 'consultations'];
+    const businessIntents: Intent[] = ['task_progress', 'general', 'thought_map', 'knowledge_structuring', 'knowledge_nodes', 'knowledge_reuse', 'pattern_analysis', 'consultations'];
     if (businessIntents.includes(intent)) {
       try {
         const { getShinjiMethodPrompt } = await import('@/services/ai/personalizedContext.service');
@@ -2840,6 +2935,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'ナレッジ構造化の提案を表示しました。AIが蓄積されたキーワードを分析し、領域/分野の構造を提案しています。内容を確認して「承認」または「却下」してください。'
         : '現在待機中のナレッジ提案はありません。キーワードが十分に蓄積されると、週次で自動的に提案が生成されます。';
+    case 'knowledge_nodes':
+      return hasCards
+        ? 'ナレッジノードを表示しました。タスクやメッセージから自動抽出されたキーワードです。「こんなこと考えていたんだな」という振り返りにお使いください。ナレッジ画面でさらに詳しく確認できます。'
+        : 'まだナレッジノードが蓄積されていません。タスクやメッセージのAI会話を進めると自動的にキーワードが抽出されます。';
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'create_business_event':

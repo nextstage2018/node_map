@@ -1,9 +1,9 @@
-// Phase 57: マイナレッジパネル — カテゴリ別キーワード一覧
+// Phase 57 + Phase F: マイナレッジパネル — カテゴリ別キーワード一覧（期間別ノード表示対応）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 
-type Period = 'week' | 'month' | 'all';
+type Period = 'today' | 'week' | 'month' | 'all';
 
 interface MyNode {
   id: string;
@@ -91,8 +91,9 @@ export default function MyKnowledgePanel({ period, onPeriodChange }: Props) {
   };
 
   const periodLabels: Record<Period, string> = {
-    week: '週間',
-    month: '月間',
+    today: '今日',
+    week: '今週',
+    month: '今月',
     all: '全期間',
   };
 
@@ -108,7 +109,7 @@ export default function MyKnowledgePanel({ period, onPeriodChange }: Props) {
           )}
         </h3>
         <div className="flex gap-1">
-          {(['week', 'month', 'all'] as Period[]).map(p => (
+          {(['today', 'week', 'month', 'all'] as Period[]).map(p => (
             <button
               key={p}
               onClick={() => onPeriodChange(p)}
@@ -140,6 +141,8 @@ export default function MyKnowledgePanel({ period, onPeriodChange }: Props) {
         <p className="text-xs text-slate-400 py-6 text-center">
           {period === 'all'
             ? 'まだナレッジが蓄積されていません。タスクやメッセージのAI会話を進めるとキーワードが自動的に蓄積されます。'
+            : period === 'today'
+            ? '今日のキーワードはまだありません。タスクやメッセージのAI会話を進めると自動的に蓄積されます。'
             : `${periodLabels[period]}のキーワードはまだありません。`
           }
         </p>
