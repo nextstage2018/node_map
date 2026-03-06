@@ -1325,6 +1325,7 @@ CREATE TABLE business_events (
   contact_persons TEXT[],
   projects UUID[],
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
@@ -1337,6 +1338,7 @@ CREATE INDEX idx_business_events_project_id ON business_events(project_id);
 CREATE INDEX idx_business_events_event_date ON business_events(event_date);
 CREATE INDEX idx_business_events_event_type ON business_events(event_type);
 CREATE INDEX idx_business_events_created_at ON business_events(created_at);
+CREATE INDEX idx_business_events_meeting_record_id ON business_events(meeting_record_id) WHERE meeting_record_id IS NOT NULL;
 ```
 
 #### 注意事項
@@ -1345,12 +1347,56 @@ CREATE INDEX idx_business_events_created_at ON business_events(created_at);
 - ai_generated: Phase 45c: AI自動生成フラグ（Cronで生成されたサマリー）
 - summary_period: Phase 45c: AI要約の期間（'2026-W10'=ISO週番号）
 - keywords_extracted: Phase 57: キーワード抽出済みフラグ
+- meeting_record_id: V2-D: 会議録との紐づけ（nullable）
 - **用途**:
   - Cron sync-business-events（毎日1:00）で過去24時間のメッセージから自動生成
   - Cron summarize-business-log（毎週月曜2:00）で週間要約を自動生成
   - /business-log ページでプロジェクト別タイムラインを表示
   - keywords_extracted で思考マップキーワード抽出対象管理
+  - 会議録登録時に event_type='meeting' で自動登録（V2-D）
 - **RLS**: user_id でフィルタ
+
+---
+
+### meeting_records（会議録）
+
+**目的**: V2-D: 会議録のテキストを保存し、AI解析の入力とする
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE meeting_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  meeting_date DATE NOT NULL,
+  content TEXT NOT NULL,
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription')),
+  source_file_id UUID,
+  ai_summary TEXT,
+  processed BOOLEAN DEFAULT false,
+  user_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_meeting_records_project_id ON meeting_records(project_id);
+CREATE INDEX idx_meeting_records_meeting_date ON meeting_records(meeting_date);
+```
+
+#### 注意事項
+
+- V2-Aで作成済み
+- processed: AI解析が完了したかどうかのフラグ
+- source_type: 現段階では 'text' のみ対応（'file', 'transcription' は将来スコープ）
+- ai_summary: AI解析後に自動設定される要約テキスト
+- 会議録登録 → AI解析 → business_events に自動登録の流れ（V2-D）
+- 検討ツリー生成の起点データ（V2-E で使用予定）
+- **RLS**: user_id でフィルタ（ただし user_id は nullable）
 
 ---
 
