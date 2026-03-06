@@ -1,6 +1,8 @@
 # NodeMap 機能仕様書
 
-> 全機能の現行仕様。各セクションは「概要 → データフロー → ルール → チェックリスト」で構成。
+最終更新: 2026-03-06
+
+> 全機能の現行仕様。各セクションは「概要 → データフロー → ルール → テストチェックリスト」で構成。
 
 ---
 
@@ -27,45 +29,37 @@ OAuth (gmail service name)
       → OK: findFreeSlots(7日) で営業時間(10-19)内の空き時間取得
         → AI プロンプトに空き時間テキスト注入
       → NG: フォールバック「相手に候補日を聞く」形式
+
+空き時間出力
+  → formatFreeSlotsForContext(slots) でデフォルト maxSlots=50（実質制限なし）
+  → 同一日付の空きは1行にグルーピング
+  → 出力形式: 「3/6（金） 10:00〜12:00、13:00〜18:00」
 ```
 
 ### 重要ルール / DO NOT
 
-1. **終日予定は除外** - `isAllDay === true` なら busySlots に追加しない（時刻情報がないため）
+1. **終日予定は除外** - `isAllDay === true` なら busySlots に追加しない
 2. **calendar_event_id 二重カウント防止** - NodeMap ブロックで `!b.calendarEventId` でフィルタ
-3. **営業時間 10:00-19:00（Phase A）** - `BUSINESS_HOURS.weekdayStart=10`, `weekdayEnd=19`。AI出力でもこの範囲のみ候補に出す
-4. **営業時間終了日除外** - `if (dayEndMs <= nowMs) continue` で当日営業時間終了済みならスキップ
-5. **現在時刻以降のみ** - `let cursor = Math.max(dayStartMs, nowMs)` で過去時間を除外
+3. **営業時間 10:00-19:00** - `BUSINESS_HOURS.weekdayStart=10`, `weekdayEnd=19`
+4. **営業時間終了日除外** - `if (dayEndMs <= nowMs) continue`
+5. **現在時刻以降のみ** - `let cursor = Math.max(dayStartMs, nowMs)`
 6. **土日は除外** - `dayOfWeek === 0 || 6` でスキップ
-7. **[NM-Task]/[NM-Job]予定はスキップ（Phase A）** - `isNodeMapEvent(summary)` で判定。NodeMap自身が作った予定は空きとみなす
-8. **カレンダー命名ルール（Phase A）** - タスク予定は `[NM-Task] タスク名`、ジョブ予定は `[NM-Job] ジョブ名` で作成
-9. **API 失敗がメイン処理をブロックしない** - タスク/ジョブ作成は続行、カレンダーはログのみ
-10. **トークン リフレッシュ失敗は許容** - 既存トークン返却で処理継続
+7. **祝日は除外** - `isJapaneseHoliday(date)` でスキップ（固定祝日・ハッピーマンデー・春分/秋分・振替休日・国民の休日、2000〜2099年対応）
+8. **[NM-Task]/[NM-Job]予定はスキップ** - `isNodeMapEvent(summary)` で判定。NodeMap自身の予定は空きとみなす
+9. **カレンダー命名** - タスク: `[NM-Task] タスク名`、ジョブ: `[NM-Job] ジョブ名`
+10. **API 失敗がメイン処理をブロックしない** - タスク/ジョブ作成は続行、カレンダーはログのみ
 11. **isCalendarConnected() 必須** - Calendar API 前に `token.scope.includes('calendar')` で確認
-
-### Phase C: 祝日除外
-- **祝日判定関数**: `isJapaneseHoliday(date)` / `getJapaneseHolidays(year)`（`src/lib/constants.ts`）
-- **対象祝日**: 固定祝日（元日〜勤労感謝の日）+ ハッピーマンデー（成人の日・海の日・敬老の日・スポーツの日）+ 春分の日・秋分の日 + 振替休日 + 国民の休日
-- **適用箇所**: `findFreeSlots()` で土日に加え祝日もスキップ
-- **範囲**: 2000〜2099年対応（天文学的近似式による春分・秋分計算）
-
-### Phase C: 複数候補の全出力
-- **改善前**: `formatFreeSlotsForContext(slots, maxSlots)` でスロット数を制限（秘書: 8件、インボックス: 20件）
-- **改善後**: デフォルト maxSlots=50（実質制限なし）、同一日付の空きは1行にグルーピング
-- **出力形式**: `- 3/6（金） 10:00〜12:00、13:00〜18:00`（同じ日の全空き時間をカンマ区切り）
-- **秘書AI・インボックス共通**: 両方とも `formatFreeSlotsForContext(freeSlots)` でデフォルト呼び出し（同一ロジック）
 
 ### テストチェックリスト
 - [ ] `getGoogleToken()` トークン取得・キャッシュ確認
 - [ ] `refreshTokenIfNeeded()` 期限内→既存返却、期限切れ→更新、失敗→既存返却
 - [ ] `isCalendarConnected()` スコープチェック
 - [ ] `getTodayEvents()` 終日除外、API エラー → `[]`
-- [ ] `findFreeSlots()` 営業時間内のみ、土日除外、現在時刻以降、NodeMap 二重カウント防止
-- [ ] `findFreeSlots()` 祝日除外（Phase C）: 祝日の日を空き時間に含めない
+- [ ] `findFreeSlots()` 営業時間内のみ、土日除外、祝日除外、現在時刻以降、NodeMap二重カウント防止
 - [ ] `isJapaneseHoliday()` 固定祝日・ハッピーマンデー・春分/秋分・振替休日・国民の休日を正しく判定
-- [ ] `formatFreeSlotsForContext()` 全候補出力・日付グルーピング（Phase C）
+- [ ] `formatFreeSlotsForContext()` 全候補出力・日付グルーピング
 - [ ] 日程調整返信 `scheduleMode=true` で空き時間注入、未接続時フォールバック
-- [ ] 秘書AIの日程調整が `findFreeSlots()` を正しく使用（祝日除外・全候補出力）
+- [ ] 秘書AIの日程調整が `findFreeSlots()` を正しく使用
 - [ ] グループタスク → 全メンバーに同期
 
 ---
@@ -73,7 +67,7 @@ OAuth (gmail service name)
 ## 2. インボックス（INBOX）
 
 ### 概要
-Gmail/Slack/Chatwork からメッセージを統一フォーマットで受信、グループ化・既読管理・返信・アクション実行。トークンベース受信（環境変数 or DB トークン）で即座に取得開始し、購読設定は表示フィルタのみ。既読は 3 段階管理（ローカル即時 + DB 永続化 + キャッシュ無効化）。
+Slack/Chatwork からメッセージを統一フォーマットで受信、グループ化・既読管理・返信・アクション実行。トークンベース受信で即座に取得開始し、購読設定は表示フィルタのみ。既読は3段階管理（ローカル即時 + DB永続化 + キャッシュ無効化）。メール機能は `EMAIL_ENABLED` フラグで休眠中（UI非表示、ソースコードは維持）。
 
 ### データフロー
 ```
@@ -93,6 +87,10 @@ GET /api/messages
 
 返信フロー:
   ReplyForm（autoAiDraft=true）→ AI 下書き生成 → ユーザー送信 → inbox_messages に direction='sent' 保存
+
+リアルタイム更新:
+  ポーリング: INBOX_POLL_INTERVAL（3分間隔）でバックグラウンド自動更新
+  ページ復帰: visibilitychange イベントでタブ切り替え・最小化復帰時に自動更新
 ```
 
 ### 重要ルール / DO NOT
@@ -106,51 +104,40 @@ GET /api/messages
 7. **同期タイムスタンプなしで API 全量取得禁止** - `inbox_sync_state.last_sync_at` で差分判定
 8. **hasChannelToken() 確認** - トークン存在を仮定しない
 
-### Phase B: メール休眠化
+### メール休眠化
 - **フラグ**: `NEXT_PUBLIC_EMAIL_ENABLED=false` でメール機能を無効化（デフォルト: true）
 - **定数**: `EMAIL_ENABLED`（`src/lib/constants.ts`）
 - **影響範囲**: メール取得スキップ（API）、サイドバー/フィルタからメール非表示（UI）、秘書AIブリーフィングからメール除外
-- **復帰方法**: 環境変数を `true` に設定（または削除）するだけで復帰
-- **ソースコード**: 削除なし。フラグによる条件分岐のみ
+- **復帰方法**: 環境変数を `true` に設定するだけで復帰。ソースコード削除なし
 
-### Phase B: リアルタイム更新
-- **ポーリング**: `INBOX_POLL_INTERVAL`（3分間隔）でバックグラウンド自動更新
-- **ページ復帰**: `visibilitychange` イベントでタブ切り替え・最小化復帰時に自動更新
-- **SWR パターン**: キャッシュを表示しつつバックグラウンドで最新化（ローディング表示なし）
-- **実装**: `useMessages.ts` の useEffect で interval + visibilitychange リスナー
-
-### Phase B: Chatwork/Slack 返信下書き対応
-- **全チャネル対応済み**: ReplyForm の AI 下書きボタン・autoAiDraft は既に全チャネルで有効
-- **チャネル別トーン**: email=フォーマル、slack=カジュアル、chatwork=標準（`generateReplyDraft` で自動調整）
-- **署名**: メールのみ自動付与（Slack/Chatwork は付与しない）
-- **グループチャネル判定**: Slack チャネル / Chatwork ルームで全体向けトーン調整
-
-### Phase B: 過去のやり取り変遷パネル
+### 過去のやり取り変遷パネル
 - **API**: `GET /api/messages/history?fromAddress=...&excludeId=...&limit=20`
 - **データソース**: `inbox_messages` を `from_address` でグルーピング、送受信両方を時系列表示
-- **UI**: メッセージ詳細画面の右カラム（`xl` ブレークポイント以上で表示、幅 72）
-- **コンポーネント**: `ContactHistoryPanel`（`src/components/inbox/ContactHistoryPanel.tsx`）
-- **注意書き**: 「最新の受信は反映されていない場合があります」を表示
-- **AI活用**: `getRecentMessages()` が既に返信下書きAIのコンテキストに過去やり取りを注入済み
+- **UI**: メッセージ詳細画面の右カラム（`xl` ブレークポイント以上で表示）
+- **コンポーネント**: `ContactHistoryPanel`
+
+### チャネル別返信トーン
+- **全チャネル対応済み**: ReplyForm の AI下書きボタン・autoAiDraft は全チャネルで有効
+- **チャネル別トーン**: email=フォーマル、slack=カジュアル、chatwork=標準
+- **署名**: メールのみ自動付与（Slack/Chatwork は付与しない）
 
 ### テストチェックリスト
 - [ ] 初回同期フロー: initial_sync_done=false → true、全チャネルから取得
-- [ ] 差分取得フロー: 2 回目以降 < 100ms で DB 即座、新着 5 秒以内に表示
-- [ ] 既読管理: ローカル即時反映、DB 失敗時も保持、再取得で上書きされない
+- [ ] 差分取得フロー: 2回目以降 < 100ms で DB 即座、新着5秒以内に表示
+- [ ] 既読管理: ローカル即時反映、DB失敗時も保持、再取得で上書きされない
 - [ ] バックグラウンド: fetchDiffInBackground 実行中に GET レスポンス返される
-- [ ] 返信フロー: To/Cc/Bcc 自動計算、AI 文体学習適用、メールアドレスバリデーション
-- [ ] 購読フィルタ: subscriptions 登録なし＋トークン有 → 全メッセージ表示
+- [ ] 返信フロー: To/Cc/Bcc 自動計算、AI文体学習適用、メールアドレスバリデーション
 - [ ] メール休眠: EMAIL_ENABLED=false → メール取得なし、フィルタ非表示、ブリーフィング除外
 - [ ] リアルタイム更新: 3分ポーリング動作、タブ復帰時に自動更新
 - [ ] Chatwork/Slack下書き: 返信ボタン → AI下書き自動生成、チャネル別トーン
-- [ ] 変遷パネル: from_address で過去やり取り取得、右カラムに表示、xl以上で表示
+- [ ] 変遷パネル: from_address で過去やり取り取得、右カラムに表示
 
 ---
 
 ## 3. 秘書 AI（SECRETARY_AI）
 
 ### 概要
-キーワードベース意図分類（< 10ms）で 44 種 intent を高速判定。データ並列取得で DB/API から必要情報を同時取得し、カード表示。アクション実行は即座に API 呼び出し（ジョブ化廃止）。
+キーワードベース意図分類（< 10ms）で39種 intent を高速判定。データ並列取得で DB/API から必要情報を同時取得し、カード表示。アクション実行は即座に API 呼び出し。
 
 ### データフロー
 ```
@@ -167,118 +154,101 @@ CardRenderer で カード生成
 
 handleCardAction(action, data)
   - API 呼び出し（即座に同期実行）
-    → /api/jobs/[id]/execute / /api/messages/reply / /api/tasks POST...
-      → ActionResultCard 表示
+    → ActionResultCard 表示
 
-UI 復元しない（毎回ダッシュボード状態スタート）
-secretary_conversations DB 保存（AI コンテキスト用のみ、デバウンス 1 秒）
+UI復元しない（毎回ダッシュボード状態スタート）
+secretary_conversations DB保存（AIコンテキスト用のみ、デバウンス1秒）
 ```
+
+### ウェルカム画面（初期表示）
+- サマリーカード4枚（未読数、予定数、タスク数、ジョブ数）を2x2グリッド
+- よく使う操作を5つに厳選（チップ形式）
+- 挨拶は時間帯で変化（おはよう / こんにちは / お疲れさまです）
+
+### Intent一覧（39種）
+
+| カテゴリ | Intent |
+|---|---|
+| 情報取得 | `briefing`, `inbox`, `message_detail`, `calendar`, `tasks`, `jobs`, `projects`, `documents`, `thought_map`, `business_log`, `business_summary`, `consultations`, `knowledge_nodes` |
+| アクション | `reply_draft`, `create_job`, `schedule`, `create_task`, `task_progress`, `create_calendar_event`, `create_drive_folder`, `create_business_event`, `store_file`, `share_file`, `file_intake`, `link_channel`, `task_external_resource`, `task_negotiation` |
+| CRUD | `create_contact`, `search_contact`, `create_organization`, `create_project`, `setup_organization` |
+| 分析 | `pattern_analysis`, `knowledge_reuse`, `knowledge_structuring` |
+| ナビゲーション | `org_projects`, `project_tasks`, `settings_change` |
+| その他 | `general` |
 
 ### 重要ルール / DO NOT
 
-1. **意図分類の優先度順を変更しない** - 特に `create_job` → `reply_draft` の順序固定（衝突回避）
+1. **意図分類の優先度順を変更しない** - 特に `create_job` → `reply_draft` の順序固定
 2. **AI を失敗させない** - API エラー時も HTML レスポンス返却（テンプレートフォールバック）
-3. **秘書会話を UI に復元しない** - 毎回ダッシュボード表示のみ。DB は AI コンテキスト用
+3. **秘書会話を UI に復元しない** - 毎回ダッシュボード表示のみ
 4. **CardRenderer null ガード必須** - `if (!card || !card.type || !card.data) return null`
 5. **同期 AI 呼び出し** - `await` で待つこと（fire-and-forget は Vercel で先に終了）
-6. **contact_persons / knowledge_master_entries ID 手動生成** - `team_${Date.now()}_${random}` / `me_auto_${Date.now()}_${random}`
-7. **既読更新後に cache.invalidateByPrefix** - サーバーキャッシュが古い値を返さない
-8. **並列 DB 取得** - Promise.all で 3-5 個の SELECT を同時実行
-
-### Phase E: 秘書AIでの外部資料取り込み対応
-- **Intent**: `task_external_resource`（「外部資料を取り込みたい」「Deep Researchの結果をタスクに」等）
-- **分類キーワード**: 外部資料 / 外部AI / deep research / タスク+資料+追加 / 壁打ち+資料+取り込み
-- **カード**: `TaskExternalResourceCard` — アクティブタスク（todo/in_progress）一覧を表示、タスク画面への導線
-- **データソース**: `tasks` テーブルから status IN ('todo', 'in_progress') をフィルタ
-- **タスクがない場合**: 「アクティブなタスクがありません」メッセージ
-
-### Phase G: 秘書AI全機能接続（最終仕上げ）
-
-Phase A〜Fで実装した全機能を秘書AIから操作可能にする最終フェーズ。
-
-#### 新規intent（3種追加、合計44種）
-- **`settings_change`**: 設定変更（メール休眠ON/OFF、連携状態確認）
-  - キーワード: 設定+変更/切り替え、メール+休眠/オフ/オン/停止/再開、通知+設定
-  - カード: 設定画面へのナビゲーション + 現在の設定状態テキスト表示
-- **`org_projects`**: 特定組織のプロジェクト一覧（階層ナビ）
-  - キーワード: 組織/社/会社+プロジェクト+一覧/教えて/見せて
-  - カード: 各PJのタスク画面へのナビゲーション + 組織詳細へのナビゲーション
-  - 組織名の部分一致対応（株式会社等の法人格を除去してマッチ）
-- **`project_tasks`**: 特定プロジェクトのタスク一覧（階層ナビ）
-  - キーワード: プロジェクト+タスク/やること
-  - カード: ステータス別タスク一覧テキスト + task_resume カード（進行中タスク上位3件）
-
-#### 既存intent改善
-- **`business_log`**: プロジェクト別の詳細閲覧対応
-  - プロジェクト名指定時: 直近30日のビジネスイベント詳細（日付・種別・コンタクト名付き）
-  - プロジェクト名なし: 全PJの7日間イベント数サマリー
-- **システムプロンプト更新**: 新しい5つの能力を「あなたの能力」セクションに追加
-
-#### 確認済み事項
-- 全intentのキーワードマッチング: 優先度順が正しく設定されている（org_projects > projects, project_tasks > tasks）
-- 思考プリセット（伸二メソッド）: 事務的intent（settings_change, org_projects, project_tasks）には適用されない（businessIntents配列に未含有）
-- ブリーフィング: Phase B〜Fの追加データ（停滞タスク・未返信・プロジェクト勢い・ナレッジ提案・組織レコメンド）を反映済み
+6. **contact_persons / knowledge_master_entries ID 手動生成**
+7. **並列 DB 取得** - Promise.all で 3-5 個の SELECT を同時実行
+8. **伸二メソッド**: ビジネス相談系intentのみ適用。事務的intent（日程調整等）には非適用
 
 ### テストチェックリスト
-- [ ] 意図分類: briefing / reply_draft / create_job / calendar / schedule / tasks / jobs
-- [ ] カード表示: ブリーフィング 6 種すべて表示、メッセージ折りたたみ、ジョブ修正フォーム
-- [ ] アクション: select_message → message_detail、approve_job → /api/jobs/[id]/execute、submit_task_form → task_created
-- [ ] UI: ダッシュボード表示、サジェストチップ動作、ファイルアップロード 3 段階
+- [ ] 意図分類: 全39種のintentが正しくマッチ
+- [ ] カード表示: ブリーフィング6種すべて表示、メッセージ折りたたみ、ジョブ修正フォーム
+- [ ] アクション: select_message → message_detail、approve_job → /api/jobs/[id]/execute
+- [ ] UI: ダッシュボード表示、サジェストチップ動作、ファイルアップロード3段階
 - [ ] エラー: API タイムアウト時エラーメッセージ表示、AI API なし時テンプレート使用
-- [ ] 外部資料intent（Phase E）: 「外部資料を取り込みたい」→ task_external_resource カード表示
-- [ ] 設定変更intent（Phase G）: 「メールをオフにして」→ settings_change カード表示、現在の設定状態テキスト
-- [ ] 組織PJナビ（Phase G）: 「○○組織のプロジェクト」→ org_projects カード（各PJへのリンク付き）
-- [ ] PJタスクナビ（Phase G）: 「○○プロジェクトのタスク」→ project_tasks カード（ステータス別一覧）
-- [ ] ビジネスログ詳細（Phase G）: 「○○のビジネスログ」→ 直近30日イベント詳細表示
+- [ ] 外部資料intent: 「外部資料を取り込みたい」→ task_external_resource カード表示
+- [ ] 設定変更intent: 「メールをオフにして」→ settings_change カード表示
+- [ ] 組織PJナビ: 「○○組織のプロジェクト」→ org_projects カード
+- [ ] PJタスクナビ: 「○○プロジェクトのタスク」→ project_tasks カード
+- [ ] ビジネスログ詳細: 「○○のビジネスログ」→ 直近30日イベント詳細表示
 
 ---
 
 ## 4. Drive 統合（DRIVE_INTEGRATION）
 
 ### 概要
-メッセージ添付ファイル・URL を Google Drive に自動保存。4 階層フォルダ（組織/プロジェクト/方向/年月）でファイル整理。AI が書類種別・方向・年月を自動分類し、ステージング承認フロー（pending_review → approved → uploaded）経由で最終配置。
+メッセージ添付ファイル・URL を Google Drive に自動保存。4階層フォルダ（組織/プロジェクト/方向/年月）でファイル整理。AI が書類種別・方向・年月を自動分類し、ステージング承認フロー経由で最終配置。
 
 ### データフロー
 ```
 ファイル追加:
   POST /api/drive/upload { projectId, fileName, sizeBytes }
-    → 4 階層フォルダ自動作成（getOrCreate～ DB マッピング）
-    → Google Drive Resumable Upload Session URL 生成
+    → 4階層フォルダ自動作成 → Resumable Upload Session URL 生成
     → uploadUrl + accessToken 返却
 
-ブラウザ → Google Drive 直接 PUT
-  fetch(uploadUrl, { method: 'PUT', body: fileBlob })
-    → Vercel 4.5MB 制限回避
+ブラウザ → Google Drive 直接 PUT（Vercel 4.5MB 制限回避）
 
 POST /api/drive/upload/complete { projectId, fileName, driveFileId }
   → AI 分類（documentType / direction / yearMonth / suggestedName）
   → drive_file_staging 登録（status='pending_review'）
 
 FileIntakeCard（秘書UI）
-  → ユーザーが AI 分類を確認・修正
-  → approve / reject
+  → ユーザーが AI 分類を確認・修正 → approve / reject
 
 承認時:
   POST /api/drive/files/intake/{id}/approve
-    → 4 階層フォルダ最終移動 + リネーム
+    → 4階層フォルダ最終移動 + リネーム
     → drive_documents 登録
     → business_events に document_received/submitted イベント記録
+
+フォルダ構造:
+  [NodeMap] A社/
+    プロジェクトX/
+      受領/2026-03/
+      提出/2026-03/
 ```
 
 ### 重要ルール / DO NOT
 
-1. **ファイル内容を読まない** - ファイル名・メール件名・メール本文先頭 200 文字のみで判定
+1. **ファイル内容を読まない** - ファイル名・メール件名・本文先頭200文字のみで判定
 2. **service_role_key 使わない** - ユーザーの OAuth トークン使用（drive.file スコープ）
-3. **フォルダ直接削除禁止** - drive_folders DB レコードも併せて削除（FK CASCADE）
-4. **リネーム後のパス検索依存禁止** - Drive API は ID ベース検索推奨（パスはユーザー操作で変わる）
+3. **フォルダ直接削除禁止** - drive_folders DB レコードも併せて削除
+4. **リネーム後のパス検索依存禁止** - Drive API は ID ベース検索推奨
 5. **isDriveConnected() 確認** - `token.scope.includes('drive.file')` で検証
 6. **project_id 必須** - ファイルアップロードに project_id なしでは不可
 
 ### テストチェックリスト
-- [ ] フォルダ作成: 初回時 4 階層自動作成、2 回目以降は既存フォルダ再利用、drive_folders DB 記録確認
-- [ ] ファイル分類: AI confidence > 0.7、フォールバック「その他」判定、yearMonth 'YYYY-MM' 形式
-- [ ] Resumable Upload: Step 1 uploadUrl 返却、Step 2 ブラウザ直接 PUT、Step 3 complete API で ファイル検出
-- [ ] ステージング承認: pending_review → approved → uploaded、reject で 一時ファイル削除
+- [ ] フォルダ作成: 初回時4階層自動作成、2回目以降は既存再利用
+- [ ] ファイル分類: AI confidence > 0.7、フォールバック「その他」
+- [ ] Resumable Upload: uploadUrl返却 → ブラウザ直接PUT → complete API
+- [ ] ステージング承認: pending_review → approved → uploaded
 - [ ] チャネル別: Gmail / Slack / Chatwork 添付ファイル自動取得
 
 ---
@@ -286,16 +256,16 @@ FileIntakeCard（秘書UI）
 ## 5. タスク ライフサイクル（TASK_LIFECYCLE）
 
 ### 概要
-個人・グループの大型業務。3 フェーズ（ideation→progress→result）で段階遷移。AI 会話で段階的に構造化し、完了時にビジネスログにアーカイブ。Calendar 統合、ファイル添付、思考ノード自動抽出を実装。
+個人・グループの大型業務。3フェーズ（ideation→progress→result）で段階遷移。AI会話で段階的に構造化し、完了時にビジネスログにアーカイブ。Calendar統合、ファイル添付、思考ノード自動抽出、外部AI資料取り込みを実装。
 
 ### データフロー
 ```
 作成時: phase='ideation', status='todo'
-  → structureSeedWithAI() で 4 要素自動生成（goal / content / concerns / dueDate）
+  → structureSeedWithAI() で4要素自動生成（goal / content / concerns / dueDate）
   → ideation_summary に保存、ユーザー編集可能
 
 進行フェーズ移行: phase='progress', status='in_progress'
-  → AI コーチング、進捗トラッカー表示（2/4 完了等）
+  → AI コーチング、進捗トラッカー表示
 
 完了: phase='result', status='done'
   → AI 事後振返り（initial_goal vs final_landing スナップショット）
@@ -303,7 +273,7 @@ FileIntakeCard（秘書UI）
 ビジネスログ化:
   archiveTaskToBusinessLog()
     → business_events 新規作成
-    → ideation_summary + result_summary + 会話ログ + ドキュメント URL 保全
+    → ideation_summary + result_summary + 会話ログ + ドキュメントURL 保全
     → tasks レコード削除（FK CASCADE）
 
 Calendar 同期:
@@ -314,137 +284,105 @@ Calendar 同期:
   AI 会話毎に extractAndLink()
     → keyword confidence >= 0.7 → knowledge_master_entries 登録
     → thought_task_nodes で紐づけ、thought_edges で思考動線記録
+
+外部AI資料取り込み:
+  task_external_resources テーブルに保存
+    → テキスト / ファイル（TXT, PDF, DOCX, MD, CSV, JSON）/ URL
+    → 保存時50,000文字上限。AI会話注入時は各資料3,000文字に制限
+    → generateTaskChat() のシステムプロンプトに注入
 ```
+
+### 伸二メソッドの適用
+- `getShinjiMethodPrompt()` が `aiClient.service.ts` の `generateTaskChat()` に注入
+- 適用範囲: タスクAI会話の全フェーズ（ideation / progress / result）
+- フレームワーク: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
 
 ### 重要ルール / DO NOT
 
 1. **task_type='group' でも user_id 単一** - グループ = 複数メンバー実行だが作成者が owner
-2. **scheduled_start=NOW 避ける** - createdAt より後の時刻指定（空き時間検索混乱防止）
+2. **scheduled_start=NOW 避ける** - createdAt より後の時刻指定
 3. **resultSummary 手動生成禁止** - タスク完了時 AI 自動生成を待つ
 4. **task_conversations 直接削除禁止** - deleteTask の FK CASCADE で自動削除
-5. **drive_documents の task_id 直接 NULL 禁止** - PATCH /api/tasks/{id}/files/{fileId} 経由
-6. **project_id 必須**（ファイルアップロード時）
-
-### Phase E: 思考プリセット（伸二メソッド）の適用確認
-- **Phase A で実装済み**: `getShinjiMethodPrompt()` が `aiClient.service.ts` の `generateTaskChat()` に注入されている（L559-568）
-- **適用範囲**: タスクAI会話の全フェーズ（ideation / progress / result）
-- **動作**: phaseInstructions の直後、タスク情報の前にシステムプロンプトに注入
-- **フレームワーク**: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
-- **対話スタイル**: 壁打ち型。「そもそも」「構造で見ると」等の表現
-
-### Phase E: 外部AI成果物の取り込み動線
-- **目的**: Deep Research等の外部AI出力をタスクに取り込み、壁打ちのコンテキストとして活用
-- **テーブル**: `task_external_resources`（UUID id、task_id FK CASCADE、resource_type / title / content）
-- **API**: `GET/POST/DELETE /api/tasks/[id]/external-resources`
-- **入力形式**:
-  - テキスト（ペースト）: 外部AIの出力を直接貼り付け
-  - ファイル（TXT, PDF, DOCX, MD, CSV, JSON）: テキスト抽出→保存
-  - URL: 参考リンクとして保存
-- **文字数制限**: 保存時50,000文字上限。AI会話注入時は各資料3,000文字に制限
-- **UI**: タスク詳細画面のAI会話タブ内、ドキュメントセクションの下に「📚 外部資料」セクション
-  - 「+ 取り込み」ボタンでパネル展開（テキスト/ファイル/URLモード切替）
-  - 資料一覧表示（タイトル / 種別アイコン / 文字数 / 削除ボタン）
-- **AIコンテキスト注入**: `generateTaskChat()` 呼び出し前に `task_external_resources` を取得
-  - `chatContext.externalResourcesContext` に格納
-  - システムプロンプトの projectContext と personalizedContext の間に配置
-- **秘書AI対応**:
-  - Intent: `task_external_resource`（「外部資料」「Deep Research」「タスクに資料を取り込み」等）
-  - カード: `TaskExternalResourceCard` でアクティブタスク一覧表示→タスク画面への導線
-- **ステップ構造の維持**: 構想→進行→結果の3フェーズは変更なし（思考マップとの連携に必要）
+5. **project_id 必須**（ファイルアップロード時）
 
 ### テストチェックリスト
-- [ ] フェーズ遷移: 作成時 ideation、進行→ status='in_progress'、完了→ status='done'
-- [ ] AI 構想: 4 要素自動生成、ユーザー再編集可能、保存のみで AI 送信なし
-- [ ] 進捗トラッカー: 4 項目プログレスバー、全完了で「進行フェーズへ」表示
-- [ ] Calendar: scheduled_start/end → Google Calendar イベント、グループで各メンバーに個別
-- [ ] ビジネスログ: 完了時 business_events 作成、summary + 会話ログ保全、タスク削除後も events 残存
-- [ ] 思考ノード: AI 会話毎に抽出、thought_task_nodes 紐づけ、thought_edges 形成
-- [ ] 伸二メソッド（Phase E）: タスクAI会話のシステムプロンプトに伸二メソッドが含まれている
-- [ ] 外部資料追加（Phase E）: テキスト/ファイル/URL を追加→task_external_resources に保存
-- [ ] 外部資料コンテキスト（Phase E）: 追加済み資料がAI会話のシステムプロンプトに注入される
-- [ ] 外部資料削除（Phase E）: 削除→DB削除、次回AI会話でコンテキストから除外
-- [ ] 秘書AI外部資料（Phase E）: 「外部資料を取り込みたい」→ task_external_resource カード表示
+- [ ] フェーズ遷移: 作成時ideation、進行→in_progress、完了→done
+- [ ] AI構想: 4要素自動生成、ユーザー再編集可能
+- [ ] Calendar: scheduled_start/end → Google Calendar イベント
+- [ ] ビジネスログ: 完了時 business_events 作成、タスク削除後も残存
+- [ ] 思考ノード: AI会話毎に抽出、thought_task_nodes紐づけ
+- [ ] 伸二メソッド: タスクAI会話のシステムプロンプトに含まれている
+- [ ] 外部資料追加: テキスト/ファイル/URL → task_external_resources に保存
+- [ ] 外部資料コンテキスト: AI会話のシステムプロンプトに注入される
+- [ ] 外部資料削除: DB削除、次回AI会話でコンテキストから除外
 
 ---
 
 ## 6. ジョブと社内相談（JOBS_AND_CONSULTATIONS）
 
 ### 概要
-秘書に委ねる日常の簡易作業。type 別に即時実行フロー（reply/schedule/check）または社内相談フロー（consulting→draft_ready→done）で処理。Phase 62 で ジョブの即座実行化を廃止し、返信・日程調整・タスク化・Drive 保存を MessageInlineActions で同期実行。
+インボックスのアクションで即時実行（返信/日程調整/Drive保存/タスク化）。社内相談のみ非同期フロー（consulting→draft_ready→done）で処理。
 
 ### データフロー
 ```
 【即時実行フロー】
 MessageDetail.tsx
-  → 💬 返信 / 📅 日程調整 / 📁 Drive 保存 / ✅ タスク化 アクション選択
-    → ReplyForm（autoAiDraft=true）→ AI 下書き生成
-      → ユーザー「送信」
-        → POST /api/messages/reply（即座に同期実行）
-        → inbox_messages に direction='sent' 保存
-        → ActionResultCard 表示
+  → 💬 返信 / 📅 日程調整 / 📁 Drive保存 / ✅ タスク化 アクション選択
+    → ReplyForm（autoAiDraft=true）→ AI下書き → 送信
+    → inbox_messages に direction='sent' 保存
 
 【日程調整】
 scheduleMode=true で AI プロンプト注入:
-  isCalendarConnected() → findFreeSlots(7 日) → formatFreeSlotsForContext()
-    → "3/6（金） 10:00〜12:00、13:00〜18:00"形式で AI に注入
-      → 全空き時間すべて候補として提示
+  isCalendarConnected() → findFreeSlots(7日) → formatFreeSlotsForContext()
+    → 全空き時間すべて候補として提示
 
 【社内相談フロー】
-MessageDetail.tsx
-  → 「💬 社内相談」選択
-    → 相談相手（linked_user_id 紐づけ済みメンバーのみ）選択
-      → POST /api/jobs { type: 'consult', ... }
-        → jobs + consultations テーブル両方作成（status='consulting'）
+MessageDetail.tsx → 「💬 社内相談」→ 相談相手選択（linked_user_id紐づけ済みのみ）
+  → POST /api/jobs { type: 'consult' }
+    → jobs + consultations テーブル両方作成
 
-回答者のジョブページ
-  → 「あなた宛ての相談」バナー表示
-    → 回答入力 → POST /api/consultations { answer }
-      → スレッド要約生成（元メッセージ + 相談内容 + 回答）
-      → AI 返信文面生成、status='draft_ready'
-
-依頼者が確認・送信
-  → execution_log に成功ログ、status='done'
+回答者のジョブページ → 回答入力 → AI返信文面生成 → status='draft_ready'
+依頼者が確認・送信 → status='done'
 ```
 
 ### 重要ルール / DO NOT
 
-1. **社内相談を即時実行化しない** - consulting→draft_ready→done の非同期フロー維持（相談者の思考時間必要）
+1. **社内相談を即時実行化しない** - 非同期フロー維持（相談者の思考時間必要）
 2. **job_id なしで consultations 作成禁止** - jobs テーブル FK 制約
 3. **responder_user_id に contact_id そのまま禁止** - linked_user_id 経由で auth.user_id 変換
-4. **過去時間を空き時間に含める禁止** - findFreeSlots で現在時刻以降のみフィルタ必須
-5. **calendar_event_id あるのに findFreeSlots 含める禁止** - 二重カウント防止、設定済みは除外
+4. **過去時間を空き時間に含める禁止** - findFreeSlots で現在時刻以降のみ
 
 ### テストチェックリスト
-- [ ] 返信アクション: 即座にメール送信・Slack 投稿、inbox_messages に direction='sent' 保存
+- [ ] 返信アクション: 即座にメール送信・Slack投稿、inbox_messages に direction='sent' 保存
 - [ ] 日程調整: scheduleMode=true で空き時間注入、カレンダー未接続時フォールバック
-- [ ] 社内相談: 作成時 jobs + consultations 両方登録、回答者のジョブページに表示、回答で ai_draft 生成
-- [ ] linked_user_id 紐づけ: 相談相手選択時 linked_user_id 紐づけ済みのみ表示、未紐づけはグレーアウト
+- [ ] 社内相談: jobs + consultations 両方登録、回答者のジョブページに表示、回答で ai_draft 生成
+- [ ] linked_user_id 紐づけ: 相談相手選択時 linked_user_id 紐づけ済みのみ表示
 
 ---
 
 ## 7. 思考マップ（THOUGHT_MAP）
 
 ### 概要
-ユーザー個人の「知識の全体地形」を力学シミュレーションで可視化。タスク・種の AI 会話で自動抽出されたキーワードノードと思考動線（エッジ）を空間配置し、フェーズを背景ゾーンで表現。Overview（全体）vs Trace（個別トレース）2 モード。
+ユーザー個人の「知識の全体地形」を力学シミュレーションで可視化。タスクのAI会話で自動抽出されたキーワードノードと思考動線（エッジ）を空間配置し、フェーズを背景ゾーンで表現。Overview（全体）vs Trace（個別トレース）2モード。
 
 ### データフロー
 ```
 AI 会話毎に extractKeywords() 実行
-  → confidence >= 0.7 のキーワードのみ採用（最大 8）
-    → knowledge_master_entries に重複なく登録（id: me_auto_${Date.now()}_${random}）
-    → thought_task_nodes で task_id / seed_id と紐づけ
+  → confidence >= 0.7 のキーワードのみ採用（最大8）
+    → knowledge_master_entries に重複なく登録
+    → thought_task_nodes で task_id と紐づけ
 
 エッジ記録:
   前ターン最後ノード → 今ターン最初ノード、今ターン内のノード群を順に接続
   → thought_edges 記録（edge_type: 'main' or 'detour'）
 
 スナップショット:
-  作成時: initial_goal（種のノード）記録
-  完了時: final_landing（結果フェーズ到達ノード）記録
+  作成時: initial_goal 記録
+  完了時: final_landing 記録
 
 Canvas 描画:
   力学シミュレーション（反発力 + 引力 + フェーズアンカー）
-  背景ゾーン: seed（左上緑）→ ideation（右上青）→ progress（右下紫）→ result（左下藍）
+  背景ゾーン: seed→ideation→progress→result
 
 Overview モード: 全ノード + 全エッジ、右パネルでタスクフィルター
 Trace モード: 特定タスク思考フロー、タイムスライダーで時系列再生
@@ -454,68 +392,51 @@ Trace モード: 特定タスク思考フロー、タイムスライダーで時
 
 1. **ノード位置を固定化しない** - 力学シミュレーションで毎回異なる（設計通り）
 2. **thought_task_nodes 手動削除禁止** - deleteTask の FK CASCADE で自動削除
-3. **信頼度 < 0.7 ノード化禁止** - ノイズ増加、0.7 以上に統一
-4. **seed_id なしに種→タスクエッジ統合禁止** - seed_id チェックで判定
-5. **turn_id なし会話ジャンプ禁止** - source_conversation_id NULL の場合は createdAt タイムスタンプで フォールバック
+3. **信頼度 < 0.7 ノード化禁止** - ノイズ増加、0.7以上に統一
+4. **turn_id なし会話ジャンプ禁止** - createdAt タイムスタンプでフォールバック
 
 ### テストチェックリスト
-- [ ] ノード抽出: AI 会話毎に keyword 抽出、信頼度 >= 0.7、knowledge_master_entries 重複なく登録
-- [ ] エッジ記録: ターン内のノード群が順に接続、前→今ターン接続、thought_edges UNIQUE 制約で重複なし
-- [ ] 力学シミュレーション: 反発・引力で自動配置、フェーズアンカーで 4 ゾーン分散、パン・ズーム動作
-- [ ] スナップショット: 作成時 initial_goal、完了時 final_landing、UI で差分比較
-- [ ] 会話ジャンプ: ノードクリック → 「会話を見る」→ turn_id で会話取得、キーワードハイライト
+- [ ] ノード抽出: AI会話毎に keyword 抽出、信頼度 >= 0.7
+- [ ] エッジ記録: ターン内のノード群が順に接続、thought_edges UNIQUE制約
+- [ ] 力学シミュレーション: 反発・引力で自動配置、パン・ズーム動作
+- [ ] スナップショット: 作成時 initial_goal、完了時 final_landing
+- [ ] 会話ジャンプ: ノードクリック → 「会話を見る」→ turn_id で会話取得
 
 ---
 
 ## 8. コンタクト（CONTACTS）
 
 ### 概要
-メッセージ送受信相手を一元管理。同一人物のメール・Slack・Chatwork アカウントを統合、過去やり取り・関連タスク・所属組織を紐づけ。重複検出・マージで一元化、AI がコンテキスト自動生成。linked_user_id で NodeMap アカウント紐づけ（社内相談用）。
+メッセージ送受信相手を一元管理。同一人物のメール・Slack・Chatworkアカウントを統合、過去やり取り・関連タスク・所属組織を紐づけ。重複検出・マージで一元化。組織・プロジェクト画面内のメンバータブとして表示。
 
 ### データフロー
 ```
 contact_persons.id 手動生成（必須）: team_${Date.now()}_${random}
 
 contact_channels（UNIQUE: contact_id + channel + address）
-  → Email / Slack user_id / Chatwork account_id 記録
 
-重複検出 GET /api/contacts/duplicates
-  → 同名、同メールアドレス、同 Slack user_id を duplicateGroups に集約
-
-マージ POST /api/contacts/merge
-  → source channels を target に付け替え
-  → source tags を target にマージ
-  → source 削除（FK CASCADE）
+重複検出 GET /api/contacts/duplicates → マージ POST /api/contacts/merge
 
 Enrichment POST /api/contacts/enrich
-  → Slack users.info / Chatwork contacts API で プロフィール取得
-  → real_name / title / department / company 自動入力
+  → Slack users.info / Chatwork contacts API でプロフィール取得
 
-AI Context 自動生成（Phase 36）
-  → 過去やり取り分析
-  → ai_context フィールドに「月 2-3 回のペース...」形式で保存
-
-linked_user_id 紐づけ（Phase 58b、自社組織のみ）
+linked_user_id 紐づけ（自社組織のみ）
   → /api/users で Supabase auth.users 取得
-  → ドロップダウンで選択 → PATCH /api/organizations/{id}/members で保存
   → 社内相談で responder_user_id に利用
 ```
 
 ### 重要ルール / DO NOT
 
-1. **contact_persons.id 自動生成頼らない** - TEXT 型・自動生成なし、手動生成で POST 必須
-2. **contact_channels UNIQUE 制約無視** - マージ前に重複チャネル削除またはマージ
+1. **contact_persons.id 自動生成頼らない** - TEXT型・手動生成必須
+2. **contact_channels UNIQUE 制約無視** - マージ前に重複チャネル削除
 3. **linked_user_id を他 user_id と混同** - auth.user_id（UUID）として使用
-4. **organization_id なしメンバー扱い禁止** - NULL の場合は「独立」扱い
-5. **ai_context 手動編集後上書き禁止** - 定期実行で上書きされる。notes フィールドに手動修正記入
+4. **organization_id なしメンバー扱い禁止** - NULL は「独立」扱い
 
 ### テストチェックリスト
 - [ ] ID 生成: `team_${Date.now()}_${random}` で生成、重複なし
-- [ ] チャネル管理: UNIQUE 制約で重複登録禁止、削除で contact_channels 自動削除
-- [ ] 重複検出: 同名・同メール・同 Slack user_id 検出
+- [ ] チャネル管理: UNIQUE制約で重複登録禁止
+- [ ] 重複検出: 同名・同メール・同Slack user_id 検出
 - [ ] マージ: source 削除、channels 付け替え、tags マージ
-- [ ] Enrichment: Slack real_name 取得、Chatwork name 取得
-- [ ] AI Context: 自動生成、返信下書き AI に注入
 - [ ] linked_user_id: 自社メンバーのみドロップダウン、社内相談で使用
 
 ---
@@ -523,70 +444,80 @@ linked_user_id 紐づけ（Phase 58b、自社組織のみ）
 ## 9. ナレッジ マスタ（KNOWLEDGE_MASTER）
 
 ### 概要
-タスク・メッセージ・ビジネスイベントから自動抽出されたキーワードを一元管理。蓄積は全ユーザー共有（同キーワード 1 レコード）だが表示は個人フィルタ。週次 AI クラスタリングで領域・分野を自動提案。未確認ノード一括承認、手動 CRUD 対応。
+タスク・メッセージ・ビジネスイベントから自動抽出されたキーワードを一元管理。蓄積は全ユーザー共有だが表示は個人フィルタ。週次AIクラスタリングで領域・分野を自動提案。思考マップ画面のナレッジタブ（/thought-map?tab=knowledge）として表示。
 
 ### データフロー
 ```
 キーワード自動抽出: extractKeywords()
-  → confidence >= 0.7 のみ採用（最大 8）
+  → confidence >= 0.7 のみ採用（最大8）
   → knowledge_master_entries 新規作成（id: me_auto_${Date.now()}_${random}）
   → is_confirmed=false で待機状態
 
 未確認ノード管理（UnconfirmedPanel）
-  → is_confirmed=false 一覧表示
   → 一括承認: 全件を同じ category / domain / field に設定
 
 週次 AI クラスタリング（毎週月曜 2:30）
-  → 未確認 50 個以上で対象
+  → 未確認50個以上で対象
   → knowledge_clustering_proposals 提案保存
 
-クラスタリング承認:
-  POST /api/knowledge/proposals/{id}/apply
-    → domain / field 自動作成（存在チェック）
-    → エントリ field_id / domain_id / is_confirmed=true 一括更新
+期間別ノード表示（マイナレッジパネル）
+  → 「今日」「今週」「今月」「全期間」の4タブフィルター（デフォルト: 今日）
+  → API: /api/nodes/my-keywords?period=today|week|month|all
 
-TagCloud UI（This Week）
-  → /api/nodes/this-week で週間キーワード取得
-  → frequency に比例したフォントサイズ表示
-
-My Knowledge Panel
-  → period フィルタ（week/month/all）
-  → ドメイン別ツリー、relatedTaskCount / relatedMessageCount バッジ表示
-
-手動 CRUD（DomainTree）
-  → 新規領域・分野・キーワード作成、編集、削除
-  → FK CASCADE で子レコード自動削除
+秘書AI対応:
+  → knowledge_nodes intent: 「今日のノード」「今週のナレッジ」等で発火
+  → ユーザーメッセージから期間を自動推定
 ```
-
-### Phase F: 期間別ノード表示
-- **目的**: ナレッジの蓄積感をリアルタイムに可視化し「こんなこと考えたんだな」という気づきを促す
-- **UI**: マイナレッジパネルに「今日」「今週」「今月」「全期間」の4タブフィルター（デフォルト: 今日）
-- **API**: `/api/nodes/my-keywords?period=today|week|month|all` — `today` を新規追加（Phase F）
-- **期間計算**: today=当日0:00〜、week=今週月曜0:00〜、month=今月1日0:00〜、all=制限なし
-- **秘書AI対応**: `knowledge_nodes` intent 追加 — 「今日のノード」「今週のナレッジ」「考えたこと」等で発火
-  - ユーザーメッセージから期間を自動推定（「今日」→today、「今週」→week、「今月」→month、その他→today）
-  - ノード一覧をテキストで返却 + ナレッジ画面へのナビゲーションカード表示
-- **基本構造は維持**: 活動→自動蓄積→自動分類→ユーザーごとノード登録の導線は変更なし。Cron頻度も変えない
 
 ### 重要ルール / DO NOT
 
-1. **knowledge_master_entries.id 自動生成頼らない** - TEXT 型・自動生成なし、手動生成で POST 必須
-2. **field_id なしエントリを表示禁止** - 未分類フォルダに表示するが、クラスタリング承認まで待つ
-3. **信頼度 < 0.7 キーワード採用禁止** - ノイズ増加、0.7 以上統一
-4. **同週に複数提案実行禁止** - ISO 週ベースで 1 度のみ、複数は自動却下
-5. **AI 提案すべて承認禁止** - ユーザー却下した提案は後続週で再提案。不要な領域は手動削除で対応
+1. **knowledge_master_entries.id 自動生成頼らない** - TEXT型・手動生成必須
+2. **信頼度 < 0.7 キーワード採用禁止** - 0.7以上統一
+3. **同週に複数提案実行禁止** - ISO週ベースで1度のみ
+4. **AI提案すべて承認禁止** - 不要な領域は手動削除で対応
 
 ### テストチェックリスト
-- [ ] ID 生成: `me_auto_` or `me_manual_` で生成、自動・手動で異なるプレフィックス
-- [ ] 抽出・紐づけ: AI 会話毎に keyword 抽出、信頼度 >= 0.7、thought_task_nodes 紐づけ
-- [ ] 未確認ノード: UnconfirmedPanel に is_confirmed=false 表示、一括承認で全件 true
-- [ ] AI クラスタリング: 毎週月曜実行、50+ 未確認で提案、proposal status='pending' で秘書に表示
-- [ ] 提案承認: domain/field 自動作成、エントリ field_id / domain_id 更新、同週の別提案自動却下
-- [ ] TagCloud: /api/nodes/this-week から週間キーワード、frequency でフォントサイズ
-- [ ] My Knowledge: period フィルタ（today/week/month/all）、ドメイン別ツリー、relatedTaskCount バッジ
-- [ ] Phase F 期間別ノード: today フィルタが正しく当日のみ表示、デフォルト=today
-- [ ] Phase F 秘書AI: 「今日のノード」「今週のナレッジ」等で knowledge_nodes intent 発火、期間推定正確
-- [ ] CRUD: 領域・分野・キーワード作成・編集・削除、FK CASCADE で子自動削除
+- [ ] ID 生成: `me_auto_` or `me_manual_` で生成
+- [ ] 未確認ノード: is_confirmed=false 表示、一括承認で全件 true
+- [ ] AIクラスタリング: 毎週月曜実行、50+未確認で提案
+- [ ] 期間別ノード: today フィルタが正しく当日のみ表示、デフォルト=today
+- [ ] 秘書AI: 「今日のノード」等で knowledge_nodes intent 発火
+- [ ] CRUD: 領域・分野・キーワード作成・編集・削除
+
+---
+
+## 10. 組織・プロジェクト（ORGANIZATIONS）
+
+### 概要
+組織 > プロジェクト > タスク | ドキュメント | ビジネスログ の階層を1画面で操作。サイドメニューの「組織・プロジェクト」（/organizations）から遷移。コンタクト・ビジネスログはこの画面内に統合。
+
+### 組織詳細ページ構成
+```
+組織詳細（/organizations/[id]）
+  タブ1: 基本情報
+  タブ2: チャネル
+  タブ3: メンバー（コンタクト）
+  タブ4: プロジェクト
+    → PJ選択後のサブタブ: タスク / ドキュメント / ビジネスログ（タイムライン）
+```
+
+### 未紐づけチャネル通知
+- 組織チャネルのうち `project_channels` に未登録のSlack/CWチャネルを警告表示
+- API: `GET /api/organizations/[id]/unlinked-channels`
+- プロジェクトタブ上部に紐づけUIを表示
+
+### ビジネスログ タイムラインUI
+- プロジェクト配下のタブとして、時間軸で変遷を辿れるUI
+- 月ごとのグルーピング、種別フィルター（会議/意思決定/メッセージ/ファイル等）
+- 自動蓄積イベント（メッセージ・タスク完了・ファイル）はグレーアウトで区別
+- 手動イベント追加可能
+
+### テストチェックリスト
+- [ ] 組織一覧: カード形式表示
+- [ ] 組織詳細: 4タブ正常表示（基本情報/チャネル/メンバー/PJ）
+- [ ] PJ配下: タスク/ドキュメント/ビジネスログのサブタブ表示
+- [ ] 未紐づけチャネル: 警告表示、プロジェクト選択→即紐づけ
+- [ ] タイムライン: 月別グルーピング、種別フィルター、手動追加
 
 ---
 
@@ -594,71 +525,16 @@ My Knowledge Panel
 
 ### 認証・権限
 - **getServerSupabase()** をサービス層で使用（service role キー、キャッシュ付き）
-- **getSupabase()** はフォールバック・クライアント側のみ（anon key、RLS 有効）
-- **getServerUserId()** で ユーザーID 確認（401 なら即座に返却）
-
-### 送信サービス関数
-```typescript
-sendEmail(to, subject, body, inReplyTo?, cc?)         // → Promise<boolean>
-sendSlackMessage(channelId, text, threadTs?, userId?) // → Promise<boolean>
-sendChatworkMessage(roomId, body)                     // → Promise<boolean>
-```
+- **getSupabase()** はフォールバック・クライアント側のみ
+- **getServerUserId()** でユーザーID確認（401なら即座に返却）
 
 ### キャッシュ無効化
-- 既読更新・mutation 直後に **cache.invalidateByPrefix** 実行
-- キャッシュキー: `messages:page:${page}` / `tasks:${userId}` 等
+- 既読更新・mutation直後に **cache.invalidateByPrefix** 実行
 
-### AI パーソナライズ
+### AIパーソナライズ
 - **buildPersonalizedContext()** で性格タイプ・応答スタイル・思考傾向・オーナー方針を注入
-- **getUserWritingStyle()** で過去送信 10 件から文体学習
-- すべての AI エンドポイントに適用
-
-### Phase A: 営業時間ルール
-- **営業日**: 平日のみ（土日祝は除外）
-- **営業時間**: 10:00〜19:00（`BUSINESS_HOURS` 定数で管理）
-- **AI出力制限**: 10:00より前、19:00以降の時間帯を候補に出さない
-- **ユーザー裁量**: 出力後にユーザーが手動変更するのは自由
-- **適用箇所**: `findFreeSlots()` / 秘書AI日程調整 / 返信下書き（scheduleMode）/ タスク予定登録
-
-### Phase A: カレンダー命名ルール
-- **タスク予定**: `[NM-Task] タスク名`（`CALENDAR_PREFIX.task`）
-- **ジョブ予定**: `[NM-Job] ジョブ名`（`CALENDAR_PREFIX.job`）
-- **空き検索時**: `[NM-Task]`/`[NM-Job]` プレフィックス付き予定はスキップ（空きとみなす）
-- **判定関数**: `isNodeMapEvent(summary)` で判定（`src/lib/constants.ts`）
-
-### Phase A: 1チャンネル＝1プロジェクト
-- **原則**: 1つのチャットグループ/チャンネル = 1つのプロジェクト
-- **対象**: Slack/Chatworkのグループチャンネル
-- **例外**: メール・LINEなど1:1のやり取りは手動紐づけ
-- **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
-- **秘書intent**: `link_channel` で「このチャンネルを○○プロジェクトに紐づけて」に対応
-
-### Phase D: 組織・ビジネスログUI統合
-- **組織詳細ページに「プロジェクト」タブを追加**
-  - 階層: 組織 > プロジェクト > タスク ｜ ドキュメント ｜ ビジネスログ（並列）
-  - 組織詳細ページの4つ目のタブとして実装（基本情報 / チャネル / メンバー / プロジェクト）
-  - プロジェクト選択後のサブタブ: タスク / ドキュメント / ビジネスログ
-  - コンポーネント: `src/components/organizations/ProjectsTab.tsx`
-- **未紐づけチャネル通知**
-  - 組織チャネルのうち `project_channels` に未登録のSlack/CWチャネルを警告表示
-  - API: `GET /api/organizations/[id]/unlinked-channels`
-  - プロジェクトタブ上部に紐づけUIを表示（プロジェクト選択→即紐づけ）
-- **1チャンネル＝1プロジェクト自動紐づけ強化**
-  - sync-business-events Cronで `resolveProjectFromMessage()` サービスを呼び出し
-  - Phase A の `channelProjectLink.service.ts` を実際のCronに統合
-- **ビジネスログの位置づけ明確化**
-  - ビジネスログはプロジェクト詳細のタブとして組織ページ内に統合
-  - 独立ページ `/business-log` は引き続き残す（全体ダッシュボード用途）
-- **秘書AI改善**
-  - `projects` インテント: 組織別にグルーピングしてナビゲーションカードを表示
-  - 組織詳細ページへ直接リンク（ビジネスログページではなく）
-
-### Phase A: 伸二メソッド思考プリセット
-- **getShinjiMethodPrompt()** で思考フレームワークを生成
-- **適用対象**: タスクAI会話（全フェーズ）、秘書チャット（ビジネス相談系intentのみ）
-- **非適用**: 事務的intent（日程調整・インボックス要約等）
-- **フレームワーク**: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
-- **対話スタイル**: 壁打ち型。「そもそも」「構造で見ると」等の表現
+- **getUserWritingStyle()** で過去送信10件から文体学習
+- すべてのAIエンドポイントに適用
 
 ---
 
@@ -671,14 +547,9 @@ SUPABASE_SERVICE_ROLE_KEY
 ANTHROPIC_API_KEY
 CRON_SECRET
 ENV_TOKEN_OWNER_ID
+NEXT_PUBLIC_EMAIL_ENABLED
 EMAIL_USER
 SLACK_BOT_TOKEN
 CHATWORK_API_TOKEN
 GMAIL_CLIENT_ID / GMAIL_CLIENT_SECRET / GMAIL_REDIRECT_URI
 ```
-
----
-
-## まとめ
-
-NodeMap の 9 機能は密結合。タスク（TASK）が中核で、それを支えるカレンダー・インボックス・秘書 AI・Drive・思考マップ・コンタクト・ナレッジが衛星機能。各機能の重要ルール（DO NOT）を厳守し、テストチェックリストで検証を完全に。このドキュメントは **SSOT（Single Source of Truth）**。矛盾があれば報告してください。

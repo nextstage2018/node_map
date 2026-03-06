@@ -1,6 +1,6 @@
 # フェーズ実装履歴（アーカイブ）
 
-> このドキュメントは過去の実装記録です。現行仕様は docs/features/ を参照してください。
+> このドキュメントは過去の実装記録です。現行仕様は docs/FEATURES.md を参照してください。
 
 このドキュメントは CLAUDE.md より、全フェーズの実装内容をアーカイブとして抽出したものです。
 Git考古学やコミット履歴の参照に用いてください。
@@ -67,6 +67,21 @@ Git考古学やコミット履歴の参照に用いてください。
 | Phase 59 | UX改善・インボックス高速化: ジョブ完了アーカイブタブ＋メモ→タスク直接変換（AI自動生成）＋インボックス受信条件改善（トークンベース取得）＋既読判定バグ修正（サーバーキャッシュ無効化＋クライアント既読保持）＋インボックス読み込み高速化（DBクエリ並列化＋差分取得バックグラウンド化＋重複既読チェック削除） | mainにマージ済み |
 | Phase 61 | AI会話パーソナライズ: 全AIエンドポイントにパーソナライズコンテキスト注入（性格タイプ・応答スタイル・思考傾向・オーナー方針）＋user_thinking_tendenciesテーブル＋日次Cron分析 | mainにマージ済み |
 | Phase 62 | インボックス即時実行UX: ジョブ不要の即時実行方式（返信/日程調整/Drive保存/タスク化）＋グループ=バブルクリック・メール=下部固定チップ＋日程調整にカレンダー空き時間自動注入（findFreeSlots→AI）＋Drive添付ファイル即時保存API（/api/drive/save-attachments）＋findFreeSlots過去時間フィルタ修正 | mainにマージ済み |
+| Phase A | 共通ルール: 営業時間(10-19)＋日本祝日除外＋カレンダー命名([NM-Task]/[NM-Job])＋1Ch=1PJ原則＋伸二メソッド思考プリセット＋BUSINESS_HOURS/CALENDAR_PREFIX定数 | b75eaa3 |
+| Phase B | インボックス改善: メール休眠化(EMAIL_ENABLED)＋リアルタイム更新(3分ポーリング+visibilitychange)＋CW/Slack返信下書き対応＋過去やり取り変遷パネル(ContactHistoryPanel) | 133d438 |
+| Phase C | カレンダー改善: 祝日除外(isJapaneseHoliday)＋複数候補全出力(maxSlots=50)＋日付グルーピング＋秘書AI日程調整改善 | 4960138 |
+| Phase D | 組織・ビジネスログUI統合: 組織詳細にプロジェクトタブ追加＋未紐づけチャネル通知＋1Ch=1PJ自動紐づけ強化＋ビジネスログをPJ配下に統合＋秘書AIプロジェクトintent改善 | 438f170 |
+| Phase E | タスクAI会話改善: 伸二メソッド適用確認＋外部AI資料取り込み(task_external_resources)＋テキスト/ファイル/URL入力＋AI会話コンテキスト注入＋秘書AI task_external_resource intent | 3bfca75 |
+| Phase F | ナレッジ期間別ノード表示: today/week/month/allフィルター＋デフォルト今日＋秘書AI knowledge_nodes intent＋期間自動推定 | 9149d42 |
+| Phase G | 秘書AI全機能接続: settings_change/org_projects/project_tasks intent追加＋business_log詳細対応＋組織名部分一致＋全intent接続確認 | 26ce986 |
+| UI-1 | デザイン基盤: tailwind.config.tsにnm-*カスタムカラー＋shadow＋spacing＋Card/Badge/Button統一コンポーネント | 3d4339b |
+| UI-2 | サイドメニュー統合: 11項目→6項目＋リダイレクトページ(/master→/thought-map?tab=knowledge, /contacts→/organizations, /business-log→/organizations, /agent→/) | 5e3823a |
+| UI-3 | 秘書ページリデザイン: WelcomeDashboard＋サマリーカード4枚＋クイックアクション＋カードデザイン統一＋入力エリア改善 | c1fca1d |
+| UI-4 | インボックス配色統一: メールフィルタ非表示＋メッセージカードデザイン統一＋変遷パネルカード統一 | ecdfa20 |
+| UI-5 | タスクページシンプル化: ステータスビューのみ＋TaskCardシンプル化＋会話パネルコンパクト化＋外部資料アコーディオン | 1cf3689 |
+| UI-6 | 思考マップ+ナレッジ統合: /thought-mapに「マップ」「ナレッジ」2タブ＋/masterリダイレクト＋サイドメニューからナレッジ削除 | 4c28849 |
+| UI-7 | 組織・PJ階層統合+タイムライン: 組織カード形式＋PJ配下にタスク/ドキュメント/ビジネスログ＋BusinessTimelineコンポーネント＋コンタクトをメンバータブに統合＋/contacts,/business-logリダイレクト | 97a6399 |
+| fix | メール非表示の漏れ修正: EMAIL_ENABLED=false時のUI残留箇所を修正 | dd175a7 |
 
 ---
 

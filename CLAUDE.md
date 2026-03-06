@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-05
+最終更新: 2026-03-06
 
 > **ドキュメント構成**: このファイルが作業の起点。詳細仕様は `docs/` 配下の2ファイルを参照。
 > 作業開始前に、関連セクションを必ず読んでください。
@@ -49,6 +49,66 @@
 
 ---
 
+## 画面・ルート一覧
+
+### サイドメニュー（6項目）
+
+| 画面 | URL | 主なテーブル |
+|---|---|---|
+| 秘書 | / | tasks, inbox_messages, jobs, calendar |
+| インボックス | /inbox | inbox_messages（Slack/CWのみ。メールはUI非表示） |
+| タスク | /tasks | tasks, task_conversations |
+| 思考マップ | /thought-map | thought_task_nodes, thought_edges |
+| 思考マップ > ナレッジ | /thought-map?tab=knowledge | knowledge_master_entries |
+| 組織・プロジェクト | /organizations | organizations, projects, business_events |
+| 組織詳細 | /organizations/[id] | organizations, projects, contact_persons, business_events |
+| 設定 | /settings | organizations, contact_persons |
+
+### リダイレクトページ（旧URLアクセスを維持）
+
+| 旧URL | リダイレクト先 |
+|---|---|
+| /master | /thought-map?tab=knowledge |
+| /contacts | /organizations |
+| /business-log | /organizations |
+| /agent | /（ホーム） |
+
+---
+
+## 配色ルール（3色）
+
+| 役割 | 色 | 用途 |
+|---|---|---|
+| **メイン** | Slate（slate-50〜900） | 背景・テキスト・ボーダー全般 |
+| **アクセント** | Blue（blue-500/600） | CTA・アクティブ状態・リンク・重要アクション |
+| **セマンティック** | 状況に応じた色 | 緑=完了、赤=緊急/エラー、黄=注意（最小限に使用） |
+
+### nm-* カスタムカラー（tailwind.config.ts）
+
+| トークン | 値 | 用途 |
+|---|---|---|
+| `nm-bg` | #F8FAFC (slate-50) | ページ背景 |
+| `nm-surface` | #FFFFFF | カード背景 |
+| `nm-border` | #E2E8F0 (slate-200) | ボーダー |
+| `nm-border-hover` | #CBD5E1 (slate-300) | ホバーボーダー |
+| `nm-text` | #1E293B (slate-800) | メインテキスト |
+| `nm-text-secondary` | #64748B (slate-500) | 副テキスト |
+| `nm-text-muted` | #94A3B8 (slate-400) | ミュートテキスト |
+| `nm-primary` | #2563EB (blue-600) | プライマリーアクション |
+| `nm-primary-hover` | #1D4ED8 (blue-700) | ホバー時 |
+| `nm-primary-light` | #EFF6FF (blue-50) | 薄い背景 |
+| `nm-primary-border` | #BFDBFE (blue-200) | 薄いボーダー |
+| `nm-dark` | #1E293B (slate-800) | ダーク背景 |
+| `nm-dark-surface` | #334155 (slate-700) | ダークサーフェス |
+
+### 統一コンポーネントバリエーション
+
+- **Card**: default / interactive（hover時shadow-md）/ accent（左border付き）
+- **Badge**: status用（dot付き）/ label用（背景色付き）
+- **Button**: primary(blue) / secondary(slate) / ghost(transparent)
+
+---
+
 ## テーブル一覧（CREATE文 → docs/TABLE_SPECS.md）
 
 | テーブル | 用途 | ID型 | 注意 |
@@ -60,9 +120,9 @@
 | `organization_channels` | 組織チャネル | UUID | UNIQUE(org_id, service_name, channel_id) |
 | `projects` | プロジェクト | UUID | organization_id で組織に紐づく |
 | `project_channels` | プロジェクトチャネル | UUID | UNIQUE(project_id, service_name, identifier) |
-| `seeds` | 種ボックス（廃止予定） | UUID | project_id / user_id あり |
 | `tasks` | タスク | UUID | seed_id / project_id / due_date / scheduled_start/end |
 | `task_members` | グループタスクメンバー | UUID | UNIQUE(task_id, user_id) |
+| `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE。resource_type / title / content |
 | `jobs` | ジョブ | UUID | type / status / ai_draft / scheduled fields |
 | `consultations` | 社内相談 | UUID | requester→responder→AI返信生成 |
 | `idea_memos` | アイデアメモ | UUID | tags TEXT[] |
@@ -77,26 +137,109 @@
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
 | `business_events` | ビジネスイベント | UUID | ai_generated / summary_period |
+| `seeds` | 種ボックス（廃止予定） | UUID | project_id / user_id あり |
 
 ---
 
-## 画面・ルート一覧
+## 秘書AI — 44 Intent
 
-| 画面 | URL | 主なテーブル |
+キーワードベース意図分類（< 10ms）で高速判定。優先度順に評価。
+
+| # | Intent | 用途 |
 |---|---|---|
-| インボックス | /inbox | inbox_messages |
-| タスク | /tasks | tasks / task_conversations |
-| ジョブ | /jobs | jobs / consultations |
-| アイデアメモ | /memos | idea_memos / memo_conversations |
-| 思考マップ | /thought-map | thought_task_nodes / thought_edges |
-| コンタクト | /contacts | contact_persons / contact_channels |
-| 組織 | /organizations | organizations / organization_channels |
-| 組織詳細 | /organizations/[id] | organizations / contact_persons |
-| ナレッジ | /master | knowledge_domains / knowledge_master_entries |
-| ビジネスログ | /business-log | projects / business_events |
-| 秘書 | /agent | tasks / seeds（読み取り専用） |
-| 種ボックス（廃止予定） | /seeds | seeds |
-| 設定 | /settings | organizations / contact_persons |
+| 1 | `briefing` | 今日の状況・ブリーフィング |
+| 2 | `inbox` | メッセージ一覧 |
+| 3 | `message_detail` | 特定メッセージ詳細 |
+| 4 | `reply_draft` | 返信下書き生成 |
+| 5 | `create_job` | ジョブ作成（AIに任せる） |
+| 6 | `calendar` | カレンダー・予定確認 |
+| 7 | `schedule` | 日程調整・空き時間 |
+| 8 | `tasks` | タスク状況 |
+| 9 | `jobs` | ジョブ・対応必要 |
+| 10 | `projects` | プロジェクト一覧 |
+| 11 | `documents` | ドキュメント・ファイル一覧 |
+| 12 | `file_intake` | ファイル確認・承認フロー |
+| 13 | `store_file` | ファイル格納指示 |
+| 14 | `share_file` | ファイル共有 |
+| 15 | `thought_map` | 思考マップ |
+| 16 | `business_log` | ビジネスログ |
+| 17 | `business_summary` | 活動要約・週間レポート |
+| 18 | `create_business_event` | ビジネスイベント登録 |
+| 19 | `knowledge_structuring` | ナレッジ構造化提案 |
+| 20 | `create_calendar_event` | カレンダー予定作成 |
+| 21 | `create_drive_folder` | Driveフォルダ作成 |
+| 22 | `create_task` | タスク作成 |
+| 23 | `task_progress` | タスク進行（AIに相談） |
+| 24 | `pattern_analysis` | 傾向分析 |
+| 25 | `knowledge_reuse` | 過去知見の再利用 |
+| 26 | `setup_organization` | 組織セットアップ |
+| 27 | `create_contact` | コンタクト作成 |
+| 28 | `create_organization` | 組織作成（手動） |
+| 29 | `create_project` | プロジェクト作成 |
+| 30 | `search_contact` | コンタクト検索 |
+| 31 | `task_negotiation` | タスク修正提案・調整 |
+| 32 | `consultations` | 社内相談確認 |
+| 33 | `link_channel` | チャンネル→PJ紐づけ |
+| 34 | `task_external_resource` | タスクに外部資料を取り込み |
+| 35 | `knowledge_nodes` | 期間別ナレッジノード表示 |
+| 36 | `settings_change` | 設定変更 |
+| 37 | `org_projects` | 特定組織のPJ一覧 |
+| 38 | `project_tasks` | 特定PJのタスク一覧 |
+| 39 | `general` | その他 |
+
+※ 型定義上は39種。将来のintent追加枠を含めて「44種対応」と呼称（一部intentは内部サブ分岐を含む）。
+
+---
+
+## 共通ビジネスルール
+
+### 営業時間
+
+- **営業日**: 平日のみ（土日・日本の祝日は除外）
+- **営業時間**: 10:00〜19:00（`BUSINESS_HOURS` 定数 — `src/lib/constants.ts`）
+- **祝日判定**: `isJapaneseHoliday(date)` — 固定祝日・ハッピーマンデー・春分/秋分・振替休日・国民の休日（2000〜2099年対応）
+
+### カレンダー命名
+
+- **タスク予定**: `[NM-Task] タスク名`（`CALENDAR_PREFIX.task`）
+- **ジョブ予定**: `[NM-Job] ジョブ名`（`CALENDAR_PREFIX.job`）
+- **空き検索時**: 上記プレフィックス付き予定はスキップ（空きとみなす）
+- **判定関数**: `isNodeMapEvent(summary)`（`src/lib/constants.ts`）
+
+### 1チャンネル＝1プロジェクト（1Ch=1PJ）
+
+- **原則**: 1つのSlack/Chatworkグループチャンネル = 1つのプロジェクト
+- **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
+- **例外**: メール・LINEなど1:1のやり取りは手動紐づけ
+
+### メール休眠フラグ
+
+- **フラグ**: `NEXT_PUBLIC_EMAIL_ENABLED=false` でメール機能をUI非表示（デフォルト: true）
+- **定数**: `EMAIL_ENABLED`（`src/lib/constants.ts`）
+- **影響**: メール取得スキップ、フィルタ非表示、ブリーフィングから除外
+- **復帰**: 環境変数を `true` に設定するだけ（ソースコード削除なし）
+
+### 伸二メソッド思考プリセット
+
+- **関数**: `getShinjiMethodPrompt()`
+- **適用**: タスクAI会話（全フェーズ）、秘書チャット（ビジネス相談系intentのみ）
+- **非適用**: 事務的intent（日程調整・インボックス要約等）
+- **フレームワーク**: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
+- **対話スタイル**: 壁打ち型。「そもそも」「構造で見ると」等の表現
+
+### ビジネスログ タイムラインUI
+
+組織詳細ページのプロジェクト配下に、時間軸で変遷を辿れるタイムラインUIを実装。
+
+| 種別 | アイコン | 左ボーダー色 | 自動/手動 |
+|---|---|---|---|
+| 会議 | Calendar | blue | 手動 or カレンダー同期 |
+| 意思決定 | GitCommit | purple | 手動 |
+| メッセージ | MessageSquare | slate | 自動（CW/Slack同期） |
+| タスク完了 | CheckCircle | green | 自動 |
+| ファイル共有 | FileText | amber | 自動（Drive同期） |
+| マイルストーン | Flag | red | 手動 |
+| メモ | StickyNote | slate | 手動 |
 
 ---
 
@@ -196,9 +339,13 @@ CRON_SECRET=
 
 # オプション
 ENV_TOKEN_OWNER_ID=              # パーソナライズ対象ユーザー
+NEXT_PUBLIC_EMAIL_ENABLED=       # false でメール休眠（デフォルト: true）
 EMAIL_USER=                      # メール取得用
 SLACK_BOT_TOKEN=                 # Slack連携（チームレベル）
 CHATWORK_API_TOKEN=              # Chatwork連携
+GMAIL_CLIENT_ID=                 # OAuth
+GMAIL_CLIENT_SECRET=             # OAuth
+GMAIL_REDIRECT_URI=              # OAuth
 ```
 
 ---
@@ -224,6 +371,7 @@ CHATWORK_API_TOKEN=              # Chatwork連携
 - メール署名: メールのみ自動付与（Slack/CWは付与しない）
 - AI文体学習: `getUserWritingStyle()` で過去送信10件を参照
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
+- 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
 
 ---
 
