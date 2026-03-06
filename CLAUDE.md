@@ -2,14 +2,16 @@
 
 最終更新: 2026-03-06
 
-> **ドキュメント構成**: このファイルが作業の起点。詳細仕様は `docs/` 配下の2ファイルを参照。
+> **ドキュメント構成**: このファイルが作業の起点。V2設計を含む全ドキュメントを参照。
 > 作業開始前に、関連セクションを必ず読んでください。
 
-| ファイル | 内容 |
-|---|---|
-| **docs/TABLE_SPECS.md** | DB現状マスタ — 全テーブルのCREATE文・制約・インデックス |
-| **docs/FEATURES.md** | 全機能仕様 — データフロー・ルール・テストチェックリスト |
-| **docs/PHASE_HISTORY.md** | フェーズ実装履歴（アーカイブ・普段読まない） |
+| ファイル | 内容 | 必読 |
+|---|---|---|
+| **docs/ARCHITECTURE_V2.md** | V2設計書 — 5階層・3ログ・チェックポイント・自己学習 | ★ |
+| **docs/UI_V2_SPEC.md** | V2 UI仕様 — 画面構成・削除機能・実装順 | ★ |
+| **docs/TABLE_SPECS.md** | DB現状マスタ — 全テーブルのCREATE文・制約・インデックス | ★ |
+| docs/v1/FEATURES.md | V1機能仕様（参考用アーカイブ） | |
+| docs/v1/PHASE_HISTORY.md | V1フェーズ実装履歴（アーカイブ） | |
 
 ---
 
@@ -51,24 +53,34 @@
 
 ## 画面・ルート一覧
 
-### サイドメニュー（6項目）
+### サイドメニュー（V2: 4項目）
 
 | 画面 | URL | 主なテーブル |
 |---|---|---|
-| 秘書 | / | tasks, inbox_messages, jobs, calendar |
+| 秘書 | / | tasks, inbox_messages, jobs, calendar（横断ダッシュボード） |
 | インボックス | /inbox | inbox_messages（Slack/CWのみ。メールはUI非表示） |
-| タスク | /tasks | tasks, task_conversations |
-| 思考マップ | /thought-map | thought_task_nodes, thought_edges |
-| 思考マップ > ナレッジ | /thought-map?tab=knowledge | knowledge_master_entries |
 | 組織・プロジェクト | /organizations | organizations, projects, business_events |
-| 組織詳細 | /organizations/[id] | organizations, projects, contact_persons, business_events |
-| 設定 | /settings | organizations, contact_persons |
+| 設定 | /settings | 個人設定 + ナレッジ閲覧 |
 
-### リダイレクトページ（旧URLアクセスを維持）
+### プロジェクト詳細（/organizations/[id]）タブ構成
+
+| タブ | 内容 | 主なテーブル |
+|---|---|---|
+| タイムライン | ビジネスログ | business_events |
+| 検討ツリー | 会議録からAI生成 | decision_trees, decision_tree_nodes, meeting_records |
+| 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
+| タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
+| ジョブ | 定型業務リスト | jobs |
+
+### リダイレクトページ
 
 | 旧URL | リダイレクト先 |
 |---|---|
-| /master | /thought-map?tab=knowledge |
+| /tasks | /organizations |
+| /thought-map | /organizations |
+| /jobs | /organizations |
+| /memos | / |
+| /master | /settings?tab=knowledge |
 | /contacts | /organizations |
 | /business-log | /organizations |
 | /agent | /（ホーム） |
@@ -137,7 +149,29 @@
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
 | `business_events` | ビジネスイベント | UUID | ai_generated / summary_period |
-| `seeds` | 種ボックス（廃止予定） | UUID | project_id / user_id あり |
+| `seeds` | 種ボックス（廃止済み） | UUID | 参照のみ。新規作成しない |
+
+### V2 新規テーブル（CREATE文 → docs/ARCHITECTURE_V2.md セクション7.3）
+
+| テーブル | 用途 | ID型 | 注意 |
+|---|---|---|---|
+| `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
+| `milestones` | マイルストーン（1週間チェックポイント） | UUID | project_id 必須、theme_id nullable |
+| `meeting_records` | 会議録 | UUID | project_id 必須。検討ツリー・学習の起点 |
+| `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
+| `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造 |
+| `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
+| `milestone_evaluations` | チェックポイント評価結果 | UUID | milestone_id FK CASCADE |
+| `evaluation_learnings` | 評価エージェント学習データ | UUID | AI判定 vs 人間判定の差分 |
+
+### V2 既存テーブル変更
+
+| テーブル | 追加カラム | 説明 |
+|---|---|---|
+| `tasks` | `milestone_id` UUID nullable | マイルストーン紐づけ |
+| `jobs` | `project_id` UUID nullable | プロジェクト任意紐づけ |
+| `thought_task_nodes` | `milestone_id` UUID nullable | 思考ログスコープ拡張 |
+| `business_events` | `meeting_record_id` UUID nullable | 会議録紐づけ |
 
 ---
 
@@ -187,7 +221,17 @@
 | 38 | `project_tasks` | 特定PJのタスク一覧 |
 | 39 | `general` | その他 |
 
-※ 型定義上は39種。将来のintent追加枠を含めて「44種対応」と呼称（一部intentは内部サブ分岐を含む）。
+### V2 追加予定intent
+
+| # | Intent | 用途 |
+|---|---|---|
+| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 |
+| 41 | `milestone_status` | マイルストーン状況確認 |
+| 42 | `decision_tree` | 検討ツリー表示・更新 |
+| 43 | `checkpoint_evaluation` | チェックポイント評価実行 |
+| 44 | `create_milestone` | マイルストーン作成 |
+
+※ V1は39種。V2で44種に拡張。
 
 ---
 
@@ -301,6 +345,19 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | 11 | `/api/cron/summarize-business-log` | 週次サマリー | business_events, projects | 800 |
 | 12 | aiClient.service | タスク完了サマリー | tasks, task_conversations | 1000 |
 
+### V2 追加AIエンドポイント（予定）
+
+| # | エンドポイント | 用途 | 主なデータソース | AI性格 |
+|---|---|---|---|---|
+| 13 | `/api/meeting-records/analyze` | 会議録AI解析 | meeting_records | 分析型 |
+| 14 | `/api/decision-trees/generate` | 検討ツリー生成 | meeting_records, decision_trees | 構造化型 |
+| 15 | `/api/milestones/evaluate` | チェックポイント評価 | milestones, tasks, thought_logs | **評価エージェント**（厳格） |
+| 16 | `/api/milestones/learn` | 評価自己学習 | evaluation_learnings, meeting_records | 学習型 |
+
+**AIの2つの性格**:
+- **壁打ちパートナー**（#2 タスクAI）: Shinji Method、協力的、発散も許容
+- **評価エージェント**（#15 チェックポイント）: 構造的、客観的、ズレを正直に指摘
+
 **共通コンテキスト**: getUserWritingStyle()（過去送信10件） / メール署名（メールのみ） / buildPersonalizedContext()（性格・思考傾向）
 
 **フォールバック**: AI失敗時はテンプレート生成 or メッセージそのまま使用。メイン処理をブロックしない。
@@ -373,6 +430,16 @@ GMAIL_REDIRECT_URI=              # OAuth
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
 
+### V2 設計上の重要概念
+
+- **5階層**: Organization > Project > Theme（任意） > Milestone > Task
+- **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務（PJ任意紐づけ）
+- **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
+- **会議録が起点**: 検討ツリー生成 + 評価学習データ + ビジネスログ追加を同時駆動
+- **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
+- **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
+- **ナレッジはバックエンド基盤**: UIには設定ページ内のみ。AIが自動参照
+
 ---
 
 ## 作業フロー
@@ -380,7 +447,7 @@ GMAIL_REDIRECT_URI=              # OAuth
 ```
 【作業開始前】
 1. このCLAUDE.mdの「10のルール」を確認
-2. 関連する docs/FEATURES.md のセクションを読む
+2. V2実装時は docs/ARCHITECTURE_V2.md と docs/UI_V2_SPEC.md を読む
 3. テーブル操作がある場合 docs/TABLE_SPECS.md を確認
 
 【タスク実行】
