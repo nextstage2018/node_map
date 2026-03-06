@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-06（Phase G + UI-7 まで反映）
+最終更新: 2026-03-06（V2-A: 新規8テーブル + 既存4テーブル変更）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -333,7 +333,9 @@ CREATE TABLE tasks (
   scheduled_end TIMESTAMPTZ,
   calendar_event_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- V2-A 追加カラム
+  milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL
 );
 ```
 
@@ -347,6 +349,7 @@ CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_phase ON tasks(phase);
 CREATE INDEX idx_tasks_scheduled_start ON tasks(scheduled_start);
 CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
+CREATE INDEX idx_tasks_milestone_id ON tasks(milestone_id);  -- V2-A
 ```
 
 #### 注意事項
@@ -356,6 +359,7 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - status: 'todo' / 'in_progress' / 'done'。done 時に business_events にアーカイブ→削除
 - phase: 'ideation'/'progress'/'result'
 - task_type: 'personal'/'group'
+- **V2-A**: `milestone_id` 追加。マイルストーン配下のタスク紐づけ（nullable）
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）
@@ -459,7 +463,9 @@ CREATE TABLE jobs (
   calendar_event_id TEXT,
   due_date DATE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- V2-A 追加カラム
+  project_id UUID REFERENCES projects(id) ON DELETE SET NULL
 );
 ```
 
@@ -471,6 +477,7 @@ CREATE INDEX idx_jobs_type ON jobs(type);
 CREATE INDEX idx_jobs_status ON jobs(status);
 CREATE INDEX idx_jobs_scheduled_start ON jobs(scheduled_start);
 CREATE INDEX idx_jobs_calendar_event ON jobs(calendar_event_id);
+CREATE INDEX idx_jobs_project_id ON jobs(project_id);  -- V2-A
 ```
 
 #### 注意事項
@@ -478,6 +485,7 @@ CREATE INDEX idx_jobs_calendar_event ON jobs(calendar_event_id);
 - type: 'reply'/'schedule'/'check'/'consult'/'todo'/'other'
 - status遷移: pending → approved → executing → done / failed
 - consulting → draft_ready → （ユーザーが手動で返信API実行）
+- **V2-A**: `project_id` 追加。プロジェクトへの任意紐づけ（nullable）
 - **RLS**: user_id でフィルタ
 
 ---
@@ -917,6 +925,8 @@ CREATE TABLE thought_task_nodes (
   source_conversation_id UUID,
   source_message_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- V2-A 追加カラム
+  milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
   UNIQUE(task_id, node_id),
   UNIQUE(seed_id, node_id),
   CHECK(task_id IS NOT NULL OR seed_id IS NOT NULL)
@@ -939,6 +949,7 @@ CREATE INDEX idx_thought_task_nodes_user_id ON thought_task_nodes(user_id);
 - **CHECK(task_id IS NOT NULL OR seed_id IS NOT NULL)**: どちらか必須
 - appear_phase: 'seed'/'ideation'/'progress'/'result'
 - is_main_route: メイン思考ルートか脇道か
+- **V2-A**: `milestone_id` 追加。思考ログのスコープ拡張（nullable）
 - 思考マップUI: ユーザーのタスク一覧→ノード可視化（多対多で統合）
 - ノード検索: 特定キーワードが使われたタスク/種を逆検索
 
@@ -1325,7 +1336,9 @@ CREATE TABLE business_events (
   contact_persons TEXT[],
   projects UUID[],
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- V2-A 追加カラム
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL
 );
 ```
 
@@ -1345,6 +1358,7 @@ CREATE INDEX idx_business_events_created_at ON business_events(created_at);
 - ai_generated: Phase 45c: AI自動生成フラグ（Cronで生成されたサマリー）
 - summary_period: Phase 45c: AI要約の期間（'2026-W10'=ISO週番号）
 - keywords_extracted: Phase 57: キーワード抽出済みフラグ
+- **V2-A**: `meeting_record_id` 追加。会議録との紐づけ（nullable）
 - **用途**:
   - Cron sync-business-events（毎日1:00）で過去24時間のメッセージから自動生成
   - Cron summarize-business-log（毎週月曜2:00）で週間要約を自動生成
@@ -1470,6 +1484,21 @@ users (Supabase auth)
   │  ├─ organization_channels (organization_id)
   │  └─ projects (organization_id)
   │     ├─ project_channels (project_id)
+  │     ├─ themes (project_id) [V2-A]
+  │     │  └─ milestones (theme_id) [V2-A]
+  │     ├─ milestones (project_id) [V2-A]
+  │     │  ├─ tasks (milestone_id) [V2-A]
+  │     │  ├─ thought_task_nodes (milestone_id) [V2-A]
+  │     │  ├─ milestone_evaluations (milestone_id) [V2-A]
+  │     │  └─ evaluation_learnings (milestone_id) [V2-A]
+  │     ├─ meeting_records (project_id) [V2-A]
+  │     │  ├─ decision_tree_nodes (source_meeting_id, cancel_meeting_id)
+  │     │  ├─ decision_tree_node_history (meeting_record_id)
+  │     │  ├─ evaluation_learnings (meeting_record_id)
+  │     │  └─ business_events (meeting_record_id) [V2-A]
+  │     ├─ decision_trees (project_id) [V2-A]
+  │     │  └─ decision_tree_nodes (tree_id) [V2-A]
+  │     │     └─ decision_tree_node_history (node_id) [V2-A]
   │     ├─ tasks (project_id)
   │     │  ├─ task_members (task_id)
   │     │  ├─ task_conversations (task_id)
@@ -1483,11 +1512,12 @@ users (Supabase auth)
   │     │  ├─ thought_task_nodes (seed_id)
   │     │  └─ thought_edges (seed_id)
   │     ├─ business_events (project_id)
+  │     ├─ evaluation_learnings (project_id) [V2-A]
   │     └─ drive_folders (project_id)
   ├─ drive_folders (user_id)
   ├─ drive_documents (user_id)
   ├─ drive_file_staging (user_id)
-  ├─ jobs (user_id)
+  ├─ jobs (user_id, project_id [V2-A])
   │  └─ consultations (job_id / requester_user_id)
   ├─ idea_memos (user_id)
   │  ├─ memo_conversations (memo_id)
@@ -1530,5 +1560,306 @@ users (Supabase auth)
 
 ---
 
+## 10. V2 新規テーブル
+
+### themes（テーマ — 任意の中間レイヤー）
+
+**目的**: V2-A: プロジェクト内の大きな方向性・論点を整理する中間レイヤー（任意）
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE themes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  sort_order INT DEFAULT 0,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_themes_project_id ON themes(project_id);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- テーマは任意の中間レイヤー。小さなプロジェクトでは省略可能
+- status: 'active' / 'completed' / 'archived'
+- milestones.theme_id で紐づく（nullable）
+
+---
+
+### milestones（マイルストーン — 1週間チェックポイント）
+
+**目的**: V2-A: 1週間サイクルの到達点・チェックポイント
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE milestones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  start_context TEXT,
+  target_date DATE,
+  achieved_date DATE,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'achieved', 'missed')),
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_milestones_project_id ON milestones(project_id);
+CREATE INDEX idx_milestones_theme_id ON milestones(theme_id);
+CREATE INDEX idx_milestones_status ON milestones(status);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- status: 'pending' / 'in_progress' / 'achieved' / 'missed'
+- description: 到達条件・ゴールの説明
+- start_context: スタート地点の状況説明
+- 1週間サイクルで設計。週末に到達判定
+- tasks.milestone_id / thought_task_nodes.milestone_id で紐づく
+
+---
+
+### meeting_records（会議録）
+
+**目的**: V2-A: 会議録の保存。検討ツリー生成・評価学習・ビジネスログ追加を駆動する起点データ
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE meeting_records (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  meeting_date DATE NOT NULL,
+  content TEXT NOT NULL,
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription')),
+  source_file_id UUID,
+  ai_summary TEXT,
+  processed BOOLEAN DEFAULT false,
+  user_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_meeting_records_project_id ON meeting_records(project_id);
+CREATE INDEX idx_meeting_records_meeting_date ON meeting_records(meeting_date);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- source_type: 'text'（直接入力）/ 'file'（ファイルアップロード）/ 'transcription'（音声文字起こし）
+- processed: AI解析済みフラグ
+- アップロード → AI解析 → 検討ツリー更新 + 評価学習データ取得 + ビジネスログ追加
+
+---
+
+### decision_trees（検討ツリーのルート）
+
+**目的**: V2-A: プロジェクト内の意思決定ツリーの親エンティティ
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_trees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_decision_trees_project_id ON decision_trees(project_id);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- 1プロジェクトに複数ツリーを持てる
+- 配下のノードは decision_tree_nodes で管理
+
+---
+
+### decision_tree_nodes（検討ツリーのノード）
+
+**目的**: V2-A: 検討ツリーの個々のノード（議題・選択肢・決定・アクション）
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_tree_nodes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tree_id UUID NOT NULL REFERENCES decision_trees(id) ON DELETE CASCADE,
+  parent_node_id UUID REFERENCES decision_tree_nodes(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  node_type TEXT NOT NULL CHECK (node_type IN ('topic', 'option', 'decision', 'action')),
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'cancelled', 'on_hold')),
+  description TEXT,
+  cancel_reason TEXT,
+  cancel_meeting_id UUID REFERENCES meeting_records(id),
+  source_meeting_id UUID REFERENCES meeting_records(id),
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_decision_tree_nodes_tree_id ON decision_tree_nodes(tree_id);
+CREATE INDEX idx_decision_tree_nodes_parent_node_id ON decision_tree_nodes(parent_node_id);
+CREATE INDEX idx_decision_tree_nodes_status ON decision_tree_nodes(status);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- node_type: 'topic'（議題）/ 'option'（選択肢）/ 'decision'（決定）/ 'action'（アクション）
+- status: 'active' / 'completed' / 'cancelled' / 'on_hold'
+- parent_node_id: 自己参照FK。ルートノードはNULL
+- cancel_meeting_id: 取消時、どの会議で廃止されたか
+- source_meeting_id: どの会議で追加されたか
+
+---
+
+### decision_tree_node_history（ノード状態変更履歴）
+
+**目的**: V2-A: 検討ツリーノードの状態変更を時系列で追跡
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_tree_node_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  node_id UUID NOT NULL REFERENCES decision_tree_nodes(id) ON DELETE CASCADE,
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  reason TEXT,
+  meeting_record_id UUID REFERENCES meeting_records(id),
+  changed_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_decision_tree_node_history_node_id ON decision_tree_node_history(node_id);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- ノード状態変更のたびにレコードを追加
+- meeting_record_id: 変更の根拠となった会議録
+
+---
+
+### milestone_evaluations（チェックポイント評価結果）
+
+**目的**: V2-A: マイルストーン到達判定の評価結果を保存
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE milestone_evaluations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  milestone_id UUID NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+  evaluation_type TEXT NOT NULL CHECK (evaluation_type IN ('auto', 'manual')),
+  achievement_level TEXT NOT NULL CHECK (achievement_level IN ('achieved', 'partially', 'missed')),
+  ai_analysis TEXT,
+  deviation_summary TEXT,
+  correction_suggestion TEXT,
+  presentation_summary TEXT,
+  evaluated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_milestone_evaluations_milestone_id ON milestone_evaluations(milestone_id);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- evaluation_type: 'auto'（AI自動評価）/ 'manual'（手動評価）
+- achievement_level: 'achieved' / 'partially' / 'missed'
+- deviation_summary: ズレの分析
+- correction_suggestion: 軌道修正の提案
+- presentation_summary: 会議プレゼン用サマリー
+
+---
+
+### evaluation_learnings（評価エージェント学習データ）
+
+**目的**: V2-A: AI判定 vs 人間判定の差分を記録し、評価エージェントの自己学習に活用
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE evaluation_learnings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  milestone_id UUID NOT NULL REFERENCES milestones(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  ai_judgment TEXT NOT NULL,
+  ai_reasoning TEXT,
+  human_judgment TEXT,
+  human_reasoning TEXT,
+  gap_analysis TEXT,
+  learning_point TEXT,
+  meeting_record_id UUID REFERENCES meeting_records(id),
+  applied_count INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_evaluation_learnings_milestone_id ON evaluation_learnings(milestone_id);
+CREATE INDEX idx_evaluation_learnings_project_id ON evaluation_learnings(project_id);
+```
+
+#### 注意事項
+
+- **ID型**: UUID（自動生成）
+- ai_judgment / human_judgment: 'achieved' / 'partially' / 'missed'
+- gap_analysis: AI判定と人間判定の差分分析
+- learning_point: 次回以降に反映すべき学び
+- applied_count: この学習が評価に反映された回数
+- 評価エージェント起動時、同一プロジェクトの直近5件の learning_point をシステムプロンプトに注入
+
+---
+
 **This document serves as the single source of truth for NodeMap database schema.**
-Last updated: 2026-03-05 (Phase 62)
+Last updated: 2026-03-06 (V2-A)
