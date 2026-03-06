@@ -1,0 +1,401 @@
+================================================================================
+NODEMAP AI CONTEXT AUDIT - EXECUTIVE SUMMARY
+================================================================================
+Date: 2026-03-05
+Model: claude-sonnet-4-5-20250929 (primary, 17/18 endpoints)
+Model: claude-opus-4-5-20251101 (1 endpoint: task summary)
+
+================================================================================
+KEY FINDINGS
+================================================================================
+
+1. TOTAL API CALL POINTS: 18 locations across 13 files
+   - 12 API endpoints
+   - 1 Cron job (weekly summary)
+   - 5 service layer integrations
+
+2. DATA INJECTION SOURCES (All Supabase):
+   ✓ inbox_messages (all endpoints)
+   ✓ tasks (9 endpoints)
+   ✓ jobs (6 endpoints)
+   ✓ contact_persons (3 endpoints)
+   ✓ contact_channels (1 endpoint)
+   ✓ projects (4 endpoints)
+   ✓ organizations (3 endpoints)
+   ✓ knowledge_master_entries (2 endpoints)
+   ✓ business_events (3 endpoints)
+   ✓ drive_documents (2 endpoints)
+   ✓ consultations (2 endpoints)
+   ✓ task_conversations (4 endpoints)
+   ✓ Google Calendar API (2 endpoints)
+   ✓ user_service_tokens (3 endpoints - auth/signature)
+
+3. LARGEST CONTEXT CONSUMERS (by tokens):
+   ① Secretary Chat (agent/chat) - 2000 max tokens
+   ② Task AI Chat - 1500 max tokens
+   ③ Replay Mode - 1500 max tokens
+   ④ Knowledge Clustering - 2000 max tokens (weekly only)
+   ⑤ Keyword Extraction - 800 max tokens
+
+4. USER-SPECIFIC CONTEXT (Privacy-Sensitive):
+   ✓ Writing style injection (6 endpoints) - from past sent messages
+   ✓ Email signature (3 endpoints) - from user_metadata.email_signature
+   ✓ Contact information (1 endpoint) - notes + ai_context
+   ✓ Conversation history (3 endpoints) - from task_conversations
+   ✓ Calendar events (2 endpoints) - from Google Calendar
+
+5. SYSTEM PROMPTS BY CATEGORY:
+   ✓ Intent classification (Secretary only) - 20+ intent patterns
+   ✓ Phase-specific rules (Task chat) - Ideation/Progress/Result
+   ✓ Channel-aware tone (4 endpoints) - Email/Slack/Chatwork
+   ✓ Extraction rules (Keyword) - Confidence >= 0.7 threshold
+   ✓ Clustering rules (Knowledge) - Domain/Field/Entry 3-hierarchy
+   ✓ Classification rules (File) - Document type + direction + date
+
+================================================================================
+CONTEXT FLOW ARCHITECTURE
+================================================================================
+
+SECRETARY CHAT (Entry Point)
+  User Message
+    ↓
+  Intent Classification (keyword-based, NO API)
+    ↓
+  Parallel DB Fetches (Promise.all)
+    ├─ inbox_messages (20 recent, received)
+    ├─ tasks (20 recent, status != done)
+    ├─ jobs (15 recent)
+    ├─ calendar_events (if briefing intent)
+    └─ Special tables (consultations, file_staging, proposals, etc)
+    ↓
+  Format Context Text (3000-5000 chars)
+    ├─ Unread count + urgency badges
+    ├─ Task statuses (proposed/in_progress/completed)
+    ├─ Job approval counts
+    ├─ Calendar preview (if connected)
+    └─ File/knowledge/consultation counters
+    ↓
+  Claude API Call
+    ├─ Model: claude-sonnet-4-5-20250929
+    ├─ Max tokens: 2000
+    ├─ System: Intent-specific instructions
+    └─ Messages: User input + formatted context
+    ↓
+  Card Generation
+    ├─ BriefingSummaryCard (statistics dashboard)
+    ├─ CalendarCard (today's events)
+    ├─ InboxSummaryCard (recent messages)
+    ├─ TaskResumeCard (task proposals)
+    ├─ JobApprovalCard (pending jobs)
+    ├─ FileIntakeCard (pending files)
+    ├─ KnowledgeProposalCard (pending clusters)
+    └─ [15+ other card types]
+    ↓
+  Return Response + Cards to UI
+
+TASK AI CHAT (Conversation)
+  User Message in Task Detail
+    ↓
+  Load Task Context
+    ├─ task.title, description, ideation_summary
+    ├─ project.name, description
+    ├─ organization.name, memo
+    ├─ task_members → contact_persons names
+    └─ task_conversations (last 20 messages)
+    ↓
+  Detect Covered Items (Regex)
+    ├─ Has "ゴール" discussed? → true/false
+    ├─ Has "内容" discussed? → true/false
+    ├─ Has "懸念" discussed? → true/false
+    └─ Has "期限" discussed? → true/false
+    ↓
+  Format System Prompt
+    ├─ Phase-specific: Ideation (4-item guided) / Progress (support) / Result (summary)
+    ├─ Task info section
+    ├─ Project context section (if available)
+    ├─ Covered items section (prevents repetition)
+    └─ Writing style sample (if available)
+    ↓
+  Claude API Call
+    ├─ Model: claude-sonnet-4-5-20250929
+    ├─ Max tokens: 1500
+    ├─ System: Full system prompt (1500+ chars)
+    └─ Messages: Last 20 conversations + user message
+    ↓
+  Save Conversation Turn
+    ├─ User message → task_conversations
+    ├─ AI response → task_conversations
+    ├─ turn_id (UUID) → for conversation jumping
+    └─ phase (ideation/progress/result)
+    ↓
+  Background: Keyword Extraction (Async)
+    ├─ Text: user message + AI response
+    ├─ Service: ThoughtNodeService.extractAndLink()
+    ├─ Sub-call: keywordExtractor.service.ts
+    ├─ Result: Link keywords to knowledge_master_entries
+    └─ Create thought_task_nodes + thought_edges
+    ↓
+  Return AI Response to UI
+
+================================================================================
+WRITING STYLE INJECTION (6 Endpoints)
+================================================================================
+
+Implementation:
+  getUserWritingStyle(userId: string, channel?: string): Promise<string>
+    ↓
+  Query: SELECT body FROM inbox_messages
+         WHERE direction='sent' AND channel=? (if specified)
+         ORDER BY created_at DESC LIMIT 10
+    ↓
+  Filter: Min 5 chars, max 5 messages
+    ↓
+  Format: "## あなたの過去の送信メッセージ\n--- 送信例1 ---\n${message1}\n..."
+    ↓
+  Inject into System Prompt (before user message)
+
+Applied to:
+  ① generateReplyDraft (email/slack/chatwork)
+  ② generateTaskChat (all phases)
+  ③ Job structuring - schedule (greeting/closing)
+  ④ Consultation reply (return email)
+  ⑤ Not used: Keyword extraction (generic)
+  ⑥ Not used: Knowledge clustering (generic)
+
+Fallback: Empty string if no API key or <5 messages available
+
+================================================================================
+EMAIL SIGNATURE HANDLING
+================================================================================
+
+Storage: user_metadata.email_signature (Supabase auth)
+
+Retrieval: getServerUserEmailSignature() → user_metadata.email_signature
+
+Injection Points:
+  ① Reply draft generation
+  ② Job structuring (schedule)
+  ③ Consultation reply
+
+Application Rules:
+  - ONLY for email channel
+  - NOT in system prompt
+  - Appended to draft AFTER Claude returns response
+  - Format: draft.trimEnd() + '\n\n' + emailSignature
+
+Example:
+  AI draft: "ご返信ありがとうございます。確認いたしました。"
+  Code appends: "\n\n" + "太郎\nNodeMap Inc.\n+81-3-xxxx-xxxx"
+  Final: "ご返信ありがとうございます。確認いたしました。\n\n太郎\nNodeMap Inc.\n..."
+
+================================================================================
+CONTACT CONTEXT INJECTION (Reply Draft Only)
+================================================================================
+
+Data Fetched:
+  contact_channels (search by from_address)
+    ↓
+  contact_persons (joined on contact_id)
+    ├─ notes (human observations)
+    ├─ ai_context (AI-generated analysis)
+    ├─ company_name
+    ├─ department
+    └─ relationship_type
+
+Injected into System Prompt as:
+  ## 相手の情報（重要：この情報を踏まえて口調や内容を調整してください）
+  相手の会社: ${company_name}
+  部署: ${department}
+  関係性: ${relationship_type}
+  メモ（口調・関係性などの情報）:
+  ${notes}
+  AI分析による相手の特徴:
+  ${ai_context}
+
+Also: Recent message context (last 5 exchanges with sender)
+
+================================================================================
+CALENDAR CONTEXT INJECTION (2 Endpoints)
+================================================================================
+
+Sources:
+  1. Secretary Chat (briefing intent)
+     - getTodayEvents(userId) → Google Calendar API
+     - Shows: Time, location, participant count
+
+  2. Job Structuring (schedule intent)
+     - findFreeSlots(userId, startDate, endDate, durationMinutes, workingHours)
+     - Returns: Available time blocks (with start/end)
+
+Authorization: Google Calendar OAuth (gmail service)
+
+Fallback: Empty if Google Calendar disconnected or API fails
+
+Format in Prompt:
+  【今日の予定】
+  - 10:00-11:00 営業会議 (30分) @会議室A (5人)
+  - 14:00-15:30 プロジェクト打合 @オンライン
+
+  OR
+
+  【候補日時】
+  ・3/6(木) 10:00-12:30, 14:00-19:00
+  ・3/7(金) 09:00-18:00
+
+================================================================================
+CONVERSATION HISTORY MANAGEMENT
+================================================================================
+
+Task AI Chat:
+  Stored: task_conversations (role, content, phase, created_at, turn_id)
+  Passed to Claude: Last 20 messages (full text)
+  Retention: Indefinite (unless task deleted)
+  Truncation: None (size limited by query LIMIT 20)
+
+Secretary Chat:
+  Stored: secretary_conversations (for context reference)
+  Passed to Claude: NONE (single turn, no history)
+  Retention: 30 days (soft, no explicit cleanup)
+  Rationale: Fresh DB data (messages/tasks/jobs) substitutes for history
+
+Replay Mode:
+  Stored: task_conversations
+  Passed to Claude: Last 50 messages + snapshots + nodes
+  Retention: Until task deleted
+  Purpose: Re-enact completed task thinking
+
+================================================================================
+FALLBACK STRATEGIES (No API Failure = Data Loss)
+================================================================================
+
+Endpoint | Fallback Type | Behavior
+---------|---|---
+Secretary Chat | Demo response | Hardcoded cards with generic counts
+Task Chat (ideation) | Demo reply | "なるほど、次は〜について質問してください"
+Task Chat (progress) | Demo reply | "いい進捗ですね..."
+Reply Draft | Demo template | "○○様\n\nお疲れ様です。内容、承知いたしました。"
+Job (schedule) | Template + calendar | Greeting/closing use templates, dates from calendar
+Job (consult) | Simple list | Lines from thread (no AI summary)
+Job (todo/default) | Subject + body | "title: subject, description: body.slice(0:50)"
+Memo→Task | Memo content | title = memo content, description = content + conversation
+Consultation reply | Simple format | "社内相談の回答を踏まえた返信:\n\n${answer}"
+Keyword extraction | Empty list | Returns { keywords: [], persons: [], projects: [] }
+Knowledge clustering | None | Returns empty proposal
+File classification | Keyword-based | Checks filename for keywords (見積書/契約書/etc)
+Replay mode | Error response | "AI APIキーが設定されていません"
+Business summary | Template | "プロジェクトX: メッセージ件, 会議件, その他件"
+
+================================================================================
+TOKEN USAGE ESTIMATES (Per-Endpoint Average)
+================================================================================
+
+Endpoint | System | Data | User Msg | Max | Typical
+---------|--------|------|----------|-----|----------
+Secretary | 200 | 2500 | 100 | 2000 | 1200
+Task Chat | 300 | 800 | 50 | 1500 | 900
+Reply Draft | 250 | 400 | 50 | 1000 | 600
+Job (Schedule) | 300 | 300 | 50 | 1024 | 500
+Job (Consult) | 150 | 200 | 50 | 512 | 300
+Keyword Extraction | 400 | 200 | 100 | 800 | 500
+Knowledge Clustering | 500 | 1500 | 100 | 2000 | 1500
+File Classification | 300 | 150 | 50 | 500 | 350
+Replay Mode | 300 | 1500 | 100 | 1500 | 1000
+Task Summary (Opus) | 200 | 1000 | 50 | 500 | 400
+
+Daily Estimate (Active User):
+  Secretary: 5-10 calls = 6,000-12,000 tokens
+  Task chat: 5-10 calls = 4,500-9,000 tokens
+  Reply drafts: 10-20 calls = 6,000-12,000 tokens
+  Others (Cron/Jobs/Files): 3,000-5,000 tokens
+  TOTAL: ~25,000-40,000 tokens/day
+
+================================================================================
+SECURITY & DATA PRIVACY
+================================================================================
+
+✓ No passwords/secrets in system prompts
+✓ No API keys exposed to Claude
+✓ All queries filtered by user_id (multi-tenant safe)
+✓ Service role key bypasses RLS but scoped to user_id
+✓ Contact names/emails injected at request time (not hardcoded)
+✓ Conversation history retained indefinitely (no TTL for task_conversations)
+
+⚠ Risks:
+  - Writing style exposes past message content
+  - Contact notes may contain sensitive info (not masked)
+  - Secretary_conversations stored indefinitely
+  - No audit trail of system prompts sent to Claude
+
+================================================================================
+RECOMMENDATIONS
+================================================================================
+
+1. Data Retention Policy
+   - Define TTL for secretary_conversations (currently unbounded)
+   - Archive task_conversations after 90 days
+   - Log retention for audit compliance
+
+2. Sensitive Data Masking
+   - Option to disable writing style injection (privacy concern)
+   - Mask contact.notes if containing PII
+   - Redact email addresses in contact context
+
+3. Logging & Audit
+   - Log full system prompts for compliance
+   - Track API calls per user per day
+   - Monitor token budget usage
+
+4. Model Management
+   - Plan migration path for model deprecation
+   - Test fallback responses quarterly
+   - Document breaking changes in prompts
+
+5. Performance
+   - Cache writing style (expensive query)
+   - Cache organization/project lists
+   - Batch knowledge clustering (weekly only)
+
+================================================================================
+FILE LOCATIONS
+================================================================================
+
+Core AI Services:
+  src/services/ai/aiClient.service.ts
+  src/services/ai/keywordExtractor.service.ts
+  src/services/nodemap/knowledgeClustering.service.ts
+  src/services/drive/fileClassification.service.ts
+
+API Endpoints:
+  src/app/api/agent/chat/route.ts                    (Secretary main)
+  src/app/api/tasks/chat/route.ts                    (Task AI chat)
+  src/app/api/ai/draft-reply/route.ts                (Reply draft)
+  src/app/api/ai/structure-job/route.ts              (Job structuring)
+  src/app/api/memos/[id]/convert/route.ts            (Memo→Task)
+  src/app/api/consultations/route.ts                 (Consultation reply)
+  src/app/api/thought-map/replay/route.ts            (Replay mode)
+  src/app/api/cron/summarize-business-log/route.ts   (Weekly summary)
+
+================================================================================
+CONCLUSION
+================================================================================
+
+NodeMap uses Claude API across 18 distinct call points with varying context
+complexity. The largest context consumer is Secretary Chat (2000 tokens max),
+which pulls fresh data from 10+ tables and 2 external APIs per request.
+
+User-specific context (writing style, email signature, contact info) is
+injected at request time and appended to system prompts. No sensitive data
+is hardcoded.
+
+Token usage averages 25-40k per active user per day, with knowledge clustering
+and task summary generation as peak consumers. All endpoints have fallback
+responses (template or demo).
+
+The architecture is sound for multi-tenant operation, but lacks explicit
+data retention policies and audit logging.
+
+================================================================================
+Document: AI_CONTEXT_AUDIT.md (Full reference)
+Summary: This file
+Date: 2026-03-05
+Auditor: Claude Code Agent
