@@ -2108,6 +2108,30 @@ export function CardRenderer({
         />
       );
       break;
+    case 'action_selector':
+      inner = (
+        <ActionSelectorCard
+          data={card.data}
+          onSelect={(actionId) => onAction?.('select_action', { actionId })}
+        />
+      );
+      break;
+    case 'project_selector':
+      inner = (
+        <ProjectSelectorCard
+          data={card.data}
+          onSelect={(projectId) => onAction?.('select_project', { projectId })}
+        />
+      );
+      break;
+    case 'milestone_selector':
+      inner = (
+        <MilestoneSelectorCard
+          data={card.data}
+          onSelect={(milestoneId) => onAction?.('select_milestone', { milestoneId })}
+        />
+      );
+      break;
     default:
       return null;
   }
@@ -3398,140 +3422,3 @@ function TaskExternalResourceCard({ data }: { data: TaskExternalResourceData }) 
   );
 }
 
-// ========================================
-// 統合カードレンダラー
-// ========================================
-export function CardRenderer({
-  card,
-  onAction,
-}: {
-  card: CardData;
-  onAction?: (action: string, data: unknown) => void;
-}) {
-  return (
-    <UnifiedCardWrapper type={card.type} data={card.data}>
-      {card.type === 'inbox_summary' && (
-        <InboxSummaryCard
-          items={card.data.items}
-          onSelectMessage={(id) => onAction?.('select_message', { id })}
-        />
-      )}
-      {card.type === 'message_detail' && (
-        <MessageDetailCard
-          message={card.data}
-          onReply={() => onAction?.('reply_to_message', { id: card.data.id })}
-          onCreateJob={() => onAction?.('create_job_from_message', { messageId: card.data.id })}
-          onCreateTask={() => onAction?.('create_task_from_message', { messageId: card.data.id })}
-        />
-      )}
-      {card.type === 'job_approval' && (
-        <JobApprovalCard
-          job={card.data}
-          onApprove={(draft) => onAction?.('execute_job', { jobId: card.data.id, editedDraft: draft })}
-          onEdit={() => onAction?.('edit_job', { jobId: card.data.id })}
-          onReject={() => onAction?.('reject_job', { jobId: card.data.id })}
-        />
-      )}
-      {card.type === 'reply_draft' && (
-        <ReplyDraftCard
-          reply={card.data}
-          onApprove={(data) => onAction?.('send_reply', data)}
-          onEdit={() => onAction?.('edit_reply', { messageId: card.data.originalMessageId })}
-          onReject={() => onAction?.('reject_reply', { messageId: card.data.originalMessageId })}
-        />
-      )}
-      {card.type === 'task_created' && (
-        <TaskCreatedCard task={card.data} />
-      )}
-      {card.type === 'navigate' && (
-        <NavigateCard nav={card.data} />
-      )}
-      {card.type === 'action_result' && (
-        <ActionResultCard result={card.data} />
-      )}
-      {card.type === 'briefing_summary' && (
-        <BriefingSummaryCard summary={card.data} />
-      )}
-      {card.type === 'calendar_events' && (
-        <CalendarEventsCard calendar={card.data} />
-      )}
-      {card.type === 'document_list' && (
-        <DocumentListCard
-          documents={card.data.documents}
-          totalCount={card.data.totalCount}
-          onShare={(docId) => onAction?.('share_document', { documentId: docId })}
-        />
-      )}
-      {card.type === 'file_intake' && (
-        <FileIntakeCard
-          files={card.data.files}
-          totalCount={card.data.totalCount}
-          onApprove={(fileId, overrides) => onAction?.('approve_file', { fileId, ...overrides })}
-          onReject={(fileId) => onAction?.('reject_file', { fileId })}
-          onApproveAll={() => onAction?.('approve_all_files', {})}
-        />
-      )}
-      {card.type === 'business_event_form' && (
-        <BusinessEventFormCard
-          data={card.data}
-          onCancel={() => onAction?.('cancel_business_event_form', {})}
-        />
-      )}
-      {card.type === 'knowledge_proposal' && (
-        <KnowledgeProposalCard
-          proposal={card.data}
-          onAccept={(proposalId) => onAction?.('accept_knowledge_proposal', { proposalId })}
-          onReject={(proposalId) => onAction?.('reject_knowledge_proposal', { proposalId })}
-        />
-      )}
-      {card.type === 'task_form' && (
-        <TaskFormCard
-          data={card.data}
-          onSubmit={(taskData) => onAction?.('submit_task_form', taskData)}
-        />
-      )}
-      {card.type === 'contact_form' && (
-        <ContactFormCard
-          data={card.data}
-          onSubmit={(contactData) => onAction?.('submit_contact_form', contactData)}
-        />
-      )}
-      {card.type === 'org_form' && (
-        <OrgFormCard
-          data={card.data}
-          onSubmit={(orgData) => onAction?.('submit_org_form', orgData)}
-        />
-      )}
-      {card.type === 'project_form' && (
-        <ProjectFormCard
-          data={card.data}
-          onSubmit={(projData) => onAction?.('submit_project_form', projData)}
-        />
-      )}
-      {card.type === 'contact_search_result' && (
-        <ContactSearchResultCard data={card.data} />
-      )}
-      {card.type === 'task_external_resource' && (
-        <TaskExternalResourceCard data={card.data} />
-      )}
-      {card.type === 'action_selector' && (
-        <ActionSelectorCard
-          data={card.data}
-          onSelect={(actionId) => onAction?.('select_action', { actionId })}
-        />
-      )}
-      {card.type === 'project_selector' && (
-        <ProjectSelectorCard
-          data={card.data}
-          onSelect={(projectId) => onAction?.('select_project', { projectId })}
-        />
-      )}
-      {card.type === 'milestone_selector' && (
-        <MilestoneSelectorCard
-          data={card.data}
-          onSelect={(milestoneId) => onAction?.('select_milestone', { milestoneId })}
-        />
-      )}
-    </UnifiedCardWrapper>
-  );
-}
