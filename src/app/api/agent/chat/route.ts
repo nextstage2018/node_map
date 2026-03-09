@@ -109,6 +109,7 @@ type Intent =
   | 'decision_tree'         // V2-I #42: 検討ツリー表示
   | 'checkpoint_evaluation' // V2-I #43: チェックポイント評価
   | 'create_milestone'      // V2-I #44: マイルストーン作成
+  | 'project_status'        // v3.1 #45: プロジェクト進捗ステータス
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -157,6 +158,10 @@ function classifyIntent(message: string): Intent {
 
   // Phase G: 特定プロジェクトのタスク一覧（「○○プロジェクトのタスク」）— tasksより先に判定
   if (m.includes('プロジェクト') && (m.includes('タスク') || m.includes('やること'))) return 'project_tasks';
+
+  // v3.1: プロジェクト進捗・状況確認（「進捗を教えて」「状況を確認」「プロジェクト確認」）— projects一覧より先に判定
+  if (m.includes('プロジェクト') && (m.includes('進捗') || m.includes('状況') || m.includes('ステータス'))) return 'project_status';
+  if ((m.includes('進捗') || m.includes('状況')) && (m.includes('確認') || m.includes('教えて') || m.includes('見せて') || m.includes('見たい'))) return 'project_status';
 
   // プロジェクト一覧
   if (m.includes('プロジェクト') && (m.includes('一覧') || m.includes('教えて') || m.includes('リスト') || m.includes('確認') || m.includes('見せて') || m.includes('見たい'))) return 'projects';
@@ -341,7 +346,8 @@ async function fetchDataAndBuildCards(
   supabase: SupabaseClient,
   userId: string,
   intent: Intent,
-  userMessage: string
+  userMessage: string,
+  contextParams?: { projectId?: string; taskId?: string; organizationId?: string; milestoneId?: string }
 ): Promise<ContextAndCards> {
   const cards: CardData[] = [];
   const parts: string[] = [];
@@ -1205,6 +1211,134 @@ async function fetchDataAndBuildCards(
       }
     }
 
+    // v3.1: プロジェクト進捗ステータス
+    if (intent === 'project_status') {
+      try {
+        const ctxProjectId = contextParams?.projectId;
+
+        if (ctxProjectId) {
+          // 特定プロジェクトの詳細ステータス
+          const { data: projData } = await supabase
+            .from('projects')
+            .select('id, name, status, organization_id, organizations(name)')
+            .eq('id', ctxProjectId)
+            .single();
+
+          if (projData) {
+            // MS進捗
+            const { data: allMS } = await supabase
+              .from('milestones')
+              .select('id, title, status, target_date')
+              .eq('project_id', ctxProjectId)
+              .order('target_date', { ascending: true });
+
+            // タスク進捗
+            const { data: allTasks } = await supabase
+              .from('tasks')
+              .select('id, status')
+              .eq('project_id', ctxProjectId);
+
+            // 直近アクティビティ
+            const { data: recentEvents } = await supabase
+              .from('business_events')
+              .select('id, event_type, title, occurred_at')
+              .eq('project_id', ctxProjectId)
+              .order('occurred_at', { ascending: false })
+              .limit(3);
+
+            const msCount = allMS?.length || 0;
+            const msCompleted = allMS?.filter((ms: { status: string }) => ms.status === 'achieved').length || 0;
+            const msInProgress = allMS?.filter((ms: { status: string }) => ms.status === 'in_progress').length || 0;
+            const taskCount = allTasks?.length || 0;
+            const taskDone = allTasks?.filter((t: { status: string }) => t.status === 'done').length || 0;
+            const orgName = projData.organizations && typeof projData.organizations === 'object' && 'name' in projData.organizations
+              ? (projData.organizations as { name: string }).name : '';
+
+            cards.push({
+              type: 'project_status_card',
+              data: {
+                projectId: projData.id,
+                projectName: projData.name,
+                organizationName: orgName,
+                milestones: {
+                  total: msCount,
+                  completed: msCompleted,
+                  inProgress: msInProgress,
+                  pending: msCount - msCompleted - msInProgress,
+                  items: (allMS || []).map((ms: { id: string; title: string; status: string; target_date: string | null }) => ({
+                    id: ms.id,
+                    title: ms.title,
+                    status: ms.status,
+                    targetDate: ms.target_date || '',
+                  })),
+                },
+                tasks: {
+                  total: taskCount,
+                  done: taskDone,
+                  progressPercent: taskCount > 0 ? Math.round((taskDone / taskCount) * 100) : 0,
+                },
+                recentActivity: (recentEvents || []).map((e: { event_type: string; title: string; occurred_at: string }) => ({
+                  eventType: e.event_type,
+                  title: e.title,
+                  timestamp: e.occurred_at,
+                })),
+              },
+            });
+            fixedReply = `「${projData.name}」の進捗状況を表示しました。`;
+          }
+        } else {
+          // 全プロジェクトの概要ステータス
+          const { data: projectList } = await supabase
+            .from('projects')
+            .select('id, name, status, organization_id, organizations(name)')
+            .eq('user_id', userId)
+            .eq('status', 'active')
+            .order('updated_at', { ascending: false })
+            .limit(10);
+
+          if (projectList && projectList.length > 0) {
+            // 各プロジェクトのMS/タスク集計を並列取得
+            const statusPromises = projectList.map(async (proj: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null }) => {
+              const [msRes, taskRes] = await Promise.all([
+                supabase.from('milestones').select('id, status').eq('project_id', proj.id),
+                supabase.from('tasks').select('id, status').eq('project_id', proj.id),
+              ]);
+              const ms = msRes.data || [];
+              const tk = taskRes.data || [];
+              const orgName = proj.organizations && typeof proj.organizations === 'object' && 'name' in proj.organizations
+                ? (proj.organizations as { name: string }).name : '';
+              return {
+                projectId: proj.id,
+                projectName: proj.name,
+                organizationName: orgName,
+                msTotal: ms.length,
+                msCompleted: ms.filter((m: { status: string }) => m.status === 'achieved').length,
+                msInProgress: ms.filter((m: { status: string }) => m.status === 'in_progress').length,
+                taskTotal: tk.length,
+                taskDone: tk.filter((t: { status: string }) => t.status === 'done').length,
+                urgentCount: tk.filter((t: { status: string }) => ['todo', 'in_progress'].includes(t.status)).length,
+              };
+            });
+            const statusData = await Promise.all(statusPromises);
+
+            cards.push({
+              type: 'quick_status_overview',
+              data: {
+                projects: statusData,
+              },
+            });
+
+            fixedReply = `${projectList.length}件のプロジェクトの進捗状況を表示しました。詳細を見たいプロジェクトをクリックしてください。`;
+          } else {
+            fixedReply = 'アクティブなプロジェクトはありません。';
+          }
+        }
+      } catch (statusError) {
+        console.error('[Secretary API] project_status error:', statusError);
+        parts.push('\n\nプロジェクト状況の取得に失敗しました。');
+      }
+    }
+
     // プロジェクト一覧（Phase D: 組織詳細ページのプロジェクトタブへ誘導）
     if (intent === 'projects') {
       try {
@@ -1680,10 +1814,10 @@ async function fetchDataAndBuildCards(
       }
     }
 
-    // タスク作成 → フォームカード生成
+    // タスク作成 → ウィザード型フロー（プロジェクト選択 → MS選択 → フォーム）
     if (intent === 'create_task') {
       try {
-        await handleCreateTaskIntent(supabase, userId, userMessage, cards, parts);
+        await handleCreateTaskIntent(supabase, userId, userMessage, cards, parts, contextParams?.projectId);
       } catch (taskError) {
         console.error('[Secretary API] タスク作成エラー:', taskError);
       }
@@ -3305,7 +3439,8 @@ async function handleCreateTaskIntent(
   userId: string,
   userMessage: string,
   cards: CardData[],
-  parts: string[]
+  parts: string[],
+  contextProjectId?: string
 ): Promise<void> {
   // プロジェクト一覧を取得
   const { data: projects } = await supabase
@@ -3313,13 +3448,25 @@ async function handleCreateTaskIntent(
     .select('id, name, organization_id, organizations(name)')
     .eq('user_id', userId)
     .eq('status', 'active')
-    .order('name');
+    .order('updated_at', { ascending: false });
 
-  // AIでメッセージからタスク情報を推定
+  // プロジェクトがない場合は先に作成を促す
+  if (!projects || projects.length === 0) {
+    parts.push('\n\n【タスク作成】\nプロジェクトがまだありません。先にプロジェクトを作成してください。');
+    return;
+  }
+
+  // ========================================
+  // ウィザード Step 1: プロジェクト選択
+  // contextProjectIdがない場合、プロジェクトが複数あればProjectSelectorCardを表示
+  // ========================================
+  let resolvedProjectId = contextProjectId || '';
+
+  // AIでメッセージからタスク情報を推定（タイトル抽出・プロジェクト推定）
   let suggestedTitle = '';
   let suggestedDescription = '';
   let suggestedPriority = 'medium';
-  let suggestedProjectId = '';
+  let suggestedDueDate = '';
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
@@ -3358,7 +3505,11 @@ async function handleCreateTaskIntent(
         suggestedTitle = parsed.title || '';
         suggestedDescription = parsed.description || '';
         suggestedPriority = parsed.priority || 'medium';
-        suggestedProjectId = parsed.projectId || '';
+        suggestedDueDate = parsed.dueDate || '';
+        // AIがプロジェクトを推定した場合
+        if (!resolvedProjectId && parsed.projectId) {
+          resolvedProjectId = parsed.projectId;
+        }
       }
     } catch (parseErr) {
       console.error('[Agent] Task parse error:', parseErr);
@@ -3371,7 +3522,6 @@ async function handleCreateTaskIntent(
     if (titleMatch) {
       suggestedTitle = titleMatch[1];
     } else {
-      // 「〇〇をタスクに」パターン
       const actionMatch = userMessage.match(/(.+?)[をの](タスク|作成|追加|登録)/);
       if (actionMatch) {
         suggestedTitle = actionMatch[1].replace(/^(新しい|新規)\s*/, '').trim();
@@ -3379,15 +3529,87 @@ async function handleCreateTaskIntent(
     }
   }
 
+  // プロジェクトが1つしかない場合は自動選択
+  if (!resolvedProjectId && projects.length === 1) {
+    resolvedProjectId = projects[0].id;
+  }
+
+  // ========================================
+  // プロジェクト未確定 → ProjectSelectorCard を表示（ウィザード Step 1）
+  // ========================================
+  if (!resolvedProjectId) {
+    cards.push({
+      type: 'project_selector',
+      data: {
+        title: 'どのプロジェクトにタスクを追加しますか？',
+        wizardAction: 'create_task',  // ウィザード用のマーカー
+        suggestedTitle,
+        suggestedDescription,
+        suggestedPriority,
+        suggestedDueDate,
+        projects: projects.map((p: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null }) => ({
+          id: p.id,
+          name: p.name,
+          organizationName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
+          status: 'active',
+        })),
+      },
+    });
+    parts.push('\n\n【タスク作成】\nまず、タスクを追加するプロジェクトを選んでください。');
+    return;
+  }
+
+  // ========================================
+  // プロジェクト確定 → マイルストーン取得 → MilestoneSelectorCard or TaskForm
+  // ========================================
+  const { data: milestones } = await supabase
+    .from('milestones')
+    .select('id, title, status, target_date')
+    .eq('project_id', resolvedProjectId)
+    .in('status', ['pending', 'in_progress'])
+    .order('target_date', { ascending: true });
+
+  // マイルストーンがある場合 → MilestoneSelectorCard を表示（ウィザード Step 2）
+  if (milestones && milestones.length > 0) {
+    cards.push({
+      type: 'milestone_selector',
+      data: {
+        title: 'どのマイルストーンに紐づけますか？',
+        wizardAction: 'create_task',
+        projectId: resolvedProjectId,
+        suggestedTitle,
+        suggestedDescription,
+        suggestedPriority,
+        suggestedDueDate,
+        milestones: milestones.map((ms: { id: string; title: string; status: string; target_date: string | null }) => ({
+          id: ms.id,
+          title: ms.title,
+          status: ms.status,
+          targetDate: ms.target_date || '',
+        })),
+        allowSkip: true,
+      },
+    });
+
+    // プロジェクト名を取得して表示
+    const selectedProject = projects.find((p: { id: string }) => p.id === resolvedProjectId);
+    const projectName = selectedProject ? (selectedProject as { name: string }).name : '';
+    parts.push(`\n\n【タスク作成】\nプロジェクト「${projectName}」のマイルストーンを選んでください。`);
+    return;
+  }
+
+  // ========================================
+  // マイルストーンなし → 直接TaskForm表示
+  // ========================================
   cards.push({
     type: 'task_form',
     data: {
       suggestedTitle,
       suggestedDescription,
       suggestedPriority,
-      suggestedProjectId,
-      suggestedDueDate: '',
-      projects: (projects || []).map((p: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null }) => ({
+      suggestedProjectId: resolvedProjectId,
+      suggestedDueDate,
+      projects: projects.map((p: { id: string; name: string; organization_id: string | null; organizations?: { name: string } | null }) => ({
         id: p.id,
         name: p.name,
         organizationName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
@@ -3395,7 +3617,7 @@ async function handleCreateTaskIntent(
     },
   });
 
-  parts.push('\n\n【タスク作成】\nタスク作成フォームを表示しました。');
+  parts.push('\n\n【タスク作成】\nタスク作成フォームを表示しました。内容を入力してください。');
 }
 
 // ========================================
@@ -3702,7 +3924,7 @@ export async function POST(request: NextRequest) {
     let fixedReply: string | undefined;
     const supabase = createServerClient();
     if (supabase && isSupabaseConfigured()) {
-      const result = await fetchDataAndBuildCards(supabase, userId, intent, message);
+      const result = await fetchDataAndBuildCards(supabase, userId, intent, message, { projectId, taskId, organizationId });
       contextText = result.contextText;
       cards = result.cards;
       fixedReply = result.fixedReply;
@@ -3943,6 +4165,10 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'Google Driveにフォルダを作成しました。'
         : 'フォルダの作成に失敗しました。フォルダ名を指定してもう一度お伝えください。';
+    case 'project_status':
+      return hasCards
+        ? 'プロジェクトの進捗状況を表示しました。'
+        : 'プロジェクト状況の取得に失敗しました。もう一度お試しください。';
     case 'projects':
       return hasCards
         ? 'プロジェクト一覧を確認しました。ビジネスログ画面で詳細を管理できます。'
@@ -3950,9 +4176,18 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
     case 'business_log':
       return 'ビジネスログへのリンクを表示しました。クリックして開いてください。';
     case 'create_task':
-      return hasCards
-        ? 'タスク作成フォームを表示しました。内容を入力して「作成する」を押してください。'
-        : 'タスク作成の準備に失敗しました。もう一度お試しください。';
+      // ウィザード型: カードの種類に応じてメッセージを変える
+      if (hasCards) {
+        const cardTypes = cards.map(c => c.type);
+        if (cardTypes.includes('project_selector')) {
+          return 'タスクを追加するプロジェクトを選んでください。';
+        }
+        if (cardTypes.includes('milestone_selector')) {
+          return 'タスクを紐づけるマイルストーンを選んでください。スキップも可能です。';
+        }
+        return 'タスク作成フォームを表示しました。内容を入力して「作成する」を押してください。';
+      }
+      return 'タスク作成の準備に失敗しました。もう一度お試しください。';
     case 'task_progress':
       return hasCards
         ? 'タスクの詳細を表示しました。このまま相談を続けることもできますし、「続ける」でタスクページに移動もできます。'

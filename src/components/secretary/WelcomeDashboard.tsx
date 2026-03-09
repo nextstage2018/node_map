@@ -44,6 +44,16 @@ interface UrgentJobItem {
   status: string;
 }
 
+interface RecentProjectItem {
+  id: string;
+  name: string;
+  organizationName: string;
+  msTotal: number;
+  msCompleted: number;
+  taskTotal: number;
+  taskDone: number;
+}
+
 // ========================================
 // 時間帯に応じた挨拶
 // ========================================
@@ -193,6 +203,56 @@ function UrgentJobList({
 }
 
 // ========================================
+// v3.1: 最近のプロジェクトリスト
+// ========================================
+function RecentProjectList({
+  projects,
+  onSendMessage,
+}: {
+  projects: RecentProjectItem[];
+  onSendMessage: (message: string) => void;
+}) {
+  if (projects.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-slate-400 mb-3 tracking-wider">最近のプロジェクト</p>
+      <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+        {projects.map((proj) => {
+          const taskPercent = proj.taskTotal > 0 ? Math.round((proj.taskDone / proj.taskTotal) * 100) : 0;
+          return (
+            <button
+              key={proj.id}
+              onClick={() => onSendMessage(`プロジェクト「${proj.name}」の進捗を教えて`)}
+              className="flex items-center gap-3 w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors group"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-700 truncate group-hover:text-blue-600 transition-colors">
+                  {proj.name}
+                </p>
+                <p className="text-[11px] text-slate-400">{proj.organizationName || '組織未設定'}</p>
+              </div>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400">MS {proj.msCompleted}/{proj.msTotal}</p>
+                  <div className="w-14 h-1.5 bg-slate-100 rounded-full overflow-hidden mt-0.5">
+                    <div
+                      className="h-full bg-blue-500 rounded-full"
+                      style={{ width: `${taskPercent}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-slate-300 group-hover:text-blue-400 transition-colors">→</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // WelcomeDashboard メインコンポーネント
 // ========================================
 export default function WelcomeDashboard({
@@ -201,6 +261,7 @@ export default function WelcomeDashboard({
   onSendMessage: (message: string) => void;
 }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [recentProjects, setRecentProjects] = useState<RecentProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -208,14 +269,15 @@ export default function WelcomeDashboard({
 
     async function fetchSummary() {
       try {
-        // 並列でAPIコール（既存4 + 新規2）
-        const [msgRes, calRes, taskRes, jobRes, msRes, urgentJobRes] = await Promise.allSettled([
+        // 並列でAPIコール（既存4 + 新規2 + v3.1プロジェクト）
+        const [msgRes, calRes, taskRes, jobRes, msRes, urgentJobRes, projRes] = await Promise.allSettled([
           fetch('/api/messages?unread=true&limit=1'),
           fetch('/api/calendar/events?range=today'),
           fetch('/api/tasks?status=active&limit=1&include_project=true&include_milestone=true&today=true'),
           fetch('/api/jobs?status=pending&limit=1'),
           fetch('/api/milestones?status=in_progress&week=current'),
           fetch('/api/jobs?urgent=true&limit=5'),
+          fetch('/api/projects?status=active&limit=5'),
         ]);
 
         if (cancelled) return;
@@ -305,6 +367,26 @@ export default function WelcomeDashboard({
             }
           }
         }
+
+        // v3.1: 最近のプロジェクト
+        const recentProj: RecentProjectItem[] = [];
+        if (projRes.status === 'fulfilled' && projRes.value.ok) {
+          const data = await projRes.value.json();
+          if (data.success && data.data && Array.isArray(data.data)) {
+            for (const p of data.data.slice(0, 5)) {
+              recentProj.push({
+                id: p.id,
+                name: p.name,
+                organizationName: p.organization_name || p.organizations?.name || '',
+                msTotal: p.ms_total ?? 0,
+                msCompleted: p.ms_completed ?? 0,
+                taskTotal: p.task_total ?? 0,
+                taskDone: p.task_done ?? 0,
+              });
+            }
+          }
+        }
+        if (!cancelled) setRecentProjects(recentProj);
 
         setSummary({ unread, calendar, tasks, jobs, milestones, urgentJobs });
       } catch {
@@ -422,6 +504,12 @@ export default function WelcomeDashboard({
             jobs={summary?.urgentJobs ?? []}
             onSendMessage={onSendMessage}
           />
+
+          {/* v3.1: 最近のプロジェクト */}
+          <RecentProjectList
+            projects={recentProjects}
+            onSendMessage={onSendMessage}
+          />
         </>
       )}
 
@@ -433,8 +521,9 @@ export default function WelcomeDashboard({
             { label: 'タスク作成', message: '新しいタスクを作成したい' },
             { label: '日程調整', message: '今週の空き時間を教えて' },
             { label: 'MS確認', message: 'マイルストーンの進捗を教えて' },
-            { label: 'プロジェクト確認', message: 'プロジェクト一覧を見せて' },
+            { label: 'プロジェクト進捗', message: 'プロジェクトの進捗状況を教えて' },
             { label: '会議録登録', message: '会議録を登録したい' },
+            { label: 'ジョブ確認', message: '対応が必要なことは？' },
             { label: 'ナレッジ確認', message: 'ナレッジの構造化提案を見せて' },
           ].map((action) => (
             <button

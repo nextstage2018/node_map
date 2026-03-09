@@ -831,6 +831,7 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
               description: taskData.description || '',
               priority: taskData.priority || 'medium',
               projectId: taskData.projectId || undefined,
+              milestoneId: taskData.milestoneId || undefined,
               dueDate: taskData.dueDate || undefined,
             }),
           });
@@ -1649,17 +1650,134 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
       }
 
       case 'select_project': {
-        const selectedProjectId = (d as { projectId: string }).projectId;
-        sendMessage(`プロジェクト ${selectedProjectId} について`);
+        const projData = d as { projectId: string; wizardAction?: string; suggestedTitle?: string; suggestedDescription?: string; suggestedPriority?: string; suggestedDueDate?: string };
+        const selectedProjId = projData.projectId;
+
+        // ウィザード型タスク作成フローの場合
+        if (projData.wizardAction === 'create_task') {
+          // Step 2: マイルストーン取得 → MilestoneSelectorCard or TaskForm表示
+          try {
+            const msRes = await fetch(`/api/milestones?projectId=${selectedProjId}&status=pending,in_progress`);
+            const msData = await msRes.json();
+            const milestones = msData.success ? (msData.data || []) : [];
+
+            if (milestones.length > 0) {
+              // マイルストーンがある → MilestoneSelectorCard
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: 'マイルストーンを選んでください。',
+                cards: [{
+                  type: 'milestone_selector',
+                  data: {
+                    title: 'どのマイルストーンに紐づけますか？',
+                    wizardAction: 'create_task',
+                    projectId: selectedProjId,
+                    suggestedTitle: projData.suggestedTitle || '',
+                    suggestedDescription: projData.suggestedDescription || '',
+                    suggestedPriority: projData.suggestedPriority || 'medium',
+                    suggestedDueDate: projData.suggestedDueDate || '',
+                    milestones: milestones.map((ms: { id: string; title: string; status: string; target_date?: string }) => ({
+                      id: ms.id,
+                      title: ms.title,
+                      status: ms.status,
+                      targetDate: ms.target_date || '',
+                    })),
+                    allowSkip: true,
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              // マイルストーンなし → 直接TaskFormCard
+              sendMessage(`プロジェクト ${selectedProjId} でタスクを作成したい`);
+            }
+          } catch {
+            sendMessage(`プロジェクト ${selectedProjId} でタスクを作成したい`);
+          }
+        } else {
+          // 通常のプロジェクト選択（ステータス確認等）
+          sendMessage(`プロジェクト「${selectedProjId}」の状況を教えて`);
+        }
         break;
       }
 
       case 'select_milestone': {
-        const milestoneId = (d as { milestoneId: string | null }).milestoneId;
-        if (milestoneId) {
-          sendMessage(`マイルストーン ${milestoneId} にタスクを作成`);
+        const msData = d as { milestoneId: string | null; wizardAction?: string; projectId?: string; suggestedTitle?: string; suggestedDescription?: string; suggestedPriority?: string; suggestedDueDate?: string };
+        const milestoneId = msData.milestoneId;
+
+        // ウィザード型タスク作成フローの場合 → TaskFormCard をメッセージとして追加
+        if (msData.wizardAction === 'create_task' && msData.projectId) {
+          try {
+            // プロジェクト一覧を取得（TaskFormCardに必要）
+            const projRes = await fetch('/api/projects?status=active');
+            const projData = await projRes.json();
+            const allProjects = projData.success ? (projData.data || []) : [];
+
+            setMessages(prev => [...prev, {
+              id: generateId(),
+              role: 'assistant',
+              content: 'タスクの内容を入力してください。',
+              cards: [{
+                type: 'task_form',
+                data: {
+                  suggestedTitle: msData.suggestedTitle || '',
+                  suggestedDescription: msData.suggestedDescription || '',
+                  suggestedPriority: msData.suggestedPriority || 'medium',
+                  suggestedProjectId: msData.projectId,
+                  suggestedMilestoneId: milestoneId || '',
+                  suggestedDueDate: msData.suggestedDueDate || '',
+                  projects: allProjects.map((p: { id: string; name: string; organizations?: { name: string } | null }) => ({
+                    id: p.id,
+                    name: p.name,
+                    organizationName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
+                  })),
+                },
+              }],
+              timestamp: new Date().toISOString(),
+            }]);
+          } catch {
+            // フォールバック: テキストメッセージで送信
+            if (milestoneId) {
+              sendMessage(`マイルストーン ${milestoneId} にタスクを作成したい`);
+            } else {
+              sendMessage('マイルストーンなしでタスクを作成したい');
+            }
+          }
         } else {
-          sendMessage('マイルストーンなしでタスクを作成');
+          // 通常のマイルストーン選択
+          if (milestoneId) {
+            sendMessage(`マイルストーン ${milestoneId} にタスクを作成`);
+          } else {
+            sendMessage('マイルストーンなしでタスクを作成');
+          }
+        }
+        break;
+      }
+
+      // v3.1: プロジェクトステータスカードのアクション
+      case 'view_tasks': {
+        const pid = (d as { projectId?: string })?.projectId;
+        if (pid) {
+          sendMessage(`プロジェクト ${pid} のタスク一覧を見せて`);
+        } else {
+          sendMessage('タスク一覧を見せて');
+        }
+        break;
+      }
+      case 'add_meeting': {
+        const pid = (d as { projectId?: string })?.projectId;
+        if (pid) {
+          sendMessage(`プロジェクト ${pid} に会議録を登録したい`);
+        } else {
+          sendMessage('会議録を登録したい');
+        }
+        break;
+      }
+      case 'view_detail': {
+        const pid = (d as { projectId?: string })?.projectId;
+        if (pid) {
+          window.location.href = `/organizations/${pid}`;
         }
         break;
       }
@@ -1776,7 +1894,7 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
 
       {/* Phase UI-3: クイックアクション（会話中） */}
       {messages.length > 0 && !isLoading && (
-        <QuickActionBar onSendMessage={sendMessage} />
+        <QuickActionBar onSendMessage={sendMessage} contextProjectId={contextProjectId} contextTaskId={contextTaskId} />
       )}
 
       {/* ファイルアップロードパネル */}

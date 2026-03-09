@@ -66,6 +66,8 @@ const cardAccentMap: Partial<Record<CardType, CardAccentColor>> = {
   action_selector: 'blue',
   project_selector: 'blue',
   milestone_selector: 'blue',
+  project_status_card: 'blue',
+  quick_status_overview: 'blue',
 };
 
 export function UnifiedCardWrapper({
@@ -132,7 +134,9 @@ export type CardType =
   | 'action_selector'    // V3.0: アクション選択カード
   | 'project_selector'   // V3.0: プロジェクト選択カード
   | 'milestone_selector' // V3.0: マイルストーン選択カード
-  | 'task_proposal';     // V3.0: タスク提案カード（会議録→承認）
+  | 'task_proposal'      // V3.0: タスク提案カード（会議録→承認）
+  | 'project_status_card'   // v3.1: プロジェクト進捗ステータス
+  | 'quick_status_overview'; // v3.1: 全PJ進捗概要
 
 // カードデータ共通
 export interface CardData {
@@ -565,6 +569,7 @@ interface TaskFormData {
   suggestedDescription: string;
   suggestedPriority: string;
   suggestedProjectId: string;
+  suggestedMilestoneId?: string;  // v3.1: ウィザードから渡される
   suggestedDueDate: string;
   projects: TaskFormProject[];
 }
@@ -579,6 +584,7 @@ export function TaskFormCard({
     description: string;
     priority: string;
     projectId: string;
+    milestoneId?: string;
     dueDate: string;
   }) => void;
 }) {
@@ -587,6 +593,7 @@ export function TaskFormCard({
   const [priority, setPriority] = useState(data.suggestedPriority || 'medium');
   const [projectId, setProjectId] = useState(data.suggestedProjectId || '');
   const [dueDate, setDueDate] = useState(data.suggestedDueDate || '');
+  const milestoneId = data.suggestedMilestoneId || '';
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
@@ -594,7 +601,7 @@ export function TaskFormCard({
     if (!title.trim() || submitting) return;
     setSubmitting(true);
     try {
-      onSubmit?.({ title: title.trim(), description: description.trim(), priority, projectId, dueDate });
+      onSubmit?.({ title: title.trim(), description: description.trim(), priority, projectId, milestoneId, dueDate });
       setSubmitted(true);
     } finally {
       setSubmitting(false);
@@ -2122,7 +2129,14 @@ export function CardRenderer({
       inner = (
         <ProjectSelectorCard
           data={card.data}
-          onSelect={(projectId) => onAction?.('select_project', { projectId })}
+          onSelect={(projectId) => onAction?.('select_project', {
+            projectId,
+            wizardAction: card.data?.wizardAction,
+            suggestedTitle: card.data?.suggestedTitle,
+            suggestedDescription: card.data?.suggestedDescription,
+            suggestedPriority: card.data?.suggestedPriority,
+            suggestedDueDate: card.data?.suggestedDueDate,
+          })}
         />
       );
       break;
@@ -2130,7 +2144,31 @@ export function CardRenderer({
       inner = (
         <MilestoneSelectorCard
           data={card.data}
-          onSelect={(milestoneId) => onAction?.('select_milestone', { milestoneId })}
+          onSelect={(milestoneId) => onAction?.('select_milestone', {
+            milestoneId,
+            wizardAction: card.data?.wizardAction,
+            projectId: card.data?.projectId,
+            suggestedTitle: card.data?.suggestedTitle,
+            suggestedDescription: card.data?.suggestedDescription,
+            suggestedPriority: card.data?.suggestedPriority,
+            suggestedDueDate: card.data?.suggestedDueDate,
+          })}
+        />
+      );
+      break;
+    case 'project_status_card':
+      inner = (
+        <ProjectStatusCard
+          data={card.data}
+          onAction={(actionId) => onAction?.(actionId, card.data)}
+        />
+      );
+      break;
+    case 'quick_status_overview':
+      inner = (
+        <QuickStatusOverview
+          data={card.data}
+          onSelectProject={(projectId) => onAction?.('select_project', { projectId })}
         />
       );
       break;
@@ -3628,6 +3666,234 @@ function TaskExternalResourceCard({ data }: { data: TaskExternalResourceData }) 
         <p className="text-[10px] text-slate-400">
           📚 タスク詳細画面の「外部資料 → + 取り込み」からテキスト・ファイル・URLを追加できます
         </p>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// v3.1: プロジェクトステータスカード
+// ========================================
+interface ProjectStatusCardData {
+  projectId: string;
+  projectName: string;
+  organizationName?: string;
+  milestones: {
+    total: number;
+    completed: number;
+    inProgress: number;
+    pending: number;
+    items: Array<{
+      id: string;
+      title: string;
+      status: string;
+      targetDate: string;
+    }>;
+  };
+  tasks: {
+    total: number;
+    done: number;
+    progressPercent: number;
+  };
+  recentActivity: Array<{
+    eventType: string;
+    title: string;
+    timestamp: string;
+  }>;
+}
+
+function ProjectStatusCard({
+  data,
+  onAction,
+}: {
+  data: ProjectStatusCardData;
+  onAction?: (action: string) => void;
+}) {
+  const eventTypeIcons: Record<string, string> = {
+    meeting: '📅',
+    message: '💬',
+    task_completed: '✅',
+    file_shared: '📄',
+    milestone_achieved: '🏁',
+    summary: '📊',
+  };
+
+  const msStatusDot = (status: string) => {
+    switch (status) {
+      case 'achieved': return 'bg-green-500';
+      case 'in_progress': return 'bg-blue-500';
+      case 'missed': return 'bg-red-500';
+      default: return 'bg-slate-300';
+    }
+  };
+
+  return (
+    <div className="p-4 space-y-3">
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-bold text-nm-text">{data.projectName}</h3>
+          {data.organizationName && (
+            <p className="text-xs text-nm-text-muted">{data.organizationName}</p>
+          )}
+        </div>
+      </div>
+
+      {/* MS進捗 */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-nm-text-secondary font-medium">マイルストーン</span>
+          <span className="text-xs text-nm-text-muted">
+            {data.milestones.completed}/{data.milestones.total} 完了
+          </span>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          {data.milestones.items.map((ms) => (
+            <div
+              key={ms.id}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-slate-200 text-[10px]"
+              title={`${ms.title} (${ms.status})`}
+            >
+              <span className={cn('w-1.5 h-1.5 rounded-full', msStatusDot(ms.status))} />
+              <span className="text-nm-text-secondary truncate max-w-[100px]">{ms.title}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* タスク進捗バー */}
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-nm-text-secondary font-medium">タスク進捗</span>
+          <span className="text-xs text-nm-text-muted">
+            {data.tasks.done}/{data.tasks.total}（{data.tasks.progressPercent}%）
+          </span>
+        </div>
+        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-blue-500 rounded-full transition-all"
+            style={{ width: `${data.tasks.progressPercent}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 直近アクティビティ */}
+      {data.recentActivity.length > 0 && (
+        <div>
+          <span className="text-xs text-nm-text-secondary font-medium">最近の動き</span>
+          <div className="mt-1 space-y-1">
+            {data.recentActivity.map((event, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs">
+                <span>{eventTypeIcons[event.eventType] || '📌'}</span>
+                <span className="flex-1 text-nm-text-secondary truncate">{event.title}</span>
+                <span className="text-nm-text-muted whitespace-nowrap">
+                  {new Date(event.timestamp).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* クイックアクション */}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => onAction?.('view_tasks')}
+          className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          タスク一覧
+        </button>
+        <button
+          onClick={() => onAction?.('add_meeting')}
+          className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          会議録追加
+        </button>
+        <button
+          onClick={() => onAction?.('view_detail')}
+          className="flex-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+        >
+          詳細ページ
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// v3.1: 全PJ進捗概要カード
+// ========================================
+interface QuickStatusOverviewData {
+  projects: Array<{
+    projectId: string;
+    projectName: string;
+    organizationName?: string;
+    msTotal: number;
+    msCompleted: number;
+    msInProgress: number;
+    taskTotal: number;
+    taskDone: number;
+    urgentCount: number;
+  }>;
+}
+
+function QuickStatusOverview({
+  data,
+  onSelectProject,
+}: {
+  data: QuickStatusOverviewData;
+  onSelectProject?: (projectId: string) => void;
+}) {
+  return (
+    <div className="p-4 space-y-2">
+      <h3 className="text-xs font-bold text-nm-text-secondary uppercase tracking-wider">プロジェクト進捗</h3>
+      <div className="space-y-1">
+        {data.projects.map((proj) => {
+          const taskPercent = proj.taskTotal > 0 ? Math.round((proj.taskDone / proj.taskTotal) * 100) : 0;
+          return (
+            <button
+              key={proj.projectId}
+              onClick={() => onSelectProject?.(proj.projectId)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 transition-colors text-left group"
+            >
+              {/* プロジェクト名 */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-nm-text truncate group-hover:text-blue-600 transition-colors">
+                  {proj.projectName}
+                </p>
+                {proj.organizationName && (
+                  <p className="text-[10px] text-nm-text-muted">{proj.organizationName}</p>
+                )}
+              </div>
+
+              {/* MS進捗 */}
+              <div className="flex items-center gap-1 text-[10px] text-nm-text-muted">
+                <span>MS</span>
+                <span className="font-medium text-nm-text-secondary">{proj.msCompleted}/{proj.msTotal}</span>
+              </div>
+
+              {/* タスク進捗バー */}
+              <div className="w-16">
+                <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full"
+                    style={{ width: `${taskPercent}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-nm-text-muted text-right mt-0.5">{taskPercent}%</p>
+              </div>
+
+              {/* 緊急 */}
+              {proj.urgentCount > 0 && (
+                <span className="px-1.5 py-0.5 text-[10px] font-medium text-red-600 bg-red-50 rounded-full">
+                  {proj.urgentCount}件
+                </span>
+              )}
+
+              <ChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-blue-400" />
+            </button>
+          );
+        })}
       </div>
     </div>
   );

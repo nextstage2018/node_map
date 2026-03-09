@@ -80,17 +80,27 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('project_id');
+    // v3.1: projectId（camelCase）もサポート
+    const projectId = searchParams.get('project_id') || searchParams.get('projectId');
+    const statusFilter = searchParams.get('status'); // e.g. "pending,in_progress"
 
     if (!projectId) {
       return NextResponse.json({ success: false, error: 'project_id は必須です' }, { status: 400 });
     }
 
     // マイルストーン一覧取得（配下のタスク数も取得）
-    const { data: milestones, error } = await supabase
+    let query = supabase
       .from('milestones')
       .select('*')
-      .eq('project_id', projectId)
+      .eq('project_id', projectId);
+
+    // v3.1: ステータスフィルター
+    if (statusFilter) {
+      const statuses = statusFilter.split(',').map(s => s.trim());
+      query = query.in('status', statuses);
+    }
+
+    const { data: milestones, error } = await query
       .order('sort_order', { ascending: true })
       .order('target_date', { ascending: true });
 

@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const status = searchParams.get('status') || '';
     const organizationId = searchParams.get('organization_id') || '';
+    const limitParam = searchParams.get('limit');
 
     let query = supabase
       .from('projects')
@@ -37,6 +38,13 @@ export async function GET(request: NextRequest) {
     }
     if (organizationId) {
       query = query.eq('organization_id', organizationId);
+    }
+    // v3.1: limit パラメータ対応
+    if (limitParam) {
+      const limit = parseInt(limitParam, 10);
+      if (!isNaN(limit) && limit > 0) {
+        query = query.limit(limit);
+      }
     }
 
     const { data, error } = await query;
