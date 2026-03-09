@@ -815,7 +815,8 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
       case 'resume_task': {
         const taskId = (d as Record<string, string>)?.taskId;
         if (taskId) {
-          window.location.href = `/tasks?open=${taskId}`;
+          // ページ遷移せず秘書チャット内でタスク進行を開始
+          sendMessage(`タスク ${taskId} を進めたい`);
         }
         break;
       }

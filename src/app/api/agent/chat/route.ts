@@ -3660,12 +3660,30 @@ async function handleTaskProgressIntent(
     return;
   }
 
-  // メッセージからタスクを特定
+  // メッセージからタスクを特定（UUID直接指定 → タスク名マッチ）
   let matchedTask: TaskRow | null = null;
-  for (const t of activeTasks) {
-    if (userMessage.includes(t.title) || userMessage.includes(t.title.slice(0, 10))) {
-      matchedTask = t;
-      break;
+  const taskUuidMatch = userMessage.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (taskUuidMatch) {
+    // 全タスク（完了含む）からIDで検索
+    matchedTask = tasks.find(t => t.id === taskUuidMatch[0]) || null;
+    // activeTasks にない場合もDB直接検索
+    if (!matchedTask) {
+      const { data: dbTask } = await supabase
+        .from('tasks')
+        .select('id, title, status, priority, phase, due_date, updated_at, project_id')
+        .eq('id', taskUuidMatch[0])
+        .single();
+      if (dbTask) {
+        matchedTask = dbTask as TaskRow;
+      }
+    }
+  }
+  if (!matchedTask) {
+    for (const t of activeTasks) {
+      if (userMessage.includes(t.title) || userMessage.includes(t.title.slice(0, 10))) {
+        matchedTask = t;
+        break;
+      }
     }
   }
 
