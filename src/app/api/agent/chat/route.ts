@@ -326,6 +326,7 @@ interface ContextAndCards {
     tasks: TaskRow[];
     jobs: JobRow[];
   };
+  fixedReply?: string; // AI生成をスキップして固定メッセージを返す場合に設定
 }
 
 async function fetchDataAndBuildCards(
@@ -339,6 +340,7 @@ async function fetchDataAndBuildCards(
   let messages: MessageRow[] = [];
   let tasks: TaskRow[] = [];
   let jobs: JobRow[] = [];
+  let fixedReply: string | undefined;
 
   try {
     // 全意図で基本データは取得（コンテキスト用）
@@ -2759,6 +2761,8 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
           .order('updated_at', { ascending: false })
           .limit(10);
 
+        console.log('[Agent] create_milestone: userProjects count:', userProjects?.length);
+
         if (userProjects && userProjects.length > 0) {
           // ユーザーメッセージからプロジェクト名をマッチ
           let matchedProject: { id: string; name: string; organization_id: string } | null = null;
@@ -2775,6 +2779,8 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
             matchedProject = { id: p.id, name: p.name, organization_id: p.organization_id };
           }
 
+          console.log('[Agent] create_milestone: matchedProject:', matchedProject?.name || 'none');
+
           const projLines = userProjects.map((p: { name: string; organizations?: { name: string } | null }) => {
             const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
             return `- ${p.name}${orgName ? `（${orgName}）` : ''}`;
@@ -2782,12 +2788,11 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
 
           if (matchedProject) {
             // プロジェクトが特定された場合: メッセージからタイトルを抽出して直接作成を試みる
-            // タイトル抽出: 「〜を作成」「〜を追加」の前の名詞句、または「タイトル:〜」形式
             let extractedTitle = '';
             let extractedDescription = '';
             let extractedTargetDate = '';
 
-            // 「Week1 要件定義」のようなタイトルを抽出
+            // タイトル抽出パターン
             const titlePatterns = [
               /(?:タイトル|名前|名称)[：:]?\s*(.+?)(?:\s*[、。\n]|$)/,
               /「(.+?)」/,
@@ -2811,7 +2816,6 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
                 if (dateStr.includes('-')) {
                   extractedTargetDate = dateStr;
                 } else {
-                  // MM/DD → YYYY-MM-DD
                   const [month, day] = dateStr.split('/');
                   const year = new Date().getFullYear();
                   extractedTargetDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
@@ -2829,9 +2833,12 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
               if (m && m[1]) { extractedDescription = m[1].trim(); break; }
             }
 
+            console.log('[Agent] create_milestone: extractedTitle:', extractedTitle);
+            console.log('[Agent] create_milestone: extractedDescription:', extractedDescription);
+            console.log('[Agent] create_milestone: extractedTargetDate:', extractedTargetDate);
+
             if (extractedTitle) {
               // タイトルが抽出できた場合: 直接DBに保存
-              // sort_order取得
               const { data: existingMs } = await supabase
                 .from('milestones')
                 .select('sort_order')
@@ -2839,6 +2846,8 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
                 .order('sort_order', { ascending: false })
                 .limit(1);
               const nextOrder = (existingMs && existingMs.length > 0) ? ((existingMs[0].sort_order || 0) + 1) : 0;
+
+              console.log('[Agent] create_milestone: attempting INSERT for project:', matchedProject.id, 'title:', extractedTitle);
 
               const { data: newMs, error: insertErr } = await supabase
                 .from('milestones')
@@ -2856,9 +2865,20 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
 
               if (insertErr) {
                 console.error('[Agent] Milestone insert error:', insertErr);
-                parts.push(`\n\n【マイルストーン作成失敗】\nエラー: ${insertErr.message}\n\nもう一度お試しください。`);
+                // INSERT失敗 → 固定メッセージ（AIに任せない）
+                fixedReply = `マイルストーンの作成に失敗しました。\nエラー: ${insertErr.message}\n\nもう一度お試しください。`;
+                parts.push(`\n\n【マイルストーン作成失敗】\n${insertErr.message}`);
               } else {
-                parts.push(`\n\n【マイルストーン作成完了】\nプロジェクト: ${matchedProject.name}\nタイトル: ${newMs.title}${newMs.target_date ? `\n期限: ${newMs.target_date}` : ''}${newMs.description ? `\nゴール: ${newMs.description}` : ''}\n\n✅ マイルストーンを作成しました。組織ページのタスクタブから確認できます。`);
+                console.log('[Agent] create_milestone: INSERT success, id:', newMs?.id);
+                // INSERT成功 → 固定メッセージ（AIに任せない）
+                const successMsg = `✅ マイルストーンを作成しました。\n\n` +
+                  `プロジェクト: ${matchedProject.name}\n` +
+                  `タイトル: ${newMs.title}\n` +
+                  (newMs.target_date ? `期限: ${newMs.target_date}\n` : '') +
+                  (newMs.description ? `ゴール: ${newMs.description}\n` : '') +
+                  `\n組織ページのタスクタブから確認できます。`;
+                fixedReply = successMsg;
+                parts.push(`\n\n【マイルストーン作成完了】\n${successMsg}`);
                 cards.push({
                   type: 'navigate',
                   data: {
@@ -2869,8 +2889,9 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
                 });
               }
             } else {
-              // タイトルが抽出できない場合: 情報を聞く
-              parts.push(`\n\n【マイルストーン作成】\n対象プロジェクト: ${matchedProject.name}\n\nマイルストーンの情報を教えてください:\n- タイトル（例: 「Week1 要件定義」）\n- ゴール / 説明（任意）\n- 期限（例: 3/14）\n\n💡 例: 「Week1 要件定義」「ゴール: 要件を洗い出す」「期限: 3/14」のように入力してください。`);
+              // タイトルが抽出できない場合: 情報を聞く（固定メッセージ）
+              fixedReply = `【マイルストーン作成】\n対象プロジェクト: ${matchedProject.name}\n\nマイルストーンの情報を教えてください:\n- タイトル（例: 「Week1 要件定義」）\n- ゴール / 説明（任意）\n- 期限（例: 3/14）\n\n💡 例: 「Week1 要件定義」のようにカギ括弧で囲んで入力してください。`;
+              parts.push(`\n\n${fixedReply}`);
               cards.push({
                 type: 'navigate',
                 data: {
@@ -2881,14 +2902,17 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
               });
             }
           } else {
-            // プロジェクトが特定されない場合: 一覧表示
-            parts.push(`\n\n【マイルストーン作成】\nどのプロジェクトにマイルストーンを作成しますか？\n\n${projLines}\n\n「○○プロジェクトにマイルストーンを作成して」と指定してください。`);
+            // プロジェクトが特定されない場合: 一覧表示（固定メッセージ）
+            fixedReply = `【マイルストーン作成】\nどのプロジェクトにマイルストーンを作成しますか？\n\n${projLines}\n\n「○○プロジェクトにマイルストーンを作成して」と指定してください。`;
+            parts.push(`\n\n${fixedReply}`);
           }
         } else {
-          parts.push('\n\n【マイルストーン作成】\nまだプロジェクトが登録されていません。先にプロジェクトを作成してください。');
+          fixedReply = 'まだプロジェクトが登録されていません。先にプロジェクトを作成してください。';
+          parts.push(`\n\n【マイルストーン作成】\n${fixedReply}`);
         }
       } catch (err) {
         console.error('[Agent] Create milestone error:', err);
+        fixedReply = 'マイルストーン作成中にエラーが発生しました。もう一度お試しください。';
         parts.push('\n\nマイルストーン作成に失敗しました。');
       }
     }
@@ -2936,7 +2960,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     console.error('[Secretary API] データ取得エラー:', error);
   }
 
-  return { contextText: parts.join(''), cards, rawData: { messages, tasks, jobs } };
+  return { contextText: parts.join(''), cards, rawData: { messages, tasks, jobs }, fixedReply };
 }
 
 // ========================================
@@ -3568,11 +3592,24 @@ export async function POST(request: NextRequest) {
     // データ取得 + カード生成
     let contextText = '';
     let cards: CardData[] = [];
+    let fixedReply: string | undefined;
     const supabase = createServerClient();
     if (supabase && isSupabaseConfigured()) {
       const result = await fetchDataAndBuildCards(supabase, userId, intent, message);
       contextText = result.contextText;
       cards = result.cards;
+      fixedReply = result.fixedReply;
+    }
+
+    // fixedReplyが設定されている場合はAI生成をスキップ（INSERT成否を正確に返す）
+    if (fixedReply) {
+      return NextResponse.json({
+        success: true,
+        data: {
+          reply: fixedReply,
+          cards: cards.length > 0 ? cards : undefined,
+        },
+      });
     }
 
     // Claude APIキーの確認
