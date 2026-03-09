@@ -5,7 +5,7 @@ import { useState } from 'react';
 import {
   Mail, MessageSquare, MessageCircle, Hash, Clock, CheckCircle2, XCircle,
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
-  Zap, CheckSquare, FileText, AlertCircle,
+  Zap, CheckSquare, FileText, AlertCircle, Flag,
   Calendar, AlertTriangle, TrendingUp,
   FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles, ListChecks, ChevronRight,
 } from 'lucide-react';
@@ -136,7 +136,8 @@ export type CardType =
   | 'milestone_selector' // V3.0: マイルストーン選択カード
   | 'task_proposal'      // V3.0: タスク提案カード（会議録→承認）
   | 'project_status_card'   // v3.1: プロジェクト進捗ステータス
-  | 'quick_status_overview'; // v3.1: 全PJ進捗概要
+  | 'quick_status_overview' // v3.1: 全PJ進捗概要
+  | 'milestone_overview';   // v3.2: マイルストーン開閉式一覧
 
 // カードデータ共通
 export interface CardData {
@@ -2151,6 +2152,13 @@ export function CardRenderer({
         />
       );
       break;
+    case 'milestone_overview':
+      inner = (
+        <MilestoneOverviewCard
+          data={card.data}
+        />
+      );
+      break;
     case 'task_proposal':
       inner = (
         <TaskProposalCard
@@ -3880,6 +3888,203 @@ function QuickStatusOverview({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ========================================
+// v3.2: マイルストーン開閉式一覧カード
+// プロジェクト→マイルストーン（期日・タスク件数）を開閉式で表示
+// ========================================
+interface MilestoneOverviewProject {
+  projectId: string;
+  projectName: string;
+  organizationName?: string;
+  orgId?: string;
+  milestones: Array<{
+    id: string;
+    title: string;
+    status: string;
+    targetDate: string | null;
+    themeName?: string | null;
+    taskTotal: number;
+    taskDone: number;
+  }>;
+}
+
+interface MilestoneOverviewData {
+  projects: MilestoneOverviewProject[];
+}
+
+function MilestoneOverviewCard({
+  data,
+}: {
+  data: MilestoneOverviewData;
+}) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const toggleProject = (projectId: string) => {
+    setExpanded(prev => ({ ...prev, [projectId]: !prev[projectId] }));
+  };
+
+  const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
+    pending: { label: '未着手', color: 'text-slate-500 bg-slate-50 border-slate-200', icon: '⏳' },
+    in_progress: { label: '進行中', color: 'text-blue-600 bg-blue-50 border-blue-200', icon: '🏁' },
+    achieved: { label: '達成', color: 'text-green-600 bg-green-50 border-green-200', icon: '✅' },
+    missed: { label: '未達', color: 'text-red-600 bg-red-50 border-red-200', icon: '❌' },
+  };
+
+  const isOverdue = (dateStr: string | null) => {
+    if (!dateStr) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(dateStr) < today;
+  };
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '期限未設定';
+    const d = new Date(dateStr);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  };
+
+  const daysUntil = (dateStr: string | null) => {
+    if (!dateStr) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const target = new Date(dateStr);
+    target.setHours(0, 0, 0, 0);
+    return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
+  if (!data.projects || data.projects.length === 0) {
+    return (
+      <div className="p-4 text-center text-sm text-slate-400">
+        進行中のマイルストーンはありません
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3 space-y-2">
+      <div className="flex items-center gap-2 mb-1">
+        <Flag className="w-4 h-4 text-blue-600" />
+        <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider">マイルストーン状況</h3>
+      </div>
+
+      {data.projects.map((proj) => {
+        const isOpen = expanded[proj.projectId] ?? (data.projects.length <= 2);
+        const totalMs = proj.milestones.length;
+        const doneMs = proj.milestones.filter(ms => ms.status === 'achieved').length;
+        const totalTasks = proj.milestones.reduce((sum, ms) => sum + ms.taskTotal, 0);
+        const doneTasks = proj.milestones.reduce((sum, ms) => sum + ms.taskDone, 0);
+
+        return (
+          <div key={proj.projectId} className="border border-slate-200 rounded-xl overflow-hidden">
+            {/* プロジェクトヘッダー（クリックで開閉） */}
+            <button
+              onClick={() => toggleProject(proj.projectId)}
+              className="w-full flex items-center gap-3 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 transition-colors text-left"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate">{proj.projectName}</p>
+                {proj.organizationName && (
+                  <p className="text-[10px] text-slate-400">{proj.organizationName}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] text-slate-500">
+                  MS {doneMs}/{totalMs}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  ({doneTasks}/{totalTasks}タスク)
+                </span>
+                {isOpen ? (
+                  <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                )}
+              </div>
+            </button>
+
+            {/* マイルストーン一覧（展開時） */}
+            {isOpen && (
+              <div className="divide-y divide-slate-100">
+                {proj.milestones.map((ms) => {
+                  const st = statusConfig[ms.status] || statusConfig.pending;
+                  const pct = ms.taskTotal > 0 ? Math.round((ms.taskDone / ms.taskTotal) * 100) : 0;
+                  const overdue = ms.status !== 'achieved' && isOverdue(ms.targetDate);
+                  const days = daysUntil(ms.targetDate);
+
+                  return (
+                    <div key={ms.id} className="px-3.5 py-2.5 hover:bg-blue-50/30 transition-colors">
+                      <div className="flex items-start gap-2">
+                        {/* ステータスアイコン */}
+                        <span className="text-sm mt-0.5">{st.icon}</span>
+
+                        <div className="flex-1 min-w-0">
+                          {/* タイトル行 */}
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-slate-800 truncate">{ms.title}</p>
+                            <span className={cn('text-[9px] px-1.5 py-0.5 rounded-full border font-medium shrink-0', st.color)}>
+                              {st.label}
+                            </span>
+                          </div>
+
+                          {/* テーマ名 */}
+                          {ms.themeName && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">テーマ: {ms.themeName}</p>
+                          )}
+
+                          {/* 期限 + タスク進捗 */}
+                          <div className="flex items-center gap-3 mt-1.5">
+                            {/* 期限 */}
+                            <div className={cn(
+                              'flex items-center gap-1 text-[11px]',
+                              overdue ? 'text-red-500 font-medium' : 'text-slate-500'
+                            )}>
+                              <Calendar className="w-3 h-3" />
+                              <span>{formatDate(ms.targetDate)}</span>
+                              {days !== null && ms.status !== 'achieved' && (
+                                <span className={cn(
+                                  'text-[10px]',
+                                  overdue ? 'text-red-400' : days <= 3 ? 'text-amber-500' : 'text-slate-400'
+                                )}>
+                                  {overdue ? `(${Math.abs(days)}日超過)` : days === 0 ? '(今日)' : `(あと${days}日)`}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* タスク進捗 */}
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-14 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={cn('h-full rounded-full', pct === 100 ? 'bg-green-500' : 'bg-blue-500')}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                              <span className="text-[10px] text-slate-500">{ms.taskDone}/{ms.taskTotal}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* プロジェクトへのリンク */}
+                        {proj.orgId && (
+                          <a
+                            href={`/organizations/${proj.orgId}?project=${proj.projectId}&tab=tasks`}
+                            className="shrink-0 mt-1 text-slate-300 hover:text-blue-500 transition-colors"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -2828,7 +2828,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     }
 
     // ========================================
-    // V2-I #41: マイルストーン状況確認
+    // V2-I #41: マイルストーン状況確認（v3.2: 開閉式カード）
     // ========================================
     if (intent === 'milestone_status') {
       try {
@@ -2838,10 +2838,26 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
           .select('id, title, status, target_date, project_id, theme_id, projects(id, name, organization_id, organizations(name)), themes(title)')
           .in('status', ['pending', 'in_progress'])
           .order('target_date', { ascending: true })
-          .limit(10);
+          .limit(20);
 
         if (milestones && milestones.length > 0) {
-          const msLines: string[] = [];
+          // プロジェクト単位でグルーピング
+          const projectMap: Record<string, {
+            projectId: string;
+            projectName: string;
+            organizationName?: string;
+            orgId?: string;
+            milestones: Array<{
+              id: string;
+              title: string;
+              status: string;
+              targetDate: string | null;
+              themeName?: string | null;
+              taskTotal: number;
+              taskDone: number;
+            }>;
+          }> = {};
+
           for (const ms of milestones) {
             // 配下タスクの完了率を計算
             const { data: msTasks } = await supabase
@@ -2851,35 +2867,62 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
 
             const totalTasks = msTasks?.length ?? 0;
             const doneTasks = msTasks?.filter((t: { status: string }) => t.status === 'done').length ?? 0;
-            const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
 
             const projName = ms.projects && typeof ms.projects === 'object' && 'name' in ms.projects ? (ms.projects as { name: string }).name : '不明';
+            const orgName = ms.projects && typeof ms.projects === 'object' && 'organizations' in ms.projects
+              && ms.projects.organizations && typeof ms.projects.organizations === 'object' && 'name' in ms.projects.organizations
+              ? (ms.projects.organizations as { name: string }).name : undefined;
+            const orgId = ms.projects && typeof ms.projects === 'object' && 'organization_id' in ms.projects
+              ? (ms.projects as { organization_id: string }).organization_id : undefined;
             const themeName = ms.themes && typeof ms.themes === 'object' && 'title' in ms.themes ? (ms.themes as { title: string }).title : null;
-            const dateStr = ms.target_date ? ms.target_date : '期限未設定';
 
-            const statusEmoji = pct === 100 ? '✅' : ms.status === 'in_progress' ? '🏁' : '⏳';
-            const statusNote = pct === 100 ? '→ 評価待ち' : '';
-
-            const path = themeName ? `${projName} > ${themeName}` : projName;
-            msLines.push(`${statusEmoji} ${path}: ${ms.title}（期限: ${dateStr}）\n   進捗: ${doneTasks}/${totalTasks}タスク完了（${pct}%）${statusNote}`);
-
-            // ナビカード
-            const orgId = ms.projects && typeof ms.projects === 'object' && 'organization_id' in ms.projects ? (ms.projects as { organization_id: string }).organization_id : null;
-            if (orgId) {
-              cards.push({
-                type: 'navigate',
-                data: {
-                  href: `/organizations/${orgId}?project=${ms.project_id}&tab=tasks`,
-                  label: `${ms.title}`,
-                  description: `${doneTasks}/${totalTasks}タスク完了（${pct}%）`,
-                },
-              });
+            if (!projectMap[ms.project_id]) {
+              projectMap[ms.project_id] = {
+                projectId: ms.project_id,
+                projectName: projName,
+                organizationName: orgName,
+                orgId: orgId,
+                milestones: [],
+              };
             }
+
+            projectMap[ms.project_id].milestones.push({
+              id: ms.id,
+              title: ms.title,
+              status: ms.status,
+              targetDate: ms.target_date,
+              themeName,
+              taskTotal: totalTasks,
+              taskDone: doneTasks,
+            });
           }
 
-          parts.push(`\n\n【進行中のマイルストーン（${milestones.length}件）】\n${msLines.join('\n')}`);
+          const projectList = Object.values(projectMap);
+
+          // 開閉式カードを追加
+          cards.push({
+            type: 'milestone_overview',
+            data: { projects: projectList },
+          });
+
+          // テキストサマリー
+          const totalMs = milestones.length;
+          const projectCount = projectList.length;
+          const overdueMs = milestones.filter(ms => {
+            if (!ms.target_date || ms.status === 'achieved') return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return new Date(ms.target_date) < today;
+          }).length;
+
+          let summaryText = `${projectCount}件のプロジェクトに${totalMs}件の進行中マイルストーンがあります。`;
+          if (overdueMs > 0) {
+            summaryText += `\n${overdueMs}件が期限超過しています。`;
+          }
+
+          parts.push(`\n\n${summaryText}`);
         } else {
-          parts.push('\n\n【マイルストーン】\n現在進行中のマイルストーンはありません。');
+          parts.push('\n\n現在進行中のマイルストーンはありません。');
         }
       } catch (err) {
         console.error('[Agent] Milestone status error:', err);
