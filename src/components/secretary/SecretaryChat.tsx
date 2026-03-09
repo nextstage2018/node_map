@@ -469,6 +469,28 @@ function formatAssistantMessage(text: string | undefined | null): React.ReactNod
       continue;
     }
 
+    // # マークダウン見出し（#, ##, ###）
+    const mdHeadingMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (mdHeadingMatch) {
+      flushBullets();
+      const level = mdHeadingMatch[1].length;
+      const headingText = mdHeadingMatch[2];
+      if (level === 1) {
+        elements.push(
+          <div key={`mh-${keyIdx++}`} className="flex items-center gap-1.5 mt-3 mb-1.5">
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">{headingText}</span>
+          </div>
+        );
+      } else {
+        elements.push(
+          <p key={`mh-${keyIdx++}`} className={`font-semibold text-slate-800 ${level === 2 ? 'text-sm mt-2.5 mb-1' : 'text-xs mt-2 mb-0.5'}`}>
+            {formatInline(headingText)}
+          </p>
+        );
+      }
+      continue;
+    }
+
     // 箇条書き（・ - ● ▸ ◦ ※ ✓ ✅）
     const bulletMatch = trimmed.match(/^([・\-●▸◦※✓✅]\s?)(.+)$/);
     if (bulletMatch) {
