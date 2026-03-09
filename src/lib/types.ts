@@ -203,6 +203,8 @@ export interface Task {
   recurrenceDay?: number;            // 繰り返し曜日/日
   assigneeContactId?: string;        // 担当者コンタクトID
   childTasks?: Task[];               // 子タスク一覧（UI表示用、DB非保存）
+  // V2-A: マイルストーン紐づけ
+  milestoneId?: string;
 }
 
 // タスクメンバー（グループタスク用）

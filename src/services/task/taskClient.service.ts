@@ -65,6 +65,8 @@ function mapTaskFromDb(dbRow: any): Task {
     recurrenceType: dbRow.recurrence_type,
     recurrenceDay: dbRow.recurrence_day,
     assigneeContactId: dbRow.assignee_contact_id,
+    // V2-A: マイルストーン紐づけ
+    milestoneId: dbRow.milestone_id || undefined,
   };
 }
 

@@ -1,6 +1,7 @@
 // Phase UI-7: 組織詳細ページ（左ツリーナビ + 右コンテンツ統合）
 // V2-D: 検討ツリータブ（会議録アップロード + 一覧）追加
 // V2-E: 検討ツリーUI（DecisionTreeView）追加
+// V2-H: 思考マップタブ（マイルストーンスコープフィルタ付き）追加
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -9,7 +10,7 @@ import {
   Building2, ArrowLeft, Globe, Save, Hash, Mail, MessageSquare,
   Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2, FolderOpen,
   ChevronRight, ChevronDown, Settings, CheckSquare, Clock, FileText,
-  ClipboardList, GitBranch,
+  ClipboardList, GitBranch, Map,
 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
@@ -17,6 +18,7 @@ import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
 import DecisionTreeView from '@/components/v2/DecisionTreeView';
+import ThoughtMapTab from '@/components/v2/ThoughtMapTab';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
 // ========================================
@@ -107,7 +109,7 @@ interface Task {
 // ========================================
 type NavNode =
   | { type: 'org'; tab: 'members' | 'channels' | 'settings' }
-  | { type: 'project'; projectId: string; tab: 'tasks' | 'timeline' | 'documents' | 'decision_tree' };
+  | { type: 'project'; projectId: string; tab: 'tasks' | 'timeline' | 'documents' | 'decision_tree' | 'thought_map' };
 
 // ========================================
 // サービスアイコン
@@ -647,6 +649,7 @@ export default function OrganizationDetailPage() {
                           {[
                             { tab: 'timeline' as const, label: 'タイムライン', icon: ClipboardList },
                             { tab: 'decision_tree' as const, label: '検討ツリー', icon: GitBranch },
+                            { tab: 'thought_map' as const, label: '思考マップ', icon: Map },
                             { tab: 'tasks' as const, label: 'タスク', icon: CheckSquare },
                             { tab: 'documents' as const, label: 'ドキュメント', icon: FileText },
                           ].map(sub => (
@@ -973,6 +976,11 @@ export default function OrganizationDetailPage() {
                     refreshKey={meetingRecordRefreshKey}
                   />
                 </div>
+              )}
+
+              {/* PJレベル: 思考マップ（V2-H） */}
+              {activeNav.type === 'project' && activeNav.tab === 'thought_map' && currentProject && (
+                <ThoughtMapTab projectId={currentProject.id} projectName={currentProject.name} />
               )}
 
               {/* PJレベル: タスク */}
