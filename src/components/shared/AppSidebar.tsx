@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bot, Inbox, Building2, Settings,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
   { href: '/settings', label: '設定', icon: Settings },
+  { href: '/guide', label: 'ガイド', icon: BookOpen },
 ];
 
 export default function AppSidebar() {
