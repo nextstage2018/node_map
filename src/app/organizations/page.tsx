@@ -3,9 +3,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Building2, Plus, Users, Globe, X, Search, FolderOpen } from 'lucide-react';
+import { Building2, Plus, Users, Globe, X, Search, FolderOpen, Trash2 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
+import MoreMenu from '@/components/shared/MoreMenu';
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
@@ -83,6 +85,10 @@ export default function OrganizationsPage() {
   const [newName, setNewName] = useState('');
   const [newDomain, setNewDomain] = useState('');
 
+  // 削除ダイアログ
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -155,6 +161,27 @@ export default function OrganizationsPage() {
         showMsg('error', data.error || '作成に失敗しました');
       }
     } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // ========================================
+  // 組織削除
+  // ========================================
+  const deleteOrganization = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/organizations/${deleteTarget.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setOrganizations(prev => prev.filter(o => o.id !== deleteTarget.id));
+        showMsg('success', `${deleteTarget.name} を削除しました`);
+      } else {
+        showMsg('error', '削除に失敗しました');
+      }
+    } catch { showMsg('error', '通信エラー'); }
+    finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
+    }
   };
 
   return (
@@ -306,6 +333,12 @@ export default function OrganizationsPage() {
                           </span>
                         </div>
                       </div>
+                      {/* 「…」メニュー */}
+                      <div className="shrink-0">
+                        <MoreMenu items={[
+                          { label: '削除', icon: <Trash2 className="w-3 h-3" />, onClick: () => setDeleteTarget({ id: org.id, name: org.name }), variant: 'danger' },
+                        ]} />
+                      </div>
                     </div>
                   </Card>
                 );
@@ -314,6 +347,17 @@ export default function OrganizationsPage() {
           )}
         </div>
       </div>
+
+      {/* 組織削除ダイアログ */}
+      <DeleteConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={deleteOrganization}
+        title={deleteTarget ? `組織「${deleteTarget.name}」を削除しますか？` : ''}
+        description="この操作は取り消せません。\n関連するプロジェクトとの紐づけが解除されます。"
+        confirmText={deleteTarget?.name}
+        isLoading={isDeleting}
+      />
     </AppLayout>
   );
 }

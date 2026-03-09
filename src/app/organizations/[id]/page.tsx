@@ -7,10 +7,12 @@ import {
   Building2, ArrowLeft, Globe, Save, Hash, Mail, MessageSquare,
   Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2, FolderOpen,
   ChevronRight, ChevronDown, Settings, CheckSquare, Clock, FileText,
-  ClipboardList,
+  ClipboardList, GitBranch, Map, Briefcase, Edit3,
 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
+import MoreMenu from '@/components/shared/MoreMenu';
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
@@ -102,7 +104,7 @@ interface Task {
 // ========================================
 type NavNode =
   | { type: 'org'; tab: 'members' | 'channels' | 'settings' }
-  | { type: 'project'; projectId: string; tab: 'tasks' | 'timeline' | 'documents' };
+  | { type: 'project'; projectId: string; tab: 'timeline' | 'decision-tree' | 'thought-map' | 'tasks' | 'jobs' };
 
 // ========================================
 // サービスアイコン
@@ -185,12 +187,54 @@ export default function OrganizationDetailPage() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [isLoadingDocs, setIsLoadingDocs] = useState(false);
 
+  // 削除ダイアログ
+  const [deleteDialog, setDeleteDialog] = useState<{
+    type: 'project' | 'task';
+    id: string;
+    name: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
     setMessage({ type, text });
     setTimeout(() => setMessage(null), 4000);
+  };
+
+  // ========================================
+  // 削除処理
+  // ========================================
+  const handleDeleteConfirm = async () => {
+    if (!deleteDialog) return;
+    setIsDeleting(true);
+    try {
+      let url = '';
+      let method = 'DELETE';
+      if (deleteDialog.type === 'project') {
+        url = `/api/projects/${deleteDialog.id}`;
+      } else if (deleteDialog.type === 'task') {
+        url = `/api/tasks?id=${deleteDialog.id}`;
+      }
+      const res = await fetch(url, { method });
+      if (res.ok) {
+        showMsg('success', `${deleteDialog.name} を削除しました`);
+        if (deleteDialog.type === 'project') {
+          setProjects(prev => prev.filter(p => p.id !== deleteDialog.id));
+          setActiveNav({ type: 'org', tab: 'members' });
+        } else if (deleteDialog.type === 'task') {
+          setTasks(prev => prev.filter(t => t.id !== deleteDialog.id));
+        }
+      } else {
+        showMsg('error', '削除に失敗しました');
+      }
+    } catch {
+      showMsg('error', '削除に失敗しました');
+    } finally {
+      setIsDeleting(false);
+      setDeleteDialog(null);
+    }
   };
 
   // ========================================
@@ -282,7 +326,6 @@ export default function OrganizationDetailPage() {
   useEffect(() => {
     if (activeNav.type === 'project') {
       if (activeNav.tab === 'tasks') fetchTasks(activeNav.projectId);
-      if (activeNav.tab === 'documents') fetchDocuments(activeNav.projectId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeNav]);
@@ -617,27 +660,36 @@ export default function OrganizationDetailPage() {
                   const statusConfig = PROJECT_STATUS_LABELS[project.status] || PROJECT_STATUS_LABELS.active;
                   return (
                     <div key={project.id}>
-                      <button
-                        onClick={() => toggleProject(project.id)}
-                        className="w-full flex items-center gap-1.5 px-5 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-                        )}
-                        <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="flex-1 text-left truncate">{project.name}</span>
-                        <span className={`text-[9px] px-1 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
-                          {statusConfig.label}
-                        </span>
-                      </button>
+                      <div className="flex items-center hover:bg-slate-50 transition-colors">
+                        <button
+                          onClick={() => toggleProject(project.id)}
+                          className="flex-1 flex items-center gap-1.5 px-5 py-2 text-xs text-slate-700"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                          )}
+                          <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="flex-1 text-left truncate">{project.name}</span>
+                          <span className={`text-[9px] px-1 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
+                            {statusConfig.label}
+                          </span>
+                        </button>
+                        <div className="pr-2">
+                          <MoreMenu items={[
+                            { label: '削除', icon: <Trash2 className="w-3 h-3" />, onClick: () => setDeleteDialog({ type: 'project', id: project.id, name: project.name }), variant: 'danger' },
+                          ]} />
+                        </div>
+                      </div>
                       {isExpanded && (
                         <div className="ml-4">
                           {[
-                            { tab: 'timeline' as const, label: 'タイムライン', icon: ClipboardList },
+                            { tab: 'timeline' as const, label: 'タイムライン', icon: Clock },
+                            { tab: 'decision-tree' as const, label: '検討ツリー', icon: GitBranch },
+                            { tab: 'thought-map' as const, label: '思考マップ', icon: Map },
                             { tab: 'tasks' as const, label: 'タスク', icon: CheckSquare },
-                            { tab: 'documents' as const, label: 'ドキュメント', icon: FileText },
+                            { tab: 'jobs' as const, label: 'ジョブ', icon: Briefcase },
                           ].map(sub => (
                             <button
                               key={sub.tab}
@@ -965,8 +1017,7 @@ export default function OrganizationDetailPage() {
                             </div>
                             <div className="space-y-1.5">
                               {statusTasks.map(task => (
-                                <a key={task.id} href={`/tasks?id=${task.id}`}
-                                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                                <div key={task.id} className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
                                   <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
                                   {task.due_date && (
                                     <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
@@ -974,7 +1025,10 @@ export default function OrganizationDetailPage() {
                                       {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                                     </span>
                                   )}
-                                </a>
+                                  <MoreMenu items={[
+                                    { label: '削除', icon: <Trash2 className="w-3 h-3" />, onClick: () => setDeleteDialog({ type: 'task', id: task.id, name: task.title }), variant: 'danger' },
+                                  ]} />
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -985,40 +1039,57 @@ export default function OrganizationDetailPage() {
                 </div>
               )}
 
-              {/* PJレベル: ドキュメント */}
-              {activeNav.type === 'project' && activeNav.tab === 'documents' && (
+              {/* PJレベル: 検討ツリー（V2新規 — プレースホルダー） */}
+              {activeNav.type === 'project' && activeNav.tab === 'decision-tree' && (
                 <div className="p-6">
-                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject?.name} - ドキュメント</h2>
-                  {isLoadingDocs ? (
-                    <div className="flex items-center justify-center py-16"><div className="animate-spin text-2xl">&#8987;</div></div>
-                  ) : documents.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-slate-400">
-                      <div className="text-center">
-                        <FileText className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="text-xs">ドキュメントがありません</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {documents.map((doc: Record<string, unknown>) => (
-                        <div key={doc.id as string} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg">
-                          <FileText className="w-4 h-4 text-slate-400 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-700 truncate">{(doc.file_name || doc.title || 'Untitled') as string}</p>
-                            <p className="text-[10px] text-slate-400">
-                              {doc.created_at ? new Date(doc.created_at as string).toLocaleDateString('ja-JP') : ''}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject?.name} - 検討ツリー</h2>
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                    <GitBranch className="w-12 h-12 mb-3 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500 mb-1">準備中</p>
+                    <p className="text-xs text-slate-400">会議録アップロードから検討ツリーを自動生成します</p>
+                  </div>
+                </div>
+              )}
+
+              {/* PJレベル: 思考マップ（V2統合 — プレースホルダー） */}
+              {activeNav.type === 'project' && activeNav.tab === 'thought-map' && (
+                <div className="p-6">
+                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject?.name} - 思考マップ</h2>
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                    <Map className="w-12 h-12 mb-3 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500 mb-1">準備中</p>
+                    <p className="text-xs text-slate-400">マイルストーン間の思考経路を可視化します</p>
+                  </div>
+                </div>
+              )}
+
+              {/* PJレベル: ジョブ（V2統合 — プレースホルダー） */}
+              {activeNav.type === 'project' && activeNav.tab === 'jobs' && (
+                <div className="p-6">
+                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject?.name} - ジョブ</h2>
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                    <Briefcase className="w-12 h-12 mb-3 text-slate-300" />
+                    <p className="text-sm font-medium text-slate-500 mb-1">準備中</p>
+                    <p className="text-xs text-slate-400">定型業務・ルーティンをこのプロジェクトに紐づけて管理します</p>
+                  </div>
                 </div>
               )}
             </div>
           </div>
         </div>
       </div>
+      {/* 削除確認ダイアログ */}
+      <DeleteConfirmDialog
+        isOpen={!!deleteDialog}
+        onClose={() => setDeleteDialog(null)}
+        onConfirm={handleDeleteConfirm}
+        title={deleteDialog ? `${deleteDialog.type === 'project' ? 'プロジェクト' : 'タスク'}「${deleteDialog.name}」を削除しますか？` : ''}
+        description={deleteDialog?.type === 'project'
+          ? 'この操作は取り消せません。\n関連するタスク・ジョブとの紐づけが解除されます。'
+          : 'この操作は取り消せません。'}
+        confirmText={deleteDialog?.type === 'project' ? deleteDialog.name : undefined}
+        isLoading={isDeleting}
+      />
     </AppLayout>
   );
 }

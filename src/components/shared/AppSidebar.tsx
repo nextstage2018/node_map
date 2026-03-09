@@ -3,19 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Bot, Inbox, CheckSquare,
-  GitBranch, Building2, Settings,
+  Bot, Inbox, Building2, Settings,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
-// Phase UI-2: サイドメニュー統合（11→6項目、グループラベルなし）
+// V2: サイドメニュー4項目化（タスク・思考マップはプロジェクト詳細に統合）
 const NAV_ITEMS = [
   { href: '/', label: '秘書', icon: Bot },
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
-  { href: '/tasks', label: 'タスク', icon: CheckSquare },
-  { href: '/thought-map', label: '思考マップ', icon: GitBranch },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
   { href: '/settings', label: '設定', icon: Settings },
 ];

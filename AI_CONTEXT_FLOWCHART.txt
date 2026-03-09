@@ -1,0 +1,707 @@
+================================================================================
+NODEMAP - AI CONTEXT FLOW VISUAL REFERENCE
+================================================================================
+
+1. SECRETARY CHAT - MAIN ENTRY POINT (Largest)
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         User Message Input                              │
+│                    "タスクを作成して"/"おはよう"                        │
+└────────────────────────────┬────────────────────────────────────────────┘
+                             │
+                    ┌────────▼────────┐
+                    │ classifyIntent  │  ← Regex-based, NO API
+                    │ (keyword match) │
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+   ┌─────────┐          ┌──────────┐        ┌─────────┐
+   │ briefing│      ┌──▶│create_   │    ┌──▶│ general │
+   │         │      │   │task      │    │   │ (other) │
+   └─────────┘      │   └──────────┘    │   └─────────┘
+        │           │                    │
+        │   ┌───────┼────────────────────┼───────┐
+        │   │       │                    │       │
+        ▼   ▼       ▼                    ▼       ▼
+   ┌──────────────────────────────────────────────────┐
+   │        Parallel DB Fetches (Promise.all)        │
+   ├──────────────────────────────────────────────────┤
+   │ • inbox_messages (20, direction=received)       │
+   │ • tasks (20, status != done)                    │
+   │ • jobs (15)                                     │
+   │ • consultations (pending count if responder)    │
+   │ • knowledge_clustering_proposals (pending)      │
+   │ • drive_file_staging (pending_review count)     │
+   │ • business_events (recent summaries)            │
+   │ • Google Calendar API (if briefing + connected) │
+   │ • contact_patterns (if pattern_analysis)        │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │      Format Context Text (3000-5000 chars)       │
+   ├──────────────────────────────────────────────────┤
+   │ ▪ Unread message count (urgency-weighted)       │
+   │ ▪ Task status: todo/proposed/in_progress        │
+   │ ▪ Job approval pending count                    │
+   │ ▪ Consultation pending count (if responder)     │
+   │ ▪ Calendar events (today)                       │
+   │ ▪ File intake pending count                     │
+   │ ▪ Knowledge proposal count                      │
+   │ ▪ Task suggestion count                         │
+   │ ▪ Recent messages (snippet + sender + time)     │
+   │ ▪ Recent tasks (title + status + due_date)      │
+   │ ▪ Recent jobs (title + status + type)           │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  System Prompt Construction (Intent-Specific)    │
+   ├──────────────────────────────────────────────────┤
+   │ • Base instructions (secretary role)             │
+   │ • Intent-specific rules (20+ patterns)           │
+   │ • Card generation instructions                  │
+   │ • Output format (JSON for cards)                 │
+   │ • Context formatting rules                      │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │    Claude API Call (claude-sonnet)               │
+   ├──────────────────────────────────────────────────┤
+   │ • Model: claude-sonnet-4-5-20250929             │
+   │ • Max tokens: 2000                              │
+   │ • System: Full system prompt (1500+ chars)      │
+   │ • User message: User input + formatted context  │
+   │ • Temperature: default (0.7)                    │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │     AI Response → Card Generation (Code)         │
+   ├──────────────────────────────────────────────────┤
+   │ Card Types (15+):                               │
+   │ ├─ briefing_summary (statistics)                │
+   │ ├─ calendar_events (today's schedule)           │
+   │ ├─ deadline_alert (urgent deadlines)            │
+   │ ├─ inbox_summary (recent messages)              │
+   │ ├─ message_detail (selected message full text)  │
+   │ ├─ task_resume (proposed tasks)                 │
+   │ ├─ job_approval (pending jobs with drafts)      │
+   │ ├─ file_intake (pending file approval)          │
+   │ ├─ knowledge_proposal (ナレッジ提案)             │
+   │ ├─ business_summary (weekly summaries)          │
+   │ ├─ storage_confirmation (Drive格納)              │
+   │ └─ [others: navigate, action_result, etc]       │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │      Return to UI: { reply, cards }              │
+   │      User sees: Assistant text + card deck       │
+   └──────────────────────────────────────────────────┘
+
+
+2. TASK AI CHAT - CONVERSATION LOOP
+================================================================================
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│              Task Detail Page / Task Chat Input                          │
+│        User types message in task (ideation/progress/result phase)       │
+└────────────────────┬─────────────────────────────────────────────────────┘
+                     │
+                     ▼
+            ┌────────────────────┐
+            │  Load Task Context  │
+            └────────┬───────────┘
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+        ▼            ▼            ▼
+   ┌────────┐  ┌────────┐  ┌──────────────┐
+   │ tasks  │  │projects│  │organizations │
+   │        │  │        │  │              │
+   │• title │  │• name  │  │• name        │
+   │• desc  │  │• desc  │  │• memo        │
+   │• idea_ │  │• org_id│  │              │
+   │  summary│  └────────┘  └──────────────┘
+   │        │
+   └────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │   Load Conversation History                      │
+   │   SELECT * FROM task_conversations               │
+   │   ORDER BY created_at                            │
+   │   LIMIT 20                                       │
+   ├──────────────────────────────────────────────────┤
+   │ Result: [ {role, content, phase, turn_id}, ... ]│
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Detect Covered Items (Regex over history)       │
+   ├──────────────────────────────────────────────────┤
+   │ Scan for: ゴール/内容/懸念/期限                  │
+   │ Set covered_items = [items_found]                │
+   │ Remaining = [all_4_items - covered_items]        │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Phase-Specific System Prompt                    │
+   ├──────────────────────────────────────────────────┤
+   │ IF phase == 'ideation':                         │
+   │   ▪ "一問一答" rule (ask 1 thing only)           │
+   │   ▪ 4-item guide (ゴール→内容→懸念→期限)          │
+   │   ▪ Covered items info                          │
+   │   ▪ "同じ質問を繰り返さない" warning              │
+   │                                                 │
+   │ ELIF phase == 'progress':                       │
+   │   ▪ "伴走パートナー" role                        │
+   │   ▪ Support + troubleshoot rules                 │
+   │   ▪ Keep goal + content in mind                 │
+   │                                                 │
+   │ ELIF phase == 'result':                         │
+   │   ▪ Summary + learning extraction               │
+   │   ▪ Compare with initial goal                   │
+   │   ▪ Extract action items                        │
+   │                                                 │
+   │ ELSE: generic                                   │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Add Writing Style (if available)                │
+   ├──────────────────────────────────────────────────┤
+   │ getUserWritingStyle(userId)                      │
+   │   ↓ Query: SELECT body FROM inbox_messages       │
+   │   ↓ WHERE direction='sent' LIMIT 10              │
+   │   ↓ Format: "## 過去のメッセージ\n--- 例1 ---\n.."│
+   │   ↓ Append to system prompt                      │
+   │                                                 │
+   │ If no key or <5 messages: (skip)                 │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │    Claude API Call (Multi-Turn)                  │
+   ├──────────────────────────────────────────────────┤
+   │ • Model: claude-sonnet-4-5-20250929             │
+   │ • Max tokens: 1500                              │
+   │ • System: Phase-specific rules + context        │
+   │ • Messages: [...history (last 20), user_msg]    │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │    Save Conversation Turn to DB                  │
+   ├──────────────────────────────────────────────────┤
+   │ INSERT task_conversations:                       │
+   │ • role: 'user' | 'assistant'                    │
+   │ • content: message text                         │
+   │ • phase: phase (ideation/progress/result)       │
+   │ • task_id: task_id                              │
+   │ • turn_id: UUID (for conversation jumping)      │
+   │ • conversation_tag: auto-classified             │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Background Async: Keyword Extraction            │
+   ├──────────────────────────────────────────────────┤
+   │ await ThoughtNodeService.extractAndLink({       │
+   │   text: user_message + ai_response,             │
+   │   taskId, phase, conversationId: turn_id        │
+   │ })                                              │
+   │   ↓                                             │
+   │ (See section 4: KEYWORD EXTRACTION)             │
+   │   ↓                                             │
+   │ Result: Link to knowledge_master_entries +      │
+   │        create thought_task_nodes + edges        │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │   Return Response to UI                          │
+   │   { reply: string, conversationTag: string }     │
+   └──────────────────────────────────────────────────┘
+
+
+3. KEYWORD EXTRACTION (Background Service)
+================================================================================
+
+Text Input (User Msg + AI Response)
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude Keyword Extraction API                   │
+   ├──────────────────────────────────────────────────┤
+   │ System Prompt:                                   │
+   │ "ナレッジ抽出の専門家 - 名詞のみ抽出"              │
+   │                                                 │
+   │ Rules:                                          │
+   │ • Keywords: 専門用語/技術/製品 (confidence>=0.7) │
+   │ • Exclude: 動詞/形容詞/曖昧な一般名詞             │
+   │ • Max: 8 keywords, 5 persons, 3 projects        │
+   │                                                 │
+   │ Output: JSON {keywords, persons, projects}     │
+   │                                                 │
+   │ Model: claude-sonnet-4-5-20250929              │
+   │ Max tokens: 800                                │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Link to Knowledge Master                        │
+   ├──────────────────────────────────────────────────┤
+   │ For each keyword:                               │
+   │   ├─ Check: EXISTS in knowledge_master_entries? │
+   │   ├─ If NO: Create new entry (id: me_auto_...)  │
+   │   └─ Create: thought_task_nodes (or seed_nodes) │
+   │                                                 │
+   │ Create thought_edges:                           │
+   │   └─ prev_node → curr_node (ordered by appear) │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   Returns to task_conversations save
+
+
+4. REPLY DRAFT GENERATION
+================================================================================
+
+Selected Inbox Message
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Parallel Context Fetches                        │
+   ├──────────────────────────────────────────────────┤
+   │ 1. Contact Info:                                │
+   │    by from_address (contact_channels)           │
+   │    → contact_persons (notes, ai_context,        │
+   │                      company, dept, relation)   │
+   │                                                 │
+   │ 2. Recent Messages (last 5):                    │
+   │    FROM/TO same address in inbox_messages       │
+   │    → Format as conversation snippet             │
+   │                                                 │
+   │ 3. Writing Style:                               │
+   │    getUserWritingStyle(userId, channel)         │
+   │    → Last 5 sent messages as samples            │
+   │                                                 │
+   │ 4. Email Signature:                             │
+   │    getServerUserEmailSignature()                │
+   │    → user_metadata.email_signature              │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Build System Prompt (Channel-Aware)             │
+   ├──────────────────────────────────────────────────┤
+   │ Base: "ビジネスメッセージの返信アシスタント"       │
+   │                                                 │
+   │ Channel Tone:                                   │
+   │   IF email: "フォーマル、挨拶・締めを含む"        │
+   │   IF slack: "カジュアル、フレンドリー"            │
+   │   IF chatwork: "標準的、簡潔"                     │
+   │                                                 │
+   │ Contact Info:                                   │
+   │   IF available: "相手の会社/部署/関係性/メモ/AI分析"│
+   │                                                 │
+   │ Past Messages:                                  │
+   │   IF available: "過去のやり取り（5件）"           │
+   │                                                 │
+   │ Writing Style:                                  │
+   │   IF available: "過去のメッセージサンプル（スタイル）"│
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │    Claude API Call                               │
+   ├──────────────────────────────────────────────────┤
+   │ Model: claude-sonnet-4-5-20250929               │
+   │ Max tokens: 1000                                │
+   │ System: Full system prompt (1500+ chars)        │
+   │ User message: "以下のメッセージに対する返信:\n    │
+   │              【チャネル】${channel}              │
+   │              【送信者】${from.name}              │
+   │              【件名】${subject}                 │
+   │              【本文】${body}"                    │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Post-Processing                                │
+   ├──────────────────────────────────────────────────┤
+   │ draft = AI response                             │
+   │                                                 │
+   │ IF channel == 'email' AND emailSignature:       │
+   │   draft = draft.trimEnd() + '\n\n' + signature  │
+   │                                                 │
+   │ ELSE (slack/chatwork):                          │
+   │   (no signature appended)                       │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   Return to UI: { draft, suggestions }
+
+
+5. JOB STRUCTURING (4 Branches)
+================================================================================
+
+Inbox Message + Job Type Selection
+        │
+        ├──────┬──────┬──────┬──────┐
+        │      │      │      │      │
+        ▼      ▼      ▼      ▼      ▼
+     schedule consult save_to_drive todo default
+
+
+BRANCH A: SCHEDULE (日程調整)
+──────────────────────────────────────────
+Step 1: Get Free Slots
+  findFreeSlots(userId, nextWeek_start, nextWeek_end, 60min, 10-19)
+  ↓
+  Result: [{start, end, durationMinutes}, ...]
+  Format: "3/6(木) 10:00-12:30, 14:00-19:00"
+
+Step 2: Get User Metadata
+  displayName → user_metadata.name
+  emailSignature → user_metadata.email_signature
+  writingStyle → getUserWritingStyle(userId, 'email')
+
+Step 3: Claude API (Greeting/Closing Only)
+  System: "日程調整アシスタント - 挨拶+締めだけ生成"
+  Input: Message content
+  Output: JSON {greeting, closing, purpose}
+  Note: Dates NOT generated by Claude, inserted by code
+
+Step 4: Hybrid Response Assembly
+  response = greeting + "\n\n【候補日時】\n" + freeSlots + "\n\n" + closing
+  ↓
+  IF email AND signature: append signature
+  ↓
+  Return: {aiDraft, purpose, freeSlots}
+
+
+BRANCH B: CONSULT (社内相談)
+──────────────────────────────────────────
+Step 1: Get Thread Messages
+  Find by thread_id OR from_address
+  SELECT (last 10) ORDER BY created_at ASC
+  ↓
+  Result: [{from_name, body, direction, timestamp}, ...]
+
+Step 2: Claude API (Thread Summary)
+  System: "スレッド要約アシスタント - 200文字以内"
+  Input: Message lines with direction labels
+  Output: Plain text summary
+
+Step 3: Return
+  {threadSummary, consultQuestion (user input)}
+
+
+BRANCH C: SAVE_TO_DRIVE
+──────────────────────────────────────────
+(No Claude API - Pure DB Logic)
+Detect organization + project from:
+  1. Message metadata (slackChannel / chatworkRoomId)
+  2. Email domain (if email)
+  ↓
+  Return: {projectId, projectName, orgName}
+
+
+BRANCH D: TODO + DEFAULT
+──────────────────────────────────────────
+Step 1: Claude API (Generic Job)
+  System: "メッセージをジョブ化 - title(20)/desc(50)"
+  Input: Message content
+  Output: JSON {title, description}
+
+Step 2: Return
+  {title, description}
+
+
+6. KNOWLEDGE CLUSTERING (Weekly Cron)
+================================================================================
+
+Cron Trigger: Monday 02:30 AM (Vercel)
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Get Unconfirmed Keywords                        │
+   ├──────────────────────────────────────────────────┤
+   │ SELECT * FROM knowledge_master_entries           │
+   │ WHERE is_confirmed = false                       │
+   │ LIMIT 50                                         │
+   │                                                 │
+   │ Thresholds:                                      │
+   │ • Min 5 entries (else skip)                      │
+   │ • Max 50 per user (process first 50)             │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude API (Clustering)                         │
+   ├──────────────────────────────────────────────────┤
+   │ System: CLUSTERING_SYSTEM_PROMPT                │
+   │  - "領域→分野→キーワード" 3-hierarchy           │
+   │  - Min 2 entries per group                      │
+   │  - Assign colors (Tailwind format)              │
+   │  - Confidence scores per domain                 │
+   │                                                 │
+   │ Input: Keyword list (labels only)               │
+   │ Output: JSON { clusters: [...], confidence }    │
+   │                                                 │
+   │ Model: claude-sonnet-4-5-20250929              │
+   │ Max tokens: 2000                                │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Parse + Validate Proposal                       │
+   ├──────────────────────────────────────────────────┤
+   │ Check: ISO week number (prevent duplicates)      │
+   │ Check: Domain + field names in existing data     │
+   │ Insert: knowledge_clustering_proposals           │
+   │   {user_id, status: 'pending', proposed_structure,
+   │    clustering_confidence, ai_reasoning, entryCount}
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   User sees in next Secretary Chat:
+   KnowledgeProposalCard (tree view + approve/reject)
+
+
+7. FILE CLASSIFICATION (Auto-Intake)
+================================================================================
+
+Uploaded Email Attachment (via Cron: sync-drive-documents)
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Gather Classification Input                     │
+   ├──────────────────────────────────────────────────┤
+   │ • fileName: original filename
+   │ • mimeType: application/pdf (etc)
+   │ • emailSubject: 件名
+   │ • emailBody: (first 200 chars)
+   │ • senderName, senderAddress
+   │ • direction: 'received' (from email direction)
+   │ • messageDate: email timestamp
+   │ • organizationName: detected from domain
+   │ • projectName: detected from metadata
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude API (File Classification)                │
+   ├──────────────────────────────────────────────────┤
+   │ System: "ビジネス文書の分類エキスパート"           │
+   │                                                 │
+   │ Document Types:                                 │
+   │ 見積書/契約書/請求書/発注書/納品書/              │
+   │ 仕様書/議事録/報告書/提案書/企画書/その他         │
+   │                                                 │
+   │ Output: JSON {                                  │
+   │   documentType, direction (received|submitted), │
+   │   yearMonth (YYYY-MM),                          │
+   │   suggestedName (YYYY-MM-DD_種別_*.ext),         │
+   │   confidence (0.0-1.0),                         │
+   │   reasoning                                     │
+   │ }                                               │
+   │                                                 │
+   │ Model: claude-sonnet-4-5-20250929              │
+   │ Max tokens: 500                                 │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Store in drive_file_staging (Pending Review)    │
+   ├──────────────────────────────────────────────────┤
+   │ INSERT drive_file_staging:                       │
+   │ • status: 'pending_review'                      │
+   │ • ai_document_type, ai_direction, ai_yearmonth  │
+   │ • ai_suggested_name, ai_confidence              │
+   │ • source_channel: 'email' (where from)          │
+   │ • drive_file_id: temp file in [NodeMap]一時保管 │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   Secretary Chat shows:
+   FileIntakeCard (AI results + user confirmation)
+        │
+        ▼
+   User approves:
+   Move file to 4-level folder: 組織/プロジェクト/受領or提出/YYYY-MM
+   INSERT drive_documents (final location)
+
+
+8. BUSINESS EVENT WEEKLY SUMMARY (Cron)
+================================================================================
+
+Cron Trigger: Monday 02:00 AM
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Get Past Week Events (Per Project)              │
+   ├──────────────────────────────────────────────────┤
+   │ For each user with active gmail token:           │
+   │   For each project:                              │
+   │     SELECT * FROM business_events                │
+   │     WHERE project_id = ? AND                      │
+   │           event_date >= weekAgo AND              │
+   │           event_type != 'summary'                │
+   │     GROUP BY event_type                          │
+   │                                                 │
+   │ Categories:                                      │
+   │ • Messages: message_sent/received/communication │
+   │ • Documents: document_received/submitted         │
+   │ • Meetings: meeting_held/call_made/etc          │
+   │ • Other: any other business_event               │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude API (Event Summary)                      │
+   ├──────────────────────────────────────────────────┤
+   │ System: "ビジネスイベント週間要約アシスタント"      │
+   │                                                 │
+   │ Input: Categorized events (title + content)     │
+   │ Output: Plain text summary (300-500 chars)      │
+   │                                                 │
+   │ Focus: Key decisions, outcomes, meetings        │
+   │                                                 │
+   │ Model: claude-sonnet-4-5-20250929              │
+   │ Max tokens: 800                                 │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Store Summary Event                             │
+   ├──────────────────────────────────────────────────┤
+   │ INSERT business_events:                          │
+   │ • event_type: 'summary'                         │
+   │ • title: "W12 (Mar 2-9) プロジェクトX 週間要約"    │
+   │ • content: AI-generated summary text             │
+   │ • ai_generated: true                            │
+   │ • summary_period: "2026-W12"                    │
+   │ • event_date: 月曜日                             │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   User sees in next Secretary Chat:
+   BusinessSummaryCard (recent summaries by project)
+
+
+9. TASK SUMMARY (On Completion)
+================================================================================
+
+Task Status Changed to 'done'
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Load Full Task Context                          │
+   ├──────────────────────────────────────────────────┤
+   │ • title, description, ideation_summary          │
+   │ • result_summary (if exists)                    │
+   │ • task_conversations (all messages)             │
+   │ • snapshots (initial_goal + final_landing)      │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude API (Task Summary) - UPGRADED MODEL     │
+   ├──────────────────────────────────────────────────┤
+   │ System: "タスク会話履歴から結果要約"               │
+   │                                                 │
+   │ Output: JSON {                                  │
+   │   【結論】...,                                   │
+   │   【プロセス】...,                               │
+   │   【学び】...,                                   │
+   │   【次のアクション】... (if any)                 │
+   │ }                                               │
+   │                                                 │
+   │ ★ Model: claude-opus-4-5-20251101 (UPGRADED)   │
+   │ Max tokens: 500                                 │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Archive to Business Log                         │
+   ├──────────────────────────────────────────────────┤
+   │ INSERT business_events:                          │
+   │ • event_type: 'task_completed'                  │
+   │ • title: task.title                             │
+   │ • content: Summary (結論 + プロセス + 学び)      │
+   │ • source_task_id: task.id                       │
+   │ • event_date: completion date                   │
+   │                                                 │
+   │ DELETE tasks: (cascade deletes conversations)   │
+   └──────────────────────────────────────────────────┘
+
+
+10. REPLAY MODE (Completed Task Recollection)
+================================================================================
+
+User Visits Completed Task in Thought Map
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Load Task + All Linked Data                     │
+   ├──────────────────────────────────────────────────┤
+   │ tasks (full record)                             │
+   │ task_conversations (all, limited to 50)         │
+   │ thought_snapshots (initial_goal + final_landing)│
+   │ thought_task_nodes (nodes touched in task)      │
+   │ + knowledge_master_entries labels                │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Format Task Context (AI Replay)                 │
+   ├──────────────────────────────────────────────────┤
+   │ • Task info (title, description, dates)         │
+   │ • Ideation + result summaries                   │
+   │ • Full conversation history (50 messages)       │
+   │ • Snapshot comparison (initial vs final)        │
+   │ • Node journey (思考の流れ)                      │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   ┌──────────────────────────────────────────────────┐
+   │  Claude API (Replay Chat)                        │
+   ├──────────────────────────────────────────────────┤
+   │ System: "思考リプレイガイド - 過去の思考分析"      │
+   │                                                 │
+   │ User Question: "なぜこの方向に？" / "初期目標との  │
+   │               比較は？" / "壁をどう乗り越えた？"   │
+   │                                                 │
+   │ Model: claude-sonnet-4-5-20250929              │
+   │ Max tokens: 1500                                │
+   │ Multi-turn: Yes (conversation history)          │
+   └──────────────────────────────────────────────────┘
+        │
+        ▼
+   User gets insights into past decision-making
+
+
+================================================================================
+LEGEND
+================================================================================
+
+→   Data flow / Process flow
+│   Sequential steps
+├─  Parallel execution (Promise.all)
+▼   End of step / Next step
+
+[System]  External system (Google Calendar API, Supabase)
+{JSON}    JSON data format
+"Text"    Human-readable text
+UU ID     Universally unique identifier (UUID)
+
+================================================================================
