@@ -488,6 +488,10 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
 - **ナレッジはバックエンド基盤**: UIには設定ページ内のみ。AIが自動参照
+- **対称データパイプライン**: 会議録(A-1)とチャネルメッセージ(A-2)から business_events / decision_trees / knowledge が対称的に自動生成
+- **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
+- **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得
+- **既知バグ**: MilestoneSection.tsx — MilestoneCard に projectId が渡されていない（展開時にエラー）
 
 ### 検討ツリー データフロー
 

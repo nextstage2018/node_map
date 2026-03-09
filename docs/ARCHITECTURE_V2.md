@@ -322,12 +322,60 @@ Week N+1:
 
 **Webhook受信**: `POST /api/webhooks/meetgeek`
 
+**取得データ**（5つのAPIを順次呼び出し）:
+- `GET /meetings/{id}` — タイトル・参加者メール・ホスト・開始/終了時刻・タイムゾーン
+- `GET /meetings/{id}/summary` — 要約テキスト + AI分析
+- `GET /meetings/{id}/transcript` — 全文書き起こし（発言者・タイムスタンプ付き）
+- `GET /meetings/{id}/highlights` — ハイライト（アクションアイテム等）
+- **録画リンク**: 4時間期限付き → `GET /api/meeting-records/[id]/recording` でオンデマンド取得（保存しない）
+
+**保存カラム**: participants(JSONB), meeting_start_at, meeting_end_at, metadata(JSONB), highlights(JSONB)
+
 プロジェクト自動判定の優先順位:
+0. 参加者メール → `contact_channels` → `contact_persons` → 所属`organization` → `projects`
 1. 参加者名（トランスクリプトのspeaker）→ `contact_persons` → 所属`organization` → `projects`
 2. 同日の`business_events`（会議）とサマリーテキスト照合
 3. フォールバック: 最新プロジェクト
 
 環境変数: `MEETGEEK_API_KEY`, `MEETGEEK_WEBHOOK_SECRET`
+
+### v3.0 追加: 対称データパイプライン
+
+2つの入口から5つの出力が対称的に自動生成される。
+
+```
+入口A-1: 会議録（手動 or MeetGeek Webhook）
+  → AI解析（/meeting-records/[id]/analyze）
+    ├── business_events（会議イベント自動追加）
+    ├── decision_tree_nodes（topics → ツリー生成、confidence=0.85）
+    ├── knowledge_master_entries（キーワード抽出、source_meeting_record_id付き）
+    ├── task_suggestions（action_items → 秘書画面で承認UI）
+    └── evaluation_learnings（milestone_feedback → 自己学習）
+
+入口A-2: チャネルメッセージ（Slack/Chatwork Cron同期）
+  → sync-business-events（毎日01:00 UTC）
+    └── business_events（メッセージイベント自動追加）
+  → sync-channel-topics（毎日01:30 UTC）
+    └── decision_tree_nodes（トピック抽出 → ツリー統合、confidence=0.6）
+  → extract-message-nodes（毎日22:30 UTC）
+    └── knowledge_master_entries（キーワード抽出）
+```
+
+**検討ツリーのソース統合**: 両入口からのノードは `source_type` で区別（meeting/channel/hybrid）。
+同一トピックのマージ時は confidence を再計算し、source_type を 'hybrid' に更新。
+
+### v3.0 追加: タスク提案パイプライン
+
+会議録AI解析で action_items を自動抽出 → task_suggestions テーブルに保存 → 秘書ブリーフィングでカード表示。
+
+```
+会議録AI解析 → action_items[] 抽出
+  → assignee名で contact_persons をマッチング
+  → task_suggestions に JSONB 保存（status: pending）
+  → 秘書ブリーフィング時に task_proposal カード表示
+  → ユーザーが承認 → POST /api/tasks で個別タスク作成
+  → ユーザーが却下 → status: dismissed に更新
+```
 
 ### v3.0 追加: 秘書UI改善
 
@@ -421,6 +469,12 @@ CREATE TABLE meeting_records (
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,
   user_id TEXT,
+  -- v3.0: MeetGeek連携強化
+  participants JSONB DEFAULT '[]'::jsonb,
+  meeting_start_at TIMESTAMPTZ,
+  meeting_end_at TIMESTAMPTZ,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  highlights JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -456,8 +510,12 @@ CREATE TABLE decision_tree_nodes (
   description TEXT,
   cancel_reason TEXT,
   cancel_meeting_id UUID REFERENCES meeting_records(id),
-  source_meeting_id UUID REFERENCES meeting_records(id),
+  source_meeting_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
   sort_order INT DEFAULT 0,
+  -- v3.0: ソース統合
+  source_type TEXT DEFAULT 'meeting' CHECK (source_type IN ('meeting', 'channel', 'hybrid')),
+  confidence_score NUMERIC(3,2) DEFAULT 0.85,
+  source_message_ids TEXT[] DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -569,19 +627,22 @@ V1（現行）              V2
 
 ---
 
-## 9. 実装フェーズ（案）
+## 9. 実装フェーズ（全完了）
 
-| Phase | 内容 | 依存 |
+| Phase | 内容 | 状態 |
 |---|---|---|
-| V2-A | DB: 新規テーブル作成 + 既存テーブル変更 | なし |
-| V2-B | UI構造変更: サイドメニュー4項目化 + プロジェクト詳細タブ構成 | V2-A |
-| V2-C | テーマ・マイルストーンの CRUD API + UI | V2-A |
-| V2-D | 会議録アップロード + AI解析基盤 | V2-A |
-| V2-E | 検討ツリー: AI生成 + ツリーUI | V2-D |
-| V2-F | チェックポイント: 評価エージェント + 判定UI | V2-C |
-| V2-G | 自己学習: 差分記録 + 議事録からの学習 + プロンプト注入 | V2-D, V2-F |
-| V2-H | 思考ログ拡張: マイルストーン間スコープ | V2-C |
-| V2-I | 統合: 秘書AIへの新intent追加 + ダッシュボード更新 | V2-C〜H |
+| V2-A | DB: 新規テーブル作成 + 既存テーブル変更 | ✅ 完了 |
+| V2-B | UI構造変更: サイドメニュー4項目化 + プロジェクト詳細タブ構成 | ✅ 完了 |
+| V2-C | テーマ・マイルストーンの CRUD API + UI | ✅ 完了 |
+| V2-D | 会議録アップロード + AI解析基盤 | ✅ 完了 |
+| V2-E | 検討ツリー: AI生成 + ツリーUI | ✅ 完了 |
+| V2-F | チェックポイント: 評価エージェント + 判定UI | ✅ 完了 |
+| V2-G | 自己学習: 差分記録 + 議事録からの学習 + プロンプト注入 | ✅ 完了 |
+| V2-H | 思考ログ拡張: マイルストーン間スコープ | ✅ 完了 |
+| V2-I | 統合: 秘書AIへの新intent追加 + ダッシュボード更新 | ✅ 完了 |
+| v3.0-1 | 対称データパイプライン（会議録⇔チャネル） | ✅ 完了 |
+| v3.0-2 | タスク提案パイプライン（action_items → 秘書承認UI） | ✅ 完了 |
+| v3.0-3 | MeetGeek連携強化（全データ取得・録画リンクAPI） | ✅ 完了 |
 
 ---
 
