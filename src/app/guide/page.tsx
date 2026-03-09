@@ -8,7 +8,8 @@ import {
   MessageSquare, ListTodo, Briefcase, GitBranch,
   Clock, Brain, Flag, ChevronRight, Lightbulb,
   Calendar, FileText, BarChart, CheckCircle,
-  ArrowRight, Layers, Users, FolderOpen
+  ArrowRight, Layers, Users, FolderOpen,
+  Link2, HardDrive, ClipboardList, StickyNote
 } from 'lucide-react';
 
 const TABS = [
@@ -268,22 +269,24 @@ function OrganizationsTab() {
     <div>
       <SectionCard title="組織・プロジェクト管理" icon={Building2}>
         <p>
-          組織の中にプロジェクトを作り、プロジェクトごとにタイムライン・検討ツリー・タスクなどを管理します。
+          組織の中にプロジェクトを作り、プロジェクト単位であらゆる情報を管理します。
           左側にツリー構造のナビゲーション、右側にタブコンテンツが表示されます。
         </p>
       </SectionCard>
 
-      <SectionCard title="組織の作成" icon={Users}>
-        <p>「組織・プロジェクト」画面の右上ボタン、または秘書に「組織を作成して」と依頼します。ドメイン重複チェックがあるため、同じドメインの組織は1つだけです。</p>
+      <SectionCard title="組織レベル" icon={Building2}>
+        <p className="mb-2">組織には「設定」タブのみがあります。組織名・ドメイン・関係性（取引先/パートナー等）の基本情報を管理します。</p>
+        <p>組織の作成は画面右上ボタン、または秘書に「組織を作成して」と依頼します。同じドメインの組織は1つだけです。</p>
       </SectionCard>
 
-      <SectionCard title="プロジェクト詳細の5つのタブ" icon={FolderOpen}>
+      <SectionCard title="プロジェクト配下の8タブ" icon={FolderOpen}>
+        <p className="mb-3 text-slate-500">プロジェクトがすべての情報のハブです。メンバー・チャネル・資料もプロジェクト単位で管理します。</p>
         <div className="space-y-3 mt-2">
           <div className="p-3 bg-white rounded border border-slate-200">
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <Clock className="w-4 h-4 text-blue-500" /> タイムライン
             </p>
-            <p>プロジェクトのビジネスログを時系列で表示します。会議・メッセージ・タスク完了・ファイル共有などが自動記録されます。</p>
+            <p>プロジェクトのビジネスログを時系列で表示。会議・メッセージ・タスク完了・ファイル共有などが自動記録されます。</p>
             <p className="text-xs text-slate-400 mt-1">※ 読み取り専用。手動追加はできません。</p>
           </div>
 
@@ -291,7 +294,7 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <GitBranch className="w-4 h-4 text-blue-500" /> 検討ツリー
             </p>
-            <p>会議録をここから登録すると、AIが自動解析して検討項目をツリー構造で整理します。意思決定の経緯が可視化されます。</p>
+            <p>会議録を登録すると、AIが自動解析して検討項目をツリー構造で整理します。意思決定の経緯が可視化されます。</p>
             <FlowStep steps={['会議録登録', 'AI解析', 'ツリー自動生成', 'ビジネスイベント追加']} />
           </div>
 
@@ -299,22 +302,67 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <Brain className="w-4 h-4 text-blue-500" /> 思考マップ
             </p>
-            <p>マイルストーン間の思考経路を可視化します。タスクの会話ログからAIが思考の流れを構造化します。</p>
+            <p>マイルストーン間の思考経路を可視化。タスクの会話ログからAIが思考の流れを構造化します。</p>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ListTodo className="w-4 h-4 text-blue-500" /> タスク
             </p>
-            <p>テーマ → マイルストーン → タスクの階層で管理します。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
+            <p>テーマ → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <Briefcase className="w-4 h-4 text-blue-500" /> ジョブ
             </p>
-            <p>定型業務のリストです。AIに構造化や対応を任せることができます。</p>
+            <p>定型業務ややることメモを管理します。SEOレポートや定例MTGなど定期的な業務はジョブとして登録すると便利です。</p>
+            <div className="flex gap-2 mt-2">
+              <Badge color="blue" label="定型業務" />
+              <Badge color="slate" label="やることメモ" />
+            </div>
           </div>
+
+          <div className="p-3 bg-white rounded border border-blue-200 bg-blue-50">
+            <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
+              <Users className="w-4 h-4 text-blue-500" /> メンバー
+            </p>
+            <p>プロジェクトに関わるメンバーを管理します。コンタクト一覧から追加、またはメッセージ履歴から自動検出できます。</p>
+          </div>
+
+          <div className="p-3 bg-white rounded border border-blue-200 bg-blue-50">
+            <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
+              <Link2 className="w-4 h-4 text-blue-500" /> チャネル
+            </p>
+            <p>プロジェクトに紐づくSlack・Chatworkチャネルを設定します。1プロジェクト = 1チャネルが原則です。</p>
+            <div className="mt-2 p-2 bg-white rounded border border-slate-200 text-xs text-slate-500">
+              推奨: Slack 1チャネル、Chatwork 1ルーム、メール 任意（現在休眠中）
+            </div>
+          </div>
+
+          <div className="p-3 bg-white rounded border border-blue-200 bg-blue-50">
+            <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
+              <ClipboardList className="w-4 h-4 text-blue-500" /> 関連資料
+            </p>
+            <p>プロジェクトに関連するドキュメント・スプレッドシート・外部URLを一覧管理します。タグ（プロジェクト・マイルストーン・タスク・ジョブ）で絞り込み検索ができます。</p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Driveフォルダ構造" icon={HardDrive}>
+        <p className="mb-3">Google Driveのフォルダは以下の構造で自動生成されます。組織・プロジェクトまでは作成時に自動生成、それ以降はファイル保存時に動的生成されます。</p>
+        <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm text-slate-700 space-y-1">
+          <p>[NodeMap] 組織名/</p>
+          <p className="pl-4">└── プロジェクト名/</p>
+          <p className="pl-12">├── ジョブ/　　　　　← 定型業務の資料</p>
+          <p className="pl-12">├── 会議議事録/　　　← MeetGeek等の格納先</p>
+          <p className="pl-12">└── マイルストーン/</p>
+          <p className="pl-20">└── MS名/</p>
+          <p className="pl-28">└── タスク名/　← ドキュメント蓄積先</p>
+        </div>
+        <div className="mt-3 space-y-1 text-xs text-slate-500">
+          <p>ファイル名ルール: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_原名.ext</span></p>
+          <p>メタデータタグ: プロジェクト・マイルストーン・タスク・ジョブで検索可能</p>
         </div>
       </SectionCard>
 

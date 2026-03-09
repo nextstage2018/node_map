@@ -108,9 +108,14 @@
 | 秘書 | / | secretary_conversations, inbox_messages, tasks |
 | インボックス | /inbox | inbox_messages |
 | 組織・プロジェクト | /organizations | organizations, projects, business_events |
-| 設定 | /settings | 個人設定 + ナレッジ閲覧 |
+| 設定 | /settings | 個人設定 |
+| ガイド | /guide | 操作ガイド（5タブ構成） |
 
-### プロジェクト詳細（/organizations/[id]）タブ構成
+### 組織レベル（/organizations/[id]）
+
+組織には「設定」タブのみ。名前・ドメイン・関係性等の基本情報管理。配下にプロジェクト一覧。
+
+### プロジェクト詳細（/organizations/[id]）タブ構成（v3.3: 8タブ）
 
 | タブ | 内容 | 主なテーブル |
 |---|---|---|
@@ -118,7 +123,10 @@
 | 検討ツリー | 会議録からAI生成 | decision_trees, decision_tree_nodes, meeting_records |
 | 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
 | タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
-| ジョブ | 定型業務リスト | jobs |
+| ジョブ | 定型業務 / やることメモ | jobs |
+| メンバー | PJ関係者管理（v3.3で組織から移動） | project_members, contact_persons |
+| チャネル | PJ紐づけチャネル（1メディア=1推奨） | project_channels |
+| 関連資料 | ドキュメント・スプレッドシートURL一覧。タグ検索対応 | drive_documents |
 
 ### リダイレクトページ
 
@@ -190,8 +198,8 @@
 | `thought_edges` | 思考動線 | UUID | UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable。v3.0: source_meeting_record_id 追加 |
 | `drive_file_staging` | ファイルステージング | UUID | AI分類→承認→最終配置 |
-| `drive_folders` | Driveフォルダ | UUID | 4階層: 組織/プロジェクト/方向/年月 |
-| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL |
+| `drive_folders` | Driveフォルダ | UUID | v3.3新構造: 組織/PJ/（ジョブ\|会議議事録\|MS）/タスク。L1-L2は作成時自動生成、L3以降は動的生成 |
+| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。v3.3: milestone_id, job_id 追加予定。タグ検索対応 |
 | `thought_snapshots` | スナップショット | UUID | initial_goal / final_landing |
 | `secretary_conversations` | 秘書会話 | UUID | AIコンテキスト用（UI復元なし） |
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
@@ -282,7 +290,9 @@
 ### 1チャンネル＝1プロジェクト（1Ch=1PJ）
 
 - **原則**: 1つのSlack/Chatworkグループチャンネル = 1つのプロジェクト
+- **推奨構成**: Slack 1チャネル、Chatwork 1ルーム、メール 任意（現在休眠中）
 - **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
+- **管理場所**: v3.3よりプロジェクト配下「チャネル」タブで管理（組織レベルから移動）
 - **例外**: メール・LINEなど1:1のやり取りは手動紐づけ
 
 ### メール休眠フラグ
@@ -493,7 +503,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
 - **5階層**: Organization > Project > Theme（任意） > Milestone > Task
-- **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務（PJ任意紐づけ）
+- **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務 or やることメモ（PJ配下。SEOレポート・定例MTG等の定期実行に便利）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
@@ -528,6 +538,48 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
     → decision_tree_nodes 作成/更新（タイトル類似判定で重複防止）
     → decision_tree_node_history に履歴記録
 ```
+
+---
+
+## v3.3 プロジェクト中心リストラクチャリング（設計済み・実装予定）
+
+### 概要
+組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。Driveフォルダ構造を用途別に再設計。
+
+### 組織→プロジェクト引っ越し
+- **組織レベル**: 「設定」タブのみ残す（メンバー・チャネル削除）
+- **プロジェクト配下**: 8タブ（タイムライン/検討ツリー/思考マップ/タスク/ジョブ/メンバー/チャネル/関連資料）
+- **チャネル推奨**: Slack 1、Chatwork 1、メール任意（休眠中）
+
+### Driveフォルダ新構造
+```
+[NodeMap] 組織名/
+└── プロジェクト名/
+    ├── ジョブ/            ← 定型業務の資料
+    ├── 会議議事録/         ← MeetGeek等の格納先
+    └── マイルストーン/
+        └── MS名/
+            └── タスク名/   ← タスク関連ドキュメント蓄積
+```
+- L1（組織）・L2（PJ）: 作成時に自動生成
+- L3以降: ファイル保存時に動的生成
+- ファイル名: `YYYY-MM-DD_種別_原名.ext`
+- メタデータタグ: PJ・MS・タスク・ジョブで検索可能
+
+### 関連資料タブ（v3.3新設）
+- ドキュメント・スプレッドシートURL・外部リンクを一覧管理
+- タグ（PJ/MS/タスク/ジョブ）で絞り込み検索
+- 各アイテムにリンクショートカット
+
+### ジョブの2種類
+- **定型業務**: SEOレポート、定例MTGなど定期実行
+- **やることメモ**: 一時的なTODO
+
+### 実装フェーズ（詳細: docs/RESTRUCTURING_V3.3.md）
+- Phase 1: DBスキーマ拡張（project_members, drive_documents拡張）
+- Phase 2: UIリストラクチャリング（タブ移動・新規コンポーネント）
+- Phase 3: Driveフォルダ再構築
+- Phase 4: Cron・AIパイプライン更新
 
 ---
 
