@@ -177,7 +177,29 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
   }
 
   if (milestones.length === 0) {
-    return null; // マイルストーンがなければ何も表示しない
+    return (
+      <div className="mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Flag className="w-3.5 h-3.5 text-red-400" />
+          <h4 className="text-xs font-medium text-slate-600">マイルストーン</h4>
+        </div>
+        <div className="flex items-center justify-center py-4 border border-dashed border-slate-200 rounded-lg">
+          <div className="text-center">
+            <Flag className="w-5 h-5 mx-auto mb-1.5 text-slate-300" />
+            <p className="text-[11px] text-slate-400 mb-2">マイルストーンがありません</p>
+            <button
+              onClick={() => {
+                // 秘書AIでマイルストーン作成を開始
+                window.location.href = '/?message=' + encodeURIComponent('マイルストーンを作成したい');
+              }}
+              className="px-3 py-1.5 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              マイルストーンを作成
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

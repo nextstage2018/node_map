@@ -10,10 +10,12 @@ import {
   Building2, ArrowLeft, Globe, Save, Hash, Mail, MessageSquare,
   Users, UserPlus, Trash2, Search, Wand2, X, Plus, Link2, FolderOpen,
   ChevronRight, ChevronDown, Settings, CheckSquare, Clock, FileText,
-  ClipboardList, GitBranch, Map,
+  ClipboardList, GitBranch, Map, Pencil,
 } from 'lucide-react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
+import MoreMenu from '@/components/shared/MoreMenu';
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
@@ -166,6 +168,11 @@ export default function OrganizationDetailPage() {
   const [showNewProject, setShowNewProject] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDesc, setNewProjectDesc] = useState('');
+
+  // V2-I: プロジェクト編集・削除
+  const [editingProject, setEditingProject] = useState<{ id: string; name: string; description: string } | null>(null);
+  const [deleteProject, setDeleteProject] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingProject, setIsDeletingProject] = useState(false);
 
   // チャネル
   const [channels, setChannels] = useState<OrgChannel[]>([]);
@@ -477,6 +484,42 @@ export default function OrganizationDetailPage() {
     } catch { showMsg('error', '通信エラー'); }
   };
 
+  // V2-I: プロジェクト編集
+  const handleUpdateProject = async (projectId: string, name: string, description: string) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description: description || null }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setEditingProject(null);
+        fetchProjects();
+        showMsg('success', 'プロジェクトを更新しました');
+      } else { showMsg('error', data.error || '更新に失敗しました'); }
+    } catch { showMsg('error', '通信エラー'); }
+  };
+
+  // V2-I: プロジェクト削除
+  const handleDeleteProject = async () => {
+    if (!deleteProject) return;
+    setIsDeletingProject(true);
+    try {
+      const res = await fetch(`/api/projects/${deleteProject.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setDeleteProject(null);
+        fetchProjects();
+        // 削除したPJが選択中だったらナビをリセット
+        if (activeNav.type === 'project' && activeNav.projectId === deleteProject.id) {
+          setActiveNav({ type: 'org', tab: 'overview' });
+        }
+        showMsg('success', 'プロジェクトを削除しました');
+      } else { showMsg('error', data.error || '削除に失敗しました'); }
+    } catch { showMsg('error', '通信エラー'); }
+    setIsDeletingProject(false);
+  };
+
   // チャネルフォーム
   useEffect(() => {
     if (showChannelForm && channelService !== 'email') fetchAvailableChannels(channelService);
@@ -630,21 +673,29 @@ export default function OrganizationDetailPage() {
                   const statusConfig = PROJECT_STATUS_LABELS[project.status] || PROJECT_STATUS_LABELS.active;
                   return (
                     <div key={project.id}>
-                      <button
-                        onClick={() => toggleProject(project.id)}
-                        className="w-full flex items-center gap-1.5 px-5 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
-                      >
-                        {isExpanded ? (
-                          <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
-                        )}
-                        <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                        <span className="flex-1 text-left truncate">{project.name}</span>
-                        <span className={`text-[9px] px-1 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
-                          {statusConfig.label}
-                        </span>
-                      </button>
+                      <div className="flex items-center group">
+                        <button
+                          onClick={() => toggleProject(project.id)}
+                          className="flex-1 flex items-center gap-1.5 px-5 py-2 text-xs text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="w-3 h-3 text-slate-400 shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                          )}
+                          <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                          <span className="flex-1 text-left truncate">{project.name}</span>
+                          <span className={`text-[9px] px-1 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
+                            {statusConfig.label}
+                          </span>
+                        </button>
+                        <div className="pr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <MoreMenu items={[
+                            { label: '編集', icon: <Pencil className="w-3 h-3" />, onClick: () => setEditingProject({ id: project.id, name: project.name, description: project.description || '' }) },
+                            { label: '削除', icon: <Trash2 className="w-3 h-3" />, onClick: () => setDeleteProject({ id: project.id, name: project.name }), variant: 'danger' },
+                          ]} />
+                        </div>
+                      </div>
                       {isExpanded && (
                         <div className="ml-4">
                           {[
@@ -1020,8 +1071,9 @@ export default function OrganizationDetailPage() {
                             </div>
                             <div className="space-y-1.5">
                               {statusTasks.map(task => (
-                                <div key={task.id}
-                                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-default">
+                                <button key={task.id}
+                                  onClick={() => router.push(`/?message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`)}
+                                  className="w-full flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors text-left">
                                   <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
                                   {task.due_date && (
                                     <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
@@ -1029,7 +1081,7 @@ export default function OrganizationDetailPage() {
                                       {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                                     </span>
                                   )}
-                                </div>
+                                </button>
                               ))}
                             </div>
                           </div>
@@ -1074,6 +1126,61 @@ export default function OrganizationDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* V2-I: プロジェクト編集ダイアログ */}
+      {editingProject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setEditingProject(null)} />
+          <div className="relative bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-md mx-4 p-6">
+            <button onClick={() => setEditingProject(null)} className="absolute top-3 right-3 p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100">
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-sm font-bold text-slate-800 mb-4">プロジェクトを編集</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">プロジェクト名</label>
+                <input
+                  type="text"
+                  value={editingProject.name}
+                  onChange={(e) => setEditingProject({ ...editingProject, name: e.target.value })}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-600 mb-1">説明（任意）</label>
+                <textarea
+                  value={editingProject.description}
+                  onChange={(e) => setEditingProject({ ...editingProject, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setEditingProject(null)} className="px-4 py-2 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50">キャンセル</button>
+              <button
+                onClick={() => handleUpdateProject(editingProject.id, editingProject.name, editingProject.description)}
+                disabled={!editingProject.name.trim()}
+                className="px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* V2-I: プロジェクト削除確認ダイアログ */}
+      <DeleteConfirmDialog
+        isOpen={!!deleteProject}
+        onClose={() => setDeleteProject(null)}
+        onConfirm={handleDeleteProject}
+        title="プロジェクトを削除"
+        description={`「${deleteProject?.name || ''}」を削除すると、配下のタスク・ドキュメント・マイルストーンもすべて削除されます。この操作は取り消せません。`}
+        confirmText={deleteProject?.name}
+        isLoading={isDeletingProject}
+      />
     </AppLayout>
   );
 }

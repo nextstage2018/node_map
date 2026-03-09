@@ -2760,29 +2760,38 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
           .limit(10);
 
         if (userProjects && userProjects.length > 0) {
-          // テーマ一覧も取得
-          const projectIds = userProjects.map((p: { id: string }) => p.id);
-          const { data: themes } = await supabase
-            .from('themes')
-            .select('id, title, project_id')
-            .in('project_id', projectIds);
+          // ユーザーメッセージからプロジェクト名をマッチ
+          let matchedProject: { id: string; name: string; organization_id: string } | null = null;
+          for (const p of userProjects) {
+            if (userMessage.includes(p.name)) {
+              matchedProject = { id: p.id, name: p.name, organization_id: p.organization_id };
+              break;
+            }
+          }
 
-          cards.push({
-            type: 'milestone_create_form',
-            data: {
-              projects: userProjects.map((p: { id: string; name: string; organizations?: { name: string } | null }) => ({
-                id: p.id,
-                name: p.name,
-                orgName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
-              })),
-              themes: (themes || []).map((t: { id: string; title: string; project_id: string }) => ({
-                id: t.id,
-                title: t.title,
-                project_id: t.project_id,
-              })),
-            },
-          });
-          parts.push('\n\n【マイルストーン作成】\nマイルストーンを作成します。プロジェクト、タイトル、ゴール、期限を設定してください。テーマ（任意）も選択できます。\n\n💡 マイルストーンは1週間単位のチェックポイントとして設計してください。');
+          // メッセージからタイトル・期限を抽出する手がかりを提供
+          const projLines = userProjects.map((p: { name: string; organizations?: { name: string } | null }) => {
+            const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
+            return `- ${p.name}${orgName ? `（${orgName}）` : ''}`;
+          }).join('\n');
+
+          if (matchedProject) {
+            // プロジェクトが特定された場合: AI会話でタイトル・ゴール・期限を聞く
+            parts.push(`\n\n【マイルストーン作成】\n対象プロジェクト: ${matchedProject.name}\n\nマイルストーンの情報を教えてください:\n- タイトル（例: Week1 要件定義）\n- ゴール / 説明（任意）\n- 期限（例: 3/14）\n\n💡 マイルストーンは1週間単位のチェックポイントとして設計してください。\n\n情報が揃い次第、自動で作成します。`);
+
+            // プロジェクト情報をカードで渡す（AI後続処理用）
+            cards.push({
+              type: 'navigate',
+              data: {
+                href: `/organizations/${matchedProject.organization_id}?project=${matchedProject.id}&tab=tasks`,
+                label: `${matchedProject.name} のタスク`,
+                description: 'マイルストーンの確認はこちら',
+              },
+            });
+          } else {
+            // プロジェクトが特定されない場合: 一覧表示
+            parts.push(`\n\n【マイルストーン作成】\nどのプロジェクトにマイルストーンを作成しますか？\n\n${projLines}\n\n「○○プロジェクトにマイルストーンを作成して」と指定してください。`);
+          }
         } else {
           parts.push('\n\n【マイルストーン作成】\nまだプロジェクトが登録されていません。先にプロジェクトを作成してください。');
         }

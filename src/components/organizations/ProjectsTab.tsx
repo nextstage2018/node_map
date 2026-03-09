@@ -596,9 +596,10 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
             </div>
             <div className="space-y-1.5">
               {statusTasks.map((task) => (
-                <div
+                <a
                   key={task.id}
-                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-default"
+                  href={`/?message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`}
+                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
                 >
                   <span className={`text-xs ${priorityColors[task.priority] || ''}`}>
                     {task.priority === 'high' ? '!' : task.priority === 'medium' ? '-' : '.'}
@@ -610,7 +611,7 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
                       {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                     </span>
                   )}
-                </div>
+                </a>
               ))}
             </div>
           </div>
