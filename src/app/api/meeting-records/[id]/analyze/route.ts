@@ -7,6 +7,7 @@ import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supa
 import Anthropic from '@anthropic-ai/sdk';
 import { extractLearningsFromMeetingFeedback } from '@/lib/services/evaluationLearning.service';
 import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
+import { matchContactByName } from '@/services/businessLog/taskSuggestion.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +24,19 @@ interface MilestoneFeedback {
   reasoning: string;
 }
 
+interface ActionItem {
+  title: string;
+  assignee: string;
+  due_date: string | null;
+  priority: 'high' | 'medium' | 'low';
+  related_topic: string;
+}
+
 interface AnalysisResult {
   summary: string;
   topics: AnalysisTopic[];
   milestone_feedback: MilestoneFeedback[] | null;
+  action_items: ActionItem[];
 }
 
 export async function POST(
@@ -64,8 +74,8 @@ export async function POST(
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 2000,
-        system: `あなたは会議録を構造化するアシスタントです。以下の会議録から3つの情報を抽出してください。
+        max_tokens: 2500,
+        system: `あなたは会議録を構造化するアシスタントです。以下の会議録から4つの情報を抽出してください。
 
 必ず以下のJSON形式で返してください（JSONのみ、他のテキストは不要）:
 {
@@ -84,6 +94,15 @@ export async function POST(
       "human_judgment": "人間の判定（achieved / partially / missed など）",
       "reasoning": "判定理由"
     }
+  ],
+  "action_items": [
+    {
+      "title": "具体的なアクション名（動詞で始める）",
+      "assignee": "担当者名（不明なら空文字）",
+      "due_date": "YYYY-MM-DD（不明ならnull）",
+      "priority": "high または medium または low",
+      "related_topic": "関連する議題のタイトル"
+    }
   ]
 }
 
@@ -91,6 +110,9 @@ export async function POST(
 - topicsは会議で議論された全ての議題を抽出してください
 - 決定に至った議題のstatusは "completed"、まだ検討中なら "active"、取り消しなら "cancelled"
 - マイルストーンに関する言及がなければ milestone_feedback は null にしてください
+- action_itemsは決定事項・依頼事項・確認事項など、具体的で実行可能なアクションを抽出してください
+- 曖昧な内容（「検討する」「考えておく」等）はaction_itemsに含めないでください
+- action_itemsがなければ空配列にしてください
 - 必ず有効なJSONを返してください`,
         messages: [
           {
@@ -107,7 +129,11 @@ export async function POST(
       if (!jsonMatch) {
         throw new Error('AIレスポンスからJSONを解析できませんでした');
       }
-      analysisResult = JSON.parse(jsonMatch[0]) as AnalysisResult;
+      const parsed = JSON.parse(jsonMatch[0]);
+      analysisResult = {
+        ...parsed,
+        action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+      } as AnalysisResult;
     } catch (aiError) {
       console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
       // フォールバック: 空のsummaryで保存し、メイン処理をブロックしない
@@ -115,6 +141,7 @@ export async function POST(
         summary: '',
         topics: [],
         milestone_feedback: null,
+        action_items: [],
       };
     }
 
@@ -189,6 +216,47 @@ export async function POST(
       }
     }
 
+    // 7. v3.0: action_items からタスク提案を自動生成 → task_suggestions に保存
+    let actionItemsSaved = 0;
+    if (analysisResult.action_items && analysisResult.action_items.length > 0) {
+      try {
+        // 担当者名を contact_persons にマッチング
+        const itemsWithContacts = await Promise.all(
+          analysisResult.action_items.map(async (item) => {
+            let assigneeContactId: string | null = null;
+            if (item.assignee) {
+              assigneeContactId = await matchContactByName(supabase, userId, item.assignee);
+            }
+            return {
+              title: item.title,
+              assignee: item.assignee || '',
+              assigneeContactId,
+              due_date: item.due_date || null,
+              priority: item.priority || 'medium',
+              related_topic: item.related_topic || '',
+            };
+          })
+        );
+
+        await supabase.from('task_suggestions').insert({
+          user_id: userId,
+          meeting_record_id: id,
+          suggestions: {
+            meetingTitle: record.title,
+            meetingDate: record.meeting_date,
+            projectId: record.project_id,
+            items: itemsWithContacts,
+          },
+          status: 'pending',
+        });
+        actionItemsSaved = itemsWithContacts.length;
+        console.log(`[MeetingRecords Analyze] ${actionItemsSaved}件のアクションアイテムを提案として保存しました`);
+      } catch (actionError) {
+        // タスク提案保存失敗してもメイン処理はブロックしない
+        console.error('[MeetingRecords Analyze] タスク提案保存エラー:', actionError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -196,6 +264,7 @@ export async function POST(
         analysis: analysisResult,
         knowledge_extracted: knowledgeExtracted,
         learnings_inserted: learningsInserted,
+        action_items_saved: actionItemsSaved,
       },
     });
   } catch (error) {

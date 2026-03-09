@@ -59,6 +59,7 @@ const cardAccentMap: Partial<Record<CardType, CardAccentColor>> = {
   org_form: 'yellow',
   project_form: 'yellow',
 
+  task_proposal: 'yellow',
   deadline_alert: 'red',
   task_resume: 'blue',
   task_external_resource: 'blue',
@@ -130,7 +131,8 @@ export type CardType =
   | 'task_external_resource' // Phase E: タスク外部資料取り込み
   | 'action_selector'    // V3.0: アクション選択カード
   | 'project_selector'   // V3.0: プロジェクト選択カード
-  | 'milestone_selector'; // V3.0: マイルストーン選択カード
+  | 'milestone_selector' // V3.0: マイルストーン選択カード
+  | 'task_proposal';     // V3.0: タスク提案カード（会議録→承認）
 
 // カードデータ共通
 export interface CardData {
@@ -2132,6 +2134,15 @@ export function CardRenderer({
         />
       );
       break;
+    case 'task_proposal':
+      inner = (
+        <TaskProposalCard
+          data={card.data}
+          onApprove={(payload) => onAction?.('approve_task_proposal', payload)}
+          onDismiss={(suggestionId) => onAction?.('dismiss_task_proposal', { suggestionId })}
+        />
+      );
+      break;
     default:
       return null;
   }
@@ -3349,6 +3360,206 @@ function MilestoneSelectorCard({ data, onSelect }: { data: MilestoneSelectorData
             <span className="text-xs text-slate-500">マイルストーンに紐づけない</span>
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// V3.0: タスク提案カード（会議録→承認→タスク作成）
+// ========================================
+interface TaskProposalItem {
+  title: string;
+  assignee: string;
+  assigneeContactId?: string;
+  dueDate: string | null;
+  priority: 'high' | 'medium' | 'low';
+  relatedTopic: string;
+}
+
+interface TaskProposalData {
+  suggestionId: string;
+  meetingTitle: string;
+  projectId: string;
+  projectName: string;
+  items: TaskProposalItem[];
+  milestones: Array<{ id: string; title: string; status: string }>;
+}
+
+function TaskProposalCard({
+  data,
+  onApprove,
+  onDismiss,
+}: {
+  data: TaskProposalData;
+  onApprove?: (payload: {
+    suggestionId: string;
+    projectId: string;
+    milestoneId: string;
+    items: Array<{ title: string; priority: string; dueDate: string | null; assignee: string; assigneeContactId?: string }>;
+  }) => void;
+  onDismiss?: (suggestionId: string) => void;
+}) {
+  const [selectedItems, setSelectedItems] = useState<Set<number>>(
+    new Set(data.items.map((_, i) => i))
+  );
+  const [editedTitles, setEditedTitles] = useState<Record<number, string>>({});
+  const [milestoneId, setMilestoneId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  const toggleItem = (index: number) => {
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const handleApprove = () => {
+    if (submitting || selectedItems.size === 0) return;
+    setSubmitting(true);
+    const items = data.items
+      .filter((_, i) => selectedItems.has(i))
+      .map((item, _idx) => {
+        const originalIdx = data.items.indexOf(item);
+        return {
+          title: editedTitles[originalIdx] || item.title,
+          priority: item.priority,
+          dueDate: item.dueDate,
+          assignee: item.assignee,
+          assigneeContactId: item.assigneeContactId,
+        };
+      });
+    onApprove?.({
+      suggestionId: data.suggestionId,
+      projectId: data.projectId,
+      milestoneId,
+      items,
+    });
+    setSubmitted(true);
+    setSubmitting(false);
+  };
+
+  const handleDismiss = () => {
+    onDismiss?.(data.suggestionId);
+    setDismissed(true);
+  };
+
+  if (dismissed) {
+    return (
+      <div className="px-4 py-3 text-sm text-nm-text-secondary">
+        提案を却下しました
+      </div>
+    );
+  }
+
+  if (submitted) {
+    return (
+      <div className="px-4 py-3">
+        <div className="flex items-center gap-2 text-green-700">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+          <span className="text-sm font-medium">{selectedItems.size}件のタスクを作成しました</span>
+        </div>
+      </div>
+    );
+  }
+
+  const priorityLabel: Record<string, string> = { high: '高', medium: '中', low: '低' };
+  const priorityColor: Record<string, string> = {
+    high: 'text-red-600 bg-red-50',
+    medium: 'text-yellow-700 bg-yellow-50',
+    low: 'text-slate-600 bg-slate-100',
+  };
+
+  return (
+    <div className="px-4 py-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+        <p className="text-sm font-medium text-nm-text">
+          会議「{data.meetingTitle}」からの提案（{data.items.length}件）
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        {data.items.map((item, i) => (
+          <div
+            key={i}
+            className={`flex items-start gap-2 p-2.5 rounded-lg border transition-colors ${
+              selectedItems.has(i)
+                ? 'border-blue-200 bg-blue-50/50'
+                : 'border-slate-200 bg-slate-50 opacity-60'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={selectedItems.has(i)}
+              onChange={() => toggleItem(i)}
+              className="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <div className="flex-1 min-w-0">
+              <input
+                type="text"
+                value={editedTitles[i] !== undefined ? editedTitles[i] : item.title}
+                onChange={(e) => setEditedTitles(prev => ({ ...prev, [i]: e.target.value }))}
+                className="w-full text-sm font-medium text-nm-text bg-transparent border-none p-0 focus:ring-0 focus:outline-none"
+              />
+              <div className="flex items-center gap-2 mt-1 text-xs text-nm-text-secondary">
+                {item.assignee && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    {item.assignee}
+                  </span>
+                )}
+                {item.dueDate && (
+                  <span className="flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    {item.dueDate}
+                  </span>
+                )}
+                <span className={`px-1.5 py-0.5 rounded text-xs ${priorityColor[item.priority] || ''}`}>
+                  {priorityLabel[item.priority] || item.priority}
+                </span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* マイルストーン選択 */}
+      {data.milestones && data.milestones.length > 0 && (
+        <div>
+          <label className="text-xs text-nm-text-secondary block mb-1">マイルストーン（任意）</label>
+          <select
+            value={milestoneId}
+            onChange={(e) => setMilestoneId(e.target.value)}
+            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 bg-white focus:ring-blue-500 focus:border-blue-500"
+          >
+            <option value="">なし</option>
+            {data.milestones.map(ms => (
+              <option key={ms.id} value={ms.id}>{ms.title}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* アクションボタン */}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={handleApprove}
+          disabled={submitting || selectedItems.size === 0}
+          className="flex-1 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? '作成中...' : `${selectedItems.size}件を承認してタスク作成`}
+        </button>
+        <button
+          onClick={handleDismiss}
+          className="px-4 py-2 text-sm text-nm-text-secondary border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+        >
+          却下
+        </button>
       </div>
     </div>
   );

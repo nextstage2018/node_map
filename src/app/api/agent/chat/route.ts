@@ -548,6 +548,114 @@ async function fetchDataAndBuildCards(
         });
       }
 
+      // (2.5) V3.0: タスク提案カード（pending の task_suggestions があれば表示）
+      if (pendingTaskSuggestions > 0) {
+        try {
+          const { data: pendingSuggestions } = await supabase
+            .from('task_suggestions')
+            .select('id, suggestions, meeting_record_id, business_event_id, created_at')
+            .eq('user_id', userId)
+            .eq('status', 'pending')
+            .order('created_at', { ascending: false })
+            .limit(3);
+
+          if (pendingSuggestions && pendingSuggestions.length > 0) {
+            for (const suggestion of pendingSuggestions) {
+              const sugData = suggestion.suggestions as {
+                meetingTitle?: string;
+                meetingDate?: string;
+                projectId?: string;
+                items?: Array<{
+                  title: string;
+                  assignee: string;
+                  assigneeContactId?: string;
+                  due_date?: string | null;
+                  priority?: string;
+                  related_topic?: string;
+                }>;
+                // 旧形式（Phase 56互換）
+                parentTask?: { title: string; description: string };
+                childTasks?: Array<{ title: string; description: string; priority: string; assigneeName?: string; assigneeContactId?: string }>;
+              };
+
+              // 新形式（v3.0）と旧形式（Phase 56）の両方に対応
+              let items: Array<{ title: string; assignee: string; assigneeContactId?: string; dueDate: string | null; priority: 'high' | 'medium' | 'low'; relatedTopic: string }> = [];
+              let projectId = '';
+              let meetingTitle = '';
+
+              if (sugData.items) {
+                // v3.0形式
+                items = sugData.items.map(item => ({
+                  title: item.title,
+                  assignee: item.assignee || '',
+                  assigneeContactId: item.assigneeContactId,
+                  dueDate: item.due_date || null,
+                  priority: (item.priority as 'high' | 'medium' | 'low') || 'medium',
+                  relatedTopic: item.related_topic || '',
+                }));
+                projectId = sugData.projectId || '';
+                meetingTitle = sugData.meetingTitle || '会議';
+              } else if (sugData.childTasks) {
+                // Phase 56旧形式
+                items = sugData.childTasks.map(ct => ({
+                  title: ct.title,
+                  assignee: ct.assigneeName || '',
+                  assigneeContactId: ct.assigneeContactId,
+                  dueDate: null,
+                  priority: (ct.priority as 'high' | 'medium' | 'low') || 'medium',
+                  relatedTopic: '',
+                }));
+                meetingTitle = sugData.parentTask?.title || '会議';
+              }
+
+              if (items.length === 0) continue;
+
+              // プロジェクト名を取得
+              let projectName = '';
+              if (projectId) {
+                try {
+                  const { data: proj } = await supabase
+                    .from('projects')
+                    .select('name')
+                    .eq('id', projectId)
+                    .single();
+                  projectName = proj?.name || '';
+                } catch { /* 無視 */ }
+              }
+
+              // プロジェクトのマイルストーン一覧を取得
+              let milestones: Array<{ id: string; title: string; status: string }> = [];
+              if (projectId) {
+                try {
+                  const { data: msData } = await supabase
+                    .from('milestones')
+                    .select('id, title, status')
+                    .eq('project_id', projectId)
+                    .in('status', ['pending', 'in_progress'])
+                    .order('sort_order', { ascending: true })
+                    .limit(10);
+                  milestones = msData || [];
+                } catch { /* 無視 */ }
+              }
+
+              cards.push({
+                type: 'task_proposal',
+                data: {
+                  suggestionId: suggestion.id,
+                  meetingTitle,
+                  projectId,
+                  projectName,
+                  items,
+                  milestones,
+                },
+              });
+            }
+          }
+        } catch (tpError) {
+          console.error('[Briefing] タスク提案カード取得エラー:', tpError);
+        }
+      }
+
       // (3) 期限アラートカード（今日〜3日以内に期限のタスク/ジョブ）
       const deadlineItems: Array<{
         id: string; title: string; dueDate: string; dueLabel: string;

@@ -873,6 +873,73 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         }
         break;
       }
+      case 'approve_task_proposal': {
+        // V3.0: タスク提案承認 → 一括タスク作成
+        const payload = d as {
+          suggestionId: string;
+          projectId: string;
+          milestoneId: string;
+          items: Array<{ title: string; priority: string; dueDate: string | null; assignee: string; assigneeContactId?: string }>;
+        };
+        try {
+          let createdCount = 0;
+          for (const item of payload.items) {
+            const res = await fetch('/api/tasks', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                title: item.title,
+                priority: item.priority || 'medium',
+                projectId: payload.projectId || undefined,
+                milestoneId: payload.milestoneId || undefined,
+                dueDate: item.dueDate || undefined,
+                assigneeContactId: item.assigneeContactId || undefined,
+              }),
+            });
+            const result = await res.json();
+            if (result.success) createdCount++;
+          }
+          // task_suggestions の status を accepted に更新
+          try {
+            await fetch(`/api/task-suggestions/${payload.suggestionId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: 'accepted' }),
+            });
+          } catch { /* ステータス更新失敗は無視 */ }
+
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: '',
+            cards: [{
+              type: 'action_result',
+              data: { success: true, message: `${createdCount}件のタスクを作成しました` },
+            }],
+            timestamp: new Date().toISOString(),
+          }]);
+        } catch {
+          setMessages(prev => [...prev, {
+            id: generateId(),
+            role: 'assistant',
+            content: 'タスクの一括作成中にエラーが発生しました。',
+            timestamp: new Date().toISOString(),
+          }]);
+        }
+        break;
+      }
+      case 'dismiss_task_proposal': {
+        // V3.0: タスク提案却下
+        const dismissData = d as { suggestionId: string };
+        try {
+          await fetch(`/api/task-suggestions/${dismissData.suggestionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'dismissed' }),
+          });
+        } catch { /* 失敗は無視 */ }
+        break;
+      }
       case 'task_chat': {
         // タスクのAI会話 → /api/tasks/chat POST
         const chatData = d as Record<string, string>;

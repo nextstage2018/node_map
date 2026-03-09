@@ -493,6 +493,8 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
   → POST /api/meeting-records/{id}/analyze（AI解析）
     → meeting_records.ai_summary 更新
     → business_events に自動追加（event_type: meeting, meeting_record_id 付き）
+    → knowledge_master_entries にキーワード自動抽出（v3.0）
+    → task_suggestions にアクションアイテム自動保存（v3.0: action_items[]）
     → evaluation_learnings にフィードバック保存（該当あれば）
   → POST /api/decision-trees/generate（topics → ノード生成）
     → decision_trees 作成 or 既存取得

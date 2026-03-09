@@ -1302,6 +1302,45 @@ CREATE INDEX idx_task_external_resources_user_id ON task_external_resources(user
 
 ---
 
+### task_suggestions（Phase 56 + v3.0: タスク提案）
+
+**目的**: 会議録AI解析から自動抽出されたアクションアイテムの一時保存。秘書画面で承認/却下する。
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE task_suggestions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  business_event_id UUID REFERENCES business_events(id) ON DELETE CASCADE,
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE CASCADE,  -- v3.0
+  suggestions JSONB NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'dismissed')),
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_task_suggestions_user ON task_suggestions(user_id, status);
+CREATE INDEX idx_task_suggestions_event ON task_suggestions(business_event_id);
+CREATE INDEX idx_task_suggestions_meeting ON task_suggestions(meeting_record_id);  -- v3.0
+```
+
+#### 注意事項
+
+- **v3.0**: meeting_record_id で会議録からの直接リンクを追加
+- suggestions JSONB の構造（v3.0形式）:
+  - `meetingTitle`: 会議タイトル
+  - `meetingDate`: 会議日
+  - `projectId`: プロジェクトID
+  - `items[]`: `{ title, assignee, assigneeContactId, due_date, priority, related_topic }`
+- 旧形式（Phase 56）: `{ parentTask, childTasks[] }` — 後方互換で秘書画面が両形式に対応
+- 秘書ブリーフィングで `status='pending'` のレコードを `task_proposal` カードとして表示
+
+---
+
 ## 8. ビジネスイベント・分析テーブル
 
 ### business_events（ビジネスログ：活動記録）
