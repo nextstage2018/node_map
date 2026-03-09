@@ -1,6 +1,6 @@
-// Phase A-1: 旧エージェントページ → メインページにリダイレクト
+// リダイレクト: 組織・プロジェクトへ
 import { redirect } from 'next/navigation';
 
 export default function AgentPage() {
-  redirect('/');
+  redirect('/organizations');
 }

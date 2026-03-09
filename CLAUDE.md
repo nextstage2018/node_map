@@ -91,14 +91,15 @@
 
 ## 画面・ルート一覧
 
-### サイドメニュー（4項目）
+### サイドメニュー（2項目）
 
 | 画面 | URL | 主なテーブル |
 |---|---|---|
-| 秘書 | / | tasks, inbox_messages, jobs, calendar（横断ダッシュボード） |
-| インボックス | /inbox | inbox_messages（Slack/CWのみ。メールはUI非表示） |
 | 組織・プロジェクト | /organizations | organizations, projects, business_events |
 | 設定 | /settings | 個人設定 + ナレッジ閲覧 |
+
+> **v3.0方針**: NodeMapは「構造化データ保管庫」。秘書・インボックスUIは廃止し、Claude + MCPが対話インターフェースを担う。
+> インボックスのバックエンド（Slack/CW同期Cron）は引き続き稼働。
 
 ### プロジェクト詳細（/organizations/[id]）タブ構成
 
@@ -114,14 +115,15 @@
 
 | 旧URL | リダイレクト先 |
 |---|---|
+| / | /organizations |
 | /tasks | /organizations |
 | /thought-map | /organizations |
 | /jobs | /organizations |
-| /memos | / |
+| /memos | /organizations |
 | /master | /settings?tab=knowledge |
 | /contacts | /organizations |
 | /business-log | /organizations |
-| /agent | /（ホーム） |
+| /agent | /organizations |
 
 ---
 
