@@ -4,16 +4,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, GitCommit, MessageSquare, CheckCircle, FileText,
-  Flag, StickyNote, ChevronDown, ChevronRight, Plus, Filter,
+  Flag, StickyNote, ChevronDown, ChevronRight, Filter,
   Clock, Bot, Phone, Mail, Handshake, Bookmark,
   Loader2, X,
 } from 'lucide-react';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
 import {
-  BusinessEvent, ContactOption, EVENT_TYPE_CONFIG,
+  BusinessEvent, EVENT_TYPE_CONFIG,
 } from '@/components/business-log/types';
-import EventForm from '@/components/business-log/EventForm';
 import EventDetail from '@/components/business-log/EventDetail';
 
 // ========================================
@@ -97,12 +94,9 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
   const [isLoading, setIsLoading] = useState(true);
   const [filterKey, setFilterKey] = useState('all');
   const [expandedEvents, setExpandedEvents] = useState<Set<string>>(new Set());
-  const [contacts, setContacts] = useState<ContactOption[]>([]);
 
-  // イベント作成/詳細
-  const [showNewEvent, setShowNewEvent] = useState(false);
+  // 詳細表示
   const [selectedEvent, setSelectedEvent] = useState<BusinessEvent | null>(null);
-  const [autoSuggestEventId, setAutoSuggestEventId] = useState<string | null>(null);
 
   // データ取得
   const fetchEvents = useCallback(async () => {
@@ -115,20 +109,9 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
     finally { setIsLoading(false); }
   }, [projectId]);
 
-  const fetchContacts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/contacts');
-      const data = await res.json();
-      if (data.success && data.data) {
-        setContacts(data.data.map((c: { id: string; name: string }) => ({ id: c.id, name: c.name })));
-      }
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => {
     fetchEvents();
-    fetchContacts();
-  }, [fetchEvents, fetchContacts]);
+  }, [fetchEvents]);
 
   // フィルタ適用
   const filteredEvents = events.filter((event) => {
@@ -150,80 +133,15 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
     });
   };
 
-  // イベント作成
-  const handleCreateEvent = async (formData: {
-    title: string; content: string; eventType: string;
-    participants: string[];
-    calendarEventId?: string; meetingNotesUrl?: string;
-    eventStart?: string; eventEnd?: string;
-  }) => {
-    let fullContent = formData.content.trim();
-    if (formData.participants.length > 0) {
-      const names = formData.participants.map((id) => contacts.find((c) => c.id === id)?.name || id).join(', ');
-      fullContent = `【参加者】${names}\n\n${fullContent}`;
-    }
-    try {
-      const res = await fetch('/api/business-events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: formData.title.trim(),
-          content: fullContent || null,
-          eventType: formData.eventType,
-          projectId,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShowNewEvent(false);
-        fetchEvents();
-        const meetingTypes = ['meeting', 'call', 'calendar_meeting', 'decision'];
-        if (data.data?.id && meetingTypes.includes(formData.eventType) && formData.content.trim()) {
-          setSelectedEvent(data.data);
-          setTimeout(() => setAutoSuggestEventId(data.data.id), 500);
-        }
-      }
-    } catch { /* ignore */ }
-  };
-
-  const handleUpdateEvent = async (data: { title: string; content: string; eventType: string }) => {
-    if (!selectedEvent) return;
-    try {
-      const res = await fetch(`/api/business-events/${selectedEvent.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: data.title, content: data.content || null, eventType: data.eventType, projectId }),
-      });
-      const result = await res.json();
-      if (result.success) { setSelectedEvent(result.data); fetchEvents(); }
-    } catch { /* ignore */ }
-  };
-
-  const handleDeleteEvent = async () => {
-    if (!selectedEvent) return;
-    try {
-      const res = await fetch(`/api/business-events/${selectedEvent.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (data.success) { setSelectedEvent(null); fetchEvents(); }
-    } catch { /* ignore */ }
-  };
 
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* メインタイムライン */}
       <div className={`flex-1 overflow-y-auto ${selectedEvent ? 'border-r border-slate-200' : ''}`}>
-        {/* ヘッダー: フィルタ + 追加ボタン */}
+        {/* ヘッダー: フィルタ */}
         <div className="px-4 py-3 border-b border-slate-100 bg-white sticky top-0 z-10">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-slate-500">{filteredEvents.length}件のイベント</span>
-            <Button
-              variant="primary"
-              size="xs"
-              icon={<Plus className="w-3 h-3" />}
-              onClick={() => { setShowNewEvent(true); setSelectedEvent(null); }}
-            >
-              イベント追加
-            </Button>
           </div>
           {/* フィルタチップ */}
           <div className="flex gap-1.5 flex-wrap">
@@ -243,16 +161,6 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
           </div>
         </div>
 
-        {/* イベント作成フォーム */}
-        {showNewEvent && (
-          <EventForm
-            contacts={contacts}
-            projectId={projectId}
-            onSubmit={handleCreateEvent}
-            onClose={() => setShowNewEvent(false)}
-          />
-        )}
-
         {/* タイムライン本体 */}
         <div className="px-4 py-4">
           {isLoading ? (
@@ -263,7 +171,7 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Clock className="w-10 h-10 mb-3 text-slate-300" />
               <p className="text-sm">イベントがありません</p>
-              <p className="text-xs mt-1">「イベント追加」でプロジェクトの出来事を記録しましょう</p>
+              <p className="text-xs mt-1">検討ツリータブから会議録を登録するとイベントが自動生成されます</p>
             </div>
           ) : (
             Array.from(monthGroups.entries()).map(([monthLabel, monthEvents]) => (
@@ -367,10 +275,6 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
             event={selectedEvent}
             project={{ id: projectId, name: projectName, description: null, status: 'active', created_at: '', updated_at: '' }}
             onClose={() => setSelectedEvent(null)}
-            onUpdate={handleUpdateEvent}
-            onDelete={handleDeleteEvent}
-            autoSuggest={autoSuggestEventId === selectedEvent.id}
-            onAutoSuggestDone={() => setAutoSuggestEventId(null)}
           />
         </div>
       )}

@@ -6,6 +6,28 @@ import {
   Bot, Send, Loader2, Trash2,
   Paperclip, Upload, X, FileText, ChevronDown,
 } from 'lucide-react';
+
+// ========================================
+// V3.0: コンテキストバッジ表示
+// ========================================
+interface ContextBadgeProps {
+  label: string;
+  onClear: () => void;
+}
+
+function ContextBadge({ label, onClear }: ContextBadgeProps) {
+  return (
+    <div className="px-4 py-2 border-b border-slate-100 bg-slate-50/80 flex items-center gap-2">
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-lg">
+        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+        {label}
+      </span>
+      <button onClick={onClear} className="text-slate-400 hover:text-slate-600 p-0.5">
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+}
 import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
 import WelcomeDashboard from './WelcomeDashboard';
@@ -414,9 +436,12 @@ interface SecretaryChatProps {
   initialMessage?: string;
   contextTaskId?: string;
   contextProjectId?: string;
+  contextOrganizationId?: string;
+  contextMessageId?: string;
+  contextContactId?: string;
 }
 
-export default function SecretaryChat({ initialMessage, contextTaskId, contextProjectId }: SecretaryChatProps = {}) {
+export default function SecretaryChat({ initialMessage, contextTaskId, contextProjectId, contextOrganizationId, contextMessageId, contextContactId }: SecretaryChatProps = {}) {
   const [messages, setMessages] = useState<SecretaryMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -424,6 +449,9 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [isRestoringHistory, setIsRestoringHistory] = useState(true);
   const [hasAutoSent, setHasAutoSent] = useState(false);
+  const [contextLabel, setContextLabel] = useState<string | null>(null);
+  const [activeContextId, setActiveContextId] = useState<string | null>(null);
+  const [showActionSelector, setShowActionSelector] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -460,6 +488,53 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialMessage, hasAutoSent, isRestoringHistory]);
+
+  // V3.0: コンテキスト情報の取得（プロジェクト名、タスク名など）
+  useEffect(() => {
+    const fetchContextLabel = async () => {
+      try {
+        if (contextProjectId) {
+          const res = await fetch(`/api/projects/${contextProjectId}`);
+          const data = await res.json();
+          if (data.success && data.data?.name) {
+            setContextLabel(data.data.name);
+            setActiveContextId(contextProjectId);
+          }
+        } else if (contextTaskId) {
+          const res = await fetch(`/api/tasks?id=${contextTaskId}`);
+          const data = await res.json();
+          if (data.success && data.data?.title) {
+            setContextLabel(data.data.title);
+            setActiveContextId(contextTaskId);
+          }
+        } else if (contextOrganizationId) {
+          const res = await fetch(`/api/organizations/${contextOrganizationId}`);
+          const data = await res.json();
+          if (data.success && data.data?.name) {
+            setContextLabel(data.data.name);
+            setActiveContextId(contextOrganizationId);
+          }
+        } else if (contextMessageId) {
+          const res = await fetch(`/api/messages?id=${contextMessageId}`);
+          const data = await res.json();
+          if (data.success && data.data?.from_name) {
+            setContextLabel(`${data.data.from_name}からのメッセージ`);
+            setActiveContextId(contextMessageId);
+          }
+        } else if (contextContactId) {
+          const res = await fetch(`/api/contacts/${contextContactId}`);
+          const data = await res.json();
+          if (data.success && data.data?.name) {
+            setContextLabel(data.data.name);
+            setActiveContextId(contextContactId);
+          }
+        }
+      } catch {
+        // サイレント失敗（ラベルなしで続行）
+      }
+    };
+    fetchContextLabel();
+  }, [contextProjectId, contextTaskId, contextOrganizationId, contextMessageId, contextContactId]);
 
   // Phase 53a: メッセージ変更時にDBに自動保存（デバウンス付き）
   useEffect(() => {
@@ -522,6 +597,9 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
           history: contextMessages,
           ...(contextTaskId && { taskId: contextTaskId }),
           ...(contextProjectId && { projectId: contextProjectId }),
+          ...(contextOrganizationId && { organizationId: contextOrganizationId }),
+          ...(contextMessageId && { messageId: contextMessageId }),
+          ...(contextContactId && { contactId: contextContactId }),
         }),
       });
 
@@ -1489,6 +1567,36 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         }
         break;
       }
+      // V3.0: 新しいセレクターカードアクション
+      case 'select_action': {
+        const actionId = (d as { actionId: string }).actionId;
+        const actionMessages: Record<string, string> = {
+          'create_task': 'タスクを作成したい',
+          'check_progress': 'プロジェクトの進捗を教えて',
+          'upload_meeting': '会議録を登録したい',
+          'create_job': 'ジョブを登録したい',
+        };
+        const msg = actionMessages[actionId] || 'お願いします';
+        sendMessage(msg);
+        break;
+      }
+
+      case 'select_project': {
+        const selectedProjectId = (d as { projectId: string }).projectId;
+        sendMessage(`プロジェクト ${selectedProjectId} について`);
+        break;
+      }
+
+      case 'select_milestone': {
+        const milestoneId = (d as { milestoneId: string | null }).milestoneId;
+        if (milestoneId) {
+          sendMessage(`マイルストーン ${milestoneId} にタスクを作成`);
+        } else {
+          sendMessage('マイルストーンなしでタスクを作成');
+        }
+        break;
+      }
+
       default: {
         sendMessage(`${action}について確認します`);
       }
@@ -1519,11 +1627,28 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         )}
       </div>
 
+      {/* V3.0: コンテキストバッジ表示 */}
+      {contextLabel && (
+        <ContextBadge
+          label={contextLabel}
+          onClear={() => {
+            setContextLabel(null);
+            setActiveContextId(null);
+          }}
+        />
+      )}
+
       {/* チャットエリア */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 && !isLoading ? (
-          // Phase UI-3: ウェルカムダッシュボード
-          <WelcomeDashboard onSendMessage={sendMessage} />
+          // Phase UI-3: ウェルカムダッシュボード（またはアクションセレクター）
+          activeContextId && !contextLabel ? (
+            <div className="max-w-3xl mx-auto text-center text-slate-500 py-8">
+              コンテキスト情報を読み込み中...
+            </div>
+          ) : (
+            <WelcomeDashboard onSendMessage={sendMessage} />
+          )
         ) : (
           // メッセージ一覧
           <div className="max-w-3xl mx-auto space-y-4">

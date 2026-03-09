@@ -11,6 +11,9 @@ function HomeContent() {
   const initialMessage = searchParams.get('message') || undefined;
   const taskId = searchParams.get('taskId') || undefined;
   const projectId = searchParams.get('projectId') || undefined;
+  const organizationId = searchParams.get('organizationId') || undefined;
+  const messageId = searchParams.get('messageId') || undefined;
+  const contactId = searchParams.get('contactId') || undefined;
 
   return (
     <AppLayout>
@@ -18,6 +21,9 @@ function HomeContent() {
         initialMessage={initialMessage}
         contextTaskId={taskId}
         contextProjectId={projectId}
+        contextOrganizationId={organizationId}
+        contextMessageId={messageId}
+        contextContactId={contactId}
       />
     </AppLayout>
   );

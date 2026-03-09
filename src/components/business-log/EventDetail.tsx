@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import {
   FolderOpen, FileText, Phone, Mail, MessageSquare,
-  Handshake, X, Pencil, Trash2, AlertTriangle, Bookmark, Bot,
+  Handshake, X, Bookmark, Bot,
   Sparkles, Loader2, CheckCircle2, Plus, Link2, Users, ListChecks,
 } from 'lucide-react';
 import Card from '@/components/ui/Card';
@@ -32,10 +32,6 @@ interface EventDetailProps {
   event: BusinessEvent;
   project: Project | null;
   onClose: () => void;
-  onUpdate: (data: { title: string; content: string; eventType: string }) => Promise<void>;
-  onDelete: () => Promise<void>;
-  autoSuggest?: boolean;
-  onAutoSuggestDone?: () => void;
 }
 
 const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
@@ -48,16 +44,7 @@ export default function EventDetail({
   event,
   project,
   onClose,
-  onUpdate,
-  onDelete,
-  autoSuggest,
-  onAutoSuggestDone,
 }: EventDetailProps) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [editTitle, setEditTitle] = useState(event.title);
-  const [editContent, setEditContent] = useState(event.content || '');
-  const [editEventType, setEditEventType] = useState(event.event_type);
 
   // Phase 56: 親子タスク提案
   const [parentTask, setParentTask] = useState<ParentTaskSuggestion | null>(null);
@@ -67,19 +54,6 @@ export default function EventDetail({
   const [allCreated, setAllCreated] = useState(false);
   const [isCreatingAll, setIsCreatingAll] = useState(false);
   const [suggestedProjectId, setSuggestedProjectId] = useState<string | null>(null);
-
-  const startEditing = () => {
-    setEditTitle(event.title);
-    setEditContent(event.content || '');
-    setEditEventType(event.event_type);
-    setIsEditing(true);
-  };
-
-  const handleUpdate = async () => {
-    if (!editTitle.trim()) return;
-    await onUpdate({ title: editTitle.trim(), content: editContent.trim(), eventType: editEventType });
-    setIsEditing(false);
-  };
 
   const handleSuggestTasks = async () => {
     setIsLoadingSuggestions(true);
@@ -105,14 +79,6 @@ export default function EventDetail({
     }
   };
 
-  // Phase 56: 自動提案トリガー
-  useEffect(() => {
-    if (autoSuggest && !showSuggestions && !isLoadingSuggestions) {
-      handleSuggestTasks();
-      onAutoSuggestDone?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoSuggest]);
 
   // Phase 56: 親タスク＋子タスク一括作成
   const handleCreateAllTasks = async () => {
@@ -152,61 +118,6 @@ export default function EventDetail({
 
   // 会議関連のイベントタイプか判定
   const isMeetingType = ['meeting', 'call', 'calendar_meeting', 'decision'].includes(event.event_type);
-
-  if (isEditing) {
-    return (
-      <Card variant="flat" className="w-80 overflow-y-auto bg-slate-50 shrink-0">
-        <div className="p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-bold text-slate-900">イベント編集</h3>
-            <Button onClick={() => setIsEditing(false)} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
-          </div>
-          <div className="space-y-3">
-            <div className="flex flex-wrap gap-1.5">
-              {Object.entries(EVENT_TYPE_CONFIG)
-                .filter(([key]) => !['document_received', 'document_submitted', 'summary', 'task_completed', 'calendar_meeting'].includes(key))
-                .map(([key, config]) => {
-                  const Icon = ICON_MAP[config.icon] || FileText;
-                  return (
-                    <button
-                      key={key}
-                      onClick={() => setEditEventType(key)}
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
-                        editEventType === key ? 'ring-2 ring-offset-1 ring-blue-400' : ''
-                      } ${config.color}`}
-                    >
-                      <Icon className="w-2.5 h-2.5" />
-                      {config.label}
-                    </button>
-                  );
-                })}
-            </div>
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              rows={8}
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-            />
-            <div className="flex gap-2">
-              <Button onClick={handleUpdate} disabled={!editTitle.trim()} variant="primary" size="sm" className="flex-1">
-                保存
-              </Button>
-              <Button onClick={() => setIsEditing(false)} variant="outline" size="sm">
-                取消
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Card>
-    );
-  }
-
   const typeConfig = EVENT_TYPE_CONFIG[event.event_type] || EVENT_TYPE_CONFIG.note;
   const TypeIcon = ICON_MAP[typeConfig.icon] || FileText;
 
@@ -216,32 +127,8 @@ export default function EventDetail({
         {/* ヘッダー */}
         <div className="border-b border-slate-200 flex items-start justify-between pb-4 mb-4">
           <h3 className="text-base font-bold text-slate-900 pr-2">{event.title}</h3>
-          <div className="flex items-center gap-1 shrink-0">
-            {!event.ai_generated && (
-              <Button onClick={startEditing} icon={<Pencil className="w-4 h-4" />} variant="ghost" size="sm" title="編集" />
-            )}
-            <Button onClick={() => setShowDeleteConfirm(true)} icon={<Trash2 className="w-4 h-4" />} variant="ghost" size="sm" title="削除" />
-            <Button onClick={onClose} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
-          </div>
+          <Button onClick={onClose} icon={<X className="w-4 h-4" />} variant="ghost" size="sm" />
         </div>
-
-        {/* 削除確認 */}
-        {showDeleteConfirm && (
-          <Card variant="outlined" padding="md" className="mb-4 bg-red-50 border-red-200">
-            <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-              <span className="text-xs font-medium text-red-700">このイベントを削除しますか？</span>
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={onDelete} variant="danger" size="sm" className="flex-1">
-                削除する
-              </Button>
-              <Button onClick={() => setShowDeleteConfirm(false)} variant="outline" size="sm">
-                取消
-              </Button>
-            </div>
-          </Card>
-        )}
 
         {/* タイプバッジ */}
         <div className="flex items-center gap-2 mb-4">

@@ -7,7 +7,7 @@ import {
   ArrowRight, ExternalLink, Loader2, Edit3, Send,
   Zap, CheckSquare, FileText, AlertCircle,
   Calendar, AlertTriangle, TrendingUp,
-  FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles, ListChecks,
+  FolderInput, Check, X, ChevronDown, ChevronUp, Sparkles, ListChecks, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -62,6 +62,9 @@ const cardAccentMap: Partial<Record<CardType, CardAccentColor>> = {
   deadline_alert: 'red',
   task_resume: 'blue',
   task_external_resource: 'blue',
+  action_selector: 'blue',
+  project_selector: 'blue',
+  milestone_selector: 'blue',
 };
 
 export function UnifiedCardWrapper({
@@ -124,7 +127,10 @@ export type CardType =
   | 'org_form'           // Phase 53c: 組織作成フォーム
   | 'project_form'       // Phase 53c: プロジェクト作成フォーム
   | 'task_negotiation'   // Phase 56c: タスク修正提案・調整
-  | 'task_external_resource'; // Phase E: タスク外部資料取り込み
+  | 'task_external_resource' // Phase E: タスク外部資料取り込み
+  | 'action_selector'    // V3.0: アクション選択カード
+  | 'project_selector'   // V3.0: プロジェクト選択カード
+  | 'milestone_selector'; // V3.0: マイルストーン選択カード
 
 // カードデータ共通
 export interface CardData {
@@ -3197,6 +3203,134 @@ export function ProjectFormCard({
 }
 
 // ========================================
+// V3.0: アクション選択カード
+// ========================================
+interface ActionSelectorData {
+  title: string;
+  options: Array<{
+    id: string;
+    label: string;
+    description: string;
+    icon: string;
+  }>;
+}
+
+function ActionSelectorCard({ data, onSelect }: { data: ActionSelectorData; onSelect?: (actionId: string) => void }) {
+  const iconMap: Record<string, React.ReactNode> = {
+    task: <CheckSquare className="w-4 h-4" />,
+    meeting: <Calendar className="w-4 h-4" />,
+    progress: <TrendingUp className="w-4 h-4" />,
+    job: <Zap className="w-4 h-4" />,
+    note: <FileText className="w-4 h-4" />,
+  };
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <p className="text-sm font-medium text-slate-800">{data.title}</p>
+      <div className="grid grid-cols-1 gap-1.5">
+        {data.options.map(opt => (
+          <button key={opt.id} onClick={() => onSelect?.(opt.id)}
+            className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-left transition-colors">
+            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+              {iconMap[opt.icon] || <FileText className="w-4 h-4" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{opt.label}</div>
+              <div className="text-xs text-slate-500">{opt.description}</div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-300 shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// V3.0: プロジェクト選択カード
+// ========================================
+interface ProjectSelectorData {
+  title: string;
+  projects: Array<{
+    id: string;
+    name: string;
+    organizationName?: string;
+    status?: string;
+  }>;
+}
+
+function ProjectSelectorCard({ data, onSelect }: { data: ProjectSelectorData; onSelect?: (projectId: string) => void }) {
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <p className="text-sm font-medium text-slate-800">{data.title}</p>
+      <div className="grid grid-cols-1 gap-1.5 max-h-60 overflow-y-auto">
+        {data.projects.map(proj => (
+          <button key={proj.id} onClick={() => onSelect?.(proj.id)}
+            className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-left transition-colors">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{proj.name}</div>
+              {proj.organizationName && <div className="text-xs text-slate-400">{proj.organizationName}</div>}
+            </div>
+            {proj.status && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 shrink-0">{proj.status}</span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// V3.0: マイルストーン選択カード
+// ========================================
+interface MilestoneSelectorData {
+  title: string;
+  milestones: Array<{
+    id: string;
+    title: string;
+    status: string;
+    targetDate?: string;
+  }>;
+  allowSkip?: boolean;
+}
+
+function MilestoneSelectorCard({ data, onSelect }: { data: MilestoneSelectorData; onSelect?: (milestoneId: string | null) => void }) {
+  const statusConfig: Record<string, { label: string; color: string }> = {
+    pending: { label: '未開始', color: 'bg-slate-100 text-slate-600' },
+    in_progress: { label: '進行中', color: 'bg-blue-50 text-blue-600' },
+    achieved: { label: '達成', color: 'bg-green-50 text-green-600' },
+    missed: { label: '未達', color: 'bg-red-50 text-red-600' },
+  };
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <p className="text-sm font-medium text-slate-800">{data.title}</p>
+      <div className="grid grid-cols-1 gap-1.5 max-h-60 overflow-y-auto">
+        {data.milestones.map(ms => {
+          const sc = statusConfig[ms.status] || statusConfig.pending;
+          return (
+            <button key={ms.id} onClick={() => onSelect?.(ms.id)}
+              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 hover:bg-blue-50 hover:border-blue-200 text-left transition-colors">
+              <Calendar className="w-4 h-4 text-red-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium text-slate-800">{ms.title}</div>
+                {ms.targetDate && <div className="text-xs text-slate-400">{new Date(ms.targetDate).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}</div>}
+              </div>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${sc.color} shrink-0`}>{sc.label}</span>
+            </button>
+          );
+        })}
+        {data.allowSkip !== false && (
+          <button onClick={() => onSelect?.(null)}
+            className="flex items-center justify-center gap-2 p-2.5 rounded-lg border border-dashed border-slate-300 hover:bg-slate-50 text-left transition-colors">
+            <span className="text-xs text-slate-500">マイルストーンに紐づけない</span>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // Phase E: タスク外部資料取り込みカード
 // ========================================
 interface TaskExternalResourceData {
@@ -3261,5 +3395,143 @@ function TaskExternalResourceCard({ data }: { data: TaskExternalResourceData }) 
         </p>
       </div>
     </div>
+  );
+}
+
+// ========================================
+// 統合カードレンダラー
+// ========================================
+export function CardRenderer({
+  card,
+  onAction,
+}: {
+  card: CardData;
+  onAction?: (action: string, data: unknown) => void;
+}) {
+  return (
+    <UnifiedCardWrapper type={card.type} data={card.data}>
+      {card.type === 'inbox_summary' && (
+        <InboxSummaryCard
+          items={card.data.items}
+          onSelectMessage={(id) => onAction?.('select_message', { id })}
+        />
+      )}
+      {card.type === 'message_detail' && (
+        <MessageDetailCard
+          message={card.data}
+          onReply={() => onAction?.('reply_to_message', { id: card.data.id })}
+          onCreateJob={() => onAction?.('create_job_from_message', { messageId: card.data.id })}
+          onCreateTask={() => onAction?.('create_task_from_message', { messageId: card.data.id })}
+        />
+      )}
+      {card.type === 'job_approval' && (
+        <JobApprovalCard
+          job={card.data}
+          onApprove={(draft) => onAction?.('execute_job', { jobId: card.data.id, editedDraft: draft })}
+          onEdit={() => onAction?.('edit_job', { jobId: card.data.id })}
+          onReject={() => onAction?.('reject_job', { jobId: card.data.id })}
+        />
+      )}
+      {card.type === 'reply_draft' && (
+        <ReplyDraftCard
+          reply={card.data}
+          onApprove={(data) => onAction?.('send_reply', data)}
+          onEdit={() => onAction?.('edit_reply', { messageId: card.data.originalMessageId })}
+          onReject={() => onAction?.('reject_reply', { messageId: card.data.originalMessageId })}
+        />
+      )}
+      {card.type === 'task_created' && (
+        <TaskCreatedCard task={card.data} />
+      )}
+      {card.type === 'navigate' && (
+        <NavigateCard nav={card.data} />
+      )}
+      {card.type === 'action_result' && (
+        <ActionResultCard result={card.data} />
+      )}
+      {card.type === 'briefing_summary' && (
+        <BriefingSummaryCard summary={card.data} />
+      )}
+      {card.type === 'calendar_events' && (
+        <CalendarEventsCard calendar={card.data} />
+      )}
+      {card.type === 'document_list' && (
+        <DocumentListCard
+          documents={card.data.documents}
+          totalCount={card.data.totalCount}
+          onShare={(docId) => onAction?.('share_document', { documentId: docId })}
+        />
+      )}
+      {card.type === 'file_intake' && (
+        <FileIntakeCard
+          files={card.data.files}
+          totalCount={card.data.totalCount}
+          onApprove={(fileId, overrides) => onAction?.('approve_file', { fileId, ...overrides })}
+          onReject={(fileId) => onAction?.('reject_file', { fileId })}
+          onApproveAll={() => onAction?.('approve_all_files', {})}
+        />
+      )}
+      {card.type === 'business_event_form' && (
+        <BusinessEventFormCard
+          data={card.data}
+          onCancel={() => onAction?.('cancel_business_event_form', {})}
+        />
+      )}
+      {card.type === 'knowledge_proposal' && (
+        <KnowledgeProposalCard
+          proposal={card.data}
+          onAccept={(proposalId) => onAction?.('accept_knowledge_proposal', { proposalId })}
+          onReject={(proposalId) => onAction?.('reject_knowledge_proposal', { proposalId })}
+        />
+      )}
+      {card.type === 'task_form' && (
+        <TaskFormCard
+          data={card.data}
+          onSubmit={(taskData) => onAction?.('submit_task_form', taskData)}
+        />
+      )}
+      {card.type === 'contact_form' && (
+        <ContactFormCard
+          data={card.data}
+          onSubmit={(contactData) => onAction?.('submit_contact_form', contactData)}
+        />
+      )}
+      {card.type === 'org_form' && (
+        <OrgFormCard
+          data={card.data}
+          onSubmit={(orgData) => onAction?.('submit_org_form', orgData)}
+        />
+      )}
+      {card.type === 'project_form' && (
+        <ProjectFormCard
+          data={card.data}
+          onSubmit={(projData) => onAction?.('submit_project_form', projData)}
+        />
+      )}
+      {card.type === 'contact_search_result' && (
+        <ContactSearchResultCard data={card.data} />
+      )}
+      {card.type === 'task_external_resource' && (
+        <TaskExternalResourceCard data={card.data} />
+      )}
+      {card.type === 'action_selector' && (
+        <ActionSelectorCard
+          data={card.data}
+          onSelect={(actionId) => onAction?.('select_action', { actionId })}
+        />
+      )}
+      {card.type === 'project_selector' && (
+        <ProjectSelectorCard
+          data={card.data}
+          onSelect={(projectId) => onAction?.('select_project', { projectId })}
+        />
+      )}
+      {card.type === 'milestone_selector' && (
+        <MilestoneSelectorCard
+          data={card.data}
+          onSelect={(milestoneId) => onAction?.('select_milestone', { milestoneId })}
+        />
+      )}
+    </UnifiedCardWrapper>
   );
 }

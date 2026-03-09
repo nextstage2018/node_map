@@ -227,19 +227,19 @@ function classifyIntent(message: string): Intent {
   // 思考マップ
   if (m.includes('思考') || m.includes('マップ') || m.includes('ナレッジ')) return 'thought_map';
 
-  // ビジネスイベント登録（自然言語で幅広くマッチ）
+  // V3.0: ビジネスイベント記録 → 会議録アップロードにリダイレクト
   // 「打ち合わせを記録して」「会議を登録」「ビジネスメモを追加」「活動を残したい」等
-  if ((m.includes('記録') || m.includes('登録') || m.includes('追加')) && (m.includes('打ち合わせ') || m.includes('会議') || m.includes('電話') || m.includes('商談'))) return 'create_business_event';
-  if (m.includes('イベント') && (m.includes('記録') || m.includes('追加') || m.includes('登録') || m.includes('作成'))) return 'create_business_event';
-  if ((m.includes('記録') || m.includes('登録') || m.includes('追加') || m.includes('残')) && (m.includes('活動') || m.includes('ビジネス'))) return 'create_business_event';
-  if (m.includes('ログ') && (m.includes('残') || m.includes('追加') || m.includes('記録') || m.includes('書'))) return 'create_business_event';
+  if ((m.includes('記録') || m.includes('登録') || m.includes('追加')) && (m.includes('打ち合わせ') || m.includes('会議') || m.includes('電話') || m.includes('商談'))) return 'upload_meeting_record';
+  if (m.includes('イベント') && (m.includes('記録') || m.includes('追加') || m.includes('登録') || m.includes('作成'))) return 'upload_meeting_record';
+  if ((m.includes('記録') || m.includes('登録') || m.includes('追加') || m.includes('残')) && (m.includes('活動') || m.includes('ビジネス'))) return 'upload_meeting_record';
+  if (m.includes('ログ') && (m.includes('残') || m.includes('追加') || m.includes('記録') || m.includes('書'))) return 'upload_meeting_record';
   // 「ビジネスメモ」「活動メモ」「メモを追加」等のパターン
-  if ((m.includes('ビジネス') || m.includes('活動') || m.includes('業務')) && (m.includes('メモ') || m.includes('ノート'))) return 'create_business_event';
-  if (m.includes('メモ') && (m.includes('追加') || m.includes('記録') || m.includes('登録') || m.includes('残'))) return 'create_business_event';
+  if ((m.includes('ビジネス') || m.includes('活動') || m.includes('業務')) && (m.includes('メモ') || m.includes('ノート'))) return 'upload_meeting_record';
+  if (m.includes('メモ') && (m.includes('追加') || m.includes('記録') || m.includes('登録') || m.includes('残'))) return 'upload_meeting_record';
   // 「〜したい」「〜を残す」系の自然な表現
-  if ((m.includes('記録したい') || m.includes('残したい') || m.includes('追加したい') || m.includes('登録したい')) && !m.includes('タスク') && !m.includes('ジョブ')) return 'create_business_event';
+  if ((m.includes('記録したい') || m.includes('残したい') || m.includes('追加したい') || m.includes('登録したい')) && !m.includes('タスク') && !m.includes('ジョブ')) return 'upload_meeting_record';
   // 「打ち合わせがあった」「会議した」「電話した」等の報告系
-  if ((m.includes('打ち合わせ') || m.includes('会議') || m.includes('商談')) && (m.includes('あった') || m.includes('した') || m.includes('終わった') || m.includes('だった'))) return 'create_business_event';
+  if ((m.includes('打ち合わせ') || m.includes('会議') || m.includes('商談')) && (m.includes('あった') || m.includes('した') || m.includes('終わった') || m.includes('だった'))) return 'upload_meeting_record';
 
   // ビジネス活動要約
   if (m.includes('活動') && (m.includes('要約') || m.includes('まとめ') || m.includes('サマリー'))) return 'business_summary';
@@ -1857,15 +1857,6 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         }
       } catch (krErr) {
         console.error('[Secretary API] 知見再利用エラー:', krErr);
-      }
-    }
-
-    // ビジネスイベント登録 → プロジェクト・コンタクトを取得してフォームカード生成
-    if (intent === 'create_business_event') {
-      try {
-        await handleCreateBusinessEventIntent(supabase, userId, userMessage, cards);
-      } catch (eventError) {
-        console.error('[Secretary API] ビジネスイベント作成エラー:', eventError);
       }
     }
 
@@ -3585,7 +3576,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { message, history, taskId, projectId } = body;
+    const { message, history, taskId, projectId, organizationId, messageId, contactId } = body;
 
     if (!message) {
       return NextResponse.json(
@@ -3609,8 +3600,8 @@ export async function POST(request: NextRequest) {
       fixedReply = result.fixedReply;
     }
 
-    // タスクタブからの遷移時: タスク・プロジェクト情報をコンテキストに追加
-    if (taskId || projectId) {
+    // V3.0: 複数のコンテキストパラメータをサポート
+    if (taskId || projectId || organizationId || messageId || contactId) {
       const sb = getServerSupabase() || getSupabase();
       if (sb) {
         let taskContext = '';
@@ -3635,6 +3626,42 @@ export async function POST(request: NextRequest) {
           if (projData) {
             taskContext += `\n\n【所属プロジェクト】\nプロジェクト名: ${projData.name}`;
             if (projData.description) taskContext += `\n概要: ${projData.description}`;
+          }
+        }
+        if (organizationId) {
+          const { data: orgData } = await sb
+            .from('organizations')
+            .select('id, name, description')
+            .eq('id', organizationId)
+            .single();
+          if (orgData) {
+            taskContext += `\n\n【所属組織】\n組織名: ${orgData.name}`;
+            if (orgData.description) taskContext += `\n説明: ${orgData.description}`;
+          }
+        }
+        if (messageId) {
+          const { data: msgData } = await sb
+            .from('inbox_messages')
+            .select('id, from_name, from_address, channel, subject, body')
+            .eq('id', messageId)
+            .single();
+          if (msgData) {
+            taskContext += `\n\n【参照メッセージ】\n差出人: ${msgData.from_name || msgData.from_address}\nチャネル: ${msgData.channel}`;
+            if (msgData.subject) taskContext += `\n件名: ${msgData.subject}`;
+            if (msgData.body) taskContext += `\n本文: ${msgData.body.slice(0, 200)}`;
+          }
+        }
+        if (contactId) {
+          const { data: contactData } = await sb
+            .from('contact_persons')
+            .select('id, name, company_name, department, relationship_type')
+            .eq('id', contactId)
+            .single();
+          if (contactData) {
+            taskContext += `\n\n【参照コンタクト】\n氏名: ${contactData.name}`;
+            if (contactData.company_name) taskContext += `\n会社: ${contactData.company_name}`;
+            if (contactData.department) taskContext += `\n部門: ${contactData.department}`;
+            taskContext += `\n関係: ${contactData.relationship_type}`;
           }
         }
         if (taskContext) {
@@ -3799,9 +3826,7 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
     case 'thought_map':
       return '思考マップへのリンクを表示しました。クリックして開いてください。';
     case 'create_business_event':
-      return hasCards
-        ? 'イベント登録フォームを表示しました。内容を入力して「記録する」を押してください。メッセージの内容からタイトルや種別を推定しています。'
-        : 'イベント登録フォームの準備に失敗しました。もう一度お試しください。';
+      return 'ビジネスイベントは会議録やメッセージから自動生成されます。検討ツリータブから会議録を登録してください。';
     case 'create_calendar_event':
       return hasCards
         ? 'カレンダーに予定を登録しました。'
