@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { taskId, message, conversationHistory } = body;
+    const { taskId, message, conversationHistory, milestoneId } = body; // V2-H: milestoneId オプション
 
     if (!taskId || !message) {
       return NextResponse.json(
@@ -62,17 +62,23 @@ export async function POST(request: NextRequest) {
       .limit(50);
 
     // スナップショットを取得
-    const { data: snapshots } = await sb
+    // V2-H: milestoneId指定時はマイルストーン期間に限定（target_dateベース）
+    let snapshotQuery = sb
       .from('thought_snapshots')
       .select('snapshot_type, summary, node_ids, created_at')
       .eq('task_id', taskId);
+    const { data: snapshots } = await snapshotQuery;
 
-    // ノード情報を取得
-    const { data: nodeRows } = await sb
+    // ノード情報を取得（V2-H: milestoneId指定時はマイルストーンスコープでフィルタ）
+    let nodeQuery = sb
       .from('thought_task_nodes')
       .select('node_id, appear_phase, appear_order, is_main_route, knowledge_master_entries(label)')
       .eq('task_id', taskId)
       .order('appear_order', { ascending: true });
+    if (milestoneId) {
+      nodeQuery = nodeQuery.eq('milestone_id', milestoneId);
+    }
+    const { data: nodeRows } = await nodeQuery;
 
     // コンテキストの構築
     const taskContext = buildTaskContext(task, conversations || [], snapshots || [], nodeRows || []);

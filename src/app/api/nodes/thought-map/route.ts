@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
     const targetUserId = searchParams.get('userId');
     const taskId = searchParams.get('taskId') || undefined;
     const seedId = searchParams.get('seedId') || undefined;
+    const milestoneId = searchParams.get('milestoneId') || undefined; // V2-H
+    const projectId = searchParams.get('projectId') || undefined; // V2-H
     const mode = searchParams.get('mode'); // 'overview' = 全体マップ
 
     // ユーザー指定なし → 組織内の全ユーザー一覧（思考ノード数付き）を返す
@@ -39,6 +41,71 @@ export async function GET(request: NextRequest) {
     if (mode === 'overview') {
       const overviewData = await getUserOverviewMap(targetUserId);
       return NextResponse.json({ success: true, data: overviewData });
+    }
+
+    // V2-H: マイルストーンスコープ — milestone_id でフィルタした思考ノード＋エッジを返す
+    if (milestoneId) {
+      const milestoneNodes = await ThoughtNodeService.getLinkedNodes({ milestoneId });
+      // マイルストーンに紐づくノードのIDセットを作成
+      const milestoneNodeIds = new Set(milestoneNodes.map(n => n.nodeId));
+      // そのノードに関連するエッジを取得（ユーザーの全エッジからフィルタ）
+      const sb = getServerSupabase() || getSupabase();
+      let filteredEdges: any[] = [];
+      if (sb && targetUserId) {
+        const { data: allEdges } = await sb
+          .from('thought_edges')
+          .select('*')
+          .eq('user_id', targetUserId)
+          .order('edge_order', { ascending: true });
+        // 両端のノードがマイルストーンスコープ内のエッジのみ
+        filteredEdges = (allEdges || [])
+          .filter((e: any) => milestoneNodeIds.has(e.from_node_id) && milestoneNodeIds.has(e.to_node_id))
+          .map((row: any) => ({
+            id: row.id,
+            fromNodeId: row.from_node_id,
+            toNodeId: row.to_node_id,
+            edgeType: row.edge_type,
+            edgeOrder: row.edge_order,
+            taskId: row.task_id,
+            seedId: row.seed_id,
+          }));
+      }
+
+      // マイルストーン情報も返す
+      let milestoneInfo = null;
+      if (sb) {
+        const { data: ms } = await sb
+          .from('milestones')
+          .select('id, title, description, start_context, status, target_date')
+          .eq('id', milestoneId)
+          .maybeSingle();
+        milestoneInfo = ms;
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          nodes: milestoneNodes,
+          edges: filteredEdges,
+          milestone: milestoneInfo,
+        },
+      });
+    }
+
+    // V2-H: プロジェクトスコープ — projectIdに属するマイルストーン一覧を返す（思考マップUIのフィルタ用）
+    if (projectId && mode === 'milestones') {
+      const sb = getServerSupabase() || getSupabase();
+      if (sb) {
+        const { data: milestones } = await sb
+          .from('milestones')
+          .select('id, title, description, start_context, status, target_date, sort_order')
+          .eq('project_id', projectId)
+          .order('sort_order', { ascending: true });
+        return NextResponse.json({
+          success: true,
+          data: { milestones: milestones || [] },
+        });
+      }
     }
 
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す

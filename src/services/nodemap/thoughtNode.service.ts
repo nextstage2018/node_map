@@ -19,6 +19,7 @@ export interface ThoughtNode {
   id: string;
   taskId?: string;
   seedId?: string;
+  milestoneId?: string; // V2-H: マイルストーンスコープ
   nodeId: string;       // knowledge_master_entries の id
   nodeLabel: string;    // ラベル（表示用）
   userId: string;
@@ -66,10 +67,11 @@ export class ThoughtNodeService {
     taskId?: string;        // タスクID（タスク会話の場合）
     seedId?: string;        // 種ID（種会話の場合）
     memoId?: string;        // Phase Restructure: メモID（メモ会話の場合）
+    milestoneId?: string;   // V2-H: マイルストーンID（タスク経由で伝播）
     phase: string;          // seed / ideation / progress / result
     conversationId?: string; // 会話ターンのID
   }): Promise<ExtractAndLinkResult> {
-    const { text, userId, taskId, seedId, memoId, phase, conversationId } = params;
+    const { text, userId, taskId, seedId, memoId, milestoneId, phase, conversationId } = params;
 
     const result: ExtractAndLinkResult = {
       extractedKeywords: [],
@@ -143,6 +145,7 @@ export class ThoughtNodeService {
             taskId,
             seedId,
             memoId,
+            milestoneId,
             nodeId: masterEntryId,
             userId,
             appearOrder: currentOrder,
@@ -464,6 +467,7 @@ export class ThoughtNodeService {
       taskId?: string;
       seedId?: string;
       memoId?: string;       // Phase Restructure: メモID
+      milestoneId?: string;  // V2-H: マイルストーンID
       nodeId: string;
       userId: string;
       appearOrder: number;
@@ -471,7 +475,7 @@ export class ThoughtNodeService {
       conversationId?: string;
     }
   ): Promise<Omit<ThoughtNode, 'nodeLabel'> | null> {
-    const { taskId, seedId, memoId, nodeId, userId, appearOrder, appearPhase, conversationId } = params;
+    const { taskId, seedId, memoId, milestoneId, nodeId, userId, appearOrder, appearPhase, conversationId } = params;
     const now = new Date().toISOString();
 
     try {
@@ -486,6 +490,7 @@ export class ThoughtNodeService {
       if (taskId) insertData.task_id = taskId;
       if (seedId) insertData.seed_id = seedId;
       if (memoId) insertData.memo_id = memoId;
+      if (milestoneId) insertData.milestone_id = milestoneId; // V2-H
 
       // まず既存レコードをチェック（UNIQUE制約がない場合でも重複を防ぐ）
       let existQuery = sb
@@ -561,6 +566,7 @@ export class ThoughtNodeService {
     taskId?: string;
     seedId?: string;
     userId?: string;
+    milestoneId?: string;  // V2-H: マイルストーンでフィルタ
   }): Promise<ThoughtNode[]> {
     const sb = getServerSupabase() || getSupabase();
     if (!sb) return [];
@@ -574,6 +580,7 @@ export class ThoughtNodeService {
       if (params.taskId) query = query.eq('task_id', params.taskId);
       if (params.seedId) query = query.eq('seed_id', params.seedId);
       if (params.userId) query = query.eq('user_id', params.userId);
+      if (params.milestoneId) query = query.eq('milestone_id', params.milestoneId); // V2-H
 
       const { data, error } = await query;
 
@@ -590,6 +597,7 @@ export class ThoughtNodeService {
         id: row.id,
         taskId: row.task_id,
         seedId: row.seed_id,
+        milestoneId: row.milestone_id, // V2-H
         nodeId: row.node_id,
         nodeLabel: row.knowledge_master_entries?.label || '',
         userId: row.user_id,

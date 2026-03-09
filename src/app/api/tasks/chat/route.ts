@@ -176,6 +176,7 @@ export async function POST(request: NextRequest) {
         text: `${body.message}\n\n${response.reply}`,
         userId,
         taskId: body.taskId,
+        milestoneId: task.milestoneId, // V2-H: タスクのmilestone_idを伝播
         phase: body.phase,
         conversationId: turnId,
       });
