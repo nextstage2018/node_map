@@ -1787,11 +1787,13 @@ async function fetchDataAndBuildCards(
             }
           }
           if (intent === 'schedule') {
-            // 来週の空き時間を検索
-            const now = new Date();
-            const nextStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0);
-            const nextEnd = new Date(nextStart.getTime() + 7 * 24 * 60 * 60 * 1000);
-            const freeSlots = await findFreeSlots(userId, nextStart.toISOString(), nextEnd.toISOString(), 60);
+            // 来週の空き時間を検索（JST基準で日付を計算）
+            const nowMs = Date.now();
+            const jstOffsetMs = 9 * 60 * 60 * 1000;
+            const nowJST = new Date(nowMs + jstOffsetMs);
+            const nextStartUTC = new Date(Date.UTC(nowJST.getUTCFullYear(), nowJST.getUTCMonth(), nowJST.getUTCDate() + 1) - jstOffsetMs); // 翌日JST 00:00のUTC表現
+            const nextEnd = new Date(nextStartUTC.getTime() + 7 * 24 * 60 * 60 * 1000);
+            const freeSlots = await findFreeSlots(userId, nextStartUTC.toISOString(), nextEnd.toISOString(), 60);
             console.log('[Secretary API] 空き時間検索結果:', freeSlots.length, '件');
             if (freeSlots.length > 0) {
               parts.push(`\n\n【空き時間（今後7日間、Googleカレンダー＋NodeMap作業ブロック考慮済み・祝日除外）- 実データに基づく計算結果】\n${formatFreeSlotsForContext(freeSlots)}`);

@@ -211,9 +211,10 @@ export async function getEvents(
 // 今日の予定取得（ショートカット）
 // ========================================
 export async function getTodayEvents(userId: string): Promise<CalendarEvent[]> {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-  const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  // JST（UTC+9）で今日の0:00〜23:59を正しく計算
+  const nowJST = getJSTDateParts(new Date());
+  const todayStart = createJSTDate(nowJST.year, nowJST.month, nowJST.day, 0, 0, 0);
+  const todayEnd = createJSTDate(nowJST.year, nowJST.month, nowJST.day, 23, 59, 59);
 
   return getEvents(userId, todayStart.toISOString(), todayEnd.toISOString());
 }
@@ -222,8 +223,9 @@ export async function getTodayEvents(userId: string): Promise<CalendarEvent[]> {
 // 指定期間の予定取得
 // ========================================
 export async function getWeekEvents(userId: string, offsetDays = 0): Promise<CalendarEvent[]> {
-  const now = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays, 0, 0, 0);
+  // JST（UTC+9）で日付を正しく計算
+  const nowJST = getJSTDateParts(new Date());
+  const start = createJSTDate(nowJST.year, nowJST.month, nowJST.day + offsetDays, 0, 0, 0);
   const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   return getEvents(userId, start.toISOString(), end.toISOString());
@@ -237,6 +239,29 @@ export interface EnhancedFreeSlot extends FreeSlot {
   source?: 'google' | 'nodemap';
 }
 
+// JST（UTC+9）でDateを作成するヘルパー
+// Vercel等のサーバーはUTCで動くため、JSTの時刻を正しく計算するために必要
+function createJSTDate(year: number, month: number, day: number, hours = 0, minutes = 0, seconds = 0): Date {
+  // JST = UTC + 9時間 なので、UTC時刻 = JST時刻 - 9時間
+  const utcMs = Date.UTC(year, month, day, hours - 9, minutes, seconds);
+  return new Date(utcMs);
+}
+
+// ISO文字列からJST日付部分を取得
+function getJSTDateParts(date: Date): { year: number; month: number; day: number; dayOfWeek: number; hours: number; minutes: number } {
+  // JSTオフセット = +9時間
+  const jstMs = date.getTime() + 9 * 60 * 60 * 1000;
+  const jst = new Date(jstMs);
+  return {
+    year: jst.getUTCFullYear(),
+    month: jst.getUTCMonth(),
+    day: jst.getUTCDate(),
+    dayOfWeek: jst.getUTCDay(),
+    hours: jst.getUTCHours(),
+    minutes: jst.getUTCMinutes(),
+  };
+}
+
 export async function findFreeSlots(
   userId: string,
   startDate: string,
@@ -248,6 +273,7 @@ export async function findFreeSlots(
   try {
     // 1. Google Calendar の予定を取得
     const events = await getEvents(userId, startDate, endDate);
+    console.log('[Calendar] findFreeSlots: 取得イベント数:', events.length, 'イベント:', events.map(e => `${e.summary}(${e.start}〜${e.end})`).join(', '));
 
     // 2. NodeMap の作業ブロックを取得（カレンダー未反映分のみ）
     let nodeMapBlocks: { start: string; end: string; calendarEventId: string | null }[] = [];
@@ -284,25 +310,60 @@ export async function findFreeSlots(
 
     // 開始時間順にソート
     busySlots.sort((a, b) => a.start - b.start);
+    console.log('[Calendar] busySlots数:', busySlots.length, 'busySlots:', busySlots.map(s => `${new Date(s.start).toISOString()}〜${new Date(s.end).toISOString()}`).join(', '));
 
     const freeSlots: FreeSlot[] = [];
     const start = new Date(startDate);
     const end = new Date(endDate);
     const nowMs = Date.now(); // 現在時刻（過去スロットフィルタ用）
 
-    for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
-      const dayOfWeek = d.getDay();
-      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-      // Phase C: 日本の祝日を除外
-      if (isJapaneseHoliday(d)) continue;
+    // JSTベースで日付をループ（サーバーがUTCでも正しく計算）
+    const startParts = getJSTDateParts(start);
+    const endParts = getJSTDateParts(end);
 
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursStart, 0, 0);
-      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), workingHoursEnd, 0, 0);
-      const dayStartMs = dayStart.getTime();
-      const dayEndMs = dayEnd.getTime();
+    // 開始日から終了日までJSTベースで1日ずつ進む
+    let currentYear = startParts.year;
+    let currentMonth = startParts.month;
+    let currentDay = startParts.day;
+
+    for (let i = 0; i < 30; i++) { // 最大30日間の安全ガード
+      const dayStartJST = createJSTDate(currentYear, currentMonth, currentDay, workingHoursStart, 0, 0);
+      const dayEndJST = createJSTDate(currentYear, currentMonth, currentDay, workingHoursEnd, 0, 0);
+
+      // 終了日を超えたら終了
+      if (dayStartJST.getTime() >= end.getTime()) break;
+
+      const jstParts = getJSTDateParts(dayStartJST);
+      const dayOfWeek = jstParts.dayOfWeek;
+
+      // 土日スキップ
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        // 次の日へ
+        const nextDay = new Date(dayStartJST.getTime() + 24 * 60 * 60 * 1000);
+        const np = getJSTDateParts(nextDay);
+        currentYear = np.year; currentMonth = np.month; currentDay = np.day;
+        continue;
+      }
+
+      // 祝日スキップ（JSTの日付で判定）
+      const jstDateForHoliday = new Date(currentYear, currentMonth, currentDay);
+      if (isJapaneseHoliday(jstDateForHoliday)) {
+        const nextDay = new Date(dayStartJST.getTime() + 24 * 60 * 60 * 1000);
+        const np = getJSTDateParts(nextDay);
+        currentYear = np.year; currentMonth = np.month; currentDay = np.day;
+        continue;
+      }
+
+      const dayStartMs = dayStartJST.getTime();
+      const dayEndMs = dayEndJST.getTime();
 
       // 今日の営業時間が既に終了している場合はスキップ
-      if (dayEndMs <= nowMs) continue;
+      if (dayEndMs <= nowMs) {
+        const nextDay = new Date(dayStartJST.getTime() + 24 * 60 * 60 * 1000);
+        const np = getJSTDateParts(nextDay);
+        currentYear = np.year; currentMonth = np.month; currentDay = np.day;
+        continue;
+      }
 
       // その日のbusy スロットを抽出
       const dayBusy = busySlots
@@ -334,13 +395,19 @@ export async function findFreeSlots(
         if (gapMinutes >= slotDurationMinutes) {
           freeSlots.push({
             start: new Date(cursor).toISOString(),
-            end: dayEnd.toISOString(),
+            end: dayEndJST.toISOString(),
             durationMinutes: gapMinutes,
           });
         }
       }
+
+      // 次の日へ
+      const nextDay = new Date(dayStartJST.getTime() + 24 * 60 * 60 * 1000);
+      const np = getJSTDateParts(nextDay);
+      currentYear = np.year; currentMonth = np.month; currentDay = np.day;
     }
 
+    console.log('[Calendar] 空きスロット計算結果:', freeSlots.length, '件');
     return freeSlots;
   } catch (error) {
     console.error('[Calendar] 空き時間検索エラー:', error);
