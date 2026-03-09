@@ -24,7 +24,9 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const targetUserId = searchParams.get('userId');
+    const rawUserId = searchParams.get('userId');
+    // 'current' の場合は認証済みユーザーのIDに解決
+    const targetUserId = rawUserId === 'current' ? viewerId : rawUserId;
     const taskId = searchParams.get('taskId') || undefined;
     const seedId = searchParams.get('seedId') || undefined;
     const milestoneId = searchParams.get('milestoneId') || undefined; // V2-H

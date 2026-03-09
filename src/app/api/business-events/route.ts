@@ -43,11 +43,21 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[BusinessEvents API] 取得エラー:', error);
       // JOINエラー時はフォールバック（contact_personsが外部キーでない場合）
-      const { data: fallbackData, error: fallbackError } = await supabase
+      let fallbackQuery = supabase
         .from('business_events')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
+
+      // フォールバックでもproject_idフィルタを維持
+      if (projectId) {
+        fallbackQuery = fallbackQuery.eq('project_id', projectId);
+      }
+      if (eventType) {
+        fallbackQuery = fallbackQuery.eq('event_type', eventType);
+      }
+
+      const { data: fallbackData, error: fallbackError } = await fallbackQuery;
 
       if (fallbackError) {
         return NextResponse.json(

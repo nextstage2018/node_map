@@ -90,10 +90,16 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
 
   const addMember = async (contactId: string) => {
     try {
+      // auto_ コンタクトの場合はname情報も送信
+      const contact = allContacts.find(c => c.id === contactId);
       const res = await fetch(`/api/projects/${projectId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contact_id: contactId }),
+        body: JSON.stringify({
+          contact_id: contactId,
+          name: contact?.name,
+          companyName: contact?.companyName,
+        }),
       });
       const data = await res.json();
       if (data.success) {

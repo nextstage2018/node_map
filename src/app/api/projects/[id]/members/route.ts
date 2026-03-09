@@ -147,7 +147,7 @@ export async function POST(
     // プロジェクトの所有確認
     const { data: project } = await supabase
       .from('projects')
-      .select('id')
+      .select('id, organization_id')
       .eq('id', projectId)
       .eq('user_id', userId)
       .single();
@@ -156,11 +156,50 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'プロジェクトが見つかりません' }, { status: 404 });
     }
 
+    // auto_ プレフィックスのコンタクトはcontact_personsに未登録 → 先に登録する
+    let resolvedContactId = contact_id;
+    if (contact_id.startsWith('auto_')) {
+      // リクエストからname情報を取得（フロント側から渡される）
+      const { name: contactName, companyName } = body;
+      const newContactId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const { error: createErr } = await supabase
+        .from('contact_persons')
+        .insert({
+          id: newContactId,
+          user_id: userId,
+          name: contactName || 'Unknown',
+          company_name: companyName || null,
+          organization_id: project.organization_id || null,
+          confirmed: true,
+        });
+      if (createErr) {
+        console.error('[Project Members API] コンタクト自動作成エラー:', createErr);
+        return NextResponse.json(
+          { success: false, error: 'コンタクトの登録に失敗しました。先にコンタクトを登録してください。' },
+          { status: 400 }
+        );
+      }
+      resolvedContactId = newContactId;
+    } else {
+      // 既存コンタクトの存在確認
+      const { data: existingContact } = await supabase
+        .from('contact_persons')
+        .select('id')
+        .eq('id', contact_id)
+        .single();
+      if (!existingContact) {
+        return NextResponse.json(
+          { success: false, error: 'コンタクトが見つかりません。先にコンタクトを登録してください。' },
+          { status: 400 }
+        );
+      }
+    }
+
     const { data, error } = await supabase
       .from('project_members')
       .insert({
         project_id: projectId,
-        contact_id,
+        contact_id: resolvedContactId,
         role: role || 'member',
         user_id: userId,
       })

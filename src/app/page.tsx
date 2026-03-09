@@ -15,9 +15,13 @@ function HomeContent() {
   const messageId = searchParams.get('messageId') || undefined;
   const contactId = searchParams.get('contactId') || undefined;
 
+  // URLパラメータ変更時にSecretryChatを再マウントする（Soft Navigation対策）
+  const contextKey = [projectId, taskId, organizationId, messageId, contactId, initialMessage].filter(Boolean).join('-') || 'default';
+
   return (
     <AppLayout>
       <SecretaryChat
+        key={contextKey}
         initialMessage={initialMessage}
         contextTaskId={taskId}
         contextProjectId={projectId}

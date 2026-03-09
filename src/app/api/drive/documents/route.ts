@@ -52,8 +52,39 @@ export async function POST(request: NextRequest) {
       // v3.3 Phase 3: 用途別フォルダ対応
       milestoneId, milestoneName, jobId, jobName, taskId, taskName,
       folderTarget, documentType,
+      // v3.3: URL登録モード（Drive不要）
+      is_external_url, title, google_drive_url, tags,
     } = body;
 
+    // --- URL登録モード（Driveアップロードなし） ---
+    if (is_external_url && google_drive_url) {
+      const supabase = createServerClient();
+      if (!supabase) {
+        return NextResponse.json({ success: false, error: 'DB未設定' }, { status: 500 });
+      }
+      const { data: doc, error: insertErr } = await supabase
+        .from('drive_documents')
+        .insert({
+          user_id: userId,
+          project_id: projectId || null,
+          organization_id: organizationId || null,
+          file_name: title || google_drive_url,
+          google_drive_url: google_drive_url,
+          tags: tags || [],
+          milestone_id: milestoneId || null,
+          job_id: jobId || null,
+          task_id: taskId || null,
+        })
+        .select('id')
+        .single();
+      if (insertErr) {
+        console.error('[Drive Documents API] URL登録エラー:', insertErr);
+        return NextResponse.json({ success: false, error: 'URL登録に失敗しました' }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, data: { id: doc.id, title, google_drive_url } });
+    }
+
+    // --- ファイルアップロードモード ---
     if (!fileName || !fileData) {
       return NextResponse.json(
         { success: false, error: 'fileName と fileData は必須です' },
