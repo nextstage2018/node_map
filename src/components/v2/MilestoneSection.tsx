@@ -3,8 +3,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Flag, ChevronDown, ChevronRight, Calendar, RefreshCw } from 'lucide-react';
+import { Flag, ChevronDown, ChevronRight, Calendar, RefreshCw, Plus } from 'lucide-react';
 import MilestoneEvaluation from './MilestoneEvaluation';
+import MilestoneForm from './MilestoneForm';
 
 interface Milestone {
   id: string;
@@ -132,6 +133,8 @@ function MilestoneCard({ milestone, onStatusUpdate }: { milestone: Milestone; on
 export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchMilestones = useCallback(async () => {
     setIsLoading(true);
@@ -176,6 +179,38 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
     );
   }
 
+  // マイルストーン作成ハンドラー
+  const handleCreateMilestone = async (data: {
+    title: string;
+    description: string;
+    start_context: string;
+    target_date: string;
+  }) => {
+    setIsSubmitting(true);
+    try {
+      const res = await fetch('/api/milestones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: projectId,
+          title: data.title,
+          description: data.description,
+          start_context: data.start_context,
+          target_date: data.target_date,
+        }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setShowCreateForm(false);
+        fetchMilestones();
+      }
+    } catch {
+      // エラーは静かに処理
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   if (milestones.length === 0) {
     return (
       <div className="mb-4">
@@ -188,16 +223,19 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
             <Flag className="w-5 h-5 mx-auto mb-1.5 text-slate-300" />
             <p className="text-[11px] text-slate-400 mb-2">マイルストーンがありません</p>
             <button
-              onClick={() => {
-                // 秘書AIでマイルストーン作成を開始
-                window.location.href = '/?message=' + encodeURIComponent('マイルストーンを作成したい');
-              }}
+              onClick={() => setShowCreateForm(true)}
               className="px-3 py-1.5 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
             >
               マイルストーンを作成
             </button>
           </div>
         </div>
+        <MilestoneForm
+          isOpen={showCreateForm}
+          onClose={() => setShowCreateForm(false)}
+          onSubmit={handleCreateMilestone}
+          isLoading={isSubmitting}
+        />
       </div>
     );
   }
@@ -212,6 +250,13 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
         <span className="text-[10px] text-slate-400">
           {milestones.filter((m) => m.status === 'achieved').length}/{milestones.length} 達成
         </span>
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="ml-auto p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+          title="マイルストーンを追加"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
       </div>
       <div className="space-y-2">
         {milestones.map((ms) => (
@@ -222,6 +267,12 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
           />
         ))}
       </div>
+      <MilestoneForm
+        isOpen={showCreateForm}
+        onClose={() => setShowCreateForm(false)}
+        onSubmit={handleCreateMilestone}
+        isLoading={isSubmitting}
+      />
     </div>
   );
 }

@@ -2769,25 +2769,117 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
             }
           }
 
-          // メッセージからタイトル・期限を抽出する手がかりを提供
+          // プロジェクトが1つだけの場合は自動選択
+          if (!matchedProject && userProjects.length === 1) {
+            const p = userProjects[0];
+            matchedProject = { id: p.id, name: p.name, organization_id: p.organization_id };
+          }
+
           const projLines = userProjects.map((p: { name: string; organizations?: { name: string } | null }) => {
             const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
             return `- ${p.name}${orgName ? `（${orgName}）` : ''}`;
           }).join('\n');
 
           if (matchedProject) {
-            // プロジェクトが特定された場合: AI会話でタイトル・ゴール・期限を聞く
-            parts.push(`\n\n【マイルストーン作成】\n対象プロジェクト: ${matchedProject.name}\n\nマイルストーンの情報を教えてください:\n- タイトル（例: Week1 要件定義）\n- ゴール / 説明（任意）\n- 期限（例: 3/14）\n\n💡 マイルストーンは1週間単位のチェックポイントとして設計してください。\n\n情報が揃い次第、自動で作成します。`);
+            // プロジェクトが特定された場合: メッセージからタイトルを抽出して直接作成を試みる
+            // タイトル抽出: 「〜を作成」「〜を追加」の前の名詞句、または「タイトル:〜」形式
+            let extractedTitle = '';
+            let extractedDescription = '';
+            let extractedTargetDate = '';
 
-            // プロジェクト情報をカードで渡す（AI後続処理用）
-            cards.push({
-              type: 'navigate',
-              data: {
-                href: `/organizations/${matchedProject.organization_id}?project=${matchedProject.id}&tab=tasks`,
-                label: `${matchedProject.name} のタスク`,
-                description: 'マイルストーンの確認はこちら',
-              },
-            });
+            // 「Week1 要件定義」のようなタイトルを抽出
+            const titlePatterns = [
+              /(?:タイトル|名前|名称)[：:]?\s*(.+?)(?:\s*[、。\n]|$)/,
+              /「(.+?)」/,
+              /(?:Week\d+\s*.+?)(?:\s*[、。\n]|$)/i,
+            ];
+            for (const pat of titlePatterns) {
+              const m = userMessage.match(pat);
+              if (m && m[1]) { extractedTitle = m[1].trim(); break; }
+            }
+
+            // 期限抽出
+            const datePatterns = [
+              /(?:期限|deadline|〆切|期日)[：:]?\s*(\d{1,2}\/\d{1,2})/i,
+              /(\d{4}-\d{2}-\d{2})/,
+              /(\d{1,2}\/\d{1,2})/,
+            ];
+            for (const pat of datePatterns) {
+              const m = userMessage.match(pat);
+              if (m && m[1]) {
+                const dateStr = m[1];
+                if (dateStr.includes('-')) {
+                  extractedTargetDate = dateStr;
+                } else {
+                  // MM/DD → YYYY-MM-DD
+                  const [month, day] = dateStr.split('/');
+                  const year = new Date().getFullYear();
+                  extractedTargetDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+                }
+                break;
+              }
+            }
+
+            // ゴール・説明抽出
+            const descPatterns = [
+              /(?:ゴール|目標|説明|description)[：:]?\s*(.+?)(?:\s*[、。\n]|$)/i,
+            ];
+            for (const pat of descPatterns) {
+              const m = userMessage.match(pat);
+              if (m && m[1]) { extractedDescription = m[1].trim(); break; }
+            }
+
+            if (extractedTitle) {
+              // タイトルが抽出できた場合: 直接DBに保存
+              // sort_order取得
+              const { data: existingMs } = await supabase
+                .from('milestones')
+                .select('sort_order')
+                .eq('project_id', matchedProject.id)
+                .order('sort_order', { ascending: false })
+                .limit(1);
+              const nextOrder = (existingMs && existingMs.length > 0) ? ((existingMs[0].sort_order || 0) + 1) : 0;
+
+              const { data: newMs, error: insertErr } = await supabase
+                .from('milestones')
+                .insert({
+                  project_id: matchedProject.id,
+                  title: extractedTitle,
+                  description: extractedDescription || null,
+                  start_context: null,
+                  target_date: extractedTargetDate || null,
+                  status: 'not_started',
+                  sort_order: nextOrder,
+                })
+                .select()
+                .single();
+
+              if (insertErr) {
+                console.error('[Agent] Milestone insert error:', insertErr);
+                parts.push(`\n\n【マイルストーン作成失敗】\nエラー: ${insertErr.message}\n\nもう一度お試しください。`);
+              } else {
+                parts.push(`\n\n【マイルストーン作成完了】\nプロジェクト: ${matchedProject.name}\nタイトル: ${newMs.title}${newMs.target_date ? `\n期限: ${newMs.target_date}` : ''}${newMs.description ? `\nゴール: ${newMs.description}` : ''}\n\n✅ マイルストーンを作成しました。組織ページのタスクタブから確認できます。`);
+                cards.push({
+                  type: 'navigate',
+                  data: {
+                    href: `/organizations/${matchedProject.organization_id}?project=${matchedProject.id}&tab=tasks`,
+                    label: `${matchedProject.name} のタスクタブ`,
+                    description: 'マイルストーンを確認',
+                  },
+                });
+              }
+            } else {
+              // タイトルが抽出できない場合: 情報を聞く
+              parts.push(`\n\n【マイルストーン作成】\n対象プロジェクト: ${matchedProject.name}\n\nマイルストーンの情報を教えてください:\n- タイトル（例: 「Week1 要件定義」）\n- ゴール / 説明（任意）\n- 期限（例: 3/14）\n\n💡 例: 「Week1 要件定義」「ゴール: 要件を洗い出す」「期限: 3/14」のように入力してください。`);
+              cards.push({
+                type: 'navigate',
+                data: {
+                  href: `/organizations/${matchedProject.organization_id}?project=${matchedProject.id}&tab=tasks`,
+                  label: `${matchedProject.name} のタスク`,
+                  description: 'マイルストーンの確認はこちら',
+                },
+              });
+            }
           } else {
             // プロジェクトが特定されない場合: 一覧表示
             parts.push(`\n\n【マイルストーン作成】\nどのプロジェクトにマイルストーンを作成しますか？\n\n${projLines}\n\n「○○プロジェクトにマイルストーンを作成して」と指定してください。`);
@@ -2797,7 +2889,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         }
       } catch (err) {
         console.error('[Agent] Create milestone error:', err);
-        parts.push('\n\nマイルストーン作成の準備に失敗しました。');
+        parts.push('\n\nマイルストーン作成に失敗しました。');
       }
     }
 
