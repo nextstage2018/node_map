@@ -1,5 +1,6 @@
 // Phase UI-7: 組織詳細ページ（左ツリーナビ + 右コンテンツ統合）
 // V2-D: 検討ツリータブ（会議録アップロード + 一覧）追加
+// V2-E: 検討ツリーUI（DecisionTreeView）追加
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -15,6 +16,7 @@ import ContextBar from '@/components/shared/ContextBar';
 import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
+import DecisionTreeView from '@/components/v2/DecisionTreeView';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
 // ========================================
@@ -190,6 +192,8 @@ export default function OrganizationDetailPage() {
 
   // 会議録（V2-D: 検討ツリータブ用）
   const [meetingRecordRefreshKey, setMeetingRecordRefreshKey] = useState(0);
+  // V2-E: 検討ツリーリフレッシュ用
+  const [treeRefreshKey, setTreeRefreshKey] = useState(0);
 
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -941,17 +945,29 @@ export default function OrganizationDetailPage() {
                 <BusinessTimeline projectId={currentProject.id} projectName={currentProject.name} />
               )}
 
-              {/* PJレベル: 検討ツリー（V2-D: 会議録アップロード + 一覧） */}
+              {/* PJレベル: 検討ツリー（V2-D: 会議録アップロード + 一覧 / V2-E: ツリーUI） */}
               {activeNav.type === 'project' && activeNav.tab === 'decision_tree' && currentProject && (
                 <div className="p-6 space-y-6">
                   <h2 className="text-sm font-bold text-slate-800">{currentProject.name} - 検討ツリー</h2>
+
+                  {/* V2-E: 検討ツリービュー */}
+                  <DecisionTreeView
+                    projectId={currentProject.id}
+                    refreshKey={treeRefreshKey}
+                  />
+
+                  {/* 会議録アップロード */}
                   <MeetingRecordUpload
                     projectId={currentProject.id}
                     onRecordCreated={() => {
-                      // MeetingRecordList の refreshKey を更新して再取得をトリガー
                       setMeetingRecordRefreshKey(prev => prev + 1);
                     }}
+                    onTreeUpdated={() => {
+                      setTreeRefreshKey(prev => prev + 1);
+                    }}
                   />
+
+                  {/* 会議録一覧 */}
                   <MeetingRecordList
                     projectId={currentProject.id}
                     refreshKey={meetingRecordRefreshKey}
