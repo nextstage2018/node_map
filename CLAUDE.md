@@ -3,7 +3,7 @@
 最終更新: 2026-03-09
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0アップグレード実装完了済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0アップグレード + v3.1 UI改善 + v3.2 秘書チャット改善 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -55,7 +55,7 @@
 
 ---
 
-## 設計原則（v3.0）
+## 設計原則（v3.0 + v3.2）
 
 ### 議事録ファースト
 
@@ -86,6 +86,16 @@
 | `action_selector` | プロジェクトコンテキスト時のアクション選択 |
 | `project_selector` | プロジェクト未指定時のPJ選択 |
 | `milestone_selector` | タスク作成時のMS選択 |
+
+### v3.2: 秘書チャットUI改善
+
+| 機能 | 実装 | 備考 |
+|---|---|---|
+| **テキスト構造化表示** | `formatAssistantMessage()` in SecretaryChat.tsx | 【】見出し、箇条書き、**太字**、番号リストをリッチ表示。`#`マークダウン見出しは**未対応**（残課題） |
+| **動的選択肢（suggestions）** | APIレスポンスに`suggestions[]`追加 | intentに応じた次のアクション候補。入力エリア上に青いチップボタンで表示 |
+| **マイルストーン開閉式カード** | `milestone_overview`カードタイプ | プロジェクト単位グルーピング → 開閉 → MS期日・タスク件数・進捗バー・超過日数 |
+| **タスクカード安全化** | TaskProgressCard / TaskResumeCard | `sendMessage`ループ除去。プロジェクトリンク or チャット入力プリセットに変更 |
+| **カレンダー primaryのみ** | `getAllCalendarEvents` | 他人のカレンダーを除外。primaryのみ取得 |
 
 ---
 
@@ -492,6 +502,11 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
 - **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得
 - **既知バグ**: MilestoneSection.tsx — MilestoneCard に projectId が渡されていない（展開時にエラー）
+- **v3.2 カレンダー修正**: `getAllCalendarEvents` はprimaryカレンダーのみ取得（他人の「業務」ブロックで全時間が埋まる問題を修正済み）
+- **v3.2 タスクカード**: TaskProgressCard / TaskResumeCard から`sendMessage`による無限ループを除去済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
+- **v3.2 秘書チャットUI**: `formatAssistantMessage()`でアシスタントメッセージをリッチ表示。APIは`suggestions`（動的選択肢）を返却
+- **v3.2 intent判定順序**: `create_milestone` → `checkpoint_evaluation` → `milestone_status` → `project_status` の順に配置（`project_status`の「進捗+教えて」がMSを横取りしないよう修正済み）
+- **v3.2 マイルストーンカード**: `milestone_overview`カード（プロジェクト単位グルーピング・開閉式）を追加。ただしDB上にactive MSがないとテキスト応答のみ
 
 ### 検討ツリー データフロー
 
