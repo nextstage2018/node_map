@@ -1,9 +1,10 @@
-// Phase UI-3: ウェルカムダッシュボード（メッセージ未送信時の初期画面）
+// Phase UI-3 + V2-I: ウェルカムダッシュボード（メッセージ未送信時の初期画面）
+// V2-I: 「今週の進捗」「対応が必要なジョブ」カード追加 + 「今日のタスク」マイルストーン対応
 'use client';
 
 import { useState, useEffect } from 'react';
 import {
-  Mail, Calendar, CheckSquare, Zap, Loader2,
+  Mail, Calendar, CheckSquare, Zap, Loader2, Flag, Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -13,8 +14,34 @@ import { cn } from '@/lib/utils';
 interface DashboardSummary {
   unread: { total: number; slack: number; chatwork: number };
   calendar: { total: number; nextEvents: string[] };
-  tasks: { total: number; inProgress: number };
+  tasks: {
+    total: number;
+    inProgress: number;
+    items: TodayTaskItem[];
+  };
   jobs: { total: number; pendingApproval: number };
+  milestones: {
+    totalActive: number;
+    completed: number;
+    tasksDone: number;
+    tasksTotal: number;
+  };
+  urgentJobs: UrgentJobItem[];
+}
+
+interface TodayTaskItem {
+  id: string;
+  title: string;
+  projectName: string;
+  milestoneName: string | null;
+  orgId: string | null;
+}
+
+interface UrgentJobItem {
+  id: string;
+  title: string;
+  scheduledDate: string | null;
+  status: string;
 }
 
 // ========================================
@@ -77,6 +104,95 @@ function SummaryCard({
 }
 
 // ========================================
+// 今日のタスク詳細リスト（マイルストーン付き）
+// ========================================
+function TodayTaskList({
+  tasks,
+  onSendMessage,
+}: {
+  tasks: TodayTaskItem[];
+  onSendMessage: (message: string) => void;
+}) {
+  if (tasks.length === 0) return null;
+
+  // プロジェクト＋マイルストーンでグループ化
+  const groups = new Map<string, { projectName: string; milestoneName: string | null; tasks: TodayTaskItem[] }>();
+  for (const t of tasks) {
+    const key = `${t.projectName}::${t.milestoneName || 'none'}`;
+    if (!groups.has(key)) {
+      groups.set(key, { projectName: t.projectName, milestoneName: t.milestoneName, tasks: [] });
+    }
+    groups.get(key)!.tasks.push(t);
+  }
+
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-slate-400 mb-3 tracking-wider">今日のタスク ({tasks.length})</p>
+      <div className="bg-white rounded-xl border border-slate-200 p-4">
+        {Array.from(groups.entries()).map(([key, group]) => (
+          <div key={key} className="mb-3 last:mb-0">
+            <p className="text-xs font-medium text-slate-500 mb-1">
+              {group.projectName}
+              {group.milestoneName && (
+                <span className="text-slate-400"> &gt; {group.milestoneName}</span>
+              )}
+            </p>
+            {group.tasks.map((task) => (
+              <button
+                key={task.id}
+                onClick={() => onSendMessage(`タスク「${task.title}」を進めたい`)}
+                className="flex items-center gap-2 w-full text-left py-1 pl-3 text-sm text-slate-700 hover:text-blue-600 transition-colors"
+              >
+                <CheckSquare className="w-3.5 h-3.5 text-slate-300 flex-shrink-0" />
+                <span>{task.title}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// 対応が必要なジョブリスト
+// ========================================
+function UrgentJobList({
+  jobs,
+  onSendMessage,
+}: {
+  jobs: UrgentJobItem[];
+  onSendMessage: (message: string) => void;
+}) {
+  if (jobs.length === 0) return null;
+
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-slate-400 mb-3 tracking-wider">対応が必要なジョブ</p>
+      <div className="bg-white rounded-xl border border-amber-200 p-4">
+        {jobs.map((job) => (
+          <button
+            key={job.id}
+            onClick={() => onSendMessage('対応が必要なことは？')}
+            className="flex items-center justify-between w-full text-left py-1.5 text-sm text-slate-700 hover:text-amber-600 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              <span>{job.title}</span>
+            </div>
+            {job.scheduledDate && (
+              <span className="text-[11px] text-slate-400 flex-shrink-0 ml-2">
+                期限: {job.scheduledDate}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
 // WelcomeDashboard メインコンポーネント
 // ========================================
 export default function WelcomeDashboard({
@@ -92,12 +208,14 @@ export default function WelcomeDashboard({
 
     async function fetchSummary() {
       try {
-        // 並列でAPIコール
-        const [msgRes, calRes, taskRes, jobRes] = await Promise.allSettled([
+        // 並列でAPIコール（既存4 + 新規2）
+        const [msgRes, calRes, taskRes, jobRes, msRes, urgentJobRes] = await Promise.allSettled([
           fetch('/api/messages?unread=true&limit=1'),
           fetch('/api/calendar/events?range=today'),
-          fetch('/api/tasks?status=active&limit=1'),
+          fetch('/api/tasks?status=active&limit=1&include_project=true&include_milestone=true&today=true'),
           fetch('/api/jobs?status=pending&limit=1'),
+          fetch('/api/milestones?status=in_progress&week=current'),
+          fetch('/api/jobs?urgent=true&limit=5'),
         ]);
 
         if (cancelled) return;
@@ -107,7 +225,6 @@ export default function WelcomeDashboard({
           const data = await msgRes.value.json();
           if (data.success) {
             unread.total = data.data?.totalCount ?? data.data?.unreadCount ?? 0;
-            // チャネルごとの内訳
             if (data.data?.channels) {
               unread.slack = data.data.channels.slack ?? 0;
               unread.chatwork = data.data.channels.chatwork ?? 0;
@@ -127,12 +244,28 @@ export default function WelcomeDashboard({
           }
         }
 
-        const tasks = { total: 0, inProgress: 0 };
+        const tasks = { total: 0, inProgress: 0, items: [] as TodayTaskItem[] };
         if (taskRes.status === 'fulfilled' && taskRes.value.ok) {
           const data = await taskRes.value.json();
           if (data.success) {
             tasks.total = data.data?.totalCount ?? data.data?.length ?? 0;
             tasks.inProgress = data.data?.inProgressCount ?? 0;
+            // 今日のタスク詳細（マイルストーン名・プロジェクト名付き）
+            if (data.data?.todayTasks && Array.isArray(data.data.todayTasks)) {
+              tasks.items = data.data.todayTasks.map((t: {
+                id: string;
+                title: string;
+                project_name?: string;
+                milestone_name?: string;
+                organization_id?: string;
+              }) => ({
+                id: t.id,
+                title: t.title,
+                projectName: t.project_name || '未分類',
+                milestoneName: t.milestone_name || null,
+                orgId: t.organization_id || null,
+              }));
+            }
           }
         }
 
@@ -145,14 +278,44 @@ export default function WelcomeDashboard({
           }
         }
 
-        setSummary({ unread, calendar, tasks, jobs });
+        // V2-I: 今週のマイルストーン進捗
+        const milestones = { totalActive: 0, completed: 0, tasksDone: 0, tasksTotal: 0 };
+        if (msRes.status === 'fulfilled' && msRes.value.ok) {
+          const data = await msRes.value.json();
+          if (data.success && data.data) {
+            milestones.totalActive = data.data.totalActive ?? 0;
+            milestones.completed = data.data.completed ?? 0;
+            milestones.tasksDone = data.data.tasksDone ?? 0;
+            milestones.tasksTotal = data.data.tasksTotal ?? 0;
+          }
+        }
+
+        // V2-I: 対応が必要なジョブ（期限3日以内）
+        const urgentJobs: UrgentJobItem[] = [];
+        if (urgentJobRes.status === 'fulfilled' && urgentJobRes.value.ok) {
+          const data = await urgentJobRes.value.json();
+          if (data.success && data.data?.jobs && Array.isArray(data.data.jobs)) {
+            for (const j of data.data.jobs.slice(0, 5)) {
+              urgentJobs.push({
+                id: j.id,
+                title: j.title,
+                scheduledDate: j.scheduled_date || j.due_date || null,
+                status: j.status,
+              });
+            }
+          }
+        }
+
+        setSummary({ unread, calendar, tasks, jobs, milestones, urgentJobs });
       } catch {
         // サマリー取得失敗は無視（デフォルト0で表示）
         setSummary({
           unread: { total: 0, slack: 0, chatwork: 0 },
           calendar: { total: 0, nextEvents: [] },
-          tasks: { total: 0, inProgress: 0 },
+          tasks: { total: 0, inProgress: 0, items: [] },
           jobs: { total: 0, pendingApproval: 0 },
+          milestones: { totalActive: 0, completed: 0, tasksDone: 0, tasksTotal: 0 },
+          urgentJobs: [],
         });
       } finally {
         if (!cancelled) setLoading(false);
@@ -184,8 +347,9 @@ export default function WelcomeDashboard({
     ? `進行中: ${summary.tasks.inProgress}`
     : '読み込み中...';
 
-  const jobDetail = summary
-    ? `承認待ち: ${summary.jobs.pendingApproval}`
+  // V2-I: 今週の進捗detail
+  const milestoneDetail = summary
+    ? `MS達成: ${summary.milestones.completed}/${summary.milestones.totalActive}、タスク完了: ${summary.milestones.tasksDone}/${summary.milestones.tasksTotal}`
     : '読み込み中...';
 
   return (
@@ -202,48 +366,63 @@ export default function WelcomeDashboard({
           <Loader2 className="w-6 h-6 animate-spin text-slate-300" />
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 mb-8">
-          <SummaryCard
-            icon={Mail}
-            iconColor="text-blue-600"
-            bgColor="bg-blue-50"
-            borderColor="border-blue-100"
-            label="未読"
-            count={summary?.unread.total ?? 0}
-            detail={unreadDetail}
-            onClick={() => onSendMessage('新着メッセージを見せて')}
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <SummaryCard
+              icon={CheckSquare}
+              iconColor="text-green-600"
+              bgColor="bg-green-50"
+              borderColor="border-green-100"
+              label="タスク"
+              count={summary?.tasks.total ?? 0}
+              detail={taskDetail}
+              onClick={() => onSendMessage('今日やるタスクを教えて')}
+            />
+            <SummaryCard
+              icon={Mail}
+              iconColor="text-blue-600"
+              bgColor="bg-blue-50"
+              borderColor="border-blue-100"
+              label="未読"
+              count={summary?.unread.total ?? 0}
+              detail={unreadDetail}
+              onClick={() => onSendMessage('新着メッセージを見せて')}
+            />
+            <SummaryCard
+              icon={Calendar}
+              iconColor="text-purple-600"
+              bgColor="bg-purple-50"
+              borderColor="border-purple-100"
+              label="予定"
+              count={summary?.calendar.total ?? 0}
+              detail={calendarDetail}
+              onClick={() => onSendMessage('今日の予定を教えて')}
+            />
+            {/* V2-I: 今週の進捗カード */}
+            <SummaryCard
+              icon={Flag}
+              iconColor="text-red-600"
+              bgColor="bg-red-50"
+              borderColor="border-red-100"
+              label="今週の進捗"
+              count={summary?.milestones.totalActive ?? 0}
+              detail={milestoneDetail}
+              onClick={() => onSendMessage('マイルストーンの進捗を教えて')}
+            />
+          </div>
+
+          {/* V2-I: 今日のタスク詳細リスト（マイルストーン付き） */}
+          <TodayTaskList
+            tasks={summary?.tasks.items ?? []}
+            onSendMessage={onSendMessage}
           />
-          <SummaryCard
-            icon={Calendar}
-            iconColor="text-purple-600"
-            bgColor="bg-purple-50"
-            borderColor="border-purple-100"
-            label="予定"
-            count={summary?.calendar.total ?? 0}
-            detail={calendarDetail}
-            onClick={() => onSendMessage('今日の予定を教えて')}
+
+          {/* V2-I: 対応が必要なジョブ */}
+          <UrgentJobList
+            jobs={summary?.urgentJobs ?? []}
+            onSendMessage={onSendMessage}
           />
-          <SummaryCard
-            icon={CheckSquare}
-            iconColor="text-green-600"
-            bgColor="bg-green-50"
-            borderColor="border-green-100"
-            label="タスク"
-            count={summary?.tasks.total ?? 0}
-            detail={taskDetail}
-            onClick={() => onSendMessage('今日やるタスクを教えて')}
-          />
-          <SummaryCard
-            icon={Zap}
-            iconColor="text-amber-600"
-            bgColor="bg-amber-50"
-            borderColor="border-amber-100"
-            label="ジョブ"
-            count={summary?.jobs.total ?? 0}
-            detail={jobDetail}
-            onClick={() => onSendMessage('対応が必要なことは？')}
-          />
-        </div>
+        </>
       )}
 
       {/* よく使う操作 */}
@@ -253,8 +432,9 @@ export default function WelcomeDashboard({
           {[
             { label: 'タスク作成', message: '新しいタスクを作成したい' },
             { label: '日程調整', message: '今週の空き時間を教えて' },
-            { label: '下書き確認', message: '対応が必要なことは？' },
+            { label: 'MS確認', message: 'マイルストーンの進捗を教えて' },
             { label: 'プロジェクト確認', message: 'プロジェクト一覧を見せて' },
+            { label: '会議録登録', message: '会議録を登録したい' },
             { label: 'ナレッジ確認', message: 'ナレッジの構造化提案を見せて' },
           ].map((action) => (
             <button
