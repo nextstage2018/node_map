@@ -9,18 +9,18 @@
 CREATE TABLE IF NOT EXISTS project_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  contact_person_id TEXT NOT NULL REFERENCES contact_persons(id) ON DELETE CASCADE,
+  contact_id TEXT NOT NULL REFERENCES contact_persons(id) ON DELETE CASCADE,
   role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'member', 'viewer')),
   user_id TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(project_id, contact_person_id)
+  UNIQUE(project_id, contact_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_project_members_project
   ON project_members(project_id);
 CREATE INDEX IF NOT EXISTS idx_project_members_contact
-  ON project_members(contact_person_id);
+  ON project_members(contact_id);
 
 -- RLS有効化
 ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
