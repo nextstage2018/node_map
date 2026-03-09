@@ -104,6 +104,11 @@ type Intent =
   | 'settings_change'       // Phase G: 設定変更（メール休眠ON/OFF等）
   | 'org_projects'          // Phase G: 特定組織のプロジェクト一覧
   | 'project_tasks'         // Phase G: 特定プロジェクトのタスク一覧
+  | 'upload_meeting_record' // V2-I #40: 会議録アップロード
+  | 'milestone_status'      // V2-I #41: マイルストーン状況確認
+  | 'decision_tree'         // V2-I #42: 検討ツリー表示
+  | 'checkpoint_evaluation' // V2-I #43: チェックポイント評価
+  | 'create_milestone'      // V2-I #44: マイルストーン作成
   | 'general';        // その他
 
 function classifyIntent(message: string): Intent {
@@ -282,6 +287,27 @@ function classifyIntent(message: string): Intent {
   // Phase A: チャンネル→プロジェクト紐づけ
   if (m.includes('チャンネル') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('リンク') || m.includes('関連付') || m.includes('結び'))) return 'link_channel';
   if (m.includes('ルーム') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('プロジェクト'))) return 'link_channel';
+
+  // V2-I #40: 会議録アップロード（「会議録を登録」「議事録をアップロード」「MTG記録」）
+  if (m.includes('会議録') || m.includes('議事録') || m.includes('ミーティングメモ') || m.includes('会議の記録') || m.includes('mtg記録') || m.includes('meeting record')) return 'upload_meeting_record';
+
+  // V2-I #44: マイルストーン作成（「マイルストーン作成」「MS作成」「新しいマイルストーン」）— milestone_statusより先に判定
+  if ((m.includes('マイルストーン') || m.includes('ms')) && (m.includes('作成') || m.includes('作って') || m.includes('新しい') || m.includes('新規') || m.includes('追加'))) return 'create_milestone';
+  if (m.includes('milestone') && (m.includes('作成') || m.includes('create') || m.includes('new'))) return 'create_milestone';
+
+  // V2-I #43: チェックポイント評価（「評価を実行」「MS評価」「チェックポイント評価」）— milestone_statusより先に判定
+  if ((m.includes('評価') || m.includes('evaluate')) && (m.includes('実行') || m.includes('チェックポイント') || m.includes('マイルストーン') || m.includes('ms') || m.includes('判定'))) return 'checkpoint_evaluation';
+
+  // V2-I #41: マイルストーン状況確認（「マイルストーンの進捗」「MS状況」「チェックポイント」「達成状況」）
+  if (m.includes('マイルストーン') || m.includes('milestone')) return 'milestone_status';
+  if (m.includes('チェックポイント') && (m.includes('確認') || m.includes('状況') || m.includes('見') || m.includes('教えて'))) return 'milestone_status';
+  if (m.includes('ms') && (m.includes('進捗') || m.includes('状況') || m.includes('達成') || m.includes('到達'))) return 'milestone_status';
+
+  // V2-I #42: 検討ツリー（「検討ツリー」「検討状況」「決定事項」「何が決まった」）
+  if (m.includes('検討ツリー') || m.includes('decision tree')) return 'decision_tree';
+  if (m.includes('検討') && (m.includes('状況') || m.includes('一覧') || m.includes('確認'))) return 'decision_tree';
+  if (m.includes('決定事項') || m.includes('議題')) return 'decision_tree';
+  if (m.includes('何が決まった') || m.includes('決まったこと')) return 'decision_tree';
 
   return 'general';
 }
@@ -2493,6 +2519,280 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
     }
 
     // ========================================
+    // V2-I #40: 会議録アップロード誘導
+    // ========================================
+    if (intent === 'upload_meeting_record') {
+      try {
+        // プロジェクト一覧を取得して誘導先を表示
+        const { data: userProjects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id, organizations(name)')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+
+        if (userProjects && userProjects.length > 0) {
+          const projLines = userProjects.map((p: { id: string; name: string; organizations?: { name: string } | null }) => {
+            const orgName = p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '';
+            return `- ${p.name}${orgName ? `（${orgName}）` : ''}`;
+          }).join('\n');
+          parts.push(`\n\n【会議録の登録】\n会議録を登録しますか？プロジェクト詳細の「検討ツリー」タブからアップロードできます。\n\n登録先のプロジェクト:\n${projLines}`);
+
+          // 最近更新されたプロジェクトへのナビカード（上位3件）
+          for (const p of userProjects.slice(0, 3)) {
+            cards.push({
+              type: 'navigate',
+              data: {
+                href: `/organizations/${p.organization_id}?project=${p.id}&tab=decision-tree`,
+                label: `${p.name} の検討ツリー`,
+                description: '会議録をアップロードしてAI解析',
+              },
+            });
+          }
+        } else {
+          parts.push('\n\n【会議録の登録】\nまだプロジェクトが登録されていません。先にプロジェクトを作成してください。');
+        }
+      } catch (err) {
+        console.error('[Agent] Upload meeting record error:', err);
+        parts.push('\n\n会議録登録先の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // V2-I #41: マイルストーン状況確認
+    // ========================================
+    if (intent === 'milestone_status') {
+      try {
+        // 進行中のマイルストーンを取得（配下タスクのステータスも含む）
+        const { data: milestones } = await supabase
+          .from('milestones')
+          .select('id, title, status, target_date, project_id, theme_id, projects(id, name, organization_id, organizations(name)), themes(title)')
+          .in('status', ['not_started', 'in_progress'])
+          .order('target_date', { ascending: true })
+          .limit(10);
+
+        if (milestones && milestones.length > 0) {
+          const msLines: string[] = [];
+          for (const ms of milestones) {
+            // 配下タスクの完了率を計算
+            const { data: msTasks } = await supabase
+              .from('tasks')
+              .select('id, status')
+              .eq('milestone_id', ms.id);
+
+            const totalTasks = msTasks?.length ?? 0;
+            const doneTasks = msTasks?.filter((t: { status: string }) => t.status === 'done').length ?? 0;
+            const pct = totalTasks > 0 ? Math.round((doneTasks / totalTasks) * 100) : 0;
+
+            const projName = ms.projects && typeof ms.projects === 'object' && 'name' in ms.projects ? (ms.projects as { name: string }).name : '不明';
+            const themeName = ms.themes && typeof ms.themes === 'object' && 'title' in ms.themes ? (ms.themes as { title: string }).title : null;
+            const dateStr = ms.target_date ? ms.target_date : '期限未設定';
+
+            const statusEmoji = pct === 100 ? '✅' : ms.status === 'in_progress' ? '🏁' : '⏳';
+            const statusNote = pct === 100 ? '→ 評価待ち' : '';
+
+            const path = themeName ? `${projName} > ${themeName}` : projName;
+            msLines.push(`${statusEmoji} ${path}: ${ms.title}（期限: ${dateStr}）\n   進捗: ${doneTasks}/${totalTasks}タスク完了（${pct}%）${statusNote}`);
+
+            // ナビカード
+            const orgId = ms.projects && typeof ms.projects === 'object' && 'organization_id' in ms.projects ? (ms.projects as { organization_id: string }).organization_id : null;
+            if (orgId) {
+              cards.push({
+                type: 'navigate',
+                data: {
+                  href: `/organizations/${orgId}?project=${ms.project_id}&tab=tasks`,
+                  label: `${ms.title}`,
+                  description: `${doneTasks}/${totalTasks}タスク完了（${pct}%）`,
+                },
+              });
+            }
+          }
+
+          parts.push(`\n\n【進行中のマイルストーン（${milestones.length}件）】\n${msLines.join('\n')}`);
+        } else {
+          parts.push('\n\n【マイルストーン】\n現在進行中のマイルストーンはありません。');
+        }
+      } catch (err) {
+        console.error('[Agent] Milestone status error:', err);
+        parts.push('\n\nマイルストーン情報の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // V2-I #42: 検討ツリー表示
+    // ========================================
+    if (intent === 'decision_tree') {
+      try {
+        // アクティブな検討ツリーを取得
+        const { data: trees } = await supabase
+          .from('decision_trees')
+          .select('id, title, status, project_id, meeting_record_id, projects(id, name, organization_id, organizations(name))')
+          .in('status', ['active', 'open'])
+          .order('created_at', { ascending: false })
+          .limit(10);
+
+        if (trees && trees.length > 0) {
+          const treeLines: string[] = [];
+          for (const tree of trees) {
+            // ノードの状況を取得
+            const { data: nodes } = await supabase
+              .from('decision_tree_nodes')
+              .select('id, title, status, node_type')
+              .eq('tree_id', tree.id)
+              .order('created_at', { ascending: true });
+
+            const totalNodes = nodes?.length ?? 0;
+            const activeNodes = nodes?.filter((n: { status: string }) => n.status === 'active' || n.status === 'open').length ?? 0;
+            const resolvedNodes = nodes?.filter((n: { status: string }) => n.status === 'resolved' || n.status === 'decided').length ?? 0;
+
+            const projName = tree.projects && typeof tree.projects === 'object' && 'name' in tree.projects ? (tree.projects as { name: string }).name : '不明';
+
+            treeLines.push(`🌳 ${projName}: ${tree.title}\n   ノード: ${totalNodes}件（進行中: ${activeNodes}, 決定済: ${resolvedNodes}）`);
+
+            // アクティブノードの詳細表示
+            if (nodes) {
+              const activeNodeList = nodes.filter((n: { status: string }) => n.status === 'active' || n.status === 'open');
+              for (const an of activeNodeList.slice(0, 3)) {
+                treeLines.push(`   ├─ 🔵 ${an.title}（${an.node_type || 'topic'}）`);
+              }
+              if (activeNodeList.length > 3) {
+                treeLines.push(`   └─ …他${activeNodeList.length - 3}件`);
+              }
+            }
+
+            // ナビカード
+            const orgId = tree.projects && typeof tree.projects === 'object' && 'organization_id' in tree.projects ? (tree.projects as { organization_id: string }).organization_id : null;
+            if (orgId) {
+              cards.push({
+                type: 'navigate',
+                data: {
+                  href: `/organizations/${orgId}?project=${tree.project_id}&tab=decision-tree`,
+                  label: `${tree.title}`,
+                  description: `${projName} - ノード${totalNodes}件`,
+                },
+              });
+            }
+          }
+
+          parts.push(`\n\n【アクティブな検討ツリー（${trees.length}件）】\n${treeLines.join('\n')}`);
+        } else {
+          parts.push('\n\n【検討ツリー】\n現在アクティブな検討ツリーはありません。会議録をアップロードすると自動生成されます。');
+        }
+      } catch (err) {
+        console.error('[Agent] Decision tree error:', err);
+        parts.push('\n\n検討ツリー情報の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // V2-I #43: チェックポイント評価
+    // ========================================
+    if (intent === 'checkpoint_evaluation') {
+      try {
+        // 評価対象のマイルストーン（全タスク完了 or 期限到来）
+        const { data: evalCandidates } = await supabase
+          .from('milestones')
+          .select('id, title, status, target_date, project_id, projects(id, name, organization_id, organizations(name))')
+          .in('status', ['in_progress', 'not_started'])
+          .order('target_date', { ascending: true })
+          .limit(10);
+
+        if (evalCandidates && evalCandidates.length > 0) {
+          const evalLines: string[] = [];
+          const readyForEval: typeof evalCandidates = [];
+
+          for (const ms of evalCandidates) {
+            const { data: msTasks } = await supabase
+              .from('tasks')
+              .select('id, status')
+              .eq('milestone_id', ms.id);
+
+            const totalTasks = msTasks?.length ?? 0;
+            const doneTasks = msTasks?.filter((t: { status: string }) => t.status === 'done').length ?? 0;
+            const allDone = totalTasks > 0 && doneTasks === totalTasks;
+            const pastDue = ms.target_date && new Date(ms.target_date) <= new Date();
+
+            if (allDone || pastDue) {
+              readyForEval.push(ms);
+              const projName = ms.projects && typeof ms.projects === 'object' && 'name' in ms.projects ? (ms.projects as { name: string }).name : '不明';
+              const reason = allDone ? 'タスク全完了' : '期限到来';
+              evalLines.push(`📋 ${projName}: ${ms.title}（${reason}）\n   タスク: ${doneTasks}/${totalTasks}完了`);
+            }
+          }
+
+          if (readyForEval.length > 0) {
+            parts.push(`\n\n【評価可能なマイルストーン（${readyForEval.length}件）】\n${evalLines.join('\n')}\n\n評価を実行するマイルストーンを選んでください。`);
+
+            for (const ms of readyForEval.slice(0, 5)) {
+              const orgId = ms.projects && typeof ms.projects === 'object' && 'organization_id' in ms.projects ? (ms.projects as { organization_id: string }).organization_id : null;
+              cards.push({
+                type: 'navigate',
+                data: {
+                  href: `/organizations/${orgId}?project=${ms.project_id}&tab=tasks&evaluate=${ms.id}`,
+                  label: `${ms.title} を評価`,
+                  description: 'チェックポイント評価を実行',
+                },
+              });
+            }
+          } else {
+            parts.push('\n\n【チェックポイント評価】\n現在、評価可能なマイルストーンはありません。タスクを全て完了するか、期限が到来すると評価できます。');
+          }
+        } else {
+          parts.push('\n\n【チェックポイント評価】\n進行中のマイルストーンがありません。');
+        }
+      } catch (err) {
+        console.error('[Agent] Checkpoint evaluation error:', err);
+        parts.push('\n\n評価対象の取得に失敗しました。');
+      }
+    }
+
+    // ========================================
+    // V2-I #44: マイルストーン作成
+    // ========================================
+    if (intent === 'create_milestone') {
+      try {
+        // プロジェクト一覧を取得
+        const { data: userProjects } = await supabase
+          .from('projects')
+          .select('id, name, organization_id, organizations(name)')
+          .eq('user_id', userId)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+
+        if (userProjects && userProjects.length > 0) {
+          // テーマ一覧も取得
+          const projectIds = userProjects.map((p: { id: string }) => p.id);
+          const { data: themes } = await supabase
+            .from('themes')
+            .select('id, title, project_id')
+            .in('project_id', projectIds);
+
+          cards.push({
+            type: 'milestone_create_form',
+            data: {
+              projects: userProjects.map((p: { id: string; name: string; organizations?: { name: string } | null }) => ({
+                id: p.id,
+                name: p.name,
+                orgName: p.organizations && typeof p.organizations === 'object' && 'name' in p.organizations ? (p.organizations as { name: string }).name : '',
+              })),
+              themes: (themes || []).map((t: { id: string; title: string; project_id: string }) => ({
+                id: t.id,
+                title: t.title,
+                project_id: t.project_id,
+              })),
+            },
+          });
+          parts.push('\n\n【マイルストーン作成】\nマイルストーンを作成します。プロジェクト、タイトル、ゴール、期限を設定してください。テーマ（任意）も選択できます。\n\n💡 マイルストーンは1週間単位のチェックポイントとして設計してください。');
+        } else {
+          parts.push('\n\n【マイルストーン作成】\nまだプロジェクトが登録されていません。先にプロジェクトを作成してください。');
+        }
+      } catch (err) {
+        console.error('[Agent] Create milestone error:', err);
+        parts.push('\n\nマイルストーン作成の準備に失敗しました。');
+      }
+    }
+
+    // ========================================
     // Phase 52: 組織レコメンド
     // ========================================
     if (intent === 'setup_organization' || intent === 'briefing') {
@@ -3083,6 +3383,11 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - 組織→プロジェクト階層ナビ（「○○組織のプロジェクト」→特定組織のPJ一覧→各PJのタスクへ遷移）
 - プロジェクト→タスク階層ナビ（「○○プロジェクトのタスク」→特定PJのタスク一覧をステータス別表示）
 - ビジネスログ詳細閲覧（「○○のビジネスログ」→特定プロジェクトの直近30日イベント詳細）
+- 会議録アップロード誘導（「会議録を登録」→対象プロジェクトの検討ツリータブへナビゲーション）
+- マイルストーン状況確認（「マイルストーンの進捗」→全PJ横断or指定PJのMS達成率・配下タスク完了率を一覧表示）
+- 検討ツリー表示（「検討ツリーを見せて」→アクティブな検討ツリーとノードの状況表示）
+- チェックポイント評価（「MSの評価を実行」→評価可能なMSを表示→評価エージェント実行へ誘導）
+- マイルストーン作成（「マイルストーンを作成して」→PJ・テーマ・タイトル・ゴール・期限を設定するフォーム表示）
 
 ## コンタクト・組織・プロジェクトの管理
 ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:
@@ -3371,6 +3676,26 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return hasCards
         ? 'プロジェクトのタスク一覧を表示しました。カードからタスクの詳細を確認できます。'
         : 'プロジェクトのタスクが見つかりませんでした。プロジェクト名を指定してもう一度お試しください。';
+    case 'upload_meeting_record':
+      return hasCards
+        ? '会議録を登録しますか？プロジェクト詳細の検討ツリータブからアップロードできます。下のカードから対象プロジェクトを選んでください。'
+        : '会議録を登録するプロジェクトが見つかりませんでした。先にプロジェクトを作成してください。';
+    case 'milestone_status':
+      return hasCards
+        ? '進行中のマイルストーンを表示しました。各マイルストーンの進捗と配下タスクの完了率を確認できます。'
+        : '現在進行中のマイルストーンはありません。「マイルストーンを作成して」で新規作成できます。';
+    case 'decision_tree':
+      return hasCards
+        ? '検討ツリーの状況を表示しました。アクティブなノード（進行中の議題）を確認できます。'
+        : 'アクティブな検討ツリーはありません。会議録をアップロードすると自動生成されます。';
+    case 'checkpoint_evaluation':
+      return hasCards
+        ? 'チェックポイント評価が可能なマイルストーンを表示しました。カードから評価を実行できます。'
+        : '現在、評価可能なマイルストーンはありません。タスクを全て完了するか、期限が到来すると評価できます。';
+    case 'create_milestone':
+      return hasCards
+        ? 'マイルストーン作成フォームを表示しました。プロジェクト・タイトル・ゴール・期限を設定してください。'
+        : 'マイルストーン作成の準備に失敗しました。先にプロジェクトを作成してください。';
     default:
       return `「${message}」について確認しました。\n\nどのように進めましょうか？`;
   }

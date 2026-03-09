@@ -221,17 +221,17 @@
 | 38 | `project_tasks` | 特定PJのタスク一覧 |
 | 39 | `general` | その他 |
 
-### V2 追加予定intent
+### V2 追加intent（V2-I 実装済み）
 
-| # | Intent | 用途 |
-|---|---|---|
-| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 |
-| 41 | `milestone_status` | マイルストーン状況確認 |
-| 42 | `decision_tree` | 検討ツリー表示・更新 |
-| 43 | `checkpoint_evaluation` | チェックポイント評価実行 |
-| 44 | `create_milestone` | マイルストーン作成 |
+| # | Intent | 用途 | ステータス |
+|---|---|---|---|
+| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 | ✅ 実装済み |
+| 41 | `milestone_status` | マイルストーン状況確認 | ✅ 実装済み |
+| 42 | `decision_tree` | 検討ツリー表示・更新 | ✅ 実装済み |
+| 43 | `checkpoint_evaluation` | チェックポイント評価実行 | ✅ 実装済み |
+| 44 | `create_milestone` | マイルストーン作成 | ✅ 実装済み |
 
-※ V1は39種。V2で44種に拡張。
+※ V1は39種。V2で44種に拡張。全44種実装完了。
 
 ---
 
