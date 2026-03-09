@@ -1,17 +1,15 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-06
+最終更新: 2026-03-09
 
-> **ドキュメント構成**: このファイルが作業の起点。V2設計を含む全ドキュメントを参照。
-> 作業開始前に、関連セクションを必ず読んでください。
+> **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
+> V2全9フェーズ実装完了済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
+| **CLAUDE.md（本ファイル）** | 設計・ルール・テーブル・API・配色の全情報 | ★ |
 | **docs/ARCHITECTURE_V2.md** | V2設計書 — 5階層・3ログ・チェックポイント・自己学習 | ★ |
-| **docs/UI_V2_SPEC.md** | V2 UI仕様 — 画面構成・削除機能・実装順 | ★ |
 | **docs/TABLE_SPECS.md** | DB現状マスタ — 全テーブルのCREATE文・制約・インデックス | ★ |
-| docs/v1/FEATURES.md | V1機能仕様（参考用アーカイブ） | |
-| docs/v1/PHASE_HISTORY.md | V1フェーズ実装履歴（アーカイブ） | |
 
 ---
 
@@ -43,11 +41,15 @@
 | 9 | mutation後のキャッシュ無効化 | 削除したデータが再表示 | UPDATE/DELETE/INSERT直後に実行 |
 | 10 | ファイルアップロードには `project_id` 必須 | アップロード失敗 | Driveフォルダ構造がプロジェクト基盤 |
 
-### 追加の注意
+### 追加の注意（V2で発見した重要ルール）
 
 - **Vercel互換params**: `{ params }: { params: Promise<{ id: string }> }` — Promiseで受ける
 - **zshブラケット**: `git add "src/app/api/tasks/[id]/route.ts"` — 引用符で囲む
 - **knowledge_master_entries.id**: TEXT型、`me_auto_${Date.now()}_${random}` で手動生成
+- **milestones.status の制約**: CHECK制約あり。許可値は `'pending'`, `'in_progress'`, `'achieved'`, `'missed'` の4つのみ。`'not_started'` は不可（DB制約違反になる）
+- **intent分類の優先順位**: `classifyIntent()` はキーワード一致で**先にマッチしたものが勝つ**。V2 intent（#40〜44）は `create_project`（#29）より**前**に評価すること。例: 「プロジェクトにマイルストーンを作成」→ 先に `create_project` がマッチしてしまう
+- **会議録AI解析のレスポンス構造**: `analyzeData.data.analysis.topics`（× `analyzeData.data.topics` ではない）
+- **検討ツリーのデータフロー**: 検討ツリータブで会議録登録 → AI解析 → 検討ツリー自動生成 → ビジネスイベント自動追加。タイムラインの手動イベント登録では検討ツリーは生成されない
 
 ---
 
@@ -156,7 +158,7 @@
 | テーブル | 用途 | ID型 | 注意 |
 |---|---|---|---|
 | `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
-| `milestones` | マイルストーン（1週間チェックポイント） | UUID | project_id 必須、theme_id nullable |
+| `milestones` | マイルストーン（1週間チェックポイント） | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
 | `meeting_records` | 会議録 | UUID | project_id 必須。検討ツリー・学習の起点 |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造 |
@@ -221,17 +223,17 @@
 | 38 | `project_tasks` | 特定PJのタスク一覧 |
 | 39 | `general` | その他 |
 
-### V2 追加intent（V2-I 実装済み）
+**⚠️ V2 intent（#40〜44）は classifyIntent() 内で #29 create_project より前に配置すること**
 
-| # | Intent | 用途 | ステータス |
-|---|---|---|---|
-| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 | ✅ 実装済み |
-| 41 | `milestone_status` | マイルストーン状況確認 | ✅ 実装済み |
-| 42 | `decision_tree` | 検討ツリー表示・更新 | ✅ 実装済み |
-| 43 | `checkpoint_evaluation` | チェックポイント評価実行 | ✅ 実装済み |
-| 44 | `create_milestone` | マイルストーン作成 | ✅ 実装済み |
+| # | Intent | 用途 |
+|---|---|---|
+| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 |
+| 41 | `milestone_status` | マイルストーン状況確認 |
+| 42 | `decision_tree` | 検討ツリー表示・更新 |
+| 43 | `checkpoint_evaluation` | チェックポイント評価実行 |
+| 44 | `create_milestone` | マイルストーン作成 |
 
-※ V1は39種。V2で44種に拡張。全44種実装完了。
+※ 全44種実装完了。
 
 ---
 
@@ -345,7 +347,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | 11 | `/api/cron/summarize-business-log` | 週次サマリー | business_events, projects | 800 |
 | 12 | aiClient.service | タスク完了サマリー | tasks, task_conversations | 1000 |
 
-### V2 追加AIエンドポイント（予定）
+### V2 追加AIエンドポイント（実装済み）
 
 | # | エンドポイント | 用途 | 主なデータソース | AI性格 |
 |---|---|---|---|---|
@@ -435,10 +437,26 @@ GMAIL_REDIRECT_URI=              # OAuth
 - **5階層**: Organization > Project > Theme（任意） > Milestone > Task
 - **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務（PJ任意紐づけ）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
-- **会議録が起点**: 検討ツリー生成 + 評価学習データ + ビジネスログ追加を同時駆動
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
 - **ナレッジはバックエンド基盤**: UIには設定ページ内のみ。AIが自動参照
+
+### 検討ツリー データフロー（会議録が起点）
+
+```
+検討ツリータブで会議録登録
+  → POST /api/meeting-records（meeting_records に保存）
+  → POST /api/meeting-records/{id}/analyze（AI解析）
+    → meeting_records.ai_summary 更新
+    → business_events に自動追加（event_type: meeting, meeting_record_id 付き）
+    → evaluation_learnings にフィードバック保存（該当あれば）
+  → POST /api/decision-trees/generate（topics → ノード生成）
+    → decision_trees 作成 or 既存取得
+    → decision_tree_nodes 作成/更新（タイトル類似判定で重複防止）
+    → decision_tree_node_history に履歴記録
+```
+
+**注意**: タイムラインタブの手動ビジネスイベント登録は business_events のみ。meeting_records には入らず、検討ツリーは生成されない。
 
 ---
 
