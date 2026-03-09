@@ -842,6 +842,7 @@ async function fetchDataAndBuildCards(
             id: t.id,
             title: t.title,
             status: t.status,
+            projectId: t.project_id || null,
             lastActivity: formatRelativeTime(t.updated_at),
             remainingItems: t.due_date
               ? [`期限: ${t.due_date}`, `フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`]
@@ -2724,6 +2725,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
                   id: t.id,
                   title: t.title,
                   status: t.status,
+                  projectId: t.project_id || null,
                   lastActivity: formatRelativeTime(t.updated_at),
                   remainingItems: [
                     `フェーズ: ${phaseLabel(t.phase)}`,
@@ -3746,7 +3748,7 @@ async function handleTaskProgressIntent(
         phase: matchedTask.phase,
         priority: matchedTask.priority,
         dueDate: matchedTask.due_date,
-        recentConversations: conversations.reverse(),
+        projectId: matchedTask.project_id || null,
       },
     });
 
@@ -3760,6 +3762,7 @@ async function handleTaskProgressIntent(
           id: t.id,
           title: t.title,
           status: t.status,
+          projectId: t.project_id || null,
           lastActivity: formatRelativeTime(t.updated_at),
           remainingItems: t.due_date
             ? [`期限: ${t.due_date}`, `フェーズ: ${phaseLabel(t.phase)}`, `優先度: ${priorityLabel(t.priority)}`]
@@ -4232,7 +4235,7 @@ function generateDemoResponse(message: string, intent: Intent, cards: CardData[]
       return 'タスク作成の準備に失敗しました。もう一度お試しください。';
     case 'task_progress':
       return hasCards
-        ? 'タスクの詳細を表示しました。このまま相談を続けることもできますし、「続ける」でタスクページに移動もできます。'
+        ? 'タスクの情報を表示しました。このタスクについて、下のチャット欄から相談できます。'
         : '進行中のタスクが見つかりませんでした。新しいタスクを作成しますか？';
     case 'create_contact':
       return hasCards

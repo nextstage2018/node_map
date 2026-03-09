@@ -813,10 +813,11 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         break;
       }
       case 'resume_task': {
-        const taskId = (d as Record<string, string>)?.taskId;
-        if (taskId) {
-          // ページ遷移せず秘書チャット内でタスク進行を開始
-          sendMessage(`タスク ${taskId} を進めたい`);
+        // タスクについてチャットで相談 → 入力欄にプリセット
+        const taskTitle = (d as Record<string, string>)?.taskTitle || (d as Record<string, string>)?.title || '';
+        if (taskTitle) {
+          setInput(`「${taskTitle}」について相談したい: `);
+          setTimeout(() => inputRef.current?.focus(), 100);
         }
         break;
       }

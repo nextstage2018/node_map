@@ -516,6 +516,7 @@ interface TaskResumeData {
   id: string;
   title: string;
   status: string;
+  projectId?: string | null;
   lastActivity: string;
   remainingItems?: string[];
 }
@@ -543,13 +544,23 @@ export function TaskResumeCard({
               ))}
             </div>
           )}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={() => onResume?.(task.id)}
+              className="px-2.5 py-1 text-[11px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors flex items-center gap-1"
+            >
+              <MessageSquare className="w-3 h-3" /> チャットで相談
+            </button>
+            {task.projectId && (
+              <a
+                href={`/organizations/${task.projectId}?tab=tasks`}
+                className="px-2.5 py-1 text-[11px] font-medium text-slate-500 bg-slate-50 hover:bg-slate-100 rounded-md transition-colors flex items-center gap-1"
+              >
+                <ArrowRight className="w-3 h-3" /> タスク一覧
+              </a>
+            )}
+          </div>
         </div>
-        <button
-          onClick={() => onResume?.(task.id)}
-          className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shrink-0"
-        >
-          <ArrowRight className="w-3 h-3" /> 続ける
-        </button>
       </div>
     </div>
   );
@@ -733,16 +744,13 @@ interface TaskProgressData {
   phase: string;
   priority: string;
   dueDate?: string | null;
-  recentConversations?: Array<{ role: string; content: string; timestamp: string }>;
+  projectId?: string | null;
 }
 
 export function TaskProgressCard({
   data,
-  onResume,
 }: {
   data: TaskProgressData;
-  onResume?: (taskId: string) => void;
-  onSendMessage?: (taskId: string, message: string) => void;
 }) {
   const phaseLabels: Record<string, { label: string; icon: string; color: string }> = {
     ideation: { label: '構想', icon: '💡', color: 'bg-amber-50 text-amber-700' },
@@ -755,15 +763,23 @@ export function TaskProgressCard({
     low: { label: '低', color: 'text-green-600 bg-green-50' },
   };
 
+  const statusLabels: Record<string, { label: string; color: string }> = {
+    pending: { label: '未着手', color: 'text-slate-500 bg-slate-50' },
+    in_progress: { label: '進行中', color: 'text-blue-600 bg-blue-50' },
+    completed: { label: '完了', color: 'text-green-600 bg-green-50' },
+    cancelled: { label: 'キャンセル', color: 'text-red-600 bg-red-50' },
+  };
+
   const phase = phaseLabels[data.phase] || { label: data.phase, icon: '📋', color: 'bg-slate-50 text-slate-700' };
   const prio = priorityLabels[data.priority] || { label: data.priority, color: 'text-slate-600 bg-slate-50' };
+  const stat = statusLabels[data.status] || { label: data.status, color: 'text-slate-600 bg-slate-50' };
 
   return (
     <div className="overflow-hidden">
       <div className="px-4 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CheckSquare className="w-4 h-4 text-indigo-600" />
-          <span className="text-xs font-semibold text-indigo-800">タスク進行</span>
+          <span className="text-xs font-semibold text-indigo-800">タスク情報</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className={cn('text-[10px] px-1.5 py-0.5 rounded-md font-medium', phase.color)}>
@@ -777,19 +793,27 @@ export function TaskProgressCard({
 
       <div className="px-4 py-3">
         <h4 className="text-sm font-semibold text-slate-800 mb-1">{data.title}</h4>
-        {data.dueDate && (
-          <p className="text-[11px] text-slate-500 flex items-center gap-1 mb-2">
-            <Clock className="w-3 h-3" /> 期限: {data.dueDate}
-          </p>
+        <div className="flex items-center gap-2 mb-1">
+          <span className={cn('text-[10px] px-1.5 py-0.5 rounded-md font-medium', stat.color)}>
+            {stat.label}
+          </span>
+          {data.dueDate && (
+            <span className="text-[11px] text-slate-500 flex items-center gap-1">
+              <Clock className="w-3 h-3" /> 期限: {data.dueDate}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-slate-400 mt-1">
+          このタスクについて下のチャットで相談できます
+        </p>
+        {data.projectId && (
+          <a
+            href={`/organizations/${data.projectId}?tab=tasks`}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700 transition-colors"
+          >
+            <ArrowRight className="w-3 h-3" /> プロジェクトのタスク一覧を見る
+          </a>
         )}
-
-        {/* タスクページへ */}
-        <button
-          onClick={() => onResume?.(data.id)}
-          className="mt-1 w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center justify-center gap-1.5"
-        >
-          <ArrowRight className="w-3 h-3" /> タスクページで詳しく見る
-        </button>
       </div>
     </div>
   );
@@ -1908,7 +1932,7 @@ export function CardRenderer({
       inner = (
         <TaskResumeCard
           task={card.data}
-          onResume={(taskId) => onAction?.('resume_task', { taskId })}
+          onResume={(taskId) => onAction?.('resume_task', { taskId, taskTitle: card.data?.title })}
         />
       );
       break;
@@ -1924,8 +1948,6 @@ export function CardRenderer({
       inner = (
         <TaskProgressCard
           data={card.data}
-          onResume={(taskId) => onAction?.('resume_task', { taskId })}
-          onSendMessage={(taskId, message) => onAction?.('task_chat', { taskId, message, phase: card.data.phase || 'ideation' })}
         />
       );
       break;
