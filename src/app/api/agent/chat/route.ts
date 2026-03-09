@@ -276,22 +276,14 @@ function classifyIntent(message: string): Intent {
   if (m.includes('会社') && (m.includes('登録') || m.includes('追加') || m.includes('設定'))) return 'setup_organization';
   if (m.includes('未登録') && (m.includes('組織') || m.includes('会社'))) return 'setup_organization';
 
-  // Phase 53c: プロジェクト作成
-  if (m.includes('プロジェクト') && (m.includes('作成') || m.includes('追加') || m.includes('新規') || m.includes('新しい') || m.includes('作って') || m.includes('立ち上げ'))) return 'create_project';
-
-  // Phase G: 設定変更（「メール休眠」「設定を変更」「メールをオフ」「通知設定」等）
-  if (m.includes('設定') && (m.includes('変更') || m.includes('変え') || m.includes('切り替え') || m.includes('オン') || m.includes('オフ') || m.includes('有効') || m.includes('無効'))) return 'settings_change';
-  if (m.includes('メール') && (m.includes('休眠') || m.includes('無効') || m.includes('オフ') || m.includes('オン') || m.includes('有効') || m.includes('停止') || m.includes('再開'))) return 'settings_change';
-  if (m.includes('通知') && (m.includes('設定') || m.includes('変更') || m.includes('オフ') || m.includes('オン'))) return 'settings_change';
-
-  // Phase A: チャンネル→プロジェクト紐づけ
-  if (m.includes('チャンネル') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('リンク') || m.includes('関連付') || m.includes('結び'))) return 'link_channel';
-  if (m.includes('ルーム') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('プロジェクト'))) return 'link_channel';
+  // ========================================
+  // V2-I #40〜#44: V2 intentは create_project より前に判定（優先度高）
+  // ========================================
 
   // V2-I #40: 会議録アップロード（「会議録を登録」「議事録をアップロード」「MTG記録」）
   if (m.includes('会議録') || m.includes('議事録') || m.includes('ミーティングメモ') || m.includes('会議の記録') || m.includes('mtg記録') || m.includes('meeting record')) return 'upload_meeting_record';
 
-  // V2-I #44: マイルストーン作成（「マイルストーン作成」「MS作成」「新しいマイルストーン」）— milestone_statusより先に判定
+  // V2-I #44: マイルストーン作成（「マイルストーン作成」「MS作成」「新しいマイルストーン」）— create_project, milestone_statusより先に判定
   if ((m.includes('マイルストーン') || m.includes('ms')) && (m.includes('作成') || m.includes('作って') || m.includes('新しい') || m.includes('新規') || m.includes('追加'))) return 'create_milestone';
   if (m.includes('milestone') && (m.includes('作成') || m.includes('create') || m.includes('new'))) return 'create_milestone';
 
@@ -307,6 +299,22 @@ function classifyIntent(message: string): Intent {
   if (m.includes('検討ツリー') || m.includes('decision tree')) return 'decision_tree';
   if (m.includes('検討') && (m.includes('状況') || m.includes('一覧') || m.includes('確認'))) return 'decision_tree';
   if (m.includes('決定事項') || m.includes('議題')) return 'decision_tree';
+
+  // ========================================
+  // Phase 53c以降: 既存intent
+  // ========================================
+
+  // Phase 53c: プロジェクト作成
+  if (m.includes('プロジェクト') && (m.includes('作成') || m.includes('追加') || m.includes('新規') || m.includes('新しい') || m.includes('作って') || m.includes('立ち上げ'))) return 'create_project';
+
+  // Phase G: 設定変更（「メール休眠」「設定を変更」「メールをオフ」「通知設定」等）
+  if (m.includes('設定') && (m.includes('変更') || m.includes('変え') || m.includes('切り替え') || m.includes('オン') || m.includes('オフ') || m.includes('有効') || m.includes('無効'))) return 'settings_change';
+  if (m.includes('メール') && (m.includes('休眠') || m.includes('無効') || m.includes('オフ') || m.includes('オン') || m.includes('有効') || m.includes('停止') || m.includes('再開'))) return 'settings_change';
+  if (m.includes('通知') && (m.includes('設定') || m.includes('変更') || m.includes('オフ') || m.includes('オン'))) return 'settings_change';
+
+  // Phase A: チャンネル→プロジェクト紐づけ
+  if (m.includes('チャンネル') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('リンク') || m.includes('関連付') || m.includes('結び'))) return 'link_channel';
+  if (m.includes('ルーム') && (m.includes('紐づけ') || m.includes('紐付け') || m.includes('プロジェクト'))) return 'link_channel';
   if (m.includes('何が決まった') || m.includes('決まったこと')) return 'decision_tree';
 
   return 'general';
