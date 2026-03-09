@@ -78,14 +78,37 @@ export default function MeetingRecordUpload({ projectId, onRecordCreated, onTree
       if (!analyzeData.success) {
         setSuccessMessage('会議録を登録しました（AI解析は失敗しました）');
       } else {
-        setSuccessMessage('会議録を登録し、AI解析が完了しました');
-
-        // V2-E: topics がある場合、検討ツリー反映ボタンを表示可能にする
-        if (analyzeData.data?.topics && analyzeData.data.topics.length > 0) {
-          setAnalysisResult({
-            recordId,
-            topics: analyzeData.data.topics,
-          });
+        // V2-E: topics がある場合、自動で検討ツリーに反映
+        const topics = analyzeData.data?.analysis?.topics;
+        if (topics && topics.length > 0) {
+          setSuccessMessage('AI解析完了。検討ツリーに反映中...');
+          try {
+            const treeRes = await fetch('/api/decision-trees/generate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                project_id: projectId,
+                meeting_record_id: recordId,
+                topics,
+              }),
+            });
+            const treeData = await treeRes.json();
+            if (treeData.success) {
+              setSuccessMessage(
+                `会議録を登録し、検討ツリーに反映しました（新規: ${treeData.data.created_count}ノード）`
+              );
+              onTreeUpdated?.();
+            } else {
+              setSuccessMessage('会議録を登録しました（検討ツリー反映に失敗）');
+              // フォールバック: 手動反映ボタンを表示
+              setAnalysisResult({ recordId, topics });
+            }
+          } catch {
+            setSuccessMessage('会議録を登録しました（検討ツリー反映に失敗）');
+            setAnalysisResult({ recordId, topics });
+          }
+        } else {
+          setSuccessMessage('会議録を登録し、AI解析が完了しました');
         }
       }
 
