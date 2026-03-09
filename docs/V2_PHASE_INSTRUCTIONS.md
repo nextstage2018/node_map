@@ -1357,10 +1357,10 @@ git commit -m "V2-I: Integration - 5 new secretary intents, enhanced dashboard w
 
 | Phase | 内容 | ブランチ | ステータス | コミットハッシュ |
 |---|---|---|---|---|
-| V2-A | DB: 8テーブル + 4変更 | feature/v2-a-db-setup | ⬜ 未着手 | |
-| V2-B | UI構造変更 | feature/v2-b-ui-restructure | ⬜ 未着手 | |
-| V2-C | テーマ・MS CRUD | feature/v2-c-theme-milestone-crud | ⬜ 未着手 | |
-| V2-D | 会議録 + AI解析 | feature/v2-d-meeting-records | ⬜ 未着手 | |
+| V2-A | DB: 8テーブル + 4変更 | feature/v2-a-db-setup | ✅ 完了 | a2a1339 |
+| V2-B | UI構造変更 | feature/v2-b-ui-restructure | ✅ 完了 | 6abae0c |
+| V2-C | テーマ・MS CRUD | feature/v2-c-theme-milestone-crud | ✅ 完了 | 60d321b |
+| V2-D | 会議録 + AI解析 | feature/v2-d-meeting-records | ⬜ 次 | |
 | V2-E | 検討ツリー | feature/v2-e-decision-tree | ⬜ 未着手 | |
 | V2-F | チェックポイント評価 | feature/v2-f-checkpoint-evaluation | ⬜ 未着手 | |
 | V2-G | 自己学習 | feature/v2-g-self-learning | ⬜ 未着手 | |
