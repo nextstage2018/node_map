@@ -325,12 +325,48 @@ export async function GET() {
       detail: dayDetails,
     });
 
-    // Step 9: 実際の findFreeSlots 呼び出し（比較用）
+    // Step 9: getAllCalendarEvents を直接テスト
+    try {
+      const { getAllCalendarEvents } = await import('@/services/calendar/calendarClient.service');
+      const allEvents = await getAllCalendarEvents(userId, tomorrowStartUTC.toISOString(), weekEndUTC.toISOString());
+      steps.push({
+        step: '9. getAllCalendarEvents実行結果',
+        result: `${allEvents.length}件`,
+        detail: allEvents.map(e => ({
+          summary: e.summary,
+          start: e.start,
+          end: e.end,
+          isAllDay: e.isAllDay,
+        })),
+      });
+    } catch (aceErr) {
+      steps.push({ step: '9. getAllCalendarEvents実行結果', result: `FAIL: ${String(aceErr)}` });
+    }
+
+    // Step 10: getNodeMapScheduledBlocks テスト
+    try {
+      const { getNodeMapScheduledBlocks } = await import('@/services/calendar/calendarSync.service');
+      const blocks = await getNodeMapScheduledBlocks(userId, tomorrowStartUTC.toISOString(), weekEndUTC.toISOString());
+      steps.push({
+        step: '10. NodeMap作業ブロック',
+        result: `${blocks.length}件`,
+        detail: blocks.map(b => ({
+          start: b.start,
+          end: b.end,
+          source: b.source,
+          calendarEventId: b.calendarEventId,
+        })),
+      });
+    } catch (nmErr) {
+      steps.push({ step: '10. NodeMap作業ブロック', result: `FAIL: ${String(nmErr)}` });
+    }
+
+    // Step 11: findFreeSlots 実行（エラー詳細付き）
     try {
       const { findFreeSlots, formatFreeSlotsForContext } = await import('@/services/calendar/calendarClient.service');
       const freeSlots = await findFreeSlots(userId, tomorrowStartUTC.toISOString(), weekEndUTC.toISOString(), 60);
       steps.push({
-        step: '9. findFreeSlots実行結果',
+        step: '11. findFreeSlots実行結果',
         result: `${freeSlots.length}件`,
         detail: {
           formatted: formatFreeSlotsForContext(freeSlots),
@@ -338,7 +374,11 @@ export async function GET() {
         },
       });
     } catch (fsErr) {
-      steps.push({ step: '9. findFreeSlots実行結果', result: `FAIL: ${String(fsErr)}` });
+      steps.push({
+        step: '11. findFreeSlots実行結果',
+        result: `FAIL: ${String(fsErr)}`,
+        detail: { stack: fsErr instanceof Error ? fsErr.stack : undefined },
+      });
     }
 
     return NextResponse.json({ success: true, steps });
