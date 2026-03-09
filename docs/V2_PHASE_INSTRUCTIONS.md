@@ -1361,9 +1361,9 @@ git commit -m "V2-I: Integration - 5 new secretary intents, enhanced dashboard w
 | V2-B | UI構造変更 | feature/v2-b-ui-restructure | ✅ 完了 | 6abae0c |
 | V2-C | テーマ・MS CRUD | feature/v2-c-theme-milestone-crud | ✅ 完了 | 60d321b |
 | V2-D | 会議録 + AI解析 | feature/v2-d-meeting-records | ✅ 完了 | 3a1495f |
-| V2-E | 検討ツリー | feature/v2-e-decision-tree | ⬜ 次 | |
-| V2-F | チェックポイント評価 | feature/v2-f-checkpoint-evaluation | ⬜ 次 | |
-| V2-G | 自己学習 | feature/v2-g-self-learning | ⬜ 未着手（V2-F待ち） | |
+| V2-E | 検討ツリー | feature/v2-e-decision-tree | ✅ 完了 | cb10670 |
+| V2-F | チェックポイント評価 | feature/v2-f-checkpoint-evaluation | ✅ 完了 | 4a33a8f |
+| V2-G | 自己学習 | feature/v2-g-self-learning | ⬜ 次 | |
 | V2-H | 思考ログ拡張 | feature/v2-h-thought-log-expansion | ⬜ 次 | |
 | V2-I | 統合 | feature/v2-i-integration | ⬜ 未着手（V2-C〜H待ち） | |
 

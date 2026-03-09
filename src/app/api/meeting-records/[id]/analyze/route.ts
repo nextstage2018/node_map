@@ -1,9 +1,11 @@
 // V2-D: 会議録AI解析エンドポイント
 // 会議録テキストをAIに送り、要約・検討ツリー素材・マイルストーンフィードバックを同時抽出
+// V2-G: milestone_feedbackから自動学習抽出を追加
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
+import { extractLearningsFromMeetingFeedback } from '@/lib/services/evaluationLearning.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -149,11 +151,30 @@ export async function POST(
       console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventError);
     }
 
+    // 5. V2-G: milestone_feedbackから自動学習抽出
+    let learningsInserted = 0;
+    if (analysisResult.milestone_feedback && analysisResult.milestone_feedback.length > 0) {
+      try {
+        learningsInserted = await extractLearningsFromMeetingFeedback(
+          record.project_id,
+          id,
+          analysisResult.milestone_feedback
+        );
+        if (learningsInserted > 0) {
+          console.log(`[MeetingRecords Analyze] ${learningsInserted}件の学習データを抽出しました`);
+        }
+      } catch (learningError) {
+        // 学習抽出失敗してもメイン処理はブロックしない
+        console.error('[MeetingRecords Analyze] 学習抽出エラー:', learningError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
         record: updatedRecord,
         analysis: analysisResult,
+        learnings_inserted: learningsInserted,
       },
     });
   } catch (error) {

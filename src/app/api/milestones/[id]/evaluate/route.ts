@@ -1,9 +1,11 @@
 // V2-F: チェックポイント評価エージェント
 // マイルストーンの到達度をAIが構造的・客観的に評価する
+// V2-G: 学習データの取得・注入・applied_countインクリメントを追加
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
+import { getLearningPointsWithIds, incrementAppliedCount } from '@/lib/services/evaluationLearning.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,18 +75,10 @@ export async function POST(
       ? `思考ノード: ${(thoughtNodes || []).map((n: { node_label: string }) => n.node_label).join(' → ')}`
       : '思考ログなし';
 
-    // 4. 過去の学習データ取得（同一プロジェクト、直近5件）
-    const { data: learnings } = await supabase
-      .from('evaluation_learnings')
-      .select('learning_point, gap_analysis')
-      .eq('project_id', milestone.project_id)
-      .not('learning_point', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    const learningPoints = (learnings || [])
-      .map((l: { learning_point: string | null }) => l.learning_point)
-      .filter(Boolean);
+    // 4. V2-G: 過去の学習データ取得（サービス経由、IDも取得してapplied_count用）
+    const learningsWithIds = await getLearningPointsWithIds(milestone.project_id, 5);
+    const learningPoints = learningsWithIds.map(l => l.learning_point);
+    const usedLearningIds = learningsWithIds.map(l => l.id);
 
     // 5. AI評価エージェント実行
     let evaluationResult: EvaluationResult;
@@ -179,7 +173,17 @@ ${thoughtLogSummary}
       return NextResponse.json({ success: false, error: insertError.message }, { status: 500 });
     }
 
-    // 7. マイルストーンのステータスを自動更新
+    // 7. V2-G: 使用した学習データのapplied_countをインクリメント
+    if (usedLearningIds.length > 0) {
+      try {
+        await incrementAppliedCount(usedLearningIds);
+      } catch (incError) {
+        // インクリメント失敗してもメイン処理はブロックしない
+        console.error('[Milestone Evaluate] applied_countインクリメントエラー:', incError);
+      }
+    }
+
+    // 8. マイルストーンのステータスを自動更新
     const statusUpdate: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
