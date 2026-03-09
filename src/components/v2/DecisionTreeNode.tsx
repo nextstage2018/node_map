@@ -1,8 +1,8 @@
-// V2-E: 検討ツリー個別ノードコンポーネント
+// V2-E: 検討ツリー マインドマップノードコンポーネント
 'use client';
 
-import { ChevronRight, ChevronDown, Circle, CheckCircle, XCircle, PauseCircle } from 'lucide-react';
 import { useState } from 'react';
+import { ChevronRight, Check, X, Pause, Minus } from 'lucide-react';
 
 export interface DecisionTreeNodeData {
   id: string;
@@ -28,102 +28,153 @@ interface DecisionTreeNodeProps {
   selectedNodeId: string | null;
 }
 
-const statusConfig = {
+// ステータス別の設定
+const statusStyles = {
   active: {
-    icon: Circle,
-    color: 'text-blue-500',
-    textClass: '',
-    label: '有効',
+    bg: 'bg-white',
+    border: 'border-blue-300',
+    dot: 'bg-blue-500',
+    text: 'text-slate-800',
+    icon: null,
+    line: 'bg-blue-200',
   },
   completed: {
-    icon: CheckCircle,
-    color: 'text-green-500',
-    textClass: '',
-    label: '完了',
+    bg: 'bg-green-50',
+    border: 'border-green-400',
+    dot: 'bg-green-500',
+    text: 'text-green-800',
+    icon: Check,
+    line: 'bg-green-200',
   },
   cancelled: {
-    icon: XCircle,
-    color: 'text-red-400',
-    textClass: 'line-through text-slate-400',
-    label: '取消',
+    bg: 'bg-slate-50',
+    border: 'border-slate-300',
+    dot: 'bg-slate-400',
+    text: 'text-slate-400 line-through',
+    icon: X,
+    line: 'bg-slate-200',
   },
   on_hold: {
-    icon: PauseCircle,
-    color: 'text-slate-400',
-    textClass: 'text-slate-400',
-    label: '保留',
+    bg: 'bg-amber-50',
+    border: 'border-amber-300',
+    dot: 'bg-amber-400',
+    text: 'text-amber-700',
+    icon: Pause,
+    line: 'bg-amber-200',
   },
 };
 
-const nodeTypeLabels: Record<string, string> = {
-  topic: '議題',
-  option: '選択肢',
-  decision: '決定',
-  action: 'アクション',
+// ノードタイプ別のスタイル
+const typeStyles = {
+  topic: { label: '議題', badge: 'bg-blue-100 text-blue-700', size: 'px-3 py-2' },
+  option: { label: '選択肢', badge: 'bg-slate-100 text-slate-600', size: 'px-2.5 py-1.5' },
+  decision: { label: '決定', badge: 'bg-purple-100 text-purple-700', size: 'px-2.5 py-1.5' },
+  action: { label: 'アクション', badge: 'bg-orange-100 text-orange-700', size: 'px-2.5 py-1.5' },
 };
 
 export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNodeId }: DecisionTreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
-  const config = statusConfig[node.status] || statusConfig.active;
-  const StatusIcon = config.icon;
+  const style = statusStyles[node.status] || statusStyles.active;
+  const typeStyle = typeStyles[node.node_type] || typeStyles.option;
   const isSelected = selectedNodeId === node.id;
+  const StatusIcon = style.icon;
+  const isTopic = node.node_type === 'topic';
 
   return (
-    <div>
-      <div
-        className={`
-          flex items-center gap-1.5 py-1.5 px-2 rounded-md cursor-pointer transition-colors
-          ${isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50'}
-        `}
-        style={{ paddingLeft: `${depth * 20 + 8}px` }}
-        onClick={() => onNodeClick(node)}
-      >
-        {/* 展開/折りたたみ */}
-        {hasChildren ? (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(!isExpanded);
-            }}
-            className="p-0.5 hover:bg-slate-200 rounded"
-          >
-            {isExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+    <div className="flex items-start gap-0">
+      {/* ノードカード */}
+      <div className="flex flex-col items-center">
+        <div
+          onClick={() => onNodeClick(node)}
+          className={`
+            relative cursor-pointer rounded-lg border-2 transition-all
+            ${style.bg} ${style.border}
+            ${isSelected ? 'ring-2 ring-blue-400 ring-offset-1 shadow-md' : 'hover:shadow-sm'}
+            ${isTopic ? 'min-w-[180px]' : 'min-w-[140px]'}
+            ${typeStyle.size}
+          `}
+        >
+          {/* ステータスドット/アイコン */}
+          <div className="flex items-center gap-1.5">
+            {StatusIcon ? (
+              <span className={`w-4 h-4 rounded-full flex items-center justify-center ${style.dot}`}>
+                <StatusIcon className="w-2.5 h-2.5 text-white" strokeWidth={3} />
+              </span>
             ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+              <span className={`w-3 h-3 rounded-full ${style.dot}`} />
             )}
-          </button>
-        ) : (
-          <span className="w-4.5 inline-block" />
-        )}
+            <span className={`${isTopic ? 'text-sm font-bold' : 'text-xs font-medium'} ${style.text} leading-tight`}>
+              {node.title}
+            </span>
+          </div>
 
-        {/* ステータスアイコン */}
-        <StatusIcon className={`w-3.5 h-3.5 shrink-0 ${config.color}`} />
-
-        {/* タイトル */}
-        <span className={`text-sm flex-1 truncate ${config.textClass}`}>
-          {node.title}
-        </span>
-
-        {/* ノードタイプバッジ */}
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">
-          {nodeTypeLabels[node.node_type] || node.node_type}
-        </span>
+          {/* ノードタイプバッジ */}
+          <div className="mt-1">
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${typeStyle.badge}`}>
+              {typeStyle.label}
+            </span>
+          </div>
+        </div>
       </div>
 
-      {/* 子ノード */}
-      {hasChildren && isExpanded && (
-        <div>
-          {node.children.map((child) => (
-            <DecisionTreeNode
-              key={child.id}
-              node={child}
-              depth={depth + 1}
-              onNodeClick={onNodeClick}
-              selectedNodeId={selectedNodeId}
-            />
-          ))}
+      {/* 子ノードへの接続線 + 子ノード */}
+      {hasChildren && (
+        <div className="flex items-center gap-0 ml-0">
+          {/* 横線 */}
+          <div className="flex flex-col items-center">
+            {/* トグルボタン付きの横線 */}
+            <div className="flex items-center">
+              <div className={`w-6 h-0.5 ${style.line}`} />
+              {hasChildren && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsExpanded(!isExpanded);
+                  }}
+                  className={`
+                    w-5 h-5 rounded-full border-2 flex items-center justify-center
+                    ${isExpanded ? 'border-slate-300 bg-white' : 'border-blue-400 bg-blue-50'}
+                    hover:bg-slate-100 transition-colors z-10
+                  `}
+                >
+                  {isExpanded ? (
+                    <Minus className="w-2.5 h-2.5 text-slate-400" />
+                  ) : (
+                    <ChevronRight className="w-2.5 h-2.5 text-blue-500" />
+                  )}
+                </button>
+              )}
+              {isExpanded && <div className={`w-4 h-0.5 ${style.line}`} />}
+            </div>
+          </div>
+
+          {/* 子ノード（縦に並べる） */}
+          {isExpanded && (
+            <div className="flex flex-col gap-1.5 relative">
+              {/* 縦の接続線 */}
+              {node.children.length > 1 && (
+                <div
+                  className={`absolute left-0 top-3 w-0.5 ${style.line}`}
+                  style={{
+                    height: `calc(100% - 24px)`,
+                  }}
+                />
+              )}
+              {node.children.map((child, idx) => (
+                <div key={child.id} className="flex items-center gap-0">
+                  {/* 子への横線 */}
+                  <div className={`w-4 h-0.5 ${style.line}`} />
+                  <DecisionTreeNode
+                    node={child}
+                    depth={depth + 1}
+                    onNodeClick={onNodeClick}
+                    selectedNodeId={selectedNodeId}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

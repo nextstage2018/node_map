@@ -1,8 +1,8 @@
-// V2-E: 検討ツリー全体ビューコンポーネント
+// V2-E: 検討ツリー マインドマップビューコンポーネント
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { GitBranch, Loader2, RefreshCw, TreePine } from 'lucide-react';
+import { GitBranch, Loader2, RefreshCw, TreePine, Maximize2, Minimize2 } from 'lucide-react';
 import DecisionTreeNode, { type DecisionTreeNodeData } from './DecisionTreeNode';
 import NodeDetailPanel from './NodeDetailPanel';
 
@@ -34,12 +34,12 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
   const [error, setError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<DecisionTreeNodeData | null>(null);
   const [meetingRecords, setMeetingRecords] = useState<MeetingRecord[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const fetchTree = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // まずツリー一覧を取得
       const listRes = await fetch(`/api/decision-trees?project_id=${projectId}`);
       const listData = await listRes.json();
 
@@ -49,7 +49,6 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
         return;
       }
 
-      // 最初のツリーの詳細を取得
       const treeId = listData.data[0].id;
       const detailRes = await fetch(`/api/decision-trees/${treeId}`);
       const detailData = await detailRes.json();
@@ -94,7 +93,7 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
       const data = await res.json();
       if (data.success) {
         setSelectedNode(null);
-        fetchTree(); // リフレッシュ
+        fetchTree();
       } else {
         alert(data.error || '削除に失敗しました');
       }
@@ -116,8 +115,7 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
       });
       const data = await res.json();
       if (data.success) {
-        fetchTree(); // リフレッシュ
-        // 選択中のノードも更新
+        fetchTree();
         if (selectedNode && selectedNode.id === nodeId) {
           setSelectedNode({ ...selectedNode, status: newStatus as DecisionTreeNodeData['status'] });
         }
@@ -128,6 +126,19 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
       console.error('ステータス変更エラー:', err);
       alert('ステータス変更に失敗しました');
     }
+  };
+
+  // ステータス別のサマリーを計算
+  const getStatusSummary = (nodes: DecisionTreeNodeData[]): Record<string, number> => {
+    const summary: Record<string, number> = { active: 0, completed: 0, cancelled: 0, on_hold: 0 };
+    const count = (nodeList: DecisionTreeNodeData[]) => {
+      for (const n of nodeList) {
+        summary[n.status] = (summary[n.status] || 0) + 1;
+        if (n.children) count(n.children);
+      }
+    };
+    count(nodes);
+    return summary;
   };
 
   // ローディング
@@ -159,18 +170,61 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     );
   }
 
+  const statusSummary = getStatusSummary(tree.nodes);
+  const totalNodes = Object.values(statusSummary).reduce((a, b) => a + b, 0);
+
+  const containerClass = isFullscreen
+    ? 'fixed inset-0 z-50 bg-white flex flex-col'
+    : '';
+
   return (
-    <div className="flex h-full">
-      {/* ツリー表示 */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between mb-3">
+    <div className={containerClass}>
+      {/* ヘッダー */}
+      <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center gap-2">
+          <GitBranch className="w-4 h-4 text-blue-600" />
+          <h3 className="text-sm font-bold text-slate-800">{tree.title}</h3>
+          <span className="text-[10px] text-slate-400">{totalNodes}ノード</span>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* ステータスサマリー */}
           <div className="flex items-center gap-2">
-            <GitBranch className="w-4 h-4 text-blue-600" />
-            <h3 className="text-sm font-bold text-slate-800">{tree.title}</h3>
-            <span className="text-[10px] text-slate-400">
-              {countNodes(tree.nodes)}ノード
-            </span>
+            {statusSummary.active > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-blue-600">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                進行中 {statusSummary.active}
+              </span>
+            )}
+            {statusSummary.completed > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-green-600">
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                完了 {statusSummary.completed}
+              </span>
+            )}
+            {statusSummary.cancelled > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                <span className="w-2 h-2 rounded-full bg-slate-400" />
+                取消 {statusSummary.cancelled}
+              </span>
+            )}
+            {statusSummary.on_hold > 0 && (
+              <span className="flex items-center gap-1 text-[10px] text-amber-500">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                保留 {statusSummary.on_hold}
+              </span>
+            )}
           </div>
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-1.5 hover:bg-slate-100 rounded transition-colors"
+            title={isFullscreen ? '縮小' : '全画面'}
+          >
+            {isFullscreen ? (
+              <Minimize2 className="w-3.5 h-3.5 text-slate-400" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5 text-slate-400" />
+            )}
+          </button>
           <button
             onClick={() => fetchTree()}
             className="p-1.5 hover:bg-slate-100 rounded transition-colors"
@@ -179,42 +233,50 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
             <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
           </button>
         </div>
-
-        <div className="border border-slate-200 rounded-lg bg-white p-2">
-          {tree.nodes.map((node) => (
-            <DecisionTreeNode
-              key={node.id}
-              node={node}
-              depth={0}
-              onNodeClick={handleNodeClick}
-              selectedNodeId={selectedNode?.id || null}
-            />
-          ))}
-        </div>
       </div>
 
-      {/* ノード詳細パネル */}
-      {selectedNode && (
-        <NodeDetailPanel
-          node={selectedNode}
-          onClose={() => setSelectedNode(null)}
-          onDelete={handleDeleteNode}
-          onStatusChange={handleStatusChange}
-          meetingRecords={meetingRecords}
-        />
+      {/* マインドマップエリア */}
+      <div className="flex flex-1 min-h-0">
+        <div
+          className={`
+            flex-1 border border-slate-200 rounded-lg bg-gradient-to-br from-slate-50 to-white
+            overflow-auto relative
+            ${isFullscreen ? 'p-8' : 'p-5'}
+          `}
+          style={{ minHeight: isFullscreen ? undefined : '300px' }}
+        >
+          {/* マインドマップ: 議題ノードを縦に並べ、子を横に展開 */}
+          <div className="flex flex-col gap-4 min-w-max">
+            {tree.nodes.map((rootNode) => (
+              <DecisionTreeNode
+                key={rootNode.id}
+                node={rootNode}
+                depth={0}
+                onNodeClick={handleNodeClick}
+                selectedNodeId={selectedNode?.id || null}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* ノード詳細パネル */}
+        {selectedNode && (
+          <NodeDetailPanel
+            node={selectedNode}
+            onClose={() => setSelectedNode(null)}
+            onDelete={handleDeleteNode}
+            onStatusChange={handleStatusChange}
+            meetingRecords={meetingRecords}
+          />
+        )}
+      </div>
+
+      {/* フルスクリーン時の閉じるヒント */}
+      {isFullscreen && (
+        <div className="text-center py-2 text-[10px] text-slate-400">
+          ESCまたは右上ボタンで閉じる
+        </div>
       )}
     </div>
   );
-}
-
-// ノード数をカウントするヘルパー
-function countNodes(nodes: DecisionTreeNodeData[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    count += 1;
-    if (node.children) {
-      count += countNodes(node.children);
-    }
-  }
-  return count;
 }
