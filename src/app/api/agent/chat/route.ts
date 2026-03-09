@@ -159,6 +159,18 @@ function classifyIntent(message: string): Intent {
   // Phase G: 特定プロジェクトのタスク一覧（「○○プロジェクトのタスク」）— tasksより先に判定
   if (m.includes('プロジェクト') && (m.includes('タスク') || m.includes('やること'))) return 'project_tasks';
 
+  // V2-I #44: マイルストーン作成 — milestone_statusより先に判定
+  if ((m.includes('マイルストーン') || m.includes('ms')) && (m.includes('作成') || m.includes('作って') || m.includes('新しい') || m.includes('新規') || m.includes('追加'))) return 'create_milestone';
+  if (m.includes('milestone') && (m.includes('作成') || m.includes('create') || m.includes('new'))) return 'create_milestone';
+
+  // V2-I #43: チェックポイント評価 — milestone_statusより先に判定
+  if ((m.includes('評価') || m.includes('evaluate')) && (m.includes('実行') || m.includes('チェックポイント') || m.includes('マイルストーン') || m.includes('ms') || m.includes('判定'))) return 'checkpoint_evaluation';
+
+  // V2-I #41: マイルストーン状況確認 — project_statusより先に判定（「マイルストーンの進捗」がproject_statusに誤マッチするのを防止）
+  if (m.includes('マイルストーン') || m.includes('milestone')) return 'milestone_status';
+  if (m.includes('チェックポイント') && (m.includes('確認') || m.includes('状況') || m.includes('見') || m.includes('教えて'))) return 'milestone_status';
+  if (m.includes('ms') && (m.includes('進捗') || m.includes('状況') || m.includes('達成') || m.includes('到達'))) return 'milestone_status';
+
   // v3.1: プロジェクト進捗・状況確認（「進捗を教えて」「状況を確認」「プロジェクト確認」）— projects一覧より先に判定
   if (m.includes('プロジェクト') && (m.includes('進捗') || m.includes('状況') || m.includes('ステータス'))) return 'project_status';
   if ((m.includes('進捗') || m.includes('状況')) && (m.includes('確認') || m.includes('教えて') || m.includes('見せて') || m.includes('見たい'))) return 'project_status';
@@ -288,17 +300,7 @@ function classifyIntent(message: string): Intent {
   // V2-I #40: 会議録アップロード（「会議録を登録」「議事録をアップロード」「MTG記録」）
   if (m.includes('会議録') || m.includes('議事録') || m.includes('ミーティングメモ') || m.includes('会議の記録') || m.includes('mtg記録') || m.includes('meeting record')) return 'upload_meeting_record';
 
-  // V2-I #44: マイルストーン作成（「マイルストーン作成」「MS作成」「新しいマイルストーン」）— create_project, milestone_statusより先に判定
-  if ((m.includes('マイルストーン') || m.includes('ms')) && (m.includes('作成') || m.includes('作って') || m.includes('新しい') || m.includes('新規') || m.includes('追加'))) return 'create_milestone';
-  if (m.includes('milestone') && (m.includes('作成') || m.includes('create') || m.includes('new'))) return 'create_milestone';
-
-  // V2-I #43: チェックポイント評価（「評価を実行」「MS評価」「チェックポイント評価」）— milestone_statusより先に判定
-  if ((m.includes('評価') || m.includes('evaluate')) && (m.includes('実行') || m.includes('チェックポイント') || m.includes('マイルストーン') || m.includes('ms') || m.includes('判定'))) return 'checkpoint_evaluation';
-
-  // V2-I #41: マイルストーン状況確認（「マイルストーンの進捗」「MS状況」「チェックポイント」「達成状況」）
-  if (m.includes('マイルストーン') || m.includes('milestone')) return 'milestone_status';
-  if (m.includes('チェックポイント') && (m.includes('確認') || m.includes('状況') || m.includes('見') || m.includes('教えて'))) return 'milestone_status';
-  if (m.includes('ms') && (m.includes('進捗') || m.includes('状況') || m.includes('達成') || m.includes('到達'))) return 'milestone_status';
+  // V2-I #44, #43, #41: 前方（project_statusより前）に移動済み
 
   // V2-I #42: 検討ツリー（「検討ツリー」「検討状況」「決定事項」「何が決まった」）
   if (m.includes('検討ツリー') || m.includes('decision tree')) return 'decision_tree';
