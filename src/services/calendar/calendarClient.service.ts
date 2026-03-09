@@ -49,6 +49,7 @@ interface TokenData {
   token_type: string;
   expiry: string | null;
   email?: string;
+  scope?: string;
 }
 
 async function getGoogleToken(userId: string): Promise<TokenData | null> {
@@ -539,13 +540,27 @@ export async function createEvent(
 export async function isCalendarConnected(userId: string): Promise<boolean> {
   const token = await getGoogleToken(userId);
   if (!token) return false;
-  // カレンダースコープが付与されているかチェック
+
+  // 1. scopeフィールドで判定（高速）
   const scope = token.scope || '';
-  if (!scope.includes('calendar')) {
-    console.log('[Calendar] カレンダースコープなし。Gmail再連携が必要です。scope:', scope);
+  if (scope.includes('calendar')) {
+    return true;
+  }
+
+  // 2. scopeが未保存（古いトークン）の場合、実際にAPI呼び出しで確認
+  console.log('[Calendar] scopeフィールドが空のため、API呼び出しで接続確認。scope:', scope);
+  try {
+    const res = await calendarFetch(userId, '/calendars/primary?fields=id');
+    if (res && res.ok) {
+      console.log('[Calendar] API呼び出し成功 → カレンダー接続確認済み');
+      return true;
+    }
+    console.log('[Calendar] API呼び出し失敗（status:', res?.status, '）→ カレンダー未接続');
+    return false;
+  } catch (err) {
+    console.error('[Calendar] API接続確認エラー:', err);
     return false;
   }
-  return true;
 }
 
 // ========================================
