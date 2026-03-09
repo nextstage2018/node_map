@@ -1214,7 +1214,15 @@ async function fetchDataAndBuildCards(
     // v3.1: プロジェクト進捗ステータス
     if (intent === 'project_status') {
       try {
-        const ctxProjectId = contextParams?.projectId;
+        // contextParamsから、またはメッセージ本文からプロジェクトIDを抽出
+        let ctxProjectId = contextParams?.projectId;
+        if (!ctxProjectId) {
+          // メッセージ本文からUUID形式のプロジェクトIDを抽出（「プロジェクト「UUID」の状況を教えて」パターン）
+          const uuidMatch = userMessage.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          if (uuidMatch) {
+            ctxProjectId = uuidMatch[0];
+          }
+        }
 
         if (ctxProjectId) {
           // 特定プロジェクトの詳細ステータス

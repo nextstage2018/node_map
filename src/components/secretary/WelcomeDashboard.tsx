@@ -223,7 +223,7 @@ function RecentProjectList({
           return (
             <button
               key={proj.id}
-              onClick={() => onSendMessage(`プロジェクト「${proj.name}」の進捗を教えて`)}
+              onClick={() => onSendMessage(`プロジェクト「${proj.id}」の進捗を教えて`)}
               className="flex items-center gap-3 w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors group"
             >
               <div className="flex-1 min-w-0">
