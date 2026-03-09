@@ -187,6 +187,7 @@ export interface Task {
   dueDate?: string;      // 期限日（タイムラインビュー用、ISO日付）
   // Phase 40c: プロジェクト紐づけ
   projectId?: string;
+  milestoneId?: string;              // V2-C: マイルストーン紐づけ
   projectName?: string;              // プロジェクト名（表示用）
   organizationName?: string;         // 組織名（表示用）
   // Calendar統合: スケジュール時刻 + カレンダーイベントID
@@ -226,6 +227,7 @@ export interface CreateTaskRequest {
   tags?: string[];
   seedId?: string;       // Phase 40c: 種から変換時の種ID（段階的廃止）
   projectId?: string;    // Phase 40c: プロジェクト紐づけ
+  milestoneId?: string;  // V2-C: マイルストーン紐づけ
   // Calendar統合
   scheduledStart?: string;
   scheduledEnd?: string;

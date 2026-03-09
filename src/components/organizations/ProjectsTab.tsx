@@ -14,6 +14,7 @@ import {
   Project, ProjectChannel, ChannelMessage,
   BusinessEvent, ContactOption, PROJECT_STATUS_LABELS,
 } from '@/components/business-log/types';
+import TaskHierarchyView from '@/components/v2/TaskHierarchyView';
 
 // ========================================
 // 型定義
@@ -466,9 +467,9 @@ function ProjectDetailPanel({
 
       {/* タブコンテンツ */}
       <div className="flex-1 overflow-y-auto">
-        {/* タスクタブ */}
+        {/* タスクタブ（V2-C: 3階層表示） */}
         {activeSubTab === 'tasks' && (
-          <TaskList tasks={tasks} isLoading={isLoadingTasks} projectId={project.id} />
+          <TaskHierarchyView projectId={project.id} />
         )}
 
         {/* ドキュメントタブ */}

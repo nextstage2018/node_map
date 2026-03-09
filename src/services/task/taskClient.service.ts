@@ -49,6 +49,7 @@ function mapTaskFromDb(dbRow: any): Task {
     // Phase 40c: 種・プロジェクト紐づけ
     seedId: dbRow.seed_id,
     projectId: dbRow.project_id,
+    milestoneId: dbRow.milestone_id,
     projectName: dbRow.projects?.name || undefined,
     organizationName: dbRow.projects?.organizations?.name || undefined,
     dueDate: dbRow.due_date || undefined,
@@ -251,6 +252,7 @@ export class TaskService {
       // Phase 40c: 種・プロジェクト紐づけ
       seedId: req.seedId,
       projectId: req.projectId,
+      milestoneId: req.milestoneId,
     };
 
     if (!sb) {
@@ -277,6 +279,7 @@ export class TaskService {
       // Phase 40c: 種・プロジェクト紐づけ（カラム未追加でもエラーにならないよう条件付き）
       if (req.seedId) insertData.seed_id = req.seedId;
       if (req.projectId) insertData.project_id = req.projectId;
+      if (req.milestoneId) insertData.milestone_id = req.milestoneId;
       // Calendar統合
       if (req.scheduledStart) insertData.scheduled_start = req.scheduledStart;
       if (req.scheduledEnd) insertData.scheduled_end = req.scheduledEnd;
