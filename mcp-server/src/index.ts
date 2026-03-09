@@ -26,6 +26,29 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // Tool definitions
 const tools: Tool[] = [
   {
+    name: 'list_organizations',
+    description:
+      'List all organizations with their project counts. Use this first to get an overview.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'list_projects',
+    description:
+      'List all projects, optionally filtered by organization. Returns project IDs needed for other tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        organization_id: {
+          type: 'string',
+          description: 'Optional: filter by organization UUID',
+        },
+      },
+    },
+  },
+  {
     name: 'get_project_context',
     description:
       'Get project context including milestones, tasks, decision tree, and recent meeting records',
@@ -112,6 +135,96 @@ const tools: Tool[] = [
 ];
 
 // Tool handler functions
+async function listOrganizations(): Promise<string> {
+  try {
+    const { data: orgs, error } = await supabase
+      .from('organizations')
+      .select('id, name, domain, status, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    // Get project counts per org
+    const { data: projects, error: projError } = await supabase
+      .from('projects')
+      .select('id, organization_id');
+
+    if (projError) throw projError;
+
+    const projectCounts: Record<string, number> = {};
+    (projects || []).forEach((p) => {
+      projectCounts[p.organization_id] = (projectCounts[p.organization_id] || 0) + 1;
+    });
+
+    const result = (orgs || []).map((org) => ({
+      ...org,
+      project_count: projectCounts[org.id] || 0,
+    }));
+
+    return JSON.stringify({ organizations: result });
+  } catch (error) {
+    return JSON.stringify({
+      error: `Failed to list organizations: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
+async function listProjects(params: {
+  organization_id?: string;
+}): Promise<string> {
+  try {
+    let query = supabase
+      .from('projects')
+      .select('id, name, status, organization_id, created_at, organizations(name)')
+      .order('created_at', { ascending: false });
+
+    if (params.organization_id) {
+      query = query.eq('organization_id', params.organization_id);
+    }
+
+    const { data: projects, error } = await query;
+    if (error) throw error;
+
+    // Get task/milestone counts per project
+    const projectIds = (projects || []).map((p) => p.id);
+
+    const { data: milestones } = await supabase
+      .from('milestones')
+      .select('id, project_id, status')
+      .in('project_id', projectIds);
+
+    const { data: tasks } = await supabase
+      .from('tasks')
+      .select('id, project_id, status')
+      .in('project_id', projectIds);
+
+    const msCounts: Record<string, number> = {};
+    const taskCounts: Record<string, number> = {};
+    (milestones || []).forEach((m) => {
+      msCounts[m.project_id] = (msCounts[m.project_id] || 0) + 1;
+    });
+    (tasks || []).forEach((t) => {
+      taskCounts[t.project_id] = (taskCounts[t.project_id] || 0) + 1;
+    });
+
+    const result = (projects || []).map((p) => ({
+      id: p.id,
+      name: p.name,
+      status: p.status,
+      organization_name: (p.organizations as any)?.name || '-',
+      milestone_count: msCounts[p.id] || 0,
+      task_count: taskCounts[p.id] || 0,
+      created_at: p.created_at,
+    }));
+
+    return JSON.stringify({ projects: result });
+  } catch (error) {
+    return JSON.stringify({
+      error: `Failed to list projects: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+}
+
 async function getProjectContext(params: {
   project_id: string;
   include_tasks?: boolean;
@@ -377,6 +490,12 @@ async function processToolCall(
   toolInput: Record<string, unknown>
 ): Promise<string> {
   switch (toolName) {
+    case 'list_organizations':
+      return listOrganizations();
+    case 'list_projects':
+      return listProjects(
+        toolInput as Parameters<typeof listProjects>[0]
+      );
     case 'get_project_context':
       return getProjectContext(
         toolInput as Parameters<typeof getProjectContext>[0]
@@ -396,10 +515,17 @@ async function processToolCall(
 
 // Initialize and run MCP server
 async function main() {
-  const server = new Server({
-    name: 'nodemap-mcp-server',
-    version: '0.1.0',
-  });
+  const server = new Server(
+    {
+      name: 'nodemap-mcp-server',
+      version: '0.1.0',
+    },
+    {
+      capabilities: {
+        tools: {},
+      },
+    }
+  );
 
   // Register tools
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

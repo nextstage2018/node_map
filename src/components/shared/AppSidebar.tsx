@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Building2, Settings,
+  Bot, Inbox, Building2, Settings,
   ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
-// v3.0: サイドメニュー2項目（NodeMap = 構造化データ保管庫。秘書・インボックスはClaude+MCPに移行）
+// V2: サイドメニュー4項目化（タスク・思考マップはプロジェクト詳細に統合）
 const NAV_ITEMS = [
+  { href: '/', label: '秘書', icon: Bot },
+  { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
   { href: '/settings', label: '設定', icon: Settings },
 ];
@@ -18,6 +20,29 @@ const NAV_ITEMS = [
 export default function AppSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+
+  // 未読数をAPIから取得
+  useEffect(() => {
+    const fetchUnread = async () => {
+      try {
+        const res = await fetch('/api/inbox?limit=1');
+        if (res.ok) {
+          const data = await res.json();
+          // unreadCount がレスポンスに含まれていれば使用
+          if (typeof data.unreadCount === 'number') {
+            setUnreadCount(data.unreadCount);
+          }
+        }
+      } catch {
+        // 取得失敗時はバッジ非表示（0のまま）
+      }
+    };
+    fetchUnread();
+    // 60秒ごとにポーリング
+    const interval = setInterval(fetchUnread, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <aside
@@ -28,7 +53,7 @@ export default function AppSidebar() {
     >
       {/* ロゴ */}
       <div className="h-14 flex items-center px-4 border-b border-slate-100">
-        <Link href="/organizations" className="flex items-center gap-2.5">
+        <Link href="/" className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
             <span className="text-white text-xs font-bold">NM</span>
           </div>
@@ -42,7 +67,10 @@ export default function AppSidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2">
         <div className="space-y-1">
           {NAV_ITEMS.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+            // ホーム（秘書）はパスが / 完全一致のみアクティブ
+            const isActive = item.href === '/'
+              ? pathname === '/'
+              : (pathname === item.href || pathname?.startsWith(item.href + '/'));
             const Icon = item.icon;
             return (
               <Link
@@ -61,11 +89,25 @@ export default function AppSidebar() {
                         'text-slate-600 hover:text-slate-900 hover:bg-slate-50',
                         !collapsed && 'border-l-[3px] border-transparent'
                       ),
+                  // 秘書リンクを少し目立たせる
+                  item.href === '/' && !isActive && 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
                 )}
               >
                 <Icon className="w-[18px] h-[18px] shrink-0" />
                 {!collapsed && (
                   <span className="flex-1">{item.label}</span>
+                )}
+                {/* 未読バッジ（インボックス） */}
+                {item.hasBadge && unreadCount > 0 && (
+                  collapsed ? (
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center rounded-full bg-blue-600 text-white text-[10px] font-bold px-1">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  ) : (
+                    <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-blue-600 text-white text-[11px] font-bold px-1.5">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )
                 )}
               </Link>
             );
