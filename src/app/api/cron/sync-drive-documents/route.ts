@@ -345,6 +345,14 @@ async function processAttachment(
     });
 
     // 3. ステージングに登録
+    // v3.3: ファイル名を新命名規則に変換 (YYYY-MM-DD_種別_原名.ext)
+    const suggestedName = classification.suggestedName
+      || DriveService.generateV33FileName(
+          fileName,
+          classification.documentType,
+          msg.created_at ? new Date(msg.created_at) : undefined
+        );
+
     const stagingId = await DriveService.saveStagingFile({
       userId,
       sourceMessageId: msg.id,
@@ -363,7 +371,7 @@ async function processAttachment(
       aiDocumentType: classification.documentType,
       aiDirection: classification.direction,
       aiYearMonth: classification.yearMonth,
-      aiSuggestedName: classification.suggestedName,
+      aiSuggestedName: suggestedName,
       aiConfidence: classification.confidence,
       aiReasoning: classification.reasoning,
       sourceChannel,

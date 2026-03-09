@@ -1075,11 +1075,15 @@ CREATE TABLE drive_folders (
   user_id TEXT NOT NULL,
   organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+  milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,     -- v3.3 Phase 3
+  job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,                 -- v3.3 Phase 3
+  task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,               -- v3.3 Phase 3
   drive_folder_id TEXT NOT NULL UNIQUE,
   drive_folder_name TEXT NOT NULL,
   parent_folder_id TEXT,
   hierarchy_level INT,
-  direction TEXT,
+  resource_type TEXT,    -- v3.3: 'job' | 'meeting' | 'milestone' | null(L1/L2)
+  direction TEXT,        -- 旧構造用（'received'/'submitted'）
   year_month TEXT,
   is_shared BOOLEAN DEFAULT false,
   shared_with_emails TEXT[],
@@ -1095,23 +1099,37 @@ CREATE INDEX idx_drive_folders_user_id ON drive_folders(user_id);
 CREATE INDEX idx_drive_folders_organization_id ON drive_folders(organization_id);
 CREATE INDEX idx_drive_folders_project_id ON drive_folders(project_id);
 CREATE INDEX idx_drive_folders_drive_folder_id ON drive_folders(drive_folder_id);
+CREATE INDEX idx_drive_folders_milestone ON drive_folders(milestone_id) WHERE milestone_id IS NOT NULL;
+CREATE INDEX idx_drive_folders_job ON drive_folders(job_id) WHERE job_id IS NOT NULL;
+CREATE INDEX idx_drive_folders_task ON drive_folders(task_id) WHERE task_id IS NOT NULL;
+CREATE INDEX idx_drive_folders_resource_type ON drive_folders(resource_type) WHERE resource_type IS NOT NULL;
+CREATE INDEX idx_drive_folders_project_resource ON drive_folders(project_id, resource_type) WHERE project_id IS NOT NULL;
 ```
 
 #### 注意事項
 
-- **4階層フォルダ構造**:
+- **v3.3 新フォルダ構造（用途別）**:
   ```
   [NodeMap] A社/                       ← level=1, organization_id
     プロジェクトX/                      ← level=2, project_id
-      受領/                             ← level=3, direction='received'
-        2026-03/                       ← level=4, year_month='2026-03'
-          2026-03-01_見積書_xxx.pdf
-      提出/                             ← level=3, direction='submitted'
-        2026-03/                       ← level=4, year_month='2026-03'
+      ジョブ/                           ← level=3, resource_type='job'
+        SEOレポート/                   ← level=4, job_id
+      会議議事録/                       ← level=3, resource_type='meeting'
+        2026-03/                       ← level=4, year_month
+      マイルストーン/                   ← level=3, resource_type='milestone'
+        MS名/                          ← level=4, milestone_id
+          タスク名/                    ← level=5, task_id
   ```
-- hierarchy_level: 1=組織 / 2=プロジェクト / 3=方向 / 4=年月
-- direction: 'received'/'submitted'（level=3 の時のみ有効）
-- year_month: 'YYYY-MM'（level=4 の時のみ有効）
+- **旧構造（互換性維持・残置）**:
+  ```
+  受領/                             ← level=3, direction='received'
+    2026-03/                       ← level=4, year_month='2026-03'
+  提出/                             ← level=3, direction='submitted'
+  ```
+- hierarchy_level: 1=組織 / 2=プロジェクト / 3=用途別(or旧方向) / 4=サブフォルダ / 5=タスク
+- resource_type: 'job'/'meeting'/'milestone'（v3.3新構造用、level=3のみ）
+- direction: 'received'/'submitted'（旧構造用、level=3のみ）
+- milestone_id, job_id, task_id: 各レベルのリソース紐づけ
 - **RLS**: user_id でフィルタ
 
 ---

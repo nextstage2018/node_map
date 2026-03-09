@@ -3,7 +3,7 @@
 最終更新: 2026-03-09
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0アップグレード + v3.1 UI改善 + v3.2 秘書チャット改善 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0アップグレード + v3.1 UI改善 + v3.2 秘書チャット改善 + v3.3 Phase 0〜2（ドキュメント・DB・UI） 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -188,6 +188,7 @@
 | `organization_channels` | 組織チャネル | UUID | UNIQUE(org_id, service_name, channel_id) |
 | `projects` | プロジェクト | UUID | organization_id で組織に紐づく |
 | `project_channels` | プロジェクトチャネル | UUID | UNIQUE(project_id, service_name, identifier) |
+| `project_members` | プロジェクトメンバー | UUID | UNIQUE(project_id, contact_id)。空なら組織メンバーにフォールバック |
 | `tasks` | タスク | UUID | milestone_id / project_id / due_date / scheduled_start/end |
 | `task_members` | グループタスクメンバー | UUID | UNIQUE(task_id, user_id) |
 | `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE |
@@ -511,7 +512,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **対称データパイプライン**: 会議録(A-1)とチャネルメッセージ(A-2)から business_events / decision_trees / knowledge が対称的に自動生成
 - **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
 - **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得
-- **既知バグ**: MilestoneSection.tsx — MilestoneCard に projectId が渡されていない（展開時にエラー）
+- **~~既知バグ~~ 修正済み**: MilestoneSection.tsx — MilestoneCard に projectId は正しく渡されている（v3.3 Phase 2で修正済み）
 - **v3.2 カレンダー修正**: `getAllCalendarEvents` はprimaryカレンダーのみ取得（他人の「業務」ブロックで全時間が埋まる問題を修正済み）
 - **v3.2 タスクカード**: TaskProgressCard / TaskResumeCard から`sendMessage`による無限ループを除去済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
 - **v3.2 秘書チャットUI**: `formatAssistantMessage()`でアシスタントメッセージをリッチ表示。APIは`suggestions`（動的選択肢）を返却
@@ -541,15 +542,17 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 
 ---
 
-## v3.3 プロジェクト中心リストラクチャリング（設計済み・実装予定）
+## v3.3 プロジェクト中心リストラクチャリング（全Phase完了）
 
 ### 概要
 組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。Driveフォルダ構造を用途別に再設計。
 
-### 組織→プロジェクト引っ越し
-- **組織レベル**: 「設定」タブのみ残す（メンバー・チャネル削除）
-- **プロジェクト配下**: 8タブ（タイムライン/検討ツリー/思考マップ/タスク/ジョブ/メンバー/チャネル/関連資料）
-- **チャネル推奨**: Slack 1、Chatwork 1、メール任意（休眠中）
+### 実装済み（Phase 0〜2）
+- **組織レベル**: 「設定」タブのみに縮小完了（メンバー・チャネルUI削除済み）
+- **プロジェクト配下**: 8タブ化完了（タイムライン/検討ツリー/思考マップ/タスク/ジョブ/メンバー/チャネル/関連資料）
+- **DB**: `project_members`テーブル作成済み、`drive_documents`に`milestone_id`/`job_id`追加済み
+- **新コンポーネント**: `ProjectMembers.tsx`、`ProjectChannels.tsx`、`ProjectResources.tsx` 作成済み
+- **チャネル推奨**: Slack 1、Chatwork 1、メール任意（休眠中）— UI上に推奨ガイド表示済み
 
 ### Driveフォルダ新構造
 ```
@@ -576,10 +579,11 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **やることメモ**: 一時的なTODO
 
 ### 実装フェーズ（詳細: docs/RESTRUCTURING_V3.3.md）
-- Phase 1: DBスキーマ拡張（project_members, drive_documents拡張）
-- Phase 2: UIリストラクチャリング（タブ移動・新規コンポーネント）
-- Phase 3: Driveフォルダ再構築
-- Phase 4: Cron・AIパイプライン更新
+- ✅ Phase 0: ドキュメント先行更新（`ef28529`）
+- ✅ Phase 1: DBスキーマ拡張（`23a5124`, `fff0455`）
+- ✅ Phase 2: UIリストラクチャリング（`1b9e861`）
+- ✅ Phase 3: Driveフォルダ再構築（driveClient.service.ts 拡張 — 新関数4つ追加）
+- ✅ Phase 4: Cron・AIパイプライン更新（sync-drive-documents命名規則 + MeetGeek Drive保存）
 
 ---
 

@@ -702,7 +702,15 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
     };
 
     if (!isBriefing) {
-      setMessages((prev) => [...prev, userMsg]);
+      // v3.2改善: 新メッセージ送信時に古いsuggestionsをクリア
+      setMessages((prev) => {
+        const cleared = prev.map(m =>
+          m.role === 'assistant' && m.suggestions
+            ? { ...m, suggestions: undefined }
+            : m
+        );
+        return [...cleared, userMsg];
+      });
     }
     setInput('');
     setIsLoading(true);
@@ -2040,21 +2048,32 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
                       <Bot className="w-3.5 h-3.5 text-white" />
                     </div>
                   )}
-                  {msg.content && (
-                    <div
-                      className={cn(
-                        'max-w-[80%]',
-                        msg.role === 'user'
-                          ? 'px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-blue-600 text-white rounded-2xl rounded-br-md shadow-nm-sm'
-                          : 'px-4 py-3 bg-white text-nm-text border border-nm-border rounded-2xl rounded-bl-md shadow-nm-sm'
-                      )}
-                    >
-                      {msg.role === 'user'
-                        ? linkifyText(msg.content, true)
-                        : formatAssistantMessage(msg.content)
-                      }
-                    </div>
-                  )}
+                  <div className="flex flex-col">
+                    {msg.content && (
+                      <div
+                        className={cn(
+                          'max-w-[80%]',
+                          msg.role === 'user'
+                            ? 'px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-blue-600 text-white rounded-2xl rounded-br-md shadow-nm-sm'
+                            : 'px-4 py-3 bg-white text-nm-text border border-nm-border rounded-2xl rounded-bl-md shadow-nm-sm'
+                        )}
+                      >
+                        {msg.role === 'user'
+                          ? linkifyText(msg.content, true)
+                          : formatAssistantMessage(msg.content)
+                        }
+                      </div>
+                    )}
+                    {/* v3.2改善: タイムスタンプ表示 */}
+                    {msg.timestamp && (
+                      <span className={cn(
+                        'text-[10px] text-slate-400 mt-0.5',
+                        msg.role === 'user' ? 'text-right' : 'text-left'
+                      )}>
+                        {new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {/* インラインカード */}
                 {msg.cards && msg.cards.length > 0 && (

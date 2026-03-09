@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import crypto from 'crypto';
+import * as DriveService from '@/services/drive/driveClient.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -518,6 +519,72 @@ export async function POST(request: NextRequest) {
 
     } catch (analyzeError) {
       console.error('[MeetGeek Webhook] AI解析トリガーエラー:', analyzeError);
+    }
+
+    // ---- v3.3: トランスクリプトをDriveの会議議事録フォルダに保存 ----
+    if (userId && transcriptText) {
+      try {
+        const connected = await DriveService.isDriveConnected(userId);
+        if (connected) {
+          // プロジェクト情報取得
+          const { data: project } = await supabase
+            .from('projects')
+            .select('id, name, organization_id, organizations(id, name)')
+            .eq('id', projectId)
+            .single();
+
+          if (project?.organization_id) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const org = (project as any).organizations;
+            const yearMonth = meetingDate.slice(0, 7); // YYYY-MM
+
+            const meetingFolderId = await DriveService.ensureNewStructureFolder(
+              userId,
+              project.organization_id,
+              org?.name || '不明',
+              projectId,
+              project.name || '不明',
+              { type: 'meeting', yearMonth }
+            );
+
+            if (meetingFolderId) {
+              const transcriptFileName = DriveService.generateV33FileName(
+                `${meetingTitle || '会議'}.txt`,
+                'トランスクリプト',
+                new Date(meetingDate)
+              );
+
+              const buffer = Buffer.from(transcriptText, 'utf-8');
+              const driveFile = await DriveService.uploadFile(
+                userId,
+                buffer,
+                transcriptFileName,
+                'text/plain',
+                meetingFolderId
+              );
+
+              if (driveFile) {
+                await DriveService.recordDocument({
+                  userId,
+                  organizationId: project.organization_id,
+                  projectId,
+                  driveFileId: driveFile.id,
+                  driveFolderId: meetingFolderId,
+                  fileName: driveFile.name,
+                  fileSizeBytes: driveFile.size,
+                  mimeType: 'text/plain',
+                  driveUrl: driveFile.webViewLink,
+                  documentType: 'トランスクリプト',
+                  yearMonth,
+                });
+                console.log(`[MeetGeek Webhook] Drive保存完了: ${transcriptFileName}`);
+              }
+            }
+          }
+        }
+      } catch (driveError) {
+        console.error('[MeetGeek Webhook] Drive保存エラー（処理続行）:', driveError);
+      }
     }
 
     return new NextResponse(null, { status: 200 });

@@ -4193,15 +4193,28 @@ interface Suggestion {
   message: string;
 }
 
-function getSuggestions(intent: Intent, cards: CardData[]): Suggestion[] {
+// v3.2改善: コンテキスト情報を基に動的にサジェスチョンを生成
+interface SuggestionContext {
+  taskCount?: number;
+  milestoneCount?: number;
+  projectCount?: number;
+  unreadCount?: number;
+}
+
+function getSuggestions(intent: Intent, cards: CardData[], context?: SuggestionContext): Suggestion[] {
   const hasCards = cards.length > 0;
+  const ctx = context || {};
 
   switch (intent) {
     case 'briefing':
       return [
-        { label: '新着メッセージ', message: '新着メッセージを見せて' },
+        ...(ctx.unreadCount && ctx.unreadCount > 0
+          ? [{ label: '新着メッセージ', message: '新着メッセージを見せて' }]
+          : []),
         { label: '空き時間を確認', message: '今週の空き時間を教えて' },
-        { label: 'タスクを進めたい', message: 'タスクを進めたい' },
+        ...(ctx.taskCount && ctx.taskCount > 5
+          ? [{ label: '優先タスク確認', message: '優先度の高いタスクを教えて' }]
+          : [{ label: 'タスクを進めたい', message: 'タスクを進めたい' }]),
       ];
     case 'inbox':
       return hasCards
@@ -4218,8 +4231,12 @@ function getSuggestions(intent: Intent, cards: CardData[]): Suggestion[] {
     case 'project_tasks':
       return [
         { label: '新しいタスク作成', message: '新しいタスクを作成したい' },
-        { label: 'タスクを進める', message: 'タスクを進めたい' },
-        { label: '今日の状況', message: '今日の状況を教えて' },
+        ...(ctx.taskCount && ctx.taskCount > 5
+          ? [{ label: '優先タスク確認', message: '優先度の高いタスクを教えて' }]
+          : [{ label: 'タスクを進める', message: 'タスクを進めたい' }]),
+        ...(ctx.milestoneCount === 0
+          ? [{ label: 'MS作成', message: 'マイルストーンを作成して' }]
+          : [{ label: '今日の状況', message: '今日の状況を教えて' }]),
       ];
     case 'task_progress':
       return [
@@ -4244,7 +4261,9 @@ function getSuggestions(intent: Intent, cards: CardData[]): Suggestion[] {
     case 'org_projects':
       return [
         { label: 'タスク確認', message: 'プロジェクトのタスクを見せて' },
-        { label: '進捗確認', message: 'プロジェクトの進捗を教えて' },
+        ...(ctx.milestoneCount === 0
+          ? [{ label: 'MS作成', message: 'マイルストーンを作成して' }]
+          : [{ label: '進捗確認', message: 'プロジェクトの進捗を教えて' }]),
         { label: '会議録を登録', message: '会議録を登録したい' },
       ];
     case 'upload_meeting_record':

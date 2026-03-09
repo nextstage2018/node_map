@@ -46,7 +46,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { organizationId, organizationName, projectId, projectName, fileName, mimeType, fileData } = body;
+    const {
+      organizationId, organizationName, projectId, projectName,
+      fileName, mimeType, fileData,
+      // v3.3 Phase 3: 用途別フォルダ対応
+      milestoneId, milestoneName, jobId, jobName, taskId, taskName,
+      folderTarget, documentType,
+    } = body;
 
     if (!fileName || !fileData) {
       return NextResponse.json(
@@ -67,7 +73,14 @@ export async function POST(request: NextRequest) {
     // フォルダ取得 or 作成
     let folderId: string | null = null;
 
-    if (organizationId && organizationName) {
+    // v3.3 新構造: folderTarget指定があればそちらを優先
+    if (folderTarget && organizationId && organizationName && projectId && projectName) {
+      folderId = await DriveService.ensureNewStructureFolder(
+        userId, organizationId, organizationName, projectId, projectName,
+        folderTarget
+      );
+    } else if (organizationId && organizationName) {
+      // 旧構造フォールバック
       const orgFolderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
       if (!orgFolderId) {
         return NextResponse.json(
@@ -95,11 +108,16 @@ export async function POST(request: NextRequest) {
     // Base64 → Buffer
     const buffer = Buffer.from(fileData, 'base64');
 
+    // v3.3: ファイル名を新命名規則に変換（documentType指定時のみ）
+    const uploadFileName = documentType
+      ? DriveService.generateV33FileName(fileName, documentType)
+      : fileName;
+
     // Driveにアップロード
     const driveFile = await DriveService.uploadFile(
       userId,
       buffer,
-      fileName,
+      uploadFileName,
       mimeType || 'application/octet-stream',
       folderId
     );
@@ -111,7 +129,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DBに記録
+    // DBに記録（v3.3: milestone_id, job_id, task_id 対応）
     const docId = await DriveService.recordDocument({
       userId,
       organizationId: organizationId || undefined,
@@ -122,6 +140,9 @@ export async function POST(request: NextRequest) {
       fileSizeBytes: driveFile.size,
       mimeType: driveFile.mimeType,
       driveUrl: driveFile.webViewLink,
+      milestoneId: milestoneId || undefined,
+      jobId: jobId || undefined,
+      taskId: taskId || undefined,
     });
 
     return NextResponse.json({

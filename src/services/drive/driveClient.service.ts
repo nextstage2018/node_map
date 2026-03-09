@@ -2,7 +2,7 @@
 // フォルダ管理・ファイルアップロード・共有リンク生成
 // Gmailと同じOAuthトークンを再利用（user_service_tokens service_name='gmail'）
 
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient, getServerSupabase, getSupabase } from '@/lib/supabase';
 
 const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
@@ -684,6 +684,10 @@ export async function recordDocument(params: {
   documentType?: string;
   yearMonth?: string;
   originalFileName?: string;
+  // v3.3 Phase 3 拡張
+  milestoneId?: string;
+  jobId?: string;
+  taskId?: string;
 }): Promise<string | null> {
   const sb = createServerClient();
   if (!sb) return null;
@@ -709,6 +713,11 @@ export async function recordDocument(params: {
   if (params.documentType) insertData.document_type = params.documentType;
   if (params.yearMonth) insertData.year_month = params.yearMonth;
   if (params.originalFileName) insertData.original_file_name = params.originalFileName;
+
+  // v3.3 Phase 3 拡張カラム
+  if (params.milestoneId) insertData.milestone_id = params.milestoneId;
+  if (params.jobId) insertData.job_id = params.jobId;
+  if (params.taskId) insertData.task_id = params.taskId;
 
   const { data, error } = await sb
     .from('drive_documents')
@@ -797,7 +806,328 @@ export function formatDocumentsForContext(
 }
 
 // ========================================
-// Phase 44a: 4階層フォルダ管理（組織/プロジェクト/方向/年月）
+// v3.3 Phase 3: 用途別フォルダ管理（ジョブ/会議議事録/MS/タスク）
+// ========================================
+
+// L3用途別ルートフォルダ取得 or 作成（ジョブ/会議議事録/マイルストーン）
+async function getOrCreateResourceTypeFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  resourceType: 'job' | 'meeting' | 'milestone',
+  folderName: string
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('resource_type', resourceType)
+    .eq('hierarchy_level', 3)
+    .is('milestone_id', null)
+    .is('job_id', null)
+    .is('task_id', null)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // 親のプロジェクトフォルダを取得
+  const { data: projFolder } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('hierarchy_level', 2)
+    .single();
+
+  const parentFolderId = projFolder?.drive_folder_id || undefined;
+  if (!parentFolderId) {
+    console.error('[Drive] プロジェクトフォルダが見つかりません:', projectId);
+    return null;
+  }
+
+  // Driveにフォルダ作成
+  const folder = await createFolder(userId, folderName, parentFolderId);
+  if (!folder) return null;
+
+  // DBに記録
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: parentFolderId,
+    hierarchy_level: 3,
+    resource_type: resourceType,
+  });
+
+  return folder.id;
+}
+
+// ジョブフォルダ取得 or 作成
+export async function getOrCreateJobFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  jobId: string,
+  jobName: string
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索（job_idで検索）
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('job_id', jobId)
+    .eq('hierarchy_level', 4)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // L3「ジョブ」ルートフォルダ確保
+  const jobRootId = await getOrCreateResourceTypeFolder(userId, orgId, projectId, 'job', 'ジョブ');
+  if (!jobRootId) return null;
+
+  // L4: ジョブ名フォルダ
+  const folder = await createFolder(userId, jobName, jobRootId);
+  if (!folder) return null;
+
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    job_id: jobId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: jobRootId,
+    hierarchy_level: 4,
+    resource_type: 'job',
+  });
+
+  return folder.id;
+}
+
+// 会議議事録フォルダ取得 or 作成
+export async function getOrCreateMeetingFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  yearMonth: string // 'YYYY-MM'
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('resource_type', 'meeting')
+    .eq('year_month', yearMonth)
+    .eq('hierarchy_level', 4)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // L3「会議議事録」ルートフォルダ確保
+  const meetingRootId = await getOrCreateResourceTypeFolder(userId, orgId, projectId, 'meeting', '会議議事録');
+  if (!meetingRootId) return null;
+
+  // L4: YYYY-MMフォルダ
+  const folder = await createFolder(userId, yearMonth, meetingRootId);
+  if (!folder) return null;
+
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: meetingRootId,
+    hierarchy_level: 4,
+    resource_type: 'meeting',
+    year_month: yearMonth,
+  });
+
+  return folder.id;
+}
+
+// マイルストーンフォルダ取得 or 作成
+export async function getOrCreateMilestoneFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  msId: string,
+  msName: string
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('project_id', projectId)
+    .eq('milestone_id', msId)
+    .eq('hierarchy_level', 4)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // L3「マイルストーン」ルートフォルダ確保
+  const msRootId = await getOrCreateResourceTypeFolder(userId, orgId, projectId, 'milestone', 'マイルストーン');
+  if (!msRootId) return null;
+
+  // L4: MS名フォルダ
+  const folder = await createFolder(userId, msName, msRootId);
+  if (!folder) return null;
+
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    milestone_id: msId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: msRootId,
+    hierarchy_level: 4,
+    resource_type: 'milestone',
+  });
+
+  return folder.id;
+}
+
+// タスクフォルダ取得 or 作成（MS配下）
+export async function getOrCreateTaskFolder(
+  userId: string,
+  orgId: string,
+  projectId: string,
+  msId: string,
+  msName: string,
+  taskId: string,
+  taskName: string
+): Promise<string | null> {
+  const sb = createServerClient();
+  if (!sb) return null;
+
+  // DBから既存マッピング検索
+  const { data: existing } = await sb
+    .from('drive_folders')
+    .select('drive_folder_id')
+    .eq('user_id', userId)
+    .eq('task_id', taskId)
+    .eq('hierarchy_level', 5)
+    .single();
+
+  if (existing?.drive_folder_id) {
+    return existing.drive_folder_id;
+  }
+
+  // 親のMSフォルダを確保
+  const msFolderId = await getOrCreateMilestoneFolder(userId, orgId, projectId, msId, msName);
+  if (!msFolderId) return null;
+
+  // L5: タスク名フォルダ
+  const folder = await createFolder(userId, taskName, msFolderId);
+  if (!folder) return null;
+
+  await sb.from('drive_folders').insert({
+    user_id: userId,
+    organization_id: orgId,
+    project_id: projectId,
+    milestone_id: msId,
+    task_id: taskId,
+    drive_folder_id: folder.id,
+    folder_name: folder.name,
+    parent_drive_folder_id: msFolderId,
+    hierarchy_level: 5,
+    resource_type: 'milestone',
+  });
+
+  return folder.id;
+}
+
+// v3.3 新構造用の一括フォルダ確保
+export async function ensureNewStructureFolder(
+  userId: string,
+  orgId: string,
+  orgName: string,
+  projectId: string,
+  projectName: string,
+  target: {
+    type: 'job';
+    jobId: string;
+    jobName: string;
+  } | {
+    type: 'meeting';
+    yearMonth: string;
+  } | {
+    type: 'milestone';
+    milestoneId: string;
+    milestoneName: string;
+  } | {
+    type: 'task';
+    milestoneId: string;
+    milestoneName: string;
+    taskId: string;
+    taskName: string;
+  }
+): Promise<string | null> {
+  // L1: 組織
+  const orgFolderId = await getOrCreateOrgFolder(userId, orgId, orgName);
+  if (!orgFolderId) return null;
+
+  // L2: プロジェクト
+  const projFolderId = await getOrCreateProjectFolder(userId, orgId, projectId, projectName);
+  if (!projFolderId) return null;
+
+  // L3+: 用途別
+  switch (target.type) {
+    case 'job':
+      return getOrCreateJobFolder(userId, orgId, projectId, target.jobId, target.jobName);
+    case 'meeting':
+      return getOrCreateMeetingFolder(userId, orgId, projectId, target.yearMonth);
+    case 'milestone':
+      return getOrCreateMilestoneFolder(userId, orgId, projectId, target.milestoneId, target.milestoneName);
+    case 'task':
+      return getOrCreateTaskFolder(userId, orgId, projectId, target.milestoneId, target.milestoneName, target.taskId, target.taskName);
+  }
+}
+
+// v3.3 ファイル名生成ヘルパー
+export function generateV33FileName(
+  originalName: string,
+  documentType?: string,
+  date?: Date
+): string {
+  const d = date || new Date();
+  const dateStr = d.toISOString().slice(0, 10); // YYYY-MM-DD
+  const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '';
+  const baseName = originalName.replace(/\.[^.]+$/, '');
+  const typePrefix = documentType ? `${documentType}_` : '';
+  return `${dateStr}_${typePrefix}${baseName}${ext}`;
+}
+
+// ========================================
+// Phase 44a: 4階層フォルダ管理（組織/プロジェクト/方向/年月）— 旧構造（互換性維持）
 // ========================================
 
 const DIRECTION_LABELS: Record<string, string> = {

@@ -507,6 +507,28 @@ export async function isCalendarConnected(userId: string): Promise<boolean> {
     const res = await calendarFetch(userId, '/calendars/primary?fields=id');
     if (res && res.ok) {
       console.log('[Calendar] API呼び出し成功 → カレンダー接続確認済み');
+
+      // v3.2改善: 成功時にscopeをDBに保存（次回からAPI呼び出し不要）
+      try {
+        const sb = createServerClient();
+        if (sb && token.scope !== undefined) {
+          const updatedScope = token.scope
+            ? `${token.scope} https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events`
+            : 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+          await sb
+            .from('user_service_tokens')
+            .update({
+              token_data: { ...token, scope: updatedScope },
+              updated_at: new Date().toISOString(),
+            })
+            .eq('user_id', userId)
+            .eq('service_name', 'gmail');
+          console.log('[Calendar] scopeをDBに保存しました');
+        }
+      } catch (saveErr) {
+        console.warn('[Calendar] scope保存エラー（処理続行）:', saveErr);
+      }
+
       return true;
     }
     console.log('[Calendar] API呼び出し失敗（status:', res?.status, '）→ カレンダー未接続');
