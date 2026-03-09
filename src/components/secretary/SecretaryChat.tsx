@@ -1765,6 +1765,69 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         }
         break;
       }
+      case 'create_task_for_project': {
+        // プロジェクト指定済みのタスク作成ウィザード（MS選択 or フォーム直行）
+        const pid = (d as { projectId?: string })?.projectId;
+        if (pid) {
+          try {
+            const msRes = await fetch(`/api/milestones?projectId=${pid}&status=pending,in_progress`);
+            const msData = await msRes.json();
+            const milestones = msData.success ? (msData.data || []) : [];
+
+            if (milestones.length > 0) {
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: 'マイルストーンを選んでください。',
+                cards: [{
+                  type: 'milestone_selector',
+                  data: {
+                    title: 'どのマイルストーンに紐づけますか？',
+                    wizardAction: 'create_task',
+                    projectId: pid,
+                    milestones: milestones.map((ms: { id: string; title: string; status: string; target_date?: string }) => ({
+                      id: ms.id,
+                      title: ms.title,
+                      status: ms.status,
+                      targetDate: ms.target_date || '',
+                    })),
+                    allowSkip: true,
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            } else {
+              // MS無し → TaskFormCard直行
+              setMessages(prev => [...prev, {
+                id: generateId(),
+                role: 'assistant',
+                content: 'タスクの内容を入力してください。',
+                cards: [{
+                  type: 'task_form',
+                  data: {
+                    suggestedProjectId: pid,
+                  },
+                }],
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+          } catch {
+            sendMessage(`プロジェクト ${pid} でタスクを作成したい`);
+          }
+        } else {
+          sendMessage('タスクを作成したい');
+        }
+        break;
+      }
+      case 'create_milestone_for_project': {
+        const pid = (d as { projectId?: string })?.projectId;
+        if (pid) {
+          sendMessage(`プロジェクト ${pid} にマイルストーンを作成したい`);
+        } else {
+          sendMessage('マイルストーンを作成したい');
+        }
+        break;
+      }
       case 'add_meeting': {
         const pid = (d as { projectId?: string })?.projectId;
         if (pid) {

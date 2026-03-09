@@ -2637,14 +2637,28 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
           .eq('user_id', userId)
           .order('updated_at', { ascending: false });
 
-        // ユーザーメッセージからプロジェクト名を特定
+        // ユーザーメッセージからプロジェクトを特定（UUID or 名前マッチ）
         let matchedProject: { id: string; name: string } | null = null;
         if (userProjects) {
-          for (const p of userProjects) {
-            if (userMessage.includes(p.name)) {
-              matchedProject = { id: p.id, name: p.name };
-              break;
+          // まずUUIDで検索
+          const uuidMatch = userMessage.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+          if (uuidMatch) {
+            const found = userProjects.find((p: { id: string }) => p.id === uuidMatch[0]);
+            if (found) matchedProject = { id: found.id, name: found.name };
+          }
+          // UUID未マッチなら名前で検索
+          if (!matchedProject) {
+            for (const p of userProjects) {
+              if (userMessage.includes(p.name)) {
+                matchedProject = { id: p.id, name: p.name };
+                break;
+              }
             }
+          }
+          // contextParamsのprojectIdもフォールバック
+          if (!matchedProject && contextParams?.projectId) {
+            const found = userProjects.find((p: { id: string }) => p.id === contextParams.projectId);
+            if (found) matchedProject = { id: found.id, name: found.name };
           }
         }
 

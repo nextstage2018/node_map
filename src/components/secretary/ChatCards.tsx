@@ -3796,22 +3796,28 @@ function ProjectStatusCard({
       )}
 
       {/* クイックアクション */}
-      <div className="flex gap-2 pt-1">
+      <div className="grid grid-cols-2 gap-2 pt-1">
         <button
           onClick={() => onAction?.('view_tasks')}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+          className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
         >
           タスク一覧
         </button>
         <button
-          onClick={() => onAction?.('add_meeting')}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+          onClick={() => onAction?.('create_task_for_project')}
+          className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
         >
-          会議録追加
+          タスク追加
+        </button>
+        <button
+          onClick={() => onAction?.('create_milestone_for_project')}
+          className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+        >
+          MS作成
         </button>
         <button
           onClick={() => onAction?.('view_detail')}
-          className="flex-1 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+          className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
         >
           詳細ページ
         </button>
