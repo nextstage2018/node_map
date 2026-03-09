@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, content, eventType, projectId, groupId, contactId, fromAddress, fromName,
+    const { title, content, description: bodyDescription, eventType, projectId, groupId, contactId, fromAddress, fromName,
       sourceCalendarEventId, meetingNotesUrl, eventStart, eventEnd } = body;
 
     if (!title || !title.trim()) {
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       .from('business_events')
       .insert({
         title: title.trim(),
-        content: content?.trim() || null,
+        description: (bodyDescription || content)?.trim() || null,
         event_type: eventType || 'note',
         project_id: projectId || null,
         group_id: groupId || null,

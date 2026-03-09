@@ -42,7 +42,8 @@ export interface ChannelMessage {
 export interface BusinessEvent {
   id: string;
   title: string;
-  content: string | null;
+  content: string | null;      // レガシー互換（UIで参照）
+  description: string | null;   // DB実カラム名
   event_type: string;
   project_id: string | null;
   group_id: string | null;

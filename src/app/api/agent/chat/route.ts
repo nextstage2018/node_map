@@ -60,6 +60,7 @@ interface JobRow {
   description: string | null;
   ai_draft: string | null;
   created_at: string;
+  project_id?: string | null;
 }
 
 // ========================================
@@ -388,16 +389,21 @@ async function fetchDataAndBuildCards(
       );
     }
 
-    // ジョブ取得
+    // ジョブ取得（projectId指定時はプロジェクト固有ジョブを優先取得）
     if (['briefing', 'jobs', 'create_job', 'general', 'pattern_analysis'].includes(intent)) {
       fetches.push(
-        supabase
-          .from('jobs')
-          .select('id, title, status, type, due_date, description, ai_draft, created_at')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(15)
-          .then((res: { data: JobRow[] | null }) => { jobs = res.data || []; })
+        (async () => {
+          let query = supabase
+            .from('jobs')
+            .select('id, title, status, type, due_date, description, ai_draft, created_at, project_id')
+            .eq('user_id', userId);
+          // jobs intentでprojectId指定時はプロジェクト絞り込み
+          if (intent === 'jobs' && contextParams?.projectId) {
+            query = query.eq('project_id', contextParams.projectId);
+          }
+          const res = await query.order('created_at', { ascending: false }).limit(15);
+          jobs = (res.data || []) as JobRow[];
+        })()
       );
     }
 

@@ -598,7 +598,7 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
               {statusTasks.map((task) => (
                 <a
                   key={task.id}
-                  href={`/?message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`}
+                  href={`/?projectId=${projectId}&message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`}
                   className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors"
                 >
                   <span className={`text-xs ${priorityColors[task.priority] || ''}`}>

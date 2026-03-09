@@ -62,6 +62,8 @@ export async function POST(request: NextRequest) {
       if (!supabase) {
         return NextResponse.json({ success: false, error: 'DB未設定' }, { status: 500 });
       }
+      // drive_file_id(NOT NULL UNIQUE) にURL用のユニークIDを生成
+      const urlDriveFileId = `url_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const { data: doc, error: insertErr } = await supabase
         .from('drive_documents')
         .insert({
@@ -69,17 +71,19 @@ export async function POST(request: NextRequest) {
           project_id: projectId || null,
           organization_id: organizationId || null,
           file_name: title || google_drive_url,
-          google_drive_url: google_drive_url,
-          tags: tags || [],
-          milestone_id: milestoneId || null,
-          job_id: jobId || null,
+          drive_file_id: urlDriveFileId,
+          mime_type: 'text/x-uri',
+          link_url: google_drive_url,
+          web_view_link: google_drive_url,
+          link_type: 'external_url',
+          document_type: 'reference',
           task_id: taskId || null,
         })
         .select('id')
         .single();
       if (insertErr) {
         console.error('[Drive Documents API] URL登録エラー:', insertErr);
-        return NextResponse.json({ success: false, error: 'URL登録に失敗しました' }, { status: 500 });
+        return NextResponse.json({ success: false, error: 'URL登録に失敗しました: ' + insertErr.message }, { status: 500 });
       }
       return NextResponse.json({ success: true, data: { id: doc.id, title, google_drive_url } });
     }

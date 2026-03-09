@@ -1,22 +1,21 @@
 // v3.3: プロジェクト関連資料コンポーネント
-// Drive連携ドキュメント + URL登録 + タグ検索
+// Drive連携ドキュメント + URL登録
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  FileText, Plus, Search, X, ExternalLink, Globe, Tag, Filter,
+  FileText, Plus, Search, X, ExternalLink, Globe,
 } from 'lucide-react';
 
 interface DriveDocument {
   id: string;
   file_name: string | null;
-  title: string | null;
-  google_drive_url: string | null;
   mime_type: string | null;
   task_id: string | null;
-  milestone_id: string | null;
-  job_id: string | null;
-  tags: string[] | null;
+  link_url: string | null;
+  web_view_link: string | null;
+  link_type: string | null;
+  document_type: string | null;
   created_at: string;
 }
 
@@ -31,8 +30,6 @@ export default function ProjectResources({ projectId, projectName }: Props) {
   const [showAddUrl, setShowAddUrl] = useState(false);
   const [newUrl, setNewUrl] = useState('');
   const [newUrlTitle, setNewUrlTitle] = useState('');
-  const [newUrlTags, setNewUrlTags] = useState('');
-  const [filterTag, setFilterTag] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -59,9 +56,6 @@ export default function ProjectResources({ projectId, projectName }: Props) {
   const addUrl = async () => {
     if (!newUrl.trim()) return;
     try {
-      const tags = newUrlTags.trim()
-        ? newUrlTags.split(/[,、\s]+/).filter(Boolean)
-        : [];
       const res = await fetch('/api/drive/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -69,7 +63,6 @@ export default function ProjectResources({ projectId, projectName }: Props) {
           projectId,
           title: newUrlTitle.trim() || newUrl.trim(),
           google_drive_url: newUrl.trim(),
-          tags,
           is_external_url: true,
         }),
       });
@@ -78,7 +71,6 @@ export default function ProjectResources({ projectId, projectName }: Props) {
         showMsg('success', 'URLを追加しました');
         setNewUrl('');
         setNewUrlTitle('');
-        setNewUrlTags('');
         setShowAddUrl(false);
         fetchDocuments();
       } else {
@@ -89,23 +81,15 @@ export default function ProjectResources({ projectId, projectName }: Props) {
     }
   };
 
-  // 全タグを収集
-  const allTags = Array.from(new Set(
-    documents.flatMap(d => d.tags || [])
-  )).sort();
-
   // フィルタリング
   const filtered = documents.filter(doc => {
-    const matchSearch = !searchQuery ||
-      (doc.file_name || doc.title || '').toLowerCase().includes(searchQuery.toLowerCase());
-    const matchTag = !filterTag ||
-      (doc.tags || []).includes(filterTag);
-    return matchSearch && matchTag;
+    if (!searchQuery) return true;
+    return (doc.file_name || '').toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   // ファイル種別アイコン色
   const getFileColor = (mimeType: string | null, url: string | null) => {
-    if (url && !url.includes('drive.google.com')) return 'text-indigo-500'; // 外部URL
+    if (url && !url.includes('drive.google.com')) return 'text-indigo-500';
     if (mimeType?.includes('spreadsheet')) return 'text-green-600';
     if (mimeType?.includes('presentation')) return 'text-amber-600';
     if (mimeType?.includes('document')) return 'text-blue-600';
@@ -166,16 +150,6 @@ export default function ProjectResources({ projectId, projectName }: Props) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div>
-            <label className="text-xs text-slate-600 mb-1 block">タグ（カンマ区切り、任意）</label>
-            <input
-              type="text"
-              value={newUrlTags}
-              onChange={(e) => setNewUrlTags(e.target.value)}
-              placeholder="例: SEO, レポート, 月次"
-              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
           <button
             onClick={addUrl}
             disabled={!newUrl.trim()}
@@ -184,34 +158,17 @@ export default function ProjectResources({ projectId, projectName }: Props) {
         </div>
       )}
 
-      {/* 検索・フィルタ */}
+      {/* 検索 */}
       {documents.length > 0 && (
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="ファイル名で検索..."
-              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          {allTags.length > 0 && (
-            <div className="relative">
-              <select
-                value={filterTag}
-                onChange={(e) => setFilterTag(e.target.value)}
-                className="appearance-none pl-7 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">全タグ</option>
-                {allTags.map(tag => (
-                  <option key={tag} value={tag}>{tag}</option>
-                ))}
-              </select>
-              <Filter className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
-          )}
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="ファイル名で検索..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
         </div>
       )}
 
@@ -228,31 +185,26 @@ export default function ProjectResources({ projectId, projectName }: Props) {
       ) : (
         <div className="space-y-2">
           {filtered.map(doc => {
-            const isExternal = doc.google_drive_url && !doc.google_drive_url.includes('drive.google.com');
-            const displayName = doc.title || doc.file_name || 'Untitled';
+            const viewUrl = doc.web_view_link || doc.link_url;
+            const isExternal = viewUrl && !viewUrl.includes('drive.google.com');
+            const displayName = doc.file_name || 'Untitled';
             return (
               <div key={doc.id} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg group hover:border-slate-300 transition-colors">
                 {isExternal ? (
-                  <Globe className={`w-4 h-4 shrink-0 ${getFileColor(doc.mime_type, doc.google_drive_url)}`} />
+                  <Globe className={`w-4 h-4 shrink-0 ${getFileColor(doc.mime_type, viewUrl)}`} />
                 ) : (
-                  <FileText className={`w-4 h-4 shrink-0 ${getFileColor(doc.mime_type, doc.google_drive_url)}`} />
+                  <FileText className={`w-4 h-4 shrink-0 ${getFileColor(doc.mime_type, viewUrl)}`} />
                 )}
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-700 truncate">{displayName}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-slate-400">
-                      {new Date(doc.created_at).toLocaleDateString('ja-JP')}
-                    </span>
-                    {(doc.tags || []).map(tag => (
-                      <span key={tag} className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded bg-slate-100 text-slate-500">
-                        <Tag className="w-2.5 h-2.5" />{tag}
-                      </span>
-                    ))}
-                  </div>
+                  <span className="text-[10px] text-slate-400">
+                    {new Date(doc.created_at).toLocaleDateString('ja-JP')}
+                    {doc.document_type && ` · ${doc.document_type}`}
+                  </span>
                 </div>
-                {doc.google_drive_url && (
+                {viewUrl && (
                   <a
-                    href={doc.google_drive_url}
+                    href={viewUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"

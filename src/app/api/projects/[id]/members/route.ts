@@ -170,7 +170,6 @@ export async function POST(
           name: contactName || 'Unknown',
           company_name: companyName || null,
           organization_id: project.organization_id || null,
-          confirmed: true,
         });
       if (createErr) {
         console.error('[Project Members API] コンタクト自動作成エラー:', createErr);
