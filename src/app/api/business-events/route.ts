@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
       .from('business_events')
       .insert({
         title: title.trim(),
-        description: (bodyDescription || content)?.trim() || null,
+        content: (bodyDescription || content)?.trim() || null,
         event_type: eventType || 'note',
         project_id: projectId || null,
         group_id: groupId || null,

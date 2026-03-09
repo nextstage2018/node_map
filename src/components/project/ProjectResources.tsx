@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  FileText, Plus, Search, X, ExternalLink, Globe,
+  FileText, Plus, Search, X, ExternalLink, Globe, ChevronRight,
 } from 'lucide-react';
 
 interface DriveDocument {
@@ -22,9 +22,10 @@ interface DriveDocument {
 interface Props {
   projectId: string;
   projectName: string;
+  organizationName?: string | null;
 }
 
-export default function ProjectResources({ projectId, projectName }: Props) {
+export default function ProjectResources({ projectId, projectName, organizationName }: Props) {
   const [documents, setDocuments] = useState<DriveDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddUrl, setShowAddUrl] = useState(false);
@@ -105,10 +106,45 @@ export default function ProjectResources({ projectId, projectName }: Props) {
     );
   }
 
+  // URLからドメイン名を抽出してわかりやすいファイル名にする
+  const formatDisplayName = (doc: DriveDocument): string => {
+    // タイトルがURLでなければそのまま表示
+    const name = doc.file_name || '';
+    if (name && !name.startsWith('http')) return name;
+    // URLの場合はドメイン+パスを見やすくする
+    try {
+      const url = new URL(name || doc.link_url || '');
+      const host = url.hostname.replace('www.', '');
+      // Google系はサービス名を表示
+      if (host.includes('docs.google.com')) {
+        const pathParts = url.pathname.split('/');
+        const type = pathParts[1] || '';
+        const typeLabels: Record<string, string> = { spreadsheets: 'スプレッドシート', document: 'ドキュメント', presentation: 'スライド', forms: 'フォーム' };
+        return typeLabels[type] || `Google ${type}`;
+      }
+      return host;
+    } catch {
+      return name || '(名称なし)';
+    }
+  };
+
   return (
     <div className="p-6 space-y-4">
+      {/* パンくずナビゲーション */}
+      <div className="flex items-center gap-1 text-[11px] text-slate-400">
+        {organizationName && (
+          <>
+            <span>{organizationName}</span>
+            <ChevronRight className="w-3 h-3" />
+          </>
+        )}
+        <span>{projectName}</span>
+        <ChevronRight className="w-3 h-3" />
+        <span className="text-slate-600 font-medium">関連資料</span>
+      </div>
+
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-slate-800">{projectName} - 関連資料</h2>
+        <h2 className="text-sm font-bold text-slate-800">関連資料</h2>
         <button
           onClick={() => setShowAddUrl(!showAddUrl)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
@@ -141,7 +177,7 @@ export default function ProjectResources({ projectId, projectName }: Props) {
             />
           </div>
           <div>
-            <label className="text-xs text-slate-600 mb-1 block">タイトル（任意）</label>
+            <label className="text-xs text-slate-600 mb-1 block">タイトル（入力推奨 — 未入力だとURLがそのまま表示されます）</label>
             <input
               type="text"
               value={newUrlTitle}
@@ -187,7 +223,10 @@ export default function ProjectResources({ projectId, projectName }: Props) {
           {filtered.map(doc => {
             const viewUrl = doc.web_view_link || doc.link_url;
             const isExternal = viewUrl && !viewUrl.includes('drive.google.com');
-            const displayName = doc.file_name || 'Untitled';
+            const displayName = formatDisplayName(doc);
+            // URLのドメインをサブラベルに表示
+            let urlDomain = '';
+            try { urlDomain = new URL(viewUrl || '').hostname.replace('www.', ''); } catch { /* */ }
             return (
               <div key={doc.id} className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg group hover:border-slate-300 transition-colors">
                 {isExternal ? (
@@ -196,11 +235,16 @@ export default function ProjectResources({ projectId, projectName }: Props) {
                   <FileText className={`w-4 h-4 shrink-0 ${getFileColor(doc.mime_type, viewUrl)}`} />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-700 truncate">{displayName}</p>
-                  <span className="text-[10px] text-slate-400">
-                    {new Date(doc.created_at).toLocaleDateString('ja-JP')}
-                    {doc.document_type && ` · ${doc.document_type}`}
-                  </span>
+                  <p className="text-sm font-medium text-slate-700 truncate">{displayName}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(doc.created_at).toLocaleDateString('ja-JP')}
+                      {doc.document_type && ` · ${doc.document_type}`}
+                    </span>
+                    {urlDomain && (
+                      <span className="text-[10px] text-slate-300 truncate max-w-[200px]">{urlDomain}</span>
+                    )}
+                  </div>
                 </div>
                 {viewUrl && (
                   <a

@@ -712,7 +712,7 @@ export default function OrganizationDetailPage() {
 
               {/* v3.3 PJレベル: 関連資料（旧ドキュメント統合 + URL管理 + タグ検索） */}
               {activeNav.type === 'project' && activeNav.tab === 'resources' && currentProject && (
-                <ProjectResources projectId={currentProject.id} projectName={currentProject.name} />
+                <ProjectResources projectId={currentProject.id} projectName={currentProject.name} organizationName={org?.name} />
               )}
             </div>
           </div>

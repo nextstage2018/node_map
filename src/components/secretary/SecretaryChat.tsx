@@ -5,6 +5,8 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Bot, Send, Loader2, Trash2,
   Paperclip, Upload, X, FileText, ChevronDown,
+  CheckSquare, MessageSquare, Calendar, Flag, ArrowRight,
+  Zap, ClipboardList, PlusCircle, BarChart3, RefreshCw,
 } from 'lucide-react';
 
 // ========================================
@@ -32,6 +34,114 @@ import { cn } from '@/lib/utils';
 import { SecretaryMessage, CardData, CardRenderer } from './ChatCards';
 import WelcomeDashboard from './WelcomeDashboard';
 import { QuickActionBar } from './QuickActions';
+
+// ========================================
+// v3.3: タスクコンテキストメニュー（タスク遷移時の初手UI）
+// ========================================
+function TaskContextMenu({ taskId, projectId, taskName, onAction }: {
+  taskId: string;
+  projectId?: string;
+  taskName: string;
+  onAction: (msg: string) => void;
+}) {
+  const actions = [
+    { id: 'progress', icon: <MessageSquare className="w-4 h-4" />, label: 'このタスクについて相談', desc: 'AIと壁打ちしながらタスクを進める', msg: `タスク「${taskName}」について相談したい` },
+    { id: 'status', icon: <BarChart3 className="w-4 h-4" />, label: '進捗を報告・更新', desc: 'タスクのステータスや進捗を更新する', msg: `タスク「${taskName}」の進捗を更新したい` },
+    { id: 'schedule', icon: <Calendar className="w-4 h-4" />, label: '作業時間を確保', desc: 'カレンダーに作業時間をブロックする', msg: `タスク「${taskName}」の作業時間を確保したい` },
+    { id: 'subtask', icon: <PlusCircle className="w-4 h-4" />, label: '関連タスクを作成', desc: 'サブタスクや関連するタスクを追加', msg: `タスク「${taskName}」に関連するタスクを作成したい` },
+    { id: 'resource', icon: <ClipboardList className="w-4 h-4" />, label: '外部資料を取り込み', desc: 'Deep Researchなどの成果物を紐づけ', msg: `タスク「${taskName}」に外部資料を取り込みたい` },
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 px-4">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center">
+            <CheckSquare className="w-4 h-4 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-800">{taskName}</h2>
+            <p className="text-xs text-slate-400">タスクメニュー</p>
+          </div>
+        </div>
+        <button onClick={() => window.history.back()} className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-1">
+          <ArrowRight className="w-3 h-3 rotate-180" /> プロジェクトに戻る
+        </button>
+      </div>
+      <div className="space-y-2">
+        {actions.map(a => (
+          <button
+            key={a.id}
+            onClick={() => onAction(a.msg)}
+            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-left transition-all shadow-sm hover:shadow-md"
+          >
+            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+              {a.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{a.label}</div>
+              <div className="text-xs text-slate-400">{a.desc}</div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-slate-300 shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ========================================
+// v3.3: ジョブコンテキストメニュー（ジョブ遷移時の初手UI）
+// ========================================
+function JobContextMenu({ projectId, projectName, onAction }: {
+  projectId: string;
+  projectName: string;
+  onAction: (msg: string) => void;
+}) {
+  const actions = [
+    { id: 'list', icon: <ClipboardList className="w-4 h-4" />, label: 'ジョブ一覧を確認', desc: '未処理・進行中のジョブを表示', msg: 'ジョブ一覧を見せて' },
+    { id: 'create', icon: <PlusCircle className="w-4 h-4" />, label: '新しいジョブを作成', desc: '定型業務やTODOメモを追加', msg: '新しいジョブを作成したい' },
+    { id: 'routine', icon: <RefreshCw className="w-4 h-4" />, label: '定型業務を確認', desc: '定期的な業務の実行状況を確認', msg: '定型業務の状況を教えて' },
+    { id: 'delegate', icon: <Zap className="w-4 h-4" />, label: 'AIに作業を任せる', desc: '返信・連絡などをAIに委任', msg: 'AIに作業を任せたい' },
+  ];
+
+  return (
+    <div className="max-w-2xl mx-auto py-8 px-4">
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+            <Zap className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-800">{projectName || 'プロジェクト'} - ジョブ</h2>
+            <p className="text-xs text-slate-400">ジョブメニュー</p>
+          </div>
+        </div>
+        <button onClick={() => window.history.back()} className="inline-flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 mt-1">
+          <ArrowRight className="w-3 h-3 rotate-180" /> プロジェクトに戻る
+        </button>
+      </div>
+      <div className="space-y-2">
+        {actions.map(a => (
+          <button
+            key={a.id}
+            onClick={() => onAction(a.msg)}
+            className="w-full flex items-center gap-3 p-3.5 rounded-xl border border-slate-200 bg-white hover:bg-blue-50 hover:border-blue-200 text-left transition-all shadow-sm hover:shadow-md"
+          >
+            <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+              {a.icon}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-slate-800">{a.label}</div>
+              <div className="text-xs text-slate-400">{a.desc}</div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-slate-300 shrink-0" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ========================================
 // メッセージ用ユニークID生成
@@ -603,9 +713,22 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestoringHistory]);
 
-  // URLパラメータからの自動送信（タスクタブからの遷移時）
+  // コンテキスト遷移の種別判定
+  const contextMode = (() => {
+    if (contextTaskId && initialMessage?.includes('進めたい')) return 'task' as const;
+    if (initialMessage?.includes('ジョブ')) return 'job' as const;
+    return null;
+  })();
+
+  // URLパラメータからの自動送信（コンテキスト付き遷移ではアクション選択UIを優先）
   useEffect(() => {
     if (initialMessage && !hasAutoSent && !isRestoringHistory) {
+      // タスク/ジョブコンテキスト遷移時はアクション選択UIを表示（自動送信しない）
+      if (contextMode) {
+        setHasAutoSent(true);
+        setHasBriefing(true);
+        return;
+      }
       setHasAutoSent(true);
       setHasBriefing(true);
       // 少し遅延させてからsendMessageを呼ぶ
@@ -2028,11 +2151,24 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
       {/* チャットエリア */}
       <div className="flex-1 overflow-y-auto px-4 py-6">
         {messages.length === 0 && !isLoading ? (
-          // Phase UI-3: ウェルカムダッシュボード（またはアクションセレクター）
+          // Phase UI-3: コンテキスト遷移時のアクション選択 or ウェルカムダッシュボード
           activeContextId && !contextLabel ? (
             <div className="max-w-3xl mx-auto text-center text-slate-500 py-8">
               コンテキスト情報を読み込み中...
             </div>
+          ) : contextMode === 'task' && contextTaskId ? (
+            <TaskContextMenu
+              taskId={contextTaskId}
+              projectId={contextProjectId}
+              taskName={initialMessage?.match(/「(.+?)」/)?.[1] || ''}
+              onAction={sendMessage}
+            />
+          ) : contextMode === 'job' && contextProjectId ? (
+            <JobContextMenu
+              projectId={contextProjectId}
+              projectName={contextLabel || ''}
+              onAction={sendMessage}
+            />
           ) : (
             <WelcomeDashboard onSendMessage={sendMessage} />
           )

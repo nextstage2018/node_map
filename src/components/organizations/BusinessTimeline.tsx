@@ -240,10 +240,10 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
                               </div>
 
                               {/* 展開コンテンツ */}
-                              {isExpanded && (event.description || event.content) && (
+                              {isExpanded && event.content && (
                                 <div className="mt-2 pt-2 border-t border-slate-100">
                                   <p className="text-xs text-slate-600 whitespace-pre-wrap leading-relaxed">
-                                    {event.description || event.content}
+                                    {event.content}
                                   </p>
                                   {event.contact_persons && (
                                     <p className="text-[10px] text-slate-400 mt-2">

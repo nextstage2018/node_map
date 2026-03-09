@@ -29,6 +29,12 @@ interface Contact {
   companyName?: string;
 }
 
+// 手動入力用
+interface ManualInput {
+  name: string;
+  companyName: string;
+}
+
 interface Props {
   projectId: string;
   projectName: string;
@@ -41,6 +47,8 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [manualInput, setManualInput] = useState<ManualInput>({ name: '', companyName: '' });
+  const [showManualForm, setShowManualForm] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const showMsg = (type: 'success' | 'error', text: string) => {
@@ -88,17 +96,16 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAddForm]);
 
-  const addMember = async (contactId: string) => {
+  const addMember = async (contactId: string, contactName?: string, companyName?: string) => {
     try {
-      // auto_ コンタクトの場合はname情報も送信
       const contact = allContacts.find(c => c.id === contactId);
       const res = await fetch(`/api/projects/${projectId}/members`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contact_id: contactId,
-          name: contact?.name,
-          companyName: contact?.companyName,
+          name: contactName || contact?.name,
+          companyName: companyName || contact?.companyName,
         }),
       });
       const data = await res.json();
@@ -112,6 +119,15 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
     } catch {
       showMsg('error', '通信エラー');
     }
+  };
+
+  // 手動入力でメンバー追加（contact_personsに新規登録→project_membersに追加）
+  const addManualMember = async () => {
+    if (!manualInput.name.trim()) return;
+    const autoId = `auto_manual_${Date.now()}`;
+    await addMember(autoId, manualInput.name.trim(), manualInput.companyName.trim());
+    setManualInput({ name: '', companyName: '' });
+    setShowManualForm(false);
   };
 
   const removeMember = async (memberId: string | null, contactId: string) => {
@@ -214,6 +230,47 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
                 >追加</button>
               </div>
             ))}
+          </div>
+
+          {/* 手動入力セクション */}
+          <div className="mt-3 pt-3 border-t border-slate-200">
+            {!showManualForm ? (
+              <button
+                onClick={() => setShowManualForm(true)}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+              >
+                + コンタクト一覧にない人を手動で追加
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <h4 className="text-xs font-semibold text-slate-600">手動でメンバーを追加</h4>
+                <input
+                  type="text"
+                  value={manualInput.name}
+                  onChange={(e) => setManualInput(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="名前（必須）"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  type="text"
+                  value={manualInput.companyName}
+                  onChange={(e) => setManualInput(prev => ({ ...prev, companyName: e.target.value }))}
+                  placeholder="会社名（任意）"
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={addManualMember}
+                    disabled={!manualInput.name.trim()}
+                    className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  >追加</button>
+                  <button
+                    onClick={() => { setShowManualForm(false); setManualInput({ name: '', companyName: '' }); }}
+                    className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                  >キャンセル</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

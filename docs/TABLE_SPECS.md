@@ -1374,18 +1374,22 @@ CREATE TABLE business_events (
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL,
   title TEXT NOT NULL,
-  description TEXT,
+  content TEXT,                    -- ※ DBカラム名は content（descriptionではない）
+  group_id UUID,
+  contact_id TEXT,
   ai_generated BOOLEAN DEFAULT false,
   summary_period TEXT,
-  event_date DATE,
+  event_date TIMESTAMPTZ,         -- ※ DB実型は TIMESTAMPTZ（DATEではない）
   source_message_id TEXT,
   source_channel TEXT,
   source_document_id TEXT,
+  source_calendar_event_id TEXT,
+  meeting_notes_url TEXT,
+  event_start TIMESTAMPTZ,
+  event_end TIMESTAMPTZ,
   keywords_extracted BOOLEAN DEFAULT false,
-  contact_persons TEXT[],
-  projects UUID[],
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
