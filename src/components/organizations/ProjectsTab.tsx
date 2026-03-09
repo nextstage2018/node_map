@@ -14,6 +14,7 @@ import {
   Project, ProjectChannel, ChannelMessage,
   BusinessEvent, ContactOption, PROJECT_STATUS_LABELS,
 } from '@/components/business-log/types';
+import MilestoneSection from '@/components/v2/MilestoneSection';
 
 // ========================================
 // 型定義
@@ -468,7 +469,10 @@ function ProjectDetailPanel({
       <div className="flex-1 overflow-y-auto">
         {/* タスクタブ */}
         {activeSubTab === 'tasks' && (
-          <TaskList tasks={tasks} isLoading={isLoadingTasks} projectId={project.id} />
+          <div className="py-2">
+            <MilestoneSection projectId={project.id} />
+            <TaskList tasks={tasks} isLoading={isLoadingTasks} projectId={project.id} />
+          </div>
         )}
 
         {/* ドキュメントタブ */}
