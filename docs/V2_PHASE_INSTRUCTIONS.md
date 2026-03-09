@@ -1363,8 +1363,8 @@ git commit -m "V2-I: Integration - 5 new secretary intents, enhanced dashboard w
 | V2-D | 会議録 + AI解析 | feature/v2-d-meeting-records | ✅ 完了 | 3a1495f |
 | V2-E | 検討ツリー | feature/v2-e-decision-tree | ✅ 完了 | cb10670 |
 | V2-F | チェックポイント評価 | feature/v2-f-checkpoint-evaluation | ✅ 完了 | 4a33a8f |
-| V2-G | 自己学習 | feature/v2-g-self-learning | ⬜ 次 | |
-| V2-H | 思考ログ拡張 | feature/v2-h-thought-log-expansion | ⬜ 次 | |
-| V2-I | 統合 | feature/v2-i-integration | ⬜ 未着手（V2-C〜H待ち） | |
+| V2-G | 自己学習 | feature/v2-g-self-learning | ✅ 完了 | 912e8f7 |
+| V2-H | 思考ログ拡張 | feature/v2-h-thought-log-expansion | ✅ 完了 | ec722f4 |
+| V2-I | 統合 | feature/v2-i-integration | ✅ 完了 | da2c70f |
 
 各フェーズ完了時にこのテーブルを更新してください。
