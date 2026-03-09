@@ -1,9 +1,9 @@
 # NodeMap V2 アーキテクチャ設計書
 
-最終更新: 2026-03-06
+最終更新: 2026-03-09
 
-> **ステータス**: 設計確定（実装前）
-> **前提**: 既存の CLAUDE.md / FEATURES.md / TABLE_SPECS.md に記載された現行仕様の上に構築する
+> **ステータス**: V2全9フェーズ + v3.0アップグレード実装完了
+> **前提**: CLAUDE.md が SSOT。本ファイルはアーキテクチャ詳細の補足
 
 ---
 
@@ -307,9 +307,40 @@ Week N+1:
 
 ### 会議録の形式
 
-- テキスト入力（秘書チャットから）
-- ファイルアップロード（Drive経由）
-- 将来: 音声文字起こし連携
+- テキスト入力（検討ツリータブから）
+- MeetGeek Webhook（会議終了時に自動取り込み・プロジェクト自動判定）
+
+### v3.0 追加: 議事録ファースト原則
+
+すべてのプロジェクトデータは**会議録またはチャネルメッセージ**から自動生成される。
+
+- タイムラインは**読み取り専用**（手動イベント追加は廃止）
+- `create_business_event` intent は `upload_meeting_record` にリダイレクト
+- MeetGeek連携: 会議終了 → Webhook → 参加者からPJ自動判定 → 議事録保存 → AI解析 → 検討ツリー・ビジネスイベント自動生成
+
+### v3.0 追加: MeetGeek連携
+
+**Webhook受信**: `POST /api/webhooks/meetgeek`
+
+プロジェクト自動判定の優先順位:
+1. 参加者名（トランスクリプトのspeaker）→ `contact_persons` → 所属`organization` → `projects`
+2. 同日の`business_events`（会議）とサマリーテキスト照合
+3. フォールバック: 最新プロジェクト
+
+環境変数: `MEETGEEK_API_KEY`, `MEETGEEK_WEBHOOK_SECRET`
+
+### v3.0 追加: 秘書UI改善
+
+- コンテキスト自動注入（URLパラメータ: projectId, taskId, organizationId, messageId, contactId）
+- カード型選択UI（action_selector, project_selector, milestone_selector）
+- プロジェクト詳細画面からの遷移時にコンテキストバッジ表示
+
+### v3.0 追加: MCPサーバー
+
+`mcp-server/` に実装。Claude CodeからNodeMapデータにアクセスする3ツール:
+- `get_project_context`: プロジェクト全コンテキスト取得
+- `create_meeting_record`: 会議録作成（AI解析パイプライン起動）
+- `get_decision_tree`: 検討ツリー取得
 
 ---
 
@@ -385,14 +416,18 @@ CREATE TABLE meeting_records (
   title TEXT NOT NULL,
   meeting_date DATE NOT NULL,
   content TEXT NOT NULL,
-  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription')),
-  source_file_id UUID,
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek')),
+  source_file_id TEXT,
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,
   user_id TEXT,
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
+
+CREATE INDEX idx_meeting_records_source
+  ON meeting_records(source_type, source_file_id)
+  WHERE source_file_id IS NOT NULL;
 ```
 
 #### decision_trees

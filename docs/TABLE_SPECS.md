@@ -1360,7 +1360,7 @@ CREATE INDEX idx_business_events_meeting_record_id ON business_events(meeting_re
 
 ### meeting_records（会議録）
 
-**目的**: V2-D: 会議録のテキストを保存し、AI解析の入力とする
+**目的**: 会議録のテキストを保存し、AI解析・検討ツリー生成・ビジネスイベント自動追加の起点とする
 
 #### CREATE TABLE
 
@@ -1371,8 +1371,8 @@ CREATE TABLE meeting_records (
   title TEXT NOT NULL,
   meeting_date DATE NOT NULL,
   content TEXT NOT NULL,
-  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription')),
-  source_file_id UUID,
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek')),
+  source_file_id TEXT,
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,
   user_id TEXT,
@@ -1386,16 +1386,17 @@ CREATE TABLE meeting_records (
 ```sql
 CREATE INDEX idx_meeting_records_project_id ON meeting_records(project_id);
 CREATE INDEX idx_meeting_records_meeting_date ON meeting_records(meeting_date);
+CREATE INDEX idx_meeting_records_source ON meeting_records(source_type, source_file_id) WHERE source_file_id IS NOT NULL;
 ```
 
 #### 注意事項
 
-- V2-Aで作成済み
 - processed: AI解析が完了したかどうかのフラグ
-- source_type: 現段階では 'text' のみ対応（'file', 'transcription' は将来スコープ）
-- ai_summary: AI解析後に自動設定される要約テキスト
-- 会議録登録 → AI解析 → business_events に自動登録の流れ（V2-D）
-- 検討ツリー生成の起点データ（V2-E で使用予定）
+- source_type: `'text'`（手動入力）、`'meetgeek'`（MeetGeek Webhook自動取り込み）
+- source_file_id: TEXT型。MeetGeekの場合はmeeting_id（UUID文字列）を格納
+- ai_summary: AI解析後に自動設定される要約テキスト（MeetGeekの場合は事前セットあり）
+- 会議録登録 → AI解析 → business_events自動追加 → 検討ツリー自動生成の一連パイプライン
+- MeetGeek重複防止: source_type='meetgeek' + source_file_id で一意チェック
 - **RLS**: user_id でフィルタ（ただし user_id は nullable）
 
 ---

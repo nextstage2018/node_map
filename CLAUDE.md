@@ -3,12 +3,12 @@
 最終更新: 2026-03-09
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ実装完了済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0アップグレード実装完了済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
 | **CLAUDE.md（本ファイル）** | 設計・ルール・テーブル・API・配色の全情報 | ★ |
-| **docs/ARCHITECTURE_V2.md** | V2設計書 — 5階層・3ログ・チェックポイント・自己学習 | ★ |
+| **docs/ARCHITECTURE_V2.md** | V2設計書 — 5階層・3ログ・チェックポイント・自己学習・MeetGeek連携 | ★ |
 | **docs/TABLE_SPECS.md** | DB現状マスタ — 全テーブルのCREATE文・制約・インデックス | ★ |
 
 ---
@@ -23,6 +23,7 @@
 - **デプロイ**: Vercel（本番: https://node-map-eight.vercel.app）
 - **リポジトリ**: https://github.com/nextstage2018/node_map.git
 - **ローカル**: ~/Desktop/node_map_git
+- **MCPサーバー**: `mcp-server/` ディレクトリ（Claude Code連携用）
 
 ---
 
@@ -41,21 +42,56 @@
 | 9 | mutation後のキャッシュ無効化 | 削除したデータが再表示 | UPDATE/DELETE/INSERT直後に実行 |
 | 10 | ファイルアップロードには `project_id` 必須 | アップロード失敗 | Driveフォルダ構造がプロジェクト基盤 |
 
-### 追加の注意（V2で発見した重要ルール）
+### 追加の注意
 
 - **Vercel互換params**: `{ params }: { params: Promise<{ id: string }> }` — Promiseで受ける
 - **zshブラケット**: `git add "src/app/api/tasks/[id]/route.ts"` — 引用符で囲む
 - **knowledge_master_entries.id**: TEXT型、`me_auto_${Date.now()}_${random}` で手動生成
-- **milestones.status の制約**: CHECK制約あり。許可値は `'pending'`, `'in_progress'`, `'achieved'`, `'missed'` の4つのみ。`'not_started'` は不可（DB制約違反になる）
-- **intent分類の優先順位**: `classifyIntent()` はキーワード一致で**先にマッチしたものが勝つ**。V2 intent（#40〜44）は `create_project`（#29）より**前**に評価すること。例: 「プロジェクトにマイルストーンを作成」→ 先に `create_project` がマッチしてしまう
+- **milestones.status の制約**: CHECK制約あり。許可値は `'pending'`, `'in_progress'`, `'achieved'`, `'missed'` の4つのみ
+- **intent分類の優先順位**: `classifyIntent()` はキーワード一致で**先にマッチしたものが勝つ**。V2 intent（#40〜44）は `create_project`（#29）より**前**に評価すること
 - **会議録AI解析のレスポンス構造**: `analyzeData.data.analysis.topics`（× `analyzeData.data.topics` ではない）
-- **検討ツリーのデータフロー**: 検討ツリータブで会議録登録 → AI解析 → 検討ツリー自動生成 → ビジネスイベント自動追加。タイムラインの手動イベント登録では検討ツリーは生成されない
+- **検討ツリーのデータフロー**: 会議録登録 → AI解析 → 検討ツリー自動生成 → ビジネスイベント自動追加
+- **タイムラインは読み取り専用**: 手動イベント登録は廃止。すべて会議録・チャネルメッセージ・Cronから自動生成
+
+---
+
+## 設計原則（v3.0）
+
+### 議事録ファースト
+
+すべてのプロジェクトデータは**会議録またはチャネルメッセージ**から自動生成される。手動の「登録」は原則排除。
+
+```
+データの流入経路（2つのみ）:
+  1. 会議録 → 検討ツリータブで登録 or MeetGeek Webhook自動連携
+  2. チャネルメッセージ → Slack/Chatwork同期（Cron）
+```
+
+### 秘書コンテキスト自動注入
+
+秘書（ホーム画面）はURLパラメータでコンテキストを受け取る。プロジェクト詳細画面からの遷移時に自動付与。
+
+```
+/?projectId=xxx&taskId=yyy&message=テキスト
+```
+
+対応パラメータ: `projectId`, `taskId`, `organizationId`, `messageId`, `contactId`, `message`
+
+### 秘書選択UI
+
+テキスト入力だけでなく、カード型選択UIで操作を簡素化。
+
+| カード種別 | 用途 |
+|---|---|
+| `action_selector` | プロジェクトコンテキスト時のアクション選択 |
+| `project_selector` | プロジェクト未指定時のPJ選択 |
+| `milestone_selector` | タスク作成時のMS選択 |
 
 ---
 
 ## 画面・ルート一覧
 
-### サイドメニュー（V2: 4項目）
+### サイドメニュー（4項目）
 
 | 画面 | URL | 主なテーブル |
 |---|---|---|
@@ -68,7 +104,7 @@
 
 | タブ | 内容 | 主なテーブル |
 |---|---|---|
-| タイムライン | ビジネスログ | business_events |
+| タイムライン | ビジネスログ（**読み取り専用**） | business_events |
 | 検討ツリー | 会議録からAI生成 | decision_trees, decision_tree_nodes, meeting_records |
 | 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
 | タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
@@ -134,13 +170,13 @@
 | `organization_channels` | 組織チャネル | UUID | UNIQUE(org_id, service_name, channel_id) |
 | `projects` | プロジェクト | UUID | organization_id で組織に紐づく |
 | `project_channels` | プロジェクトチャネル | UUID | UNIQUE(project_id, service_name, identifier) |
-| `tasks` | タスク | UUID | seed_id / project_id / due_date / scheduled_start/end |
+| `tasks` | タスク | UUID | milestone_id / project_id / due_date / scheduled_start/end |
 | `task_members` | グループタスクメンバー | UUID | UNIQUE(task_id, user_id) |
-| `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE。resource_type / title / content |
-| `jobs` | ジョブ | UUID | type / status / ai_draft / scheduled fields |
+| `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE |
+| `jobs` | ジョブ | UUID | project_id nullable。type / status / ai_draft |
 | `consultations` | 社内相談 | UUID | requester→responder→AI返信生成 |
 | `idea_memos` | アイデアメモ | UUID | tags TEXT[] |
-| `thought_task_nodes` | ノード紐づけ | UUID | UNIQUE(task_id, node_id) |
+| `thought_task_nodes` | ノード紐づけ | UUID | UNIQUE(task_id, node_id)。milestone_id nullable |
 | `thought_edges` | 思考動線 | UUID | UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable |
 | `drive_file_staging` | ファイルステージング | UUID | AI分類→承認→最終配置 |
@@ -150,36 +186,24 @@
 | `secretary_conversations` | 秘書会話 | UUID | AIコンテキスト用（UI復元なし） |
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
-| `business_events` | ビジネスイベント | UUID | ai_generated / summary_period |
-| `seeds` | 種ボックス（廃止済み） | UUID | 参照のみ。新規作成しない |
-
-### V2 新規テーブル（CREATE文 → docs/ARCHITECTURE_V2.md セクション7.3）
-
-| テーブル | 用途 | ID型 | 注意 |
-|---|---|---|---|
+| `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
 | `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
-| `milestones` | マイルストーン（1週間チェックポイント） | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
-| `meeting_records` | 会議録 | UUID | project_id 必須。検討ツリー・学習の起点 |
+| `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
+| `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型 |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造 |
 | `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
 | `milestone_evaluations` | チェックポイント評価結果 | UUID | milestone_id FK CASCADE |
 | `evaluation_learnings` | 評価エージェント学習データ | UUID | AI判定 vs 人間判定の差分 |
-
-### V2 既存テーブル変更
-
-| テーブル | 追加カラム | 説明 |
-|---|---|---|
-| `tasks` | `milestone_id` UUID nullable | マイルストーン紐づけ |
-| `jobs` | `project_id` UUID nullable | プロジェクト任意紐づけ |
-| `thought_task_nodes` | `milestone_id` UUID nullable | 思考ログスコープ拡張 |
-| `business_events` | `meeting_record_id` UUID nullable | 会議録紐づけ |
+| `seeds` | 種ボックス（廃止済み） | UUID | 参照のみ。新規作成しない |
 
 ---
 
 ## 秘書AI — 44 Intent
 
 キーワードベース意図分類（< 10ms）で高速判定。優先度順に評価。
+
+**⚠️ V2 intent（#40〜44）は classifyIntent() 内で #29 create_project より前に配置すること**
 
 | # | Intent | 用途 |
 |---|---|---|
@@ -200,7 +224,7 @@
 | 15 | `thought_map` | 思考マップ |
 | 16 | `business_log` | ビジネスログ |
 | 17 | `business_summary` | 活動要約・週間レポート |
-| 18 | `create_business_event` | ビジネスイベント登録 |
+| 18 | `create_business_event` | → `upload_meeting_record` にリダイレクト（手動登録廃止） |
 | 19 | `knowledge_structuring` | ナレッジ構造化提案 |
 | 20 | `create_calendar_event` | カレンダー予定作成 |
 | 21 | `create_drive_folder` | Driveフォルダ作成 |
@@ -222,18 +246,11 @@
 | 37 | `org_projects` | 特定組織のPJ一覧 |
 | 38 | `project_tasks` | 特定PJのタスク一覧 |
 | 39 | `general` | その他 |
-
-**⚠️ V2 intent（#40〜44）は classifyIntent() 内で #29 create_project より前に配置すること**
-
-| # | Intent | 用途 |
-|---|---|---|
 | 40 | `upload_meeting_record` | 会議録アップロード・AI解析 |
 | 41 | `milestone_status` | マイルストーン状況確認 |
 | 42 | `decision_tree` | 検討ツリー表示・更新 |
 | 43 | `checkpoint_evaluation` | チェックポイント評価実行 |
 | 44 | `create_milestone` | マイルストーン作成 |
-
-※ 全44種実装完了。
 
 ---
 
@@ -273,19 +290,18 @@
 - **フレームワーク**: 階層思考（Why×5層）→ 飛び地（横方向連想）→ ストーリー化
 - **対話スタイル**: 壁打ち型。「そもそも」「構造で見ると」等の表現
 
-### ビジネスログ タイムラインUI
+### ビジネスログ タイムラインUI（読み取り専用）
 
-組織詳細ページのプロジェクト配下に、時間軸で変遷を辿れるタイムラインUIを実装。
+組織詳細ページのプロジェクト配下に、時間軸で変遷を辿れるタイムラインUIを実装。**手動イベント追加は廃止**。すべて自動生成。
 
-| 種別 | アイコン | 左ボーダー色 | 自動/手動 |
+| 種別 | アイコン | 左ボーダー色 | 生成元 |
 |---|---|---|---|
-| 会議 | Calendar | blue | 手動 or カレンダー同期 |
-| 意思決定 | GitCommit | purple | 手動 |
-| メッセージ | MessageSquare | slate | 自動（CW/Slack同期） |
-| タスク完了 | CheckCircle | green | 自動 |
-| ファイル共有 | FileText | amber | 自動（Drive同期） |
-| マイルストーン | Flag | red | 手動 |
-| メモ | StickyNote | slate | 手動 |
+| 会議 | Calendar | blue | 会議録登録時に自動追加 / MeetGeek Webhook |
+| メッセージ | MessageSquare | slate | Cron（CW/Slack同期） |
+| タスク完了 | CheckCircle | green | タスクステータス変更時 |
+| ファイル共有 | FileText | amber | Drive同期 |
+| マイルストーン | Flag | red | マイルストーン達成時 |
+| サマリー | BarChart | indigo | 週次Cronサマリー |
 
 ---
 
@@ -346,15 +362,21 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | 10 | `/api/thought-map/replay` | 思考リプレイ | tasks, task_conversations, snapshots | 1500 |
 | 11 | `/api/cron/summarize-business-log` | 週次サマリー | business_events, projects | 800 |
 | 12 | aiClient.service | タスク完了サマリー | tasks, task_conversations | 1000 |
-
-### V2 追加AIエンドポイント（実装済み）
-
-| # | エンドポイント | 用途 | 主なデータソース | AI性格 |
-|---|---|---|---|---|
-| 13 | `/api/meeting-records/analyze` | 会議録AI解析 | meeting_records | 分析型 |
+| 13 | `/api/meeting-records/[id]/analyze` | 会議録AI解析 | meeting_records | 分析型 |
 | 14 | `/api/decision-trees/generate` | 検討ツリー生成 | meeting_records, decision_trees | 構造化型 |
 | 15 | `/api/milestones/evaluate` | チェックポイント評価 | milestones, tasks, thought_logs | **評価エージェント**（厳格） |
 | 16 | `/api/milestones/learn` | 評価自己学習 | evaluation_learnings, meeting_records | 学習型 |
+
+### Webhook エンドポイント
+
+| エンドポイント | 用途 | トリガー |
+|---|---|---|
+| `/api/webhooks/meetgeek` | MeetGeek会議録自動取り込み | MeetGeek会議完了時 |
+
+**プロジェクト自動判定**: Webhook受信時、以下の優先順位でプロジェクトを自動判定:
+1. 参加者名 → `contact_persons` → 所属`organization` → `projects`
+2. 同日の`business_events`（会議）とサマリー照合
+3. フォールバック: 最新プロジェクト
 
 **AIの2つの性格**:
 - **壁打ちパートナー**（#2 タスクAI）: Shinji Method、協力的、発散も許容
@@ -363,6 +385,20 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 **共通コンテキスト**: getUserWritingStyle()（過去送信10件） / メール署名（メールのみ） / buildPersonalizedContext()（性格・思考傾向）
 
 **フォールバック**: AI失敗時はテンプレート生成 or メッセージそのまま使用。メイン処理をブロックしない。
+
+---
+
+## MCPサーバー（Claude Code連携）
+
+`mcp-server/` ディレクトリに実装。Claude CodeからNodeMapのデータにアクセスするための3ツール。
+
+| ツール | 用途 |
+|---|---|
+| `get_project_context` | プロジェクトの全コンテキスト取得（タスク・MS・検討ツリー等） |
+| `create_meeting_record` | 会議録の作成（AI解析パイプライン起動） |
+| `get_decision_tree` | 検討ツリーの取得 |
+
+設定: `.mcp.json`（プロジェクトルート、gitignore対象）
 
 ---
 
@@ -405,6 +441,10 @@ CHATWORK_API_TOKEN=              # Chatwork連携
 GMAIL_CLIENT_ID=                 # OAuth
 GMAIL_CLIENT_SECRET=             # OAuth
 GMAIL_REDIRECT_URI=              # OAuth
+
+# MeetGeek連携
+MEETGEEK_API_KEY=                # MeetGeek APIトークン
+MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 ```
 
 ---
@@ -418,6 +458,7 @@ GMAIL_REDIRECT_URI=              # OAuth
 | Gmail | gmail.readonly | メール同期・OAuth |
 | Slack | OAuth Bot | メッセージ同期 |
 | Chatwork | API Token | メッセージ同期 |
+| MeetGeek | API + Webhook | 会議録自動取り込み |
 
 ---
 
@@ -431,9 +472,6 @@ GMAIL_REDIRECT_URI=              # OAuth
 - AI文体学習: `getUserWritingStyle()` で過去送信10件を参照
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
-
-### V2 設計上の重要概念
-
 - **5階層**: Organization > Project > Theme（任意） > Milestone > Task
 - **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務（PJ任意紐づけ）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
@@ -441,10 +479,14 @@ GMAIL_REDIRECT_URI=              # OAuth
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
 - **ナレッジはバックエンド基盤**: UIには設定ページ内のみ。AIが自動参照
 
-### 検討ツリー データフロー（会議録が起点）
+### 検討ツリー データフロー
 
 ```
-検討ツリータブで会議録登録
+データ流入（2経路）:
+  経路1: 検討ツリータブで会議録登録（手動）
+  経路2: MeetGeek Webhook（自動: 会議終了→参加者からPJ判定→議事録保存）
+
+共通パイプライン:
   → POST /api/meeting-records（meeting_records に保存）
   → POST /api/meeting-records/{id}/analyze（AI解析）
     → meeting_records.ai_summary 更新
@@ -456,8 +498,6 @@ GMAIL_REDIRECT_URI=              # OAuth
     → decision_tree_node_history に履歴記録
 ```
 
-**注意**: タイムラインタブの手動ビジネスイベント登録は business_events のみ。meeting_records には入らず、検討ツリーは生成されない。
-
 ---
 
 ## 作業フロー
@@ -465,8 +505,8 @@ GMAIL_REDIRECT_URI=              # OAuth
 ```
 【作業開始前】
 1. このCLAUDE.mdの「10のルール」を確認
-2. V2実装時は docs/ARCHITECTURE_V2.md と docs/UI_V2_SPEC.md を読む
-3. テーブル操作がある場合 docs/TABLE_SPECS.md を確認
+2. テーブル操作がある場合 docs/TABLE_SPECS.md を確認
+3. 設計の全体像は docs/ARCHITECTURE_V2.md を参照
 
 【タスク実行】
 1. git checkout -b feature/phase-XX-name
