@@ -145,12 +145,19 @@ export interface CardData {
   data: any;
 }
 
+// サジェスチョン（次のアクション候補）
+export interface SuggestionItem {
+  label: string;
+  message: string;
+}
+
 // チャットメッセージ（テキスト + カード混在）
 export interface SecretaryMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;           // テキスト部分
   cards?: CardData[];        // インラインカード（AIレスポンス時）
+  suggestions?: SuggestionItem[];  // 動的サジェスチョン
   timestamp: string;
 }
 

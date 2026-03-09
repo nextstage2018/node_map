@@ -4052,6 +4052,7 @@ export async function POST(request: NextRequest) {
         data: {
           reply: fixedReply,
           cards: cards.length > 0 ? cards : undefined,
+          suggestions: getSuggestions(intent, cards),
         },
       });
     }
@@ -4064,6 +4065,7 @@ export async function POST(request: NextRequest) {
         data: {
           reply: generateDemoResponse(message, intent, cards),
           cards: cards.length > 0 ? cards : undefined,
+          suggestions: getSuggestions(intent, cards),
         },
       });
     }
@@ -4120,6 +4122,7 @@ export async function POST(request: NextRequest) {
       data: {
         reply,
         cards: cards.length > 0 ? cards : undefined,
+        suggestions: getSuggestions(intent, cards),
       },
     });
   } catch (error) {
@@ -4128,6 +4131,101 @@ export async function POST(request: NextRequest) {
       { success: false, error: '秘書応答の生成に失敗しました' },
       { status: 500 }
     );
+  }
+}
+
+// ========================================
+// 動的サジェスチョン生成（会話の文脈に応じた次のアクション候補）
+// ========================================
+interface Suggestion {
+  label: string;
+  message: string;
+}
+
+function getSuggestions(intent: Intent, cards: CardData[]): Suggestion[] {
+  const hasCards = cards.length > 0;
+
+  switch (intent) {
+    case 'briefing':
+      return [
+        { label: '新着メッセージ', message: '新着メッセージを見せて' },
+        { label: '空き時間を確認', message: '今週の空き時間を教えて' },
+        { label: 'タスクを進めたい', message: 'タスクを進めたい' },
+      ];
+    case 'inbox':
+      return hasCards
+        ? [
+            { label: '返信を書く', message: '一番新しいメッセージに返信したい' },
+            { label: 'タスク化する', message: 'このメッセージからタスクを作りたい' },
+            { label: '今日の状況', message: '今日の状況を教えて' },
+          ]
+        : [
+            { label: '今日の状況', message: '今日の状況を教えて' },
+            { label: 'タスク確認', message: '今のタスクを見せて' },
+          ];
+    case 'tasks':
+    case 'project_tasks':
+      return [
+        { label: '新しいタスク作成', message: '新しいタスクを作成したい' },
+        { label: 'タスクを進める', message: 'タスクを進めたい' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'task_progress':
+      return [
+        { label: 'マイルストーン確認', message: 'マイルストーンの進捗を教えて' },
+        { label: '別のタスクへ', message: '他のタスクを見せて' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'schedule':
+    case 'calendar':
+      return [
+        { label: '予定を作成', message: '新しい予定を作りたい' },
+        { label: 'タスク確認', message: '今のタスクを見せて' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'create_task':
+      return [
+        { label: 'タスク一覧', message: '今のタスクを見せて' },
+        { label: '次のタスクも作成', message: '新しいタスクを作成したい' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'projects':
+    case 'org_projects':
+      return [
+        { label: 'タスク確認', message: 'プロジェクトのタスクを見せて' },
+        { label: '進捗確認', message: 'プロジェクトの進捗を教えて' },
+        { label: '会議録を登録', message: '会議録を登録したい' },
+      ];
+    case 'upload_meeting_record':
+    case 'decision_tree':
+      return [
+        { label: '検討ツリー確認', message: '検討ツリーを見せて' },
+        { label: 'タスク確認', message: 'タスクの状況を教えて' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'milestone_status':
+    case 'create_milestone':
+      return [
+        { label: 'チェックポイント評価', message: 'チェックポイント評価を実行して' },
+        { label: 'タスク確認', message: 'タスクを見せて' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'reply_draft':
+      return [
+        { label: '他のメッセージ', message: '新着メッセージを見せて' },
+        { label: '今日の状況', message: '今日の状況を教えて' },
+      ];
+    case 'general':
+      return [
+        { label: '今日の状況', message: '今日の状況を教えて' },
+        { label: 'タスク確認', message: '今のタスクを見せて' },
+        { label: 'メッセージ確認', message: '新着メッセージを見せて' },
+      ];
+    default:
+      return [
+        { label: '今日の状況', message: '今日の状況を教えて' },
+        { label: 'タスク確認', message: '今のタスクを見せて' },
+      ];
   }
 }
 

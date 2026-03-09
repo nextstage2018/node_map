@@ -401,6 +401,112 @@ function linkifyText(text: string | undefined | null, isUser: boolean): React.Re
 }
 
 // ========================================
+// アシスタントメッセージの構造化表示
+// 【見出し】、箇条書き（・- ●）、太字（**text**）をリッチ表示
+// ========================================
+function formatAssistantMessage(text: string | undefined | null): React.ReactNode {
+  if (!text) return null;
+
+  const lines = text.split('\n');
+  const elements: React.ReactNode[] = [];
+  let bulletBuffer: React.ReactNode[] = [];
+  let keyIdx = 0;
+
+  const flushBullets = () => {
+    if (bulletBuffer.length > 0) {
+      elements.push(
+        <ul key={`ul-${keyIdx++}`} className="space-y-1 my-1.5 ml-1">
+          {bulletBuffer}
+        </ul>
+      );
+      bulletBuffer = [];
+    }
+  };
+
+  const formatInline = (line: string): React.ReactNode => {
+    // **太字** と リンク の処理
+    const parts: React.ReactNode[] = [];
+    const inlineRegex = /\*\*(.+?)\*\*|\[([^\]]+)\]\((https?:\/\/[^)]+)\)|(https?:\/\/[^\s)]+)/g;
+    let last = 0;
+    let m;
+    while ((m = inlineRegex.exec(line)) !== null) {
+      if (m.index > last) parts.push(line.slice(last, m.index));
+      if (m[1]) {
+        parts.push(<strong key={`b-${keyIdx++}`} className="font-semibold text-slate-800">{m[1]}</strong>);
+      } else if (m[2] && m[3]) {
+        parts.push(<a key={`a-${keyIdx++}`} href={m[3]} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 hover:text-blue-800">{m[2]}</a>);
+      } else if (m[4]) {
+        const cleaned = m[4].replace(/[。、）」』\])]+$/, '');
+        const trailing = m[4].slice(cleaned.length);
+        parts.push(<span key={`u-${keyIdx++}`}><a href={cleaned} target="_blank" rel="noopener noreferrer" className="underline text-blue-600 hover:text-blue-800">{cleaned}</a>{trailing}</span>);
+      }
+      last = m.index + m[0].length;
+    }
+    if (last < line.length) parts.push(line.slice(last));
+    return parts.length > 0 ? parts : line;
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // 空行
+    if (!trimmed) {
+      flushBullets();
+      elements.push(<div key={`sp-${keyIdx++}`} className="h-2" />);
+      continue;
+    }
+
+    // 【セクション見出し】
+    const headingMatch = trimmed.match(/^【(.+?)】(.*)$/);
+    if (headingMatch) {
+      flushBullets();
+      elements.push(
+        <div key={`h-${keyIdx++}`} className="flex items-center gap-1.5 mt-2.5 mb-1">
+          <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">{headingMatch[1]}</span>
+          {headingMatch[2] && <span className="text-sm text-slate-700">{formatInline(headingMatch[2].trim())}</span>}
+        </div>
+      );
+      continue;
+    }
+
+    // 箇条書き（・ - ● ▸ ◦ ※ ✓ ✅）
+    const bulletMatch = trimmed.match(/^([・\-●▸◦※✓✅]\s?)(.+)$/);
+    if (bulletMatch) {
+      bulletBuffer.push(
+        <li key={`li-${keyIdx++}`} className="flex items-start gap-1.5 text-sm text-slate-700">
+          <span className="text-blue-400 mt-0.5 shrink-0 text-xs">●</span>
+          <span className="leading-relaxed">{formatInline(bulletMatch[2])}</span>
+        </li>
+      );
+      continue;
+    }
+
+    // 数字付きリスト（1. 2. 3. ）
+    const numMatch = trimmed.match(/^(\d+)[.）]\s*(.+)$/);
+    if (numMatch) {
+      bulletBuffer.push(
+        <li key={`li-${keyIdx++}`} className="flex items-start gap-1.5 text-sm text-slate-700">
+          <span className="text-blue-500 font-semibold mt-0.5 shrink-0 text-xs min-w-[16px] text-right">{numMatch[1]}.</span>
+          <span className="leading-relaxed">{formatInline(numMatch[2])}</span>
+        </li>
+      );
+      continue;
+    }
+
+    // 通常テキスト
+    flushBullets();
+    elements.push(
+      <p key={`p-${keyIdx++}`} className="text-sm leading-relaxed text-slate-700">
+        {formatInline(trimmed)}
+      </p>
+    );
+  }
+
+  flushBullets();
+  return <div className="space-y-0.5">{elements}</div>;
+}
+
+// ========================================
 // Phase 53b: スマート履歴切り詰め（古いメッセージを要約）
 // ========================================
 function smartTruncateHistory(
@@ -611,6 +717,7 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
           role: 'assistant',
           content: data.data.reply || '',
           cards: data.data.cards || undefined,
+          suggestions: data.data.suggestions || undefined,
           timestamp: new Date().toISOString(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
@@ -1914,13 +2021,16 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
                   {msg.content && (
                     <div
                       className={cn(
-                        'max-w-[75%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap',
+                        'max-w-[80%]',
                         msg.role === 'user'
-                          ? 'bg-blue-600 text-white rounded-2xl rounded-br-md shadow-nm-sm'
-                          : 'bg-white text-nm-text border border-nm-border rounded-2xl rounded-bl-md shadow-nm-sm'
+                          ? 'px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap bg-blue-600 text-white rounded-2xl rounded-br-md shadow-nm-sm'
+                          : 'px-4 py-3 bg-white text-nm-text border border-nm-border rounded-2xl rounded-bl-md shadow-nm-sm'
                       )}
                     >
-                      {linkifyText(msg.content, msg.role === 'user')}
+                      {msg.role === 'user'
+                        ? linkifyText(msg.content, true)
+                        : formatAssistantMessage(msg.content)
+                      }
                     </div>
                   )}
                 </div>
@@ -1957,10 +2067,29 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         )}
       </div>
 
-      {/* Phase UI-3: クイックアクション（会話中） */}
-      {messages.length > 0 && !isLoading && (
-        <QuickActionBar onSendMessage={sendMessage} contextProjectId={contextProjectId} contextTaskId={contextTaskId} />
-      )}
+      {/* 動的サジェスチョン or クイックアクション */}
+      {messages.length > 0 && !isLoading && (() => {
+        const lastAssistant = [...messages].reverse().find(m => m.role === 'assistant');
+        const suggestions = lastAssistant?.suggestions;
+        if (suggestions && suggestions.length > 0) {
+          return (
+            <div className="px-4 pb-2 shrink-0">
+              <div className="max-w-3xl mx-auto flex flex-wrap gap-1.5">
+                {suggestions.map((s) => (
+                  <button
+                    key={s.label}
+                    onClick={() => sendMessage(s.message)}
+                    className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-full hover:bg-blue-100 hover:border-blue-300 transition-all shadow-nm-sm"
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        }
+        return <QuickActionBar onSendMessage={sendMessage} contextProjectId={contextProjectId} contextTaskId={contextTaskId} />;
+      })()}
 
       {/* ファイルアップロードパネル */}
       {showUploadPanel && (
