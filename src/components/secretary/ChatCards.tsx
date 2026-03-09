@@ -739,15 +739,11 @@ interface TaskProgressData {
 export function TaskProgressCard({
   data,
   onResume,
-  onSendMessage,
 }: {
   data: TaskProgressData;
   onResume?: (taskId: string) => void;
   onSendMessage?: (taskId: string, message: string) => void;
 }) {
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-
   const phaseLabels: Record<string, { label: string; icon: string; color: string }> = {
     ideation: { label: '構想', icon: '💡', color: 'bg-amber-50 text-amber-700' },
     progress: { label: '進行', icon: '🔧', color: 'bg-blue-50 text-blue-700' },
@@ -761,17 +757,6 @@ export function TaskProgressCard({
 
   const phase = phaseLabels[data.phase] || { label: data.phase, icon: '📋', color: 'bg-slate-50 text-slate-700' };
   const prio = priorityLabels[data.priority] || { label: data.priority, color: 'text-slate-600 bg-slate-50' };
-
-  const handleSend = async () => {
-    if (!message.trim() || sending) return;
-    setSending(true);
-    try {
-      onSendMessage?.(data.id, message.trim());
-      setMessage('');
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <div className="overflow-hidden">
@@ -798,45 +783,10 @@ export function TaskProgressCard({
           </p>
         )}
 
-        {/* 最近の会話 */}
-        {data.recentConversations && data.recentConversations.length > 0 && (
-          <div className="mt-2 space-y-1.5 mb-3">
-            <p className="text-[10px] text-slate-400 font-medium">最近の会話:</p>
-            {data.recentConversations.slice(-3).map((conv, i) => (
-              <div key={i} className={cn(
-                'text-[11px] px-2.5 py-1.5 rounded-lg',
-                conv.role === 'assistant' ? 'bg-slate-50 text-slate-600' : 'bg-blue-50 text-blue-700'
-              )}>
-                <span className="text-[9px] text-slate-400">{conv.role === 'assistant' ? 'AI' : 'あなた'}: </span>
-                {conv.content}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* メッセージ入力 */}
-        <div className="flex gap-1.5 mt-2">
-          <input
-            type="text"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="AIに相談..."
-            className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-300"
-          />
-          <button
-            onClick={handleSend}
-            disabled={!message.trim() || sending}
-            className="px-3 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:bg-slate-200 disabled:text-slate-400 transition-colors shrink-0"
-          >
-            {sending ? '...' : '送信'}
-          </button>
-        </div>
-
         {/* タスクページへ */}
         <button
           onClick={() => onResume?.(data.id)}
-          className="mt-2 w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center justify-center gap-1.5"
+          className="mt-1 w-full px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors flex items-center justify-center gap-1.5"
         >
           <ArrowRight className="w-3 h-3" /> タスクページで詳しく見る
         </button>
