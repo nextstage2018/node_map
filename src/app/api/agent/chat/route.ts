@@ -2567,7 +2567,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         const { data: milestones } = await supabase
           .from('milestones')
           .select('id, title, status, target_date, project_id, theme_id, projects(id, name, organization_id, organizations(name)), themes(title)')
-          .in('status', ['not_started', 'in_progress'])
+          .in('status', ['pending', 'in_progress'])
           .order('target_date', { ascending: true })
           .limit(10);
 
@@ -2693,7 +2693,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         const { data: evalCandidates } = await supabase
           .from('milestones')
           .select('id, title, status, target_date, project_id, projects(id, name, organization_id, organizations(name))')
-          .in('status', ['in_progress', 'not_started'])
+          .in('status', ['in_progress', 'pending'])
           .order('target_date', { ascending: true })
           .limit(10);
 
@@ -2848,7 +2848,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
                   description: extractedDescription || null,
                   start_context: null,
                   target_date: extractedTargetDate || null,
-                  status: 'not_started',
+                  status: 'pending',
                   sort_order: nextOrder,
                 })
                 .select()

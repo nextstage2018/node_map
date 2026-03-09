@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         description: description || null,
         start_context: start_context || null,
         target_date: target_date || null,
-        status: 'not_started',
+        status: 'pending',
         sort_order: nextOrder,
       })
       .select()
