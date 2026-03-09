@@ -272,7 +272,7 @@ export default function WelcomeDashboard({
         // 並列でAPIコール（既存4 + 新規2 + v3.1プロジェクト）
         const [msgRes, calRes, taskRes, jobRes, msRes, urgentJobRes, projRes] = await Promise.allSettled([
           fetch('/api/messages?unread=true&limit=1'),
-          fetch('/api/calendar/events?range=today'),
+          fetch('/api/calendar?mode=today'),
           fetch('/api/tasks?status=active&limit=1&include_project=true&include_milestone=true&today=true'),
           fetch('/api/jobs?status=pending&limit=1'),
           fetch('/api/milestones?status=in_progress&week=current'),
