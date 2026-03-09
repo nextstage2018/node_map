@@ -1,10 +1,12 @@
 // V2-F: マイルストーン評価セクション
 // 評価実行ボタン + 最新評価結果 + 履歴表示
+// V2-G: 学習履歴の表示を追加
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Play, RefreshCw, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react';
 import EvaluationResult from './EvaluationResult';
+import LearningHistory from './LearningHistory';
 
 interface Evaluation {
   id: string;
@@ -21,12 +23,14 @@ interface Evaluation {
 interface MilestoneEvaluationProps {
   milestoneId: string;
   milestoneTitle: string;
+  projectId?: string;
   onStatusUpdate?: (newStatus: string) => void;
 }
 
 export default function MilestoneEvaluation({
   milestoneId,
   milestoneTitle,
+  projectId,
   onStatusUpdate,
 }: MilestoneEvaluationProps) {
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
@@ -175,6 +179,9 @@ export default function MilestoneEvaluation({
           )}
         </div>
       )}
+
+      {/* V2-G: 学習データ */}
+      {projectId && <LearningHistory projectId={projectId} />}
     </div>
   );
 }

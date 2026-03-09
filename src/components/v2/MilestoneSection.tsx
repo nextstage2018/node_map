@@ -120,6 +120,7 @@ function MilestoneCard({ milestone, onStatusUpdate }: { milestone: Milestone; on
           <MilestoneEvaluation
             milestoneId={milestone.id}
             milestoneTitle={milestone.title}
+            projectId={projectId}
             onStatusUpdate={handleStatusUpdate}
           />
         </div>
