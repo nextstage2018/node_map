@@ -128,7 +128,7 @@
 | /thought-map | / |
 | /jobs | / |
 | /memos | / |
-| /master | /settings?tab=knowledge |
+| /master | /settings |
 | /contacts | / |
 | /business-log | / |
 | /agent | / |
@@ -497,7 +497,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
-- **ナレッジはバックエンド基盤**: UIには設定ページ内のみ。AIが自動参照
+- **ナレッジはバックエンド基盤**: 専用UIなし。会議録・メッセージから自動抽出され、AIが内部で自動参照
 - **対称データパイプライン**: 会議録(A-1)とチャネルメッセージ(A-2)から business_events / decision_trees / knowledge が対称的に自動生成
 - **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
 - **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得

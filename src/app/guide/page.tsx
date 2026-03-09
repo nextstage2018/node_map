@@ -337,29 +337,34 @@ function SettingsTab() {
   return (
     <div>
       <SectionCard title="設定画面の概要" icon={Settings}>
-        <p>チャネル接続の管理、プロフィール設定、ナレッジの確認ができます。</p>
+        <p>設定画面には4つのタブがあります。チャネル接続・プロジェクト種別・プロフィール・通知設定です。</p>
       </SectionCard>
 
       <SectionCard title="チャネル接続" icon={MessageSquare}>
         <div className="space-y-2">
-          <p>以下のサービスと連携できます。設定画面の「チャネル」タブから接続してください。</p>
+          <p>以下のサービスと連携できます。「チャンネル接続」タブから接続してください。Google連携はOAuth認証で一括接続です。</p>
           <div className="space-y-1.5">
-            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded">
+            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
               <Calendar className="w-4 h-4 text-blue-500" />
               <span className="font-medium">Google Calendar</span>
               <span className="text-slate-500">— 予定の確認・空き時間検索</span>
             </div>
-            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded">
-              <FileText className="w-4 h-4 text-green-500" />
-              <span className="font-medium">Gmail</span>
-              <span className="text-slate-500">— メール同期</span>
+            <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
+              <FolderOpen className="w-4 h-4 text-blue-500" />
+              <span className="font-medium">Google Drive</span>
+              <span className="text-slate-500">— ファイル保存・管理</span>
             </div>
-            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded">
+            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <FileText className="w-4 h-4 text-slate-400" />
+              <span className="font-medium text-slate-500">Gmail</span>
+              <span className="text-slate-400">— メール同期（現在休眠中）</span>
+            </div>
+            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
               <MessageSquare className="w-4 h-4 text-purple-500" />
               <span className="font-medium">Slack</span>
               <span className="text-slate-500">— チャネルメッセージ同期</span>
             </div>
-            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded">
+            <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
               <MessageSquare className="w-4 h-4 text-teal-500" />
               <span className="font-medium">Chatwork</span>
               <span className="text-slate-500">— ルームメッセージ同期</span>
@@ -368,18 +373,30 @@ function SettingsTab() {
         </div>
       </SectionCard>
 
-      <SectionCard title="プロフィール・AI設定" icon={Users}>
-        <p>
-          「プロフィール」タブでは、AIの応答スタイルや性格タイプを設定できます。
-          これにより秘書やタスクAIの口調・思考パターンがカスタマイズされます。
-        </p>
+      <SectionCard title="プロジェクト種別" icon={Layers}>
+        <p>プロジェクトのテンプレートを管理できます。種別ごとにタスクテンプレートを設定しておくと、プロジェクト作成時に自動適用されます。</p>
       </SectionCard>
 
-      <SectionCard title="ナレッジ" icon={Brain}>
-        <p>
-          「ナレッジ」タブでは、会議録やメッセージから自動抽出されたキーワード・知見を確認できます。
-          ナレッジはAIが自動的に参照し、プロジェクトの文脈理解に活用します。
+      <SectionCard title="プロフィール・AI設定" icon={Users}>
+        <p className="mb-3">
+          「プロフィール」タブでは、表示名・タイムゾーン・メール署名のほか、AIの動作をカスタマイズする2つの設定があります。
         </p>
+        <div className="space-y-2">
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="font-medium text-slate-800 mb-1">性格タイプ（16タイプ診断）</p>
+            <p>MBTI型を設定すると、AIの思考アプローチが変わります。例えばINTJなら戦略的・効率重視、ENFJなら共感的・チーム志向の応答になります。</p>
+            <p className="text-xs text-slate-500 mt-1">反映先: 秘書チャット、タスクAI会話、相談回答、ジョブ構造化</p>
+          </div>
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <p className="font-medium text-slate-800 mb-1">応答スタイル（3段階）</p>
+            <p>「端的重視」は結論ファーストで短く、「通常」はバランス型、「補足説明重視」は背景や理由も丁寧に返します。</p>
+            <p className="text-xs text-slate-500 mt-1">反映先: 秘書チャット、タスクAI会話、相談回答、ジョブ構造化</p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="通知設定" icon={Settings}>
+        <p className="text-slate-400">現在準備中です。</p>
       </SectionCard>
     </div>
   );
