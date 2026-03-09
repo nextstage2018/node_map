@@ -5,7 +5,6 @@ import {
   ListToolsRequestSchema,
   Tool,
   TextContent,
-  ToolResponse,
 } from '@modelcontextprotocol/sdk/types.js';
 import { createClient } from '@supabase/supabase-js';
 
@@ -420,7 +419,7 @@ async function main() {
           text: result,
         } as TextContent,
       ],
-    } as ToolResponse;
+    };
   });
 
   const transport = new StdioServerTransport();
