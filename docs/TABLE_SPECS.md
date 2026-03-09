@@ -810,6 +810,7 @@ CREATE TABLE knowledge_master_entries (
   extracted_at TIMESTAMPTZ,
   frequency INT DEFAULT 1,
   last_used_at TIMESTAMPTZ,
+  source_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,  -- v3.0: 会議録ソース追跡
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -822,6 +823,7 @@ CREATE INDEX idx_knowledge_master_user_id ON knowledge_master_entries(user_id);
 CREATE INDEX idx_knowledge_master_label ON knowledge_master_entries(label);
 CREATE INDEX idx_knowledge_master_domain_id ON knowledge_master_entries(domain_id);
 CREATE INDEX idx_knowledge_master_field_id ON knowledge_master_entries(field_id);
+CREATE INDEX idx_knowledge_source_meeting ON knowledge_master_entries(source_meeting_record_id) WHERE source_meeting_record_id IS NOT NULL;  -- v3.0
 ```
 
 #### 注意事項
@@ -831,6 +833,7 @@ CREATE INDEX idx_knowledge_master_field_id ON knowledge_master_entries(field_id)
 - domain_id / field_id は NULL 可能。未分類のキーワードも蓄積される
 - knowledge_master_entries.id ← thought_task_nodes.node_id（1対多）
 - knowledge_master_entries.id ← thought_edges.from/to_node_id（1対多）
+- **v3.0**: source_meeting_record_id で会議録からの自動抽出を追跡
 
 ---
 
@@ -1398,6 +1401,101 @@ CREATE INDEX idx_meeting_records_source ON meeting_records(source_type, source_f
 - 会議録登録 → AI解析 → business_events自動追加 → 検討ツリー自動生成の一連パイプライン
 - MeetGeek重複防止: source_type='meetgeek' + source_file_id で一意チェック
 - **RLS**: user_id でフィルタ（ただし user_id は nullable）
+
+---
+
+### decision_trees（検討ツリー：ルートテーブル）
+
+**目的**: プロジェクトごとの検討ツリーのルートエンティティ
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_trees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL DEFAULT '検討ツリー',
+  description TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### 注意事項
+
+- 1プロジェクトにつき通常1つの検討ツリー
+- 会議録AI解析時に自動作成される
+
+---
+
+### decision_tree_nodes（検討ツリー：ノード）
+
+**目的**: 検討ツリーの各ノード（topic / option / decision）。階層構造
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_tree_nodes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tree_id UUID NOT NULL REFERENCES decision_trees(id) ON DELETE CASCADE,
+  parent_node_id UUID REFERENCES decision_tree_nodes(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  node_type TEXT NOT NULL DEFAULT 'topic',  -- topic / option / decision
+  status TEXT NOT NULL DEFAULT 'active',     -- active / completed / cancelled
+  cancel_reason TEXT,
+  cancel_meeting_id UUID,
+  source_meeting_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  source_type TEXT CHECK (source_type IN ('meeting', 'channel', 'hybrid')),  -- v3.0
+  confidence_score NUMERIC(3,2) DEFAULT 0.5 CHECK (confidence_score >= 0 AND confidence_score <= 1.0),  -- v3.0
+  source_message_ids TEXT[] DEFAULT '{}',  -- v3.0
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_decision_tree_nodes_tree_id ON decision_tree_nodes(tree_id);
+CREATE INDEX idx_decision_tree_nodes_parent ON decision_tree_nodes(parent_node_id);
+CREATE INDEX idx_decision_nodes_source_type ON decision_tree_nodes(source_type);  -- v3.0
+CREATE INDEX idx_decision_nodes_confidence ON decision_tree_nodes(confidence_score);  -- v3.0
+```
+
+#### 注意事項
+
+- parent_node_id=NULL → ルートノード（topic）
+- node_type: `'topic'`（議題）、`'option'`（選択肢）、`'decision'`（決定事項）
+- **v3.0**: source_type でデータの出自を追跡（meeting=議事録由来、channel=チャネル由来、hybrid=両方）
+- **v3.0**: confidence_score でソースの信頼度を管理（meeting=0.85、channel=0.6、hybrid=加重平均）
+- **v3.0**: source_message_ids でチャネルメッセージIDを追跡
+- topicMatcher.service.ts で類似度≥0.65のトピックをマージ、それ以下は新規作成
+
+---
+
+### decision_tree_node_history（検討ツリー：ノード変更履歴）
+
+**目的**: ノードのステータス変更履歴
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE decision_tree_node_history (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  node_id UUID NOT NULL REFERENCES decision_tree_nodes(id) ON DELETE CASCADE,
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  reason TEXT,
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### 注意事項
+
+- ノードのステータス変更（active→completed, active→cancelled等）を全て記録
+- reason にはソース情報（「会議録から自動生成」「チャネルメッセージから情報をマージ」等）
 
 ---
 

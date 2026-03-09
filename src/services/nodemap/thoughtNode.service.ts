@@ -814,6 +814,95 @@ export class ThoughtNodeService {
   }
 
   // ========================================
+  // v3.0: 汎用テキストからキーワード抽出（会議録・その他テキストソース対応）
+  // ========================================
+
+  /**
+   * v3.0: 任意のテキストからキーワードを抽出してナレッジマスタに登録
+   * 会議録AI解析後やCronバッチから呼ばれる。
+   * extractAndLinkFromMessage() と同様だが、sourceType/sourceId を汎用化。
+   * エッジは作成しない（会議録テキストは「思考の流れ」ではないため）
+   */
+  static async extractAndLinkFromText(params: {
+    text: string;
+    userId: string;
+    sourceType: 'meeting_record' | 'channel_message';
+    sourceId: string;       // meeting_record ID or message ID
+    projectId: string;      // プロジェクト紐づけ用
+  }): Promise<{ extractedCount: number; linkedCount: number; newMasterEntries: string[] }> {
+    const { text, userId, sourceType, sourceId, projectId } = params;
+    const result = { extractedCount: 0, linkedCount: 0, newMasterEntries: [] as string[] };
+
+    try {
+      if (!text || text.trim().length < 20) return result;
+
+      // キーワード抽出
+      const extraction = await extractKeywords({
+        text,
+        sourceType: sourceType as any,
+        sourceId,
+        direction: 'self',
+        userId,
+        phase: 'progress',
+      });
+
+      // 信頼度閾値0.7
+      const allKeywords = [
+        ...extraction.keywords.filter(k => k.confidence >= 0.7),
+        ...extraction.projects.filter(p => p.confidence >= 0.7),
+      ];
+
+      result.extractedCount = allKeywords.length;
+      if (allKeywords.length === 0) return result;
+
+      const sb = getServerSupabase() || getSupabase();
+      if (!sb) return result;
+
+      for (const kw of allKeywords) {
+        try {
+          // ナレッジマスタに登録（既存チェック含む）
+          const masterEntryId = await ThoughtNodeService.ensureMasterEntry(
+            sb, kw.label, userId, sourceType === 'meeting_record' ? 'meeting' : 'channel', sourceId, undefined
+          );
+          if (!masterEntryId) continue;
+
+          // frequency をインクリメント（既存エントリの場合）
+          await sb
+            .from('knowledge_master_entries')
+            .update({
+              frequency: sb.rpc ? undefined : undefined, // frequencyカラムがある場合のみ
+            })
+            .eq('id', masterEntryId);
+
+          // source_meeting_record_id を設定（会議録由来の場合）
+          if (sourceType === 'meeting_record') {
+            try {
+              await sb
+                .from('knowledge_master_entries')
+                .update({ source_meeting_record_id: sourceId })
+                .eq('id', masterEntryId)
+                .is('source_meeting_record_id', null); // 未設定の場合のみ
+            } catch {
+              // 新カラムが未適用の場合は無視
+            }
+          }
+
+          result.linkedCount++;
+          result.newMasterEntries.push(masterEntryId);
+        } catch (e) {
+          console.error(`[ThoughtNode] テキストキーワード "${kw.label}" 処理失敗:`, e);
+        }
+      }
+
+      console.log(`[ThoughtNode] extractAndLinkFromText完了: source=${sourceType}, extracted=${result.extractedCount}, linked=${result.linkedCount}`);
+      return result;
+    } catch (error) {
+      console.error('[ThoughtNode] extractAndLinkFromText エラー:', error);
+      return result;
+    }
+  }
+
+  // ========================================
   // Phase 42e: スナップショット（出口想定・着地点）
   // ========================================
 

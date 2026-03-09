@@ -31,6 +31,14 @@
       "schedule": "0 1 * * *"
     },
     {
+      "path": "/api/cron/sync-channel-topics",
+      "schedule": "30 1 * * *"
+    },
+    {
+      "path": "/api/cron/extract-knowledge-from-meetings",
+      "schedule": "0 2 * * *"
+    },
+    {
       "path": "/api/cron/summarize-business-log",
       "schedule": "0 2 * * 1"
     },

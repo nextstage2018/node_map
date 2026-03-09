@@ -1,8 +1,15 @@
 // V2-E: 検討ツリーAI生成エンドポイント
 // 会議録AI解析で抽出された topics を受け取り、検討ツリーに反映
+// v3.0: チャネルメッセージからのトピックも統合対応（source_type / confidence_score）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import {
+  matchTopic,
+  isChildNodeDuplicate,
+  calculateMergedConfidence,
+} from '@/services/nodemap/topicMatcher.service';
+import type { DecisionTreeNodeForMatch } from '@/services/nodemap/topicMatcher.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,30 +22,17 @@ interface Topic {
 
 interface GenerateRequest {
   project_id: string;
-  meeting_record_id: string;
+  meeting_record_id?: string;  // 会議録由来の場合
+  message_id?: string;         // チャネルメッセージ由来の場合
   topics: Topic[];
+  source_type?: 'meeting' | 'channel'; // デフォルト: 'meeting'（後方互換）
 }
 
-// 簡易類似度判定（タイトルの正規化比較）
-function isSimilarTitle(existingTitle: string, newTitle: string): boolean {
-  const normalize = (s: string) =>
-    s.toLowerCase()
-      .replace(/[\s　]+/g, '')
-      .replace(/[・\-_]/g, '')
-      .replace(/について$/, '')
-      .replace(/の件$/, '')
-      .replace(/に関して$/, '');
-
-  const a = normalize(existingTitle);
-  const b = normalize(newTitle);
-
-  // 完全一致
-  if (a === b) return true;
-  // 一方が他方を含む
-  if (a.includes(b) || b.includes(a)) return true;
-
-  return false;
-}
+// ソース別のデフォルトconfidence
+const CONFIDENCE_MAP = {
+  meeting: 0.85,
+  channel: 0.6,
+} as const;
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,13 +47,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body: GenerateRequest = await request.json();
-    const { project_id, meeting_record_id, topics } = body;
+    const { project_id, meeting_record_id, message_id, topics, source_type: reqSourceType } = body;
+
+    // ソースタイプ判定（後方互換: 未指定なら meeting）
+    const sourceType = reqSourceType || 'meeting';
+    const confidence = CONFIDENCE_MAP[sourceType] || 0.5;
+    // ソースID（meeting_record_id または message_id）
+    const sourceRefId = meeting_record_id || message_id || null;
 
     if (!project_id) {
       return NextResponse.json({ success: false, error: 'project_id は必須です' }, { status: 400 });
     }
-    if (!meeting_record_id) {
-      return NextResponse.json({ success: false, error: 'meeting_record_id は必須です' }, { status: 400 });
+    if (!meeting_record_id && !message_id) {
+      return NextResponse.json({ success: false, error: 'meeting_record_id または message_id は必須です' }, { status: 400 });
     }
     if (!topics || !Array.isArray(topics) || topics.length === 0) {
       return NextResponse.json({ success: false, error: 'topics は必須です' }, { status: 400 });
@@ -103,68 +103,103 @@ export async function POST(request: NextRequest) {
       .select('*')
       .eq('tree_id', treeId);
 
-    const rootNodes = (existingNodes || []).filter(n => !n.parent_node_id);
+    const rootNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => !n.parent_node_id);
 
-    // 3. 各 topic を処理
+    // 3. 各 topic を処理（topicMatcher で類似度判定）
     const createdNodes: string[] = [];
     const updatedNodes: string[] = [];
+    const mergedNodes: string[] = [];
+
+    const sourceLabel = sourceType === 'meeting' ? '会議録' : 'チャネルメッセージ';
 
     for (const topic of topics) {
-      // 既存ノードとタイトルで照合
-      const matchingNode = rootNodes.find(n => isSimilarTitle(n.title, topic.title));
+      // topicMatcher で既存ノードと照合
+      const match = matchTopic(topic.title, rootNodes);
+      const matchingNode = match.matchedNode;
 
-      if (matchingNode) {
-        // 既存ノードの場合: ステータスが cancelled なら更新
+      if (match.recommendedAction === 'merge' && matchingNode) {
+        // === マージ or 更新 ===
+
+        // ソース追跡の更新
+        const currentMsgIds = matchingNode.source_message_ids || [];
+        const newMsgIds = message_id && !currentMsgIds.includes(message_id)
+          ? [...currentMsgIds, message_id]
+          : currentMsgIds;
+
+        // source_type: 異なるソースからのマージなら 'hybrid'
+        let newSourceType = matchingNode.source_type || sourceType;
+        if (matchingNode.source_type && matchingNode.source_type !== sourceType) {
+          newSourceType = 'hybrid';
+        }
+        const newConfidence = calculateMergedConfidence(
+          matchingNode.confidence_score || confidence,
+          Math.max(currentMsgIds.length, 1),
+          confidence
+        );
+
+        // ステータス変更チェック（cancelled / completed）
         if (topic.status === 'cancelled' && matchingNode.status !== 'cancelled') {
-          const { error: updateError } = await supabase
+          await supabase
             .from('decision_tree_nodes')
             .update({
               status: 'cancelled',
-              cancel_reason: `会議で方針変更`,
-              cancel_meeting_id: meeting_record_id,
+              cancel_reason: `${sourceLabel}で方針変更`,
+              cancel_meeting_id: meeting_record_id || null,
+              source_type: newSourceType,
+              confidence_score: newConfidence,
+              source_message_ids: newMsgIds,
               updated_at: new Date().toISOString(),
             })
             .eq('id', matchingNode.id);
 
-          if (!updateError) {
-            // 変更履歴を記録
-            await supabase.from('decision_tree_node_history').insert({
-              node_id: matchingNode.id,
-              previous_status: matchingNode.status,
-              new_status: 'cancelled',
-              reason: '会議で方針変更',
-              meeting_record_id,
-            });
-            updatedNodes.push(matchingNode.id);
-          }
+          await supabase.from('decision_tree_node_history').insert({
+            node_id: matchingNode.id,
+            previous_status: matchingNode.status,
+            new_status: 'cancelled',
+            reason: `${sourceLabel}で方針変更`,
+            meeting_record_id: meeting_record_id || null,
+          });
+          updatedNodes.push(matchingNode.id);
         } else if (topic.status === 'completed' && matchingNode.status !== 'completed') {
-          const { error: updateError } = await supabase
+          await supabase
             .from('decision_tree_nodes')
             .update({
               status: 'completed',
+              source_type: newSourceType,
+              confidence_score: newConfidence,
+              source_message_ids: newMsgIds,
               updated_at: new Date().toISOString(),
             })
             .eq('id', matchingNode.id);
 
-          if (!updateError) {
-            await supabase.from('decision_tree_node_history').insert({
-              node_id: matchingNode.id,
-              previous_status: matchingNode.status,
-              new_status: 'completed',
-              reason: '会議で完了確認',
-              meeting_record_id,
-            });
-            updatedNodes.push(matchingNode.id);
-          }
+          await supabase.from('decision_tree_node_history').insert({
+            node_id: matchingNode.id,
+            previous_status: matchingNode.status,
+            new_status: 'completed',
+            reason: `${sourceLabel}で完了確認`,
+            meeting_record_id: meeting_record_id || null,
+          });
+          updatedNodes.push(matchingNode.id);
+        } else {
+          // ステータス変更なし → ソース追跡のみ更新
+          await supabase
+            .from('decision_tree_nodes')
+            .update({
+              source_type: newSourceType,
+              confidence_score: newConfidence,
+              source_message_ids: newMsgIds,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', matchingNode.id);
+          mergedNodes.push(matchingNode.id);
         }
 
-        // options を子ノードとして追加（重複チェック）
+        // options を子ノードとして追加（重複チェック: topicMatcherのisChildNodeDuplicate使用）
         if (topic.options && topic.options.length > 0) {
-          const childNodes = (existingNodes || []).filter(n => n.parent_node_id === matchingNode.id);
+          const childNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => n.parent_node_id === matchingNode.id);
 
           for (const option of topic.options) {
-            const existingOption = childNodes.find(cn => isSimilarTitle(cn.title, option));
-            if (!existingOption) {
+            if (!isChildNodeDuplicate(option, childNodes)) {
               const { data: newNode } = await supabase
                 .from('decision_tree_nodes')
                 .insert({
@@ -173,7 +208,10 @@ export async function POST(request: NextRequest) {
                   title: option,
                   node_type: 'option',
                   status: 'active',
-                  source_meeting_id: meeting_record_id,
+                  source_meeting_id: meeting_record_id || null,
+                  source_type: sourceType,
+                  confidence_score: confidence,
+                  source_message_ids: message_id ? [message_id] : [],
                   sort_order: childNodes.length,
                 })
                 .select()
@@ -185,8 +223,8 @@ export async function POST(request: NextRequest) {
                   node_id: newNode.id,
                   previous_status: null,
                   new_status: 'active',
-                  reason: '会議録から自動追加',
-                  meeting_record_id,
+                  reason: `${sourceLabel}から自動追加`,
+                  meeting_record_id: meeting_record_id || null,
                 });
               }
             }
@@ -195,8 +233,8 @@ export async function POST(request: NextRequest) {
 
         // decision を子ノードとして追加
         if (topic.decision) {
-          const childNodes = (existingNodes || []).filter(n => n.parent_node_id === matchingNode.id);
-          const existingDecision = childNodes.find(cn => cn.node_type === 'decision' && isSimilarTitle(cn.title, topic.decision!));
+          const childNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => n.parent_node_id === matchingNode.id);
+          const existingDecision = childNodes.find(cn => cn.node_type === 'decision' && isChildNodeDuplicate(topic.decision!, [cn]));
           if (!existingDecision) {
             const { data: newNode } = await supabase
               .from('decision_tree_nodes')
@@ -206,7 +244,10 @@ export async function POST(request: NextRequest) {
                 title: topic.decision,
                 node_type: 'decision',
                 status: 'active',
-                source_meeting_id: meeting_record_id,
+                source_meeting_id: meeting_record_id || null,
+                source_type: sourceType,
+                confidence_score: confidence,
+                source_message_ids: message_id ? [message_id] : [],
                 sort_order: childNodes.length,
               })
               .select()
@@ -218,14 +259,14 @@ export async function POST(request: NextRequest) {
                 node_id: newNode.id,
                 previous_status: null,
                 new_status: 'active',
-                reason: '会議録から決定事項として追加',
-                meeting_record_id,
+                reason: `${sourceLabel}から決定事項として追加`,
+                meeting_record_id: meeting_record_id || null,
               });
             }
           }
         }
       } else {
-        // 新規 topic ノードを作成
+        // === 新規 topic ノードを作成 ===
         const { data: topicNode, error: topicError } = await supabase
           .from('decision_tree_nodes')
           .insert({
@@ -234,7 +275,10 @@ export async function POST(request: NextRequest) {
             title: topic.title,
             node_type: 'topic',
             status: topic.status || 'active',
-            source_meeting_id: meeting_record_id,
+            source_meeting_id: meeting_record_id || null,
+            source_type: sourceType,
+            confidence_score: confidence,
+            source_message_ids: message_id ? [message_id] : [],
             sort_order: rootNodes.length + createdNodes.length,
           })
           .select()
@@ -247,13 +291,12 @@ export async function POST(request: NextRequest) {
 
         createdNodes.push(topicNode.id);
 
-        // 作成履歴を記録
         await supabase.from('decision_tree_node_history').insert({
           node_id: topicNode.id,
           previous_status: null,
           new_status: topic.status || 'active',
-          reason: '会議録から自動生成',
-          meeting_record_id,
+          reason: `${sourceLabel}から自動生成`,
+          meeting_record_id: meeting_record_id || null,
         });
 
         // options を子ノードとして追加
@@ -267,7 +310,10 @@ export async function POST(request: NextRequest) {
                 title: topic.options[i],
                 node_type: 'option',
                 status: 'active',
-                source_meeting_id: meeting_record_id,
+                source_meeting_id: meeting_record_id || null,
+                source_type: sourceType,
+                confidence_score: confidence,
+                source_message_ids: message_id ? [message_id] : [],
                 sort_order: i,
               })
               .select()
@@ -279,8 +325,8 @@ export async function POST(request: NextRequest) {
                 node_id: optionNode.id,
                 previous_status: null,
                 new_status: 'active',
-                reason: '会議録から自動追加',
-                meeting_record_id,
+                reason: `${sourceLabel}から自動追加`,
+                meeting_record_id: meeting_record_id || null,
               });
             }
           }
@@ -296,7 +342,10 @@ export async function POST(request: NextRequest) {
               title: topic.decision,
               node_type: 'decision',
               status: 'active',
-              source_meeting_id: meeting_record_id,
+              source_meeting_id: meeting_record_id || null,
+              source_type: sourceType,
+              confidence_score: confidence,
+              source_message_ids: message_id ? [message_id] : [],
               sort_order: topic.options ? topic.options.length : 0,
             })
             .select()
@@ -308,8 +357,8 @@ export async function POST(request: NextRequest) {
               node_id: decisionNode.id,
               previous_status: null,
               new_status: 'active',
-              reason: '会議録から決定事項として追加',
-              meeting_record_id,
+              reason: `${sourceLabel}から決定事項として追加`,
+              meeting_record_id: meeting_record_id || null,
             });
           }
         }
@@ -322,6 +371,7 @@ export async function POST(request: NextRequest) {
         tree_id: treeId,
         created_count: createdNodes.length,
         updated_count: updatedNodes.length,
+        merged_count: mergedNodes.length,
       },
     });
   } catch (error) {

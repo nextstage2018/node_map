@@ -6,6 +6,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 import { extractLearningsFromMeetingFeedback } from '@/lib/services/evaluationLearning.service';
+import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,7 +152,26 @@ export async function POST(
       console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventError);
     }
 
-    // 5. V2-G: milestone_feedbackから自動学習抽出
+    // 5. v3.0: 会議録テキストからナレッジ（キーワード）を自動抽出
+    let knowledgeExtracted = 0;
+    try {
+      const extractResult = await ThoughtNodeService.extractAndLinkFromText({
+        text: record.content || '',
+        userId,
+        sourceType: 'meeting_record',
+        sourceId: id,
+        projectId: record.project_id,
+      });
+      knowledgeExtracted = extractResult.linkedCount;
+      if (knowledgeExtracted > 0) {
+        console.log(`[MeetingRecords Analyze] ${knowledgeExtracted}件のナレッジキーワードを抽出しました`);
+      }
+    } catch (knowledgeError) {
+      // ナレッジ抽出失敗してもメイン処理はブロックしない
+      console.error('[MeetingRecords Analyze] ナレッジ抽出エラー:', knowledgeError);
+    }
+
+    // 6. V2-G: milestone_feedbackから自動学習抽出
     let learningsInserted = 0;
     if (analysisResult.milestone_feedback && analysisResult.milestone_feedback.length > 0) {
       try {
@@ -174,6 +194,7 @@ export async function POST(
       data: {
         record: updatedRecord,
         analysis: analysisResult,
+        knowledge_extracted: knowledgeExtracted,
         learnings_inserted: learningsInserted,
       },
     });

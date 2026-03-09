@@ -178,7 +178,7 @@
 | `idea_memos` | アイデアメモ | UUID | tags TEXT[] |
 | `thought_task_nodes` | ノード紐づけ | UUID | UNIQUE(task_id, node_id)。milestone_id nullable |
 | `thought_edges` | 思考動線 | UUID | UNIQUE(task_id, from_node_id, to_node_id) |
-| `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable |
+| `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable。v3.0: source_meeting_record_id 追加 |
 | `drive_file_staging` | ファイルステージング | UUID | AI分類→承認→最終配置 |
 | `drive_folders` | Driveフォルダ | UUID | 4階層: 組織/プロジェクト/方向/年月 |
 | `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL |
@@ -191,7 +191,7 @@
 | `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
 | `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型 |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
-| `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造 |
+| `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造。v3.0: source_type/confidence_score/source_message_ids 追加 |
 | `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
 | `milestone_evaluations` | チェックポイント評価結果 | UUID | milestone_id FK CASCADE |
 | `evaluation_learnings` | 評価エージェント学習データ | UUID | AI判定 vs 人間判定の差分 |
@@ -414,6 +414,8 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | `/api/cron/sync-drive-documents` | 毎日 23:00 | Gmail添付→Driveステージング |
 | `/api/cron/clean-drive-staging` | 毎日 00:30 | 期限切れステージングファイル削除 |
 | `/api/cron/sync-business-events` | 毎日 01:00 | メッセージからビジネスイベント生成 |
+| `/api/cron/sync-channel-topics` | 毎日 01:30 | チャネルメッセージ→検討ツリー統合（v3.0） |
+| `/api/cron/extract-knowledge-from-meetings` | 毎日 02:00 | 会議録→ナレッジ抽出（v3.0） |
 | `/api/cron/summarize-business-log` | **月曜 02:00** | 週次プロジェクトサマリー |
 | `/api/cron/cluster-knowledge-weekly` | **月曜 02:30** | 週次ナレッジクラスタリング |
 | `/api/cron/compute-patterns` | 毎日 03:00 | コンタクトパターン計算 |
