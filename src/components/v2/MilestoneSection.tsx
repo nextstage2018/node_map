@@ -52,7 +52,7 @@ function ProgressBar({ completed, total }: { completed: number; total: number })
   );
 }
 
-function MilestoneCard({ milestone, onStatusUpdate }: { milestone: Milestone; onStatusUpdate: (id: string, status: string) => void }) {
+function MilestoneCard({ milestone, projectId, onStatusUpdate }: { milestone: Milestone; projectId: string; onStatusUpdate: (id: string, status: string) => void }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const config = STATUS_CONFIG[milestone.status] || STATUS_CONFIG.pending;
 
@@ -263,6 +263,7 @@ export default function MilestoneSection({ projectId }: MilestoneSectionProps) {
           <MilestoneCard
             key={ms.id}
             milestone={ms}
+            projectId={projectId}
             onStatusUpdate={handleStatusUpdate}
           />
         ))}

@@ -79,6 +79,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, data: data || [] });
     }
 
+    const projectId = searchParams.get('project_id');
+
+    if (projectId) {
+      // プロジェクト指定時: そのプロジェクトのタスクのみ返す
+      const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+      const sb = getServerSupabase() || getSupabase();
+      if (!sb) {
+        return NextResponse.json({ success: true, data: [] });
+      }
+      const { data, error } = await sb
+        .from('tasks')
+        .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id, milestone_id, description, scheduled_start, scheduled_end')
+        .eq('user_id', userId)
+        .eq('project_id', projectId)
+        .order('updated_at', { ascending: false });
+
+      if (error) {
+        console.error('[Tasks API] project_id フィルタエラー:', error);
+        return NextResponse.json({ success: true, data: [] });
+      }
+      return NextResponse.json({ success: true, data: data || [] });
+    }
+
     const tasks = await TaskService.getTasks(userId);
     return NextResponse.json({ success: true, data: tasks });
   } catch (error) {
