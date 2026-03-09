@@ -216,32 +216,42 @@ export async function getAllCalendarEvents(
   timeMax: string,
   maxResults = 100
 ): Promise<CalendarEvent[]> {
+  // まずprimaryカレンダーを必ず取得（これがベースライン）
+  const primaryEvents = await getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+  console.log('[Calendar] primaryイベント数:', primaryEvents.length);
+
+  // 追加カレンダーの取得を試みる（失敗してもprimaryは返す）
   try {
-    // 1. ユーザーのカレンダーリストを取得
     const listRes = await calendarFetch(userId, '/users/me/calendarList?minAccessRole=reader');
     if (!listRes || !listRes.ok) {
-      console.warn('[Calendar] カレンダーリスト取得失敗、primaryのみ使用');
-      return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+      console.warn('[Calendar] カレンダーリスト取得失敗（status:', listRes?.status, '）、primaryのみ使用');
+      return primaryEvents;
     }
 
     const listData = await listRes.json();
     const calendars = (listData.items || []) as Array<{ id: string; summary: string; selected?: boolean; accessRole?: string }>;
     console.log('[Calendar] カレンダー数:', calendars.length, '一覧:', calendars.map(c => `${c.summary}(${c.id})`).join(', '));
 
-    if (calendars.length === 0) {
-      return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+    // primary以外のカレンダーのみ追加取得
+    const otherCalendars = calendars.filter(c => c.id !== 'primary' && !c.id.includes('#holiday') && c.selected !== false);
+    if (otherCalendars.length === 0) {
+      return primaryEvents;
     }
 
-    // 2. 各カレンダーから並列でイベント取得
-    const allEventsPromises = calendars.map(cal =>
-      getEvents(userId, timeMin, timeMax, cal.id, maxResults).catch(() => [] as CalendarEvent[])
+    // 各カレンダーから並列でイベント取得（最大5つに制限）
+    const limitedCalendars = otherCalendars.slice(0, 5);
+    const otherEventsPromises = limitedCalendars.map(cal =>
+      getEvents(userId, timeMin, timeMax, cal.id, maxResults).catch((err) => {
+        console.warn('[Calendar] カレンダー取得失敗:', cal.summary, err);
+        return [] as CalendarEvent[];
+      })
     );
-    const allEventsArrays = await Promise.all(allEventsPromises);
+    const otherEventsArrays = await Promise.all(otherEventsPromises);
 
-    // 3. 統合＆重複排除（同じイベントIDは1つのみ）
-    const seenIds = new Set<string>();
-    const mergedEvents: CalendarEvent[] = [];
-    for (const events of allEventsArrays) {
+    // primaryイベントをベースに、重複排除しつつ統合
+    const seenIds = new Set<string>(primaryEvents.map(e => e.id));
+    const mergedEvents = [...primaryEvents];
+    for (const events of otherEventsArrays) {
       for (const e of events) {
         if (!seenIds.has(e.id)) {
           seenIds.add(e.id);
@@ -252,11 +262,11 @@ export async function getAllCalendarEvents(
 
     // 開始時間でソート
     mergedEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
-    console.log('[Calendar] 全カレンダー統合イベント数:', mergedEvents.length);
+    console.log('[Calendar] 全カレンダー統合イベント数:', mergedEvents.length, '(primary:', primaryEvents.length, '+ 追加:', mergedEvents.length - primaryEvents.length, ')');
     return mergedEvents;
   } catch (error) {
-    console.error('[Calendar] 全カレンダー取得エラー:', error);
-    return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+    console.error('[Calendar] 追加カレンダー取得エラー（primaryは返却）:', error);
+    return primaryEvents;
   }
 }
 
