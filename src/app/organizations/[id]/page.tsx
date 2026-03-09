@@ -1045,50 +1045,53 @@ export default function OrganizationDetailPage() {
                   {/* V2-I: マイルストーンセクション（進捗・評価表示） */}
                   <MilestoneSection projectId={currentProject.id} />
 
-                  {/* タスク一覧（ページ内表示、/tasks へのリンクなし） */}
-                  {isLoadingTasks ? (
-                    <div className="flex items-center justify-center py-16"><div className="animate-spin text-2xl">&#8987;</div></div>
-                  ) : tasks.length === 0 ? (
-                    <div className="flex items-center justify-center h-32 text-slate-400">
-                      <div className="text-center">
-                        <CheckSquare className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="text-xs">タスクがありません</p>
-                        <p className="text-[10px] text-slate-400 mt-1">秘書AIで「タスクを作成して」と伝えると追加できます</p>
+                  {/* マイルストーン未紐づけタスク一覧 */}
+                  {(() => {
+                    const unlinkedTasks = tasks.filter(t => !t.milestone_id);
+                    if (isLoadingTasks) {
+                      return <div className="flex items-center justify-center py-16"><div className="animate-spin text-2xl">&#8987;</div></div>;
+                    }
+                    if (unlinkedTasks.length === 0) return null;
+                    return (
+                      <div className="mt-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-600 border border-amber-200">マイルストーン未設定</span>
+                          <span className="text-[10px] text-slate-400">{unlinkedTasks.length}件</span>
+                        </div>
+                        <div className="space-y-4">
+                          {(['in_progress', 'todo', 'done'] as const).map(status => {
+                            const statusTasks = unlinkedTasks.filter(t => t.status === status);
+                            if (statusTasks.length === 0) return null;
+                            const statusLabels: Record<string, string> = { todo: '未着手', in_progress: '進行中', done: '完了' };
+                            const statusColors: Record<string, string> = { todo: 'bg-slate-100 text-slate-600', in_progress: 'bg-blue-100 text-blue-700', done: 'bg-green-100 text-green-700' };
+                            return (
+                              <div key={status}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusColors[status]}`}>{statusLabels[status]}</span>
+                                  <span className="text-[10px] text-slate-400">{statusTasks.length}件</span>
+                                </div>
+                                <div className="space-y-1.5">
+                                  {statusTasks.map(task => (
+                                    <button key={task.id}
+                                      onClick={() => router.push(`/?taskId=${task.id}&projectId=${currentProject.id}&message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`)}
+                                      className="w-full flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors text-left">
+                                      <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
+                                      {task.due_date && (
+                                        <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
+                                          <Clock className="w-3 h-3" />
+                                          {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {(['in_progress', 'todo', 'done'] as const).map(status => {
-                        const statusTasks = tasks.filter(t => t.status === status);
-                        if (statusTasks.length === 0) return null;
-                        const statusLabels: Record<string, string> = { todo: '未着手', in_progress: '進行中', done: '完了' };
-                        const statusColors: Record<string, string> = { todo: 'bg-slate-100 text-slate-600', in_progress: 'bg-blue-100 text-blue-700', done: 'bg-green-100 text-green-700' };
-                        return (
-                          <div key={status}>
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${statusColors[status]}`}>{statusLabels[status]}</span>
-                              <span className="text-[10px] text-slate-400">{statusTasks.length}件</span>
-                            </div>
-                            <div className="space-y-1.5">
-                              {statusTasks.map(task => (
-                                <button key={task.id}
-                                  onClick={() => router.push(`/?message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`)}
-                                  className="w-full flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors text-left">
-                                  <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
-                                  {task.due_date && (
-                                    <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
-                                      <Clock className="w-3 h-3" />
-                                      {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
-                                    </span>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                    );
+                  })()}
                 </div>
               )}
 

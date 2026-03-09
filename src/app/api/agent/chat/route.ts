@@ -3585,7 +3585,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { message, history } = body;
+    const { message, history, taskId, projectId } = body;
 
     if (!message) {
       return NextResponse.json(
@@ -3607,6 +3607,40 @@ export async function POST(request: NextRequest) {
       contextText = result.contextText;
       cards = result.cards;
       fixedReply = result.fixedReply;
+    }
+
+    // タスクタブからの遷移時: タスク・プロジェクト情報をコンテキストに追加
+    if (taskId || projectId) {
+      const sb = getServerSupabase() || getSupabase();
+      if (sb) {
+        let taskContext = '';
+        if (taskId) {
+          const { data: taskData } = await sb
+            .from('tasks')
+            .select('id, title, status, priority, phase, description, due_date, milestone_id, project_id')
+            .eq('id', taskId)
+            .single();
+          if (taskData) {
+            taskContext += `\n\n【対象タスク情報】\nタスク名: ${taskData.title}\nステータス: ${taskData.status}\n優先度: ${taskData.priority}\nフェーズ: ${taskData.phase || '未設定'}`;
+            if (taskData.description) taskContext += `\n説明: ${taskData.description}`;
+            if (taskData.due_date) taskContext += `\n期限: ${taskData.due_date}`;
+          }
+        }
+        if (projectId) {
+          const { data: projData } = await sb
+            .from('projects')
+            .select('id, name, description, organization_id')
+            .eq('id', projectId)
+            .single();
+          if (projData) {
+            taskContext += `\n\n【所属プロジェクト】\nプロジェクト名: ${projData.name}`;
+            if (projData.description) taskContext += `\n概要: ${projData.description}`;
+          }
+        }
+        if (taskContext) {
+          contextText += taskContext;
+        }
+      }
     }
 
     // fixedReplyが設定されている場合はAI生成をスキップ（INSERT成否を正確に返す）

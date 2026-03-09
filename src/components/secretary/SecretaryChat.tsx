@@ -410,13 +410,20 @@ function smartTruncateHistory(
 // 秘書AIチャット メインコンポーネント
 // Phase 53: 会話永続化 + コンテキスト拡張 + インライン操作強化
 // ========================================
-export default function SecretaryChat() {
+interface SecretaryChatProps {
+  initialMessage?: string;
+  contextTaskId?: string;
+  contextProjectId?: string;
+}
+
+export default function SecretaryChat({ initialMessage, contextTaskId, contextProjectId }: SecretaryChatProps = {}) {
   const [messages, setMessages] = useState<SecretaryMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [hasBriefing, setHasBriefing] = useState(false);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [isRestoringHistory, setIsRestoringHistory] = useState(true);
+  const [hasAutoSent, setHasAutoSent] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -439,6 +446,20 @@ export default function SecretaryChat() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRestoringHistory]);
+
+  // URLパラメータからの自動送信（タスクタブからの遷移時）
+  useEffect(() => {
+    if (initialMessage && !hasAutoSent && !isRestoringHistory) {
+      setHasAutoSent(true);
+      setHasBriefing(true);
+      // 少し遅延させてからsendMessageを呼ぶ
+      const timer = setTimeout(() => {
+        sendMessage(initialMessage);
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialMessage, hasAutoSent, isRestoringHistory]);
 
   // Phase 53a: メッセージ変更時にDBに自動保存（デバウンス付き）
   useEffect(() => {
@@ -499,6 +520,8 @@ export default function SecretaryChat() {
         body: JSON.stringify({
           message: trimmed,
           history: contextMessages,
+          ...(contextTaskId && { taskId: contextTaskId }),
+          ...(contextProjectId && { projectId: contextProjectId }),
         }),
       });
 
