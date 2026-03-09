@@ -208,6 +208,59 @@ export async function getEvents(
 }
 
 // ========================================
+// 全カレンダーから予定を取得（複数カレンダー対応）
+// ========================================
+export async function getAllCalendarEvents(
+  userId: string,
+  timeMin: string,
+  timeMax: string,
+  maxResults = 100
+): Promise<CalendarEvent[]> {
+  try {
+    // 1. ユーザーのカレンダーリストを取得
+    const listRes = await calendarFetch(userId, '/users/me/calendarList?minAccessRole=reader');
+    if (!listRes || !listRes.ok) {
+      console.warn('[Calendar] カレンダーリスト取得失敗、primaryのみ使用');
+      return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+    }
+
+    const listData = await listRes.json();
+    const calendars = (listData.items || []) as Array<{ id: string; summary: string; selected?: boolean; accessRole?: string }>;
+    console.log('[Calendar] カレンダー数:', calendars.length, '一覧:', calendars.map(c => `${c.summary}(${c.id})`).join(', '));
+
+    if (calendars.length === 0) {
+      return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+    }
+
+    // 2. 各カレンダーから並列でイベント取得
+    const allEventsPromises = calendars.map(cal =>
+      getEvents(userId, timeMin, timeMax, cal.id, maxResults).catch(() => [] as CalendarEvent[])
+    );
+    const allEventsArrays = await Promise.all(allEventsPromises);
+
+    // 3. 統合＆重複排除（同じイベントIDは1つのみ）
+    const seenIds = new Set<string>();
+    const mergedEvents: CalendarEvent[] = [];
+    for (const events of allEventsArrays) {
+      for (const e of events) {
+        if (!seenIds.has(e.id)) {
+          seenIds.add(e.id);
+          mergedEvents.push(e);
+        }
+      }
+    }
+
+    // 開始時間でソート
+    mergedEvents.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+    console.log('[Calendar] 全カレンダー統合イベント数:', mergedEvents.length);
+    return mergedEvents;
+  } catch (error) {
+    console.error('[Calendar] 全カレンダー取得エラー:', error);
+    return getEvents(userId, timeMin, timeMax, 'primary', maxResults);
+  }
+}
+
+// ========================================
 // 今日の予定取得（ショートカット）
 // ========================================
 export async function getTodayEvents(userId: string): Promise<CalendarEvent[]> {
@@ -216,7 +269,7 @@ export async function getTodayEvents(userId: string): Promise<CalendarEvent[]> {
   const todayStart = createJSTDate(nowJST.year, nowJST.month, nowJST.day, 0, 0, 0);
   const todayEnd = createJSTDate(nowJST.year, nowJST.month, nowJST.day, 23, 59, 59);
 
-  return getEvents(userId, todayStart.toISOString(), todayEnd.toISOString());
+  return getAllCalendarEvents(userId, todayStart.toISOString(), todayEnd.toISOString());
 }
 
 // ========================================
@@ -228,7 +281,7 @@ export async function getWeekEvents(userId: string, offsetDays = 0): Promise<Cal
   const start = createJSTDate(nowJST.year, nowJST.month, nowJST.day + offsetDays, 0, 0, 0);
   const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  return getEvents(userId, start.toISOString(), end.toISOString());
+  return getAllCalendarEvents(userId, start.toISOString(), end.toISOString());
 }
 
 // ========================================
@@ -271,8 +324,8 @@ export async function findFreeSlots(
   workingHoursEnd = BUSINESS_HOURS.weekdayEnd
 ): Promise<FreeSlot[]> {
   try {
-    // 1. Google Calendar の予定を取得
-    const events = await getEvents(userId, startDate, endDate);
+    // 1. 全カレンダーから予定を取得（複数カレンダー対応）
+    const events = await getAllCalendarEvents(userId, startDate, endDate);
     console.log('[Calendar] findFreeSlots: 取得イベント数:', events.length, 'イベント:', events.map(e => `${e.summary}(${e.start}〜${e.end})`).join(', '));
 
     // 2. NodeMap の作業ブロックを取得（カレンダー未反映分のみ）
@@ -486,20 +539,20 @@ export async function isCalendarConnected(userId: string): Promise<boolean> {
 }
 
 // ========================================
-// 予定のテキスト要約（AIコンテキスト用）
+// 予定のテキスト要約（AIコンテキスト用）— JST表示
 // ========================================
 export function formatEventsForContext(events: CalendarEvent[]): string {
   if (events.length === 0) return '予定なし';
 
   return events.map(e => {
-    const start = new Date(e.start);
-    const end = new Date(e.end);
+    const startJST = getJSTDateParts(new Date(e.start));
+    const endJST = getJSTDateParts(new Date(e.end));
 
     if (e.isAllDay) {
       return `- [終日] ${e.summary}`;
     }
 
-    const timeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}〜${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+    const timeStr = `${startJST.hours.toString().padStart(2, '0')}:${startJST.minutes.toString().padStart(2, '0')}〜${endJST.hours.toString().padStart(2, '0')}:${endJST.minutes.toString().padStart(2, '0')}`;
     const attendeeStr = e.attendees && e.attendees.length > 0
       ? `（${e.attendees.map(a => a.displayName || a.email).join(', ')}）`
       : '';
@@ -508,7 +561,7 @@ export function formatEventsForContext(events: CalendarEvent[]): string {
 }
 
 // ========================================
-// 空き時間のテキスト要約（Phase C: 全候補出力・日付グルーピング）
+// 空き時間のテキスト要約（Phase C: 全候補出力・日付グルーピング）— JST表示
 // ========================================
 export function formatFreeSlotsForContext(slots: FreeSlot[], maxSlots = 50): string {
   if (slots.length === 0) return '空き時間なし';
@@ -516,14 +569,14 @@ export function formatFreeSlotsForContext(slots: FreeSlot[], maxSlots = 50): str
   const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
   const target = slots.slice(0, maxSlots);
 
-  // 日付でグルーピング
+  // 日付でグルーピング（JSTベース）
   const grouped = new Map<string, { dateStr: string; times: string[] }>();
   for (const s of target) {
-    const start = new Date(s.start);
-    const end = new Date(s.end);
-    const dateKey = `${start.getFullYear()}-${start.getMonth()}-${start.getDate()}`;
-    const dateStr = `${start.getMonth() + 1}/${start.getDate()}（${dayNames[start.getDay()]}）`;
-    const timeStr = `${start.getHours().toString().padStart(2, '0')}:${start.getMinutes().toString().padStart(2, '0')}〜${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
+    const startJST = getJSTDateParts(new Date(s.start));
+    const endJST = getJSTDateParts(new Date(s.end));
+    const dateKey = `${startJST.year}-${startJST.month}-${startJST.day}`;
+    const dateStr = `${startJST.month + 1}/${startJST.day}（${dayNames[startJST.dayOfWeek]}）`;
+    const timeStr = `${startJST.hours.toString().padStart(2, '0')}:${startJST.minutes.toString().padStart(2, '0')}〜${endJST.hours.toString().padStart(2, '0')}:${endJST.minutes.toString().padStart(2, '0')}`;
 
     if (!grouped.has(dateKey)) {
       grouped.set(dateKey, { dateStr, times: [] });
