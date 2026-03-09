@@ -19,6 +19,7 @@ import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
 import DecisionTreeView from '@/components/v2/DecisionTreeView';
 import ThoughtMapTab from '@/components/v2/ThoughtMapTab';
+import MilestoneSection from '@/components/v2/MilestoneSection';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
 // ========================================
@@ -983,13 +984,17 @@ export default function OrganizationDetailPage() {
                 <ThoughtMapTab projectId={currentProject.id} projectName={currentProject.name} />
               )}
 
-              {/* PJレベル: タスク */}
-              {activeNav.type === 'project' && activeNav.tab === 'tasks' && (
+              {/* PJレベル: タスク（V2-I修正: MilestoneSection統合 + リンク修正） */}
+              {activeNav.type === 'project' && activeNav.tab === 'tasks' && currentProject && (
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-sm font-bold text-slate-800">{currentProject?.name} - タスク</h2>
-                    <a href={`/tasks?project_id=${activeNav.projectId}`} className="text-xs text-blue-600 hover:underline">タスクページで管理</a>
+                    <h2 className="text-sm font-bold text-slate-800">{currentProject.name} - タスク</h2>
                   </div>
+
+                  {/* V2-I: マイルストーンセクション（進捗・評価表示） */}
+                  <MilestoneSection projectId={currentProject.id} />
+
+                  {/* タスク一覧（ページ内表示、/tasks へのリンクなし） */}
                   {isLoadingTasks ? (
                     <div className="flex items-center justify-center py-16"><div className="animate-spin text-2xl">&#8987;</div></div>
                   ) : tasks.length === 0 ? (
@@ -997,6 +1002,7 @@ export default function OrganizationDetailPage() {
                       <div className="text-center">
                         <CheckSquare className="w-8 h-8 mx-auto mb-2 text-slate-300" />
                         <p className="text-xs">タスクがありません</p>
+                        <p className="text-[10px] text-slate-400 mt-1">秘書AIで「タスクを作成して」と伝えると追加できます</p>
                       </div>
                     </div>
                   ) : (
@@ -1014,8 +1020,8 @@ export default function OrganizationDetailPage() {
                             </div>
                             <div className="space-y-1.5">
                               {statusTasks.map(task => (
-                                <a key={task.id} href={`/tasks?id=${task.id}`}
-                                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                                <div key={task.id}
+                                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-default">
                                   <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
                                   {task.due_date && (
                                     <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
@@ -1023,7 +1029,7 @@ export default function OrganizationDetailPage() {
                                       {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                                     </span>
                                   )}
-                                </a>
+                                </div>
                               ))}
                             </div>
                           </div>

@@ -551,12 +551,7 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
         <div className="text-center">
           <CheckSquare className="w-8 h-8 mx-auto mb-2 text-slate-300" />
           <p className="text-xs">タスクがありません</p>
-          <a
-            href={`/tasks?project_id=${projectId}`}
-            className="text-[10px] text-blue-600 hover:underline mt-1 inline-block"
-          >
-            タスクページで作成
-          </a>
+          <p className="text-[10px] text-slate-400 mt-1">秘書AIで「タスクを作成して」と伝えると追加できます</p>
         </div>
       </div>
     );
@@ -601,10 +596,9 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
             </div>
             <div className="space-y-1.5">
               {statusTasks.map((task) => (
-                <a
+                <div
                   key={task.id}
-                  href={`/tasks?id=${task.id}`}
-                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                  className="flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors cursor-default"
                 >
                   <span className={`text-xs ${priorityColors[task.priority] || ''}`}>
                     {task.priority === 'high' ? '!' : task.priority === 'medium' ? '-' : '.'}
@@ -616,7 +610,7 @@ function TaskList({ tasks, isLoading, projectId }: { tasks: Task[]; isLoading: b
                       {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                     </span>
                   )}
-                </a>
+                </div>
               ))}
             </div>
           </div>
