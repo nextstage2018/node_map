@@ -1418,6 +1418,12 @@ CREATE TABLE meeting_records (
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,
   user_id TEXT,
+  -- v3.0: MeetGeek連携強化
+  participants JSONB DEFAULT '[]'::jsonb,      -- 参加者情報 [{email?, name?}]
+  meeting_start_at TIMESTAMPTZ,                -- 会議開始時刻（UTC）
+  meeting_end_at TIMESTAMPTZ,                  -- 会議終了時刻（UTC）
+  metadata JSONB DEFAULT '{}'::jsonb,          -- MeetGeekメタデータ {host_email, source, join_link, language, ...}
+  highlights JSONB DEFAULT '[]'::jsonb,        -- MeetGeekハイライト [{highlightText, label}]
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -1435,6 +1441,11 @@ CREATE INDEX idx_meeting_records_source ON meeting_records(source_type, source_f
 
 - processed: AI解析が完了したかどうかのフラグ
 - source_type: `'text'`（手動入力）、`'meetgeek'`（MeetGeek Webhook自動取り込み）
+- participants: MeetGeek会議詳細APIから取得した参加者メール + トランスクリプトのspeaker名
+- meeting_start_at / meeting_end_at: 会議の正確な開始・終了時刻（MeetGeek提供）
+- metadata: host_email, source(google/outlook), join_link, language, timezone, template, team_ids, event_id
+- highlights: MeetGeekが自動抽出したハイライト（アクションアイテム・キーポイント等）
+- **録画リンク**: 4時間期限付きのため保存せず、`GET /api/meeting-records/[id]/recording` でオンデマンド取得
 - source_file_id: TEXT型。MeetGeekの場合はmeeting_id（UUID文字列）を格納
 - ai_summary: AI解析後に自動設定される要約テキスト（MeetGeekの場合は事前セットあり）
 - 会議録登録 → AI解析 → business_events自動追加 → 検討ツリー自動生成の一連パイプライン

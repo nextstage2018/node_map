@@ -189,7 +189,7 @@
 | `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
 | `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
 | `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
-| `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型 |
+| `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型。v3.0: participants/meeting_start_at/meeting_end_at/metadata/highlights 追加 |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造。v3.0: source_type/confidence_score/source_message_ids 追加 |
 | `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
@@ -373,7 +373,15 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 |---|---|---|
 | `/api/webhooks/meetgeek` | MeetGeek会議録自動取り込み | MeetGeek会議完了時 |
 
+**MeetGeek Webhook取得データ**: 会議完了通知受信時、以下の全データをAPIから取得:
+- 会議詳細（タイトル・参加者メール・ホスト・開始/終了時刻・タイムゾーン）
+- サマリー + AIインサイト
+- 全文トランスクリプト（発言者・タイムスタンプ付き）
+- ハイライト（アクションアイテム等）
+- **録画リンクは保存しない**（4時間期限付き → `GET /api/meeting-records/[id]/recording` でオンデマンド取得）
+
 **プロジェクト自動判定**: Webhook受信時、以下の優先順位でプロジェクトを自動判定:
+0. 参加者メール → `contact_channels` → `contact_persons` → 所属`organization` → `projects`
 1. 参加者名 → `contact_persons` → 所属`organization` → `projects`
 2. 同日の`business_events`（会議）とサマリー照合
 3. フォールバック: 最新プロジェクト

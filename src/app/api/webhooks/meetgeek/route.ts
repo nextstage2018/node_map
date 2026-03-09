@@ -1,5 +1,6 @@
 // MeetGeek Webhook受信エンドポイント
-// 会議終了 → 参加者からプロジェクト自動判定 → 議事録登録 → AI解析 → 検討ツリー・ビジネスイベント自動生成
+// 会議終了 → 全データ取得（メタ・サマリー・トランスクリプト・ハイライト）
+// → 参加者からプロジェクト自動判定 → 議事録登録 → AI解析 → 検討ツリー・ビジネスイベント自動生成
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import crypto from 'crypto';
@@ -7,6 +8,51 @@ import crypto from 'crypto';
 export const dynamic = 'force-dynamic';
 
 const MEETGEEK_API_BASE = 'https://api.meetgeek.ai/v1';
+
+// ---- 型定義 ----
+
+interface MeetGeekMeetingMeta {
+  meeting_id: string;
+  title?: string;
+  host_email?: string;
+  participant_emails?: string[];
+  source?: string;       // google, outlook, etc.
+  join_link?: string;
+  language?: string;
+  timezone?: string;
+  timestamp_start_utc?: string;
+  timestamp_end_utc?: string;
+  template?: { id: string; name: string };
+  team_ids?: string[];
+  event_id?: string;
+}
+
+interface MeetGeekSentence {
+  id: number;
+  speaker: string;
+  timestamp: string;
+  transcript: string;
+}
+
+interface MeetGeekHighlight {
+  highlightText: string;
+  label: string;
+}
+
+interface MeetGeekSummary {
+  summary?: string;
+  ai_insights?: string;
+}
+
+interface MeetGeekFetchResult {
+  meetingDetail: MeetGeekMeetingMeta | null;
+  summary: MeetGeekSummary | null;
+  sentences: MeetGeekSentence[];
+  highlights: MeetGeekHighlight[];
+  meetingMeta: MeetGeekMeetingMeta | null; // from list API (fallback)
+}
+
+// ---- ユーティリティ ----
 
 // HMAC SHA-256 署名検証
 function verifySignature(body: string, signature: string, secret: string): boolean {
@@ -18,59 +64,94 @@ function verifySignature(body: string, signature: string, secret: string): boole
   }
 }
 
-// MeetGeek APIからミーティング情報を取得
-async function fetchMeetGeekMeeting(meetingId: string, apiKey: string) {
-  // サマリー取得
-  const summaryRes = await fetch(`${MEETGEEK_API_BASE}/meetings/${meetingId}/summary`, {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
-  });
+// MeetGeek APIから全データを取得
+async function fetchMeetGeekMeeting(meetingId: string, apiKey: string): Promise<MeetGeekFetchResult> {
+  const headers = { 'Authorization': `Bearer ${apiKey}` };
 
-  let summary = null;
-  if (summaryRes.ok) {
-    summary = await summaryRes.json();
+  // --- 1. 会議詳細（GET /meetings/{id}）---
+  let meetingDetail: MeetGeekMeetingMeta | null = null;
+  try {
+    const detailRes = await fetch(`${MEETGEEK_API_BASE}/meetings/${meetingId}`, { headers });
+    if (detailRes.ok) {
+      meetingDetail = await detailRes.json();
+      console.log(`[MeetGeek Webhook] 会議詳細取得成功: ${meetingDetail?.title || meetingId}`);
+    } else {
+      console.warn(`[MeetGeek Webhook] 会議詳細取得失敗: ${detailRes.status}`);
+    }
+  } catch (err) {
+    console.warn('[MeetGeek Webhook] 会議詳細取得エラー:', err);
   }
 
-  // トランスクリプト取得（全ページ）
-  let allSentences: Array<{ id: number; speaker: string; timestamp: string; transcript: string }> = [];
+  // --- 2. サマリー取得 ---
+  let summary: MeetGeekSummary | null = null;
+  try {
+    const summaryRes = await fetch(`${MEETGEEK_API_BASE}/meetings/${meetingId}/summary`, { headers });
+    if (summaryRes.ok) {
+      summary = await summaryRes.json();
+    }
+  } catch (err) {
+    console.warn('[MeetGeek Webhook] サマリー取得エラー:', err);
+  }
+
+  // --- 3. トランスクリプト取得（全ページ）---
+  let allSentences: MeetGeekSentence[] = [];
   let cursor: string | null = null;
 
   do {
-    const url = new URL(`${MEETGEEK_API_BASE}/meetings/${meetingId}/transcript`);
-    url.searchParams.set('limit', '500');
-    if (cursor) url.searchParams.set('cursor', cursor);
+    try {
+      const url = new URL(`${MEETGEEK_API_BASE}/meetings/${meetingId}/transcript`);
+      url.searchParams.set('limit', '500');
+      if (cursor) url.searchParams.set('cursor', cursor);
 
-    const transcriptRes = await fetch(url.toString(), {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-    });
+      const transcriptRes = await fetch(url.toString(), { headers });
+      if (!transcriptRes.ok) break;
 
-    if (!transcriptRes.ok) break;
-
-    const data = await transcriptRes.json();
-    allSentences = allSentences.concat(data.sentences || []);
-    cursor = data.pagination?.next_cursor || null;
+      const data = await transcriptRes.json();
+      allSentences = allSentences.concat(data.sentences || []);
+      cursor = data.pagination?.next_cursor || null;
+    } catch (err) {
+      console.warn('[MeetGeek Webhook] トランスクリプト取得エラー:', err);
+      break;
+    }
   } while (cursor);
 
-  // ミーティング一覧から日時情報を取得
-  const meetingsRes = await fetch(`${MEETGEEK_API_BASE}/meetings?limit=500`, {
-    headers: { 'Authorization': `Bearer ${apiKey}` },
-  });
-
-  let meetingMeta = null;
-  if (meetingsRes.ok) {
-    const meetingsData = await meetingsRes.json();
-    meetingMeta = meetingsData.meetings?.find((m: { meeting_id: string }) => m.meeting_id === meetingId);
+  // --- 4. ハイライト取得 ---
+  let highlights: MeetGeekHighlight[] = [];
+  try {
+    const highlightsRes = await fetch(`${MEETGEEK_API_BASE}/meetings/${meetingId}/highlights`, { headers });
+    if (highlightsRes.ok) {
+      const highlightsData = await highlightsRes.json();
+      highlights = highlightsData.highlights || [];
+      console.log(`[MeetGeek Webhook] ハイライト取得: ${highlights.length}件`);
+    }
+  } catch (err) {
+    console.warn('[MeetGeek Webhook] ハイライト取得エラー:', err);
   }
 
-  return { summary, sentences: allSentences, meetingMeta };
+  // --- 5. 会議一覧から日時情報取得（詳細APIのフォールバック）---
+  let meetingMeta: MeetGeekMeetingMeta | null = null;
+  if (!meetingDetail?.timestamp_start_utc) {
+    try {
+      const meetingsRes = await fetch(`${MEETGEEK_API_BASE}/meetings?limit=500`, { headers });
+      if (meetingsRes.ok) {
+        const meetingsData = await meetingsRes.json();
+        meetingMeta = meetingsData.meetings?.find((m: { meeting_id: string }) => m.meeting_id === meetingId) || null;
+      }
+    } catch (err) {
+      console.warn('[MeetGeek Webhook] 会議一覧取得エラー:', err);
+    }
+  }
+
+  return { meetingDetail, summary, sentences: allSentences, highlights, meetingMeta };
 }
 
 // トランスクリプトをテキストに変換
-function formatTranscript(sentences: Array<{ speaker: string; transcript: string }>): string {
+function formatTranscript(sentences: MeetGeekSentence[]): string {
   return sentences.map(s => `${s.speaker}: ${s.transcript}`).join('\n');
 }
 
 // 参加者名からユニークなspeaker一覧を抽出
-function extractSpeakers(sentences: Array<{ speaker: string }>): string[] {
+function extractSpeakers(sentences: MeetGeekSentence[]): string[] {
   const speakers = new Set<string>();
   sentences.forEach(s => {
     if (s.speaker) speakers.add(s.speaker.trim());
@@ -78,32 +159,117 @@ function extractSpeakers(sentences: Array<{ speaker: string }>): string[] {
   return Array.from(speakers);
 }
 
+// 参加者情報を構築（メール + トランスクリプトのspeaker名を統合）
+function buildParticipants(
+  meetingDetail: MeetGeekMeetingMeta | null,
+  speakers: string[]
+): Array<{ email?: string; name?: string }> {
+  const participants: Array<{ email?: string; name?: string }> = [];
+
+  // メールベースの参加者（会議詳細APIから）
+  const emails = meetingDetail?.participant_emails || [];
+  const hostEmail = meetingDetail?.host_email;
+
+  if (hostEmail) {
+    participants.push({ email: hostEmail, name: undefined });
+  }
+  for (const email of emails) {
+    if (email !== hostEmail) {
+      participants.push({ email, name: undefined });
+    }
+  }
+
+  // speaker名を追加（メールと名前を突き合わせる情報がないので別エントリ）
+  for (const speaker of speakers) {
+    // 既にメールで登録済みの参加者とは別に、名前だけのエントリを追加
+    const alreadyExists = participants.some(p => p.name === speaker);
+    if (!alreadyExists) {
+      participants.push({ email: undefined, name: speaker });
+    }
+  }
+
+  return participants;
+}
+
+// メタデータを構築（DB保存用）
+function buildMetadata(meetingDetail: MeetGeekMeetingMeta | null): Record<string, unknown> {
+  if (!meetingDetail) return {};
+  return {
+    host_email: meetingDetail.host_email || null,
+    source: meetingDetail.source || null,
+    join_link: meetingDetail.join_link || null,
+    language: meetingDetail.language || null,
+    timezone: meetingDetail.timezone || null,
+    template: meetingDetail.template || null,
+    team_ids: meetingDetail.team_ids || [],
+    event_id: meetingDetail.event_id || null,
+  };
+}
+
 // プロジェクト自動判定
-// 優先順位: 1.参加者→コンタクト→組織→プロジェクト  2.カレンダー予定マッチ  3.フォールバック
+// 優先順位: 1.参加者メール→コンタクト  2.参加者名→コンタクト→組織→PJ  3.カレンダー予定  4.フォールバック
 async function resolveProjectId(
   supabase: ReturnType<typeof getServerSupabase>,
   speakers: string[],
+  participantEmails: string[],
   meetingDate: string,
   summaryText: string | null
 ): Promise<{ projectId: string | null; matchMethod: string }> {
   if (!supabase) return { projectId: null, matchMethod: 'none' };
 
+  // --- 方法0: 参加者メール → contact_channels → contact_persons → organization → projects ---
+  if (participantEmails.length > 0) {
+    const { data: channels } = await supabase
+      .from('contact_channels')
+      .select('contact_id')
+      .eq('channel', 'email')
+      .in('address', participantEmails);
+
+    if (channels && channels.length > 0) {
+      const contactIds = channels.map(c => c.contact_id);
+      const { data: contacts } = await supabase
+        .from('contact_persons')
+        .select('id, organization_id')
+        .in('id', contactIds)
+        .not('organization_id', 'is', null);
+
+      if (contacts && contacts.length > 0) {
+        const orgIds = [...new Set(contacts.map(c => c.organization_id).filter(Boolean))];
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id, name')
+          .in('organization_id', orgIds)
+          .order('created_at', { ascending: false });
+
+        if (projects && projects.length > 0) {
+          if (summaryText && projects.length > 1) {
+            const summaryLower = summaryText.toLowerCase();
+            const bestMatch = projects.find(p => summaryLower.includes(p.name.toLowerCase()));
+            if (bestMatch) {
+              console.log(`[MeetGeek Webhook] プロジェクト判定: メール+サマリー一致 → ${bestMatch.name}`);
+              return { projectId: bestMatch.id, matchMethod: 'email_and_summary' };
+            }
+          }
+          console.log(`[MeetGeek Webhook] プロジェクト判定: メール組織一致 → ${projects[0].name}`);
+          return { projectId: projects[0].id, matchMethod: 'email_organization' };
+        }
+      }
+    }
+  }
+
   // --- 方法1: 参加者名 → contact_persons → organization → projects ---
   if (speakers.length > 0) {
-    // speaker名でcontact_personsをあいまい検索（display_name部分一致）
     const { data: contacts } = await supabase
       .from('contact_persons')
       .select('id, display_name, organization_id');
 
     if (contacts && contacts.length > 0) {
-      // speaker名とcontact display_nameのマッチング（部分一致）
       const matchedOrgIds = new Set<string>();
       for (const speaker of speakers) {
         const speakerLower = speaker.toLowerCase();
         for (const contact of contacts) {
           if (!contact.organization_id) continue;
           const contactName = (contact.display_name || '').toLowerCase();
-          // 名前の部分一致（「田中」⊂「田中太郎」、「Tanaka」⊂「Tanaka Taro」）
           if (contactName.includes(speakerLower) || speakerLower.includes(contactName)) {
             matchedOrgIds.add(contact.organization_id);
           }
@@ -111,7 +277,6 @@ async function resolveProjectId(
       }
 
       if (matchedOrgIds.size > 0) {
-        // マッチした組織のプロジェクトを取得（最新を優先）
         const { data: projects } = await supabase
           .from('projects')
           .select('id, name')
@@ -119,7 +284,6 @@ async function resolveProjectId(
           .order('created_at', { ascending: false });
 
         if (projects && projects.length > 0) {
-          // サマリーテキストとプロジェクト名の類似度でさらに絞り込み
           if (summaryText && projects.length > 1) {
             const summaryLower = summaryText.toLowerCase();
             const bestMatch = projects.find(p =>
@@ -130,7 +294,6 @@ async function resolveProjectId(
               return { projectId: bestMatch.id, matchMethod: 'speaker_and_summary' };
             }
           }
-          // 最新プロジェクトを使用
           console.log(`[MeetGeek Webhook] プロジェクト判定: 参加者組織一致 → ${projects[0].name}`);
           return { projectId: projects[0].id, matchMethod: 'speaker_organization' };
         }
@@ -139,7 +302,6 @@ async function resolveProjectId(
   }
 
   // --- 方法2: カレンダー予定との日時マッチング ---
-  // business_eventsから同日のカレンダー系イベントを探す
   if (meetingDate) {
     const { data: calendarEvents } = await supabase
       .from('business_events')
@@ -149,7 +311,6 @@ async function resolveProjectId(
       .not('project_id', 'is', null);
 
     if (calendarEvents && calendarEvents.length > 0) {
-      // サマリーとイベントタイトルで照合
       if (summaryText && calendarEvents.length > 1) {
         const summaryLower = summaryText.toLowerCase();
         const bestMatch = calendarEvents.find(e =>
@@ -161,13 +322,12 @@ async function resolveProjectId(
           return { projectId: bestMatch.project_id, matchMethod: 'calendar_and_summary' };
         }
       }
-      // 最初のマッチを使用
       console.log(`[MeetGeek Webhook] プロジェクト判定: カレンダー日付一致 → ${calendarEvents[0].title}`);
       return { projectId: calendarEvents[0].project_id, matchMethod: 'calendar_date' };
     }
   }
 
-  // --- 方法3: フォールバック（最新プロジェクト） ---
+  // --- 方法3: フォールバック（最新プロジェクト）---
   const { data: latestProject } = await supabase
     .from('projects')
     .select('id, name')
@@ -182,6 +342,8 @@ async function resolveProjectId(
 
   return { projectId: null, matchMethod: 'none' };
 }
+
+// ---- メインハンドラ ----
 
 export async function POST(request: NextRequest) {
   try {
@@ -242,34 +404,51 @@ export async function POST(request: NextRequest) {
       return new NextResponse(null, { status: 200 });
     }
 
-    // MeetGeek APIから詳細を取得
-    const { summary, sentences, meetingMeta } = await fetchMeetGeekMeeting(meetingId, meetgeekApiKey);
+    // ★ MeetGeek APIから全データを取得（メタ・サマリー・トランスクリプト・ハイライト）
+    const { meetingDetail, summary, sentences, highlights, meetingMeta } =
+      await fetchMeetGeekMeeting(meetingId, meetgeekApiKey);
 
     if (!sentences || sentences.length === 0) {
       console.error(`[MeetGeek Webhook] トランスクリプトが空: ${meetingId}`);
       return new NextResponse(null, { status: 200 });
     }
 
-    // 会議タイトルと日時を組み立て
+    // ---- データ組み立て ----
+
+    // タイトル: 会議詳細API > サマリー > フォールバック
+    const detailTitle = meetingDetail?.title;
     const summaryText = summary?.summary || null;
-    const meetingTitle = summaryText
-      ? `MeetGeek: ${summaryText.substring(0, 60)}${summaryText.length > 60 ? '...' : ''}`
-      : `MeetGeek会議 ${meetingId.substring(0, 8)}`;
-    const meetingDate = meetingMeta?.timestamp_start_utc
-      ? meetingMeta.timestamp_start_utc.split('T')[0]
+    const meetingTitle = detailTitle
+      || (summaryText
+        ? `MeetGeek: ${summaryText.substring(0, 60)}${summaryText.length > 60 ? '...' : ''}`
+        : `MeetGeek会議 ${meetingId.substring(0, 8)}`);
+
+    // 日時
+    const startUtc = meetingDetail?.timestamp_start_utc || meetingMeta?.timestamp_start_utc;
+    const endUtc = meetingDetail?.timestamp_end_utc || meetingMeta?.timestamp_end_utc;
+    const meetingDate = startUtc
+      ? startUtc.split('T')[0]
       : new Date().toISOString().split('T')[0];
 
     // トランスクリプト整形
     const transcriptText = formatTranscript(sentences);
 
-    // 参加者を抽出
+    // 参加者
     const speakers = extractSpeakers(sentences);
-    console.log(`[MeetGeek Webhook] 参加者: ${speakers.join(', ')}`);
+    const participantEmails = [
+      ...(meetingDetail?.participant_emails || []),
+      ...(meetingDetail?.host_email ? [meetingDetail.host_email] : []),
+    ];
+    const participants = buildParticipants(meetingDetail, speakers);
+    const metadata = buildMetadata(meetingDetail);
 
-    // プロジェクト自動判定
+    console.log(`[MeetGeek Webhook] 参加者: ${speakers.join(', ')} | メール: ${participantEmails.length}件 | ハイライト: ${highlights.length}件`);
+
+    // プロジェクト自動判定（メールベースの判定を追加）
     const { projectId, matchMethod } = await resolveProjectId(
       supabase,
       speakers,
+      participantEmails,
       meetingDate,
       summaryText
     );
@@ -281,7 +460,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`[MeetGeek Webhook] プロジェクトID: ${projectId} (判定方法: ${matchMethod})`);
 
-    // meeting_recordsに保存
+    // ---- meeting_recordsに保存 ----
     const { data: record, error: insertError } = await supabase
       .from('meeting_records')
       .insert({
@@ -293,6 +472,12 @@ export async function POST(request: NextRequest) {
         source_file_id: meetingId,
         user_id: userId || null,
         processed: false,
+        // ★ 新規カラム
+        participants,
+        meeting_start_at: startUtc || null,
+        meeting_end_at: endUtc || null,
+        metadata,
+        highlights,
       })
       .select()
       .single();
@@ -302,9 +487,9 @@ export async function POST(request: NextRequest) {
       return new NextResponse(null, { status: 200 });
     }
 
-    console.log(`[MeetGeek Webhook] 議事録保存完了: ${record.id} (speakers: ${speakers.join(', ')}, method: ${matchMethod})`);
+    console.log(`[MeetGeek Webhook] 議事録保存完了: ${record.id} (title: ${meetingTitle}, method: ${matchMethod})`);
 
-    // AI解析を非同期トリガー
+    // ---- AI解析を非同期トリガー ----
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
       || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
