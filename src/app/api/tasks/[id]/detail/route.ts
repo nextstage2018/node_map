@@ -1,5 +1,6 @@
 // v4.0: タスク詳細取得API（パネル用）
-// task本体 + conversations + drive_documents + project/milestone/theme情報
+// task本体 + conversations + drive_documents + project/milestone/theme + source情報
+// JOINは使わず別クエリで取得（tasks→milestones/themes のFK不整合回避）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -22,35 +23,61 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'DB接続エラー' }, { status: 500 });
     }
 
-    // 1. タスク本体取得（JOIN: project, milestone, theme）
+    // 1. タスク本体取得（JOINなしでシンプルに）
     const { data: task, error: taskError } = await supabase
       .from('tasks')
-      .select(`
-        *,
-        projects:project_id (id, name),
-        milestones:milestone_id (id, title),
-        themes:theme_id (id, title)
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 
-    if (taskError || !task) {
+    if (taskError) {
+      console.error('[TaskDetail] タスク取得エラー:', taskError);
+      return NextResponse.json({ success: false, error: 'タスクが見つかりません', detail: taskError.message }, { status: 404 });
+    }
+    if (!task) {
       return NextResponse.json({ success: false, error: 'タスクが見つかりません' }, { status: 404 });
     }
 
-    // 2. 会話履歴取得
-    const { data: conversations } = await supabase
-      .from('task_conversations')
-      .select('id, role, content, phase, conversation_tag, turn_id, created_at')
-      .eq('task_id', id)
-      .order('created_at', { ascending: true });
+    // 2. プロジェクト情報
+    let projectName: string | null = null;
+    let projectChannels: Array<{ service_name: string; identifier: string; channel_name?: string }> = [];
+    if (task.project_id) {
+      const { data: project } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('id', task.project_id)
+        .single();
+      if (project) projectName = project.name;
 
-    // 3. 関連資料取得
-    const { data: documents } = await supabase
-      .from('drive_documents')
-      .select('id, title, document_url, document_type, created_at')
-      .eq('task_id', id)
-      .order('created_at', { ascending: false });
+      // プロジェクトチャネル情報（作成元特定用）
+      const { data: channels } = await supabase
+        .from('project_channels')
+        .select('service_name, identifier, channel_name')
+        .eq('project_id', task.project_id);
+      if (channels) projectChannels = channels;
+    }
+
+    // 3. マイルストーン・テーマ情報
+    let milestoneTitle: string | null = null;
+    let themeTitle: string | null = null;
+    if (task.milestone_id) {
+      const { data: ms } = await supabase
+        .from('milestones')
+        .select('id, title, theme_id')
+        .eq('id', task.milestone_id)
+        .single();
+      if (ms) {
+        milestoneTitle = ms.title;
+        if (ms.theme_id) {
+          const { data: theme } = await supabase
+            .from('themes')
+            .select('id, title')
+            .eq('id', ms.theme_id)
+            .single();
+          if (theme) themeTitle = theme.title;
+        }
+      }
+    }
 
     // 4. 担当者情報
     let assigneeName: string | null = null;
@@ -60,15 +87,50 @@ export async function GET(
         .select('full_name, display_name')
         .eq('id', task.assigned_contact_id)
         .single();
-      if (contact) {
-        assigneeName = contact.display_name || contact.full_name;
-      }
+      if (contact) assigneeName = contact.display_name || contact.full_name;
     }
 
-    // レスポンス構築
-    const project = task.projects as { id: string; name: string } | null;
-    const milestone = task.milestones as { id: string; title: string } | null;
-    const theme = task.themes as { id: string; title: string } | null;
+    // 5. 会話履歴取得
+    const { data: conversations } = await supabase
+      .from('task_conversations')
+      .select('id, role, content, phase, conversation_tag, turn_id, created_at')
+      .eq('task_id', id)
+      .order('created_at', { ascending: true });
+
+    // 6. 関連資料取得
+    const { data: documents } = await supabase
+      .from('drive_documents')
+      .select('id, title, document_url, document_type, created_at')
+      .eq('task_id', id)
+      .order('created_at', { ascending: false });
+
+    // 7. 元のソース情報（生成元を特定）
+    let sourceInfo: { type: string; label: string; detail?: string } | null = null;
+    if (task.source_type === 'meeting_record' && task.source_message_id) {
+      const { data: mr } = await supabase
+        .from('meeting_records')
+        .select('id, title, meeting_date')
+        .eq('id', task.source_message_id)
+        .single();
+      sourceInfo = {
+        type: 'meeting_record',
+        label: '議事録から生成',
+        detail: mr ? `${mr.title}（${mr.meeting_date}）` : undefined,
+      };
+    } else if (task.source_type === 'slack' || task.source_type === 'chatwork') {
+      const channelLabel = task.source_type === 'slack' ? 'Slack' : 'Chatwork';
+      const channel = projectChannels.find(c => c.service_name === task.source_type);
+      sourceInfo = {
+        type: task.source_type,
+        label: `${channelLabel}から生成`,
+        detail: channel?.channel_name || channel?.identifier || undefined,
+      };
+    } else {
+      sourceInfo = {
+        type: 'manual',
+        label: '手動作成',
+      };
+    }
 
     return NextResponse.json({
       success: true,
@@ -84,19 +146,20 @@ export async function GET(
         scheduled_start: task.scheduled_start,
         scheduled_end: task.scheduled_end,
         source_type: task.source_type,
+        source_info: sourceInfo,
         assigned_contact_id: task.assigned_contact_id,
         assignee_name: assigneeName,
+        user_id: task.user_id,
         project_id: task.project_id,
-        project_name: project?.name || null,
+        project_name: projectName,
         milestone_id: task.milestone_id,
-        milestone_title: milestone?.title || null,
+        milestone_title: milestoneTitle,
         theme_id: task.theme_id,
-        theme_title: theme?.title || null,
+        theme_title: themeTitle,
         result_summary: task.result_summary,
         ideation_summary: task.ideation_summary,
         created_at: task.created_at,
         updated_at: task.updated_at,
-        // 関連データ
         conversations: conversations || [],
         documents: documents || [],
       },

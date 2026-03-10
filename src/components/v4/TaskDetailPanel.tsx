@@ -1,11 +1,12 @@
-// v4.0: タスク詳細スライドパネル
+// v4.0: タスク詳細スライドパネル（サポっとさん風レイアウト）
 // カンバンのカードクリックで右からスライドイン
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import {
   X, Calendar, MessageCircle, FileText, Pause, Play,
-  ChevronRight, ExternalLink, Loader2,
+  ChevronRight, ExternalLink, Loader2, User, FolderOpen,
+  MessageSquare, Bot, Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskChatView from './TaskChatView';
@@ -28,6 +29,12 @@ interface Document {
   created_at: string;
 }
 
+interface SourceInfo {
+  type: string;
+  label: string;
+  detail?: string;
+}
+
 interface TaskDetail {
   id: string;
   title: string;
@@ -38,8 +45,10 @@ interface TaskDetail {
   task_type: string;
   due_date?: string;
   source_type?: string;
+  source_info?: SourceInfo;
   assigned_contact_id?: string;
   assignee_name?: string;
+  user_id?: string;
   project_id?: string;
   project_name?: string;
   milestone_id?: string;
@@ -60,25 +69,27 @@ interface TaskDetailPanelProps {
   onStatusChange?: (taskId: string, newStatus: string) => void;
 }
 
-const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
-  high: { label: '高', color: 'text-red-600 bg-red-50' },
-  medium: { label: '中', color: 'text-amber-600 bg-amber-50' },
-  low: { label: '低', color: 'text-slate-500 bg-slate-50' },
-};
+const STATUS_OPTIONS: Array<{ value: string; label: string; color: string }> = [
+  { value: 'todo', label: '着手前', color: 'bg-slate-100 text-slate-600' },
+  { value: 'in_progress', label: '進行中', color: 'bg-blue-50 text-blue-600' },
+  { value: 'on_hold', label: '保留', color: 'bg-amber-50 text-amber-600' },
+  { value: 'done', label: '完了', color: 'bg-green-50 text-green-600' },
+];
 
-const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  todo: { label: '着手前', color: 'text-slate-600 bg-slate-100' },
-  in_progress: { label: '進行中', color: 'text-blue-600 bg-blue-50' },
-  done: { label: '完了', color: 'text-green-600 bg-green-50' },
-  on_hold: { label: '保留', color: 'text-amber-600 bg-amber-50' },
-};
+function getSourceIcon(sourceType?: string) {
+  if (sourceType === 'slack' || sourceType === 'chatwork') {
+    return <Bot className="w-3.5 h-3.5 text-indigo-400" />;
+  }
+  if (sourceType === 'meeting_record') {
+    return <MessageSquare className="w-3.5 h-3.5 text-blue-400" />;
+  }
+  return <User className="w-3.5 h-3.5 text-slate-400" />;
+}
 
 export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: TaskDetailPanelProps) {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
 
@@ -89,7 +100,6 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
         const data = await res.json();
         if (data.success) {
           setTask(data.data);
-          setEditTitle(data.data.title);
           setEditDescription(data.data.description || '');
         }
       }
@@ -105,25 +115,6 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
     setShowChat(false);
     fetchDetail();
   }, [fetchDetail]);
-
-  // タイトル保存
-  const handleSaveTitle = async () => {
-    if (!task || editTitle.trim() === task.title) {
-      setIsEditingTitle(false);
-      return;
-    }
-    try {
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: editTitle.trim() }),
-      });
-      setTask(prev => prev ? { ...prev, title: editTitle.trim() } : prev);
-    } catch (error) {
-      console.error('タイトル更新エラー:', error);
-    }
-    setIsEditingTitle(false);
-  };
 
   // メモ保存
   const handleSaveDescription = async () => {
@@ -143,10 +134,9 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
     }
   };
 
-  // 保留切替
-  const handleToggleHold = async () => {
-    if (!task) return;
-    const newStatus = task.status === 'on_hold' ? 'todo' : 'on_hold';
+  // ステータス変更
+  const handleStatusChange = async (newStatus: string) => {
+    if (!task || task.status === newStatus) return;
     try {
       await fetch(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
@@ -159,12 +149,6 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
       console.error('ステータス更新エラー:', error);
     }
   };
-
-  // パンくず生成
-  const breadcrumbs: string[] = [];
-  if (task?.project_name) breadcrumbs.push(task.project_name);
-  if (task?.theme_title) breadcrumbs.push(task.theme_title);
-  if (task?.milestone_title) breadcrumbs.push(task.milestone_title);
 
   return (
     <>
@@ -185,7 +169,6 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             タスクが見つかりません
           </div>
         ) : showChat ? (
-          /* AI会話モード */
           <TaskChatView
             taskId={taskId}
             conversations={task.conversations}
@@ -194,20 +177,13 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             onConversationUpdate={fetchDetail}
           />
         ) : (
-          /* 詳細モード */
           <>
             {/* ヘッダー */}
-            <div className="shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-100">
-              <div className="flex items-center gap-2 min-w-0">
-                {breadcrumbs.length > 0 && (
-                  <span className="text-[10px] text-nm-text-secondary truncate">
-                    {breadcrumbs.join(' > ')}
-                  </span>
-                )}
-              </div>
+            <div className="shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <div className="flex-1" />
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors shrink-0"
+                className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
               >
                 <X className="w-4 h-4 text-slate-400" />
               </button>
@@ -215,124 +191,150 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
 
             {/* コンテンツ */}
             <div className="flex-1 overflow-y-auto">
-              <div className="px-5 py-4 space-y-5">
+              <div className="px-5 py-4">
                 {/* タスク名 */}
-                <div>
-                  {isEditingTitle ? (
-                    <input
-                      value={editTitle}
-                      onChange={(e) => setEditTitle(e.target.value)}
-                      onBlur={handleSaveTitle}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
-                      className="w-full text-lg font-semibold text-nm-text border-b-2 border-blue-400 focus:outline-none pb-1"
-                      autoFocus
-                    />
-                  ) : (
-                    <h2
-                      onClick={() => setIsEditingTitle(true)}
-                      className="text-lg font-semibold text-nm-text cursor-text hover:bg-slate-50 rounded px-1 -mx-1 py-0.5"
-                    >
-                      {task.title}
-                    </h2>
-                  )}
-                </div>
+                <h2 className="text-lg font-bold text-nm-text leading-snug mb-5">
+                  {task.title}
+                </h2>
 
-                {/* ステータス・優先度バッジ */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {STATUS_LABELS[task.status] && (
-                    <span className={cn(
-                      'text-xs font-medium px-2.5 py-1 rounded-full',
-                      STATUS_LABELS[task.status].color
-                    )}>
-                      {STATUS_LABELS[task.status].label}
+                {/* === 基本情報テーブル（サポっとさん風） === */}
+                <div className="space-y-3 mb-6">
+                  {/* 期限 */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">期限</span>
+                    <span className="text-sm text-nm-text">
+                      {task.due_date
+                        ? new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })
+                        : '未設定'}
                     </span>
-                  )}
-                  {PRIORITY_LABELS[task.priority] && (
-                    <span className={cn(
-                      'text-xs font-medium px-2.5 py-1 rounded-full',
-                      PRIORITY_LABELS[task.priority].color
-                    )}>
-                      優先度: {PRIORITY_LABELS[task.priority].label}
-                    </span>
-                  )}
-                  {task.assignee_name && (
-                    <span className="text-xs font-medium px-2.5 py-1 rounded-full text-blue-600 bg-blue-50">
-                      {task.assignee_name}
-                    </span>
-                  )}
-                </div>
-
-                {/* 期日 */}
-                {task.due_date && (
-                  <div className="flex items-center gap-2 text-sm text-slate-600">
-                    <Calendar className="w-4 h-4 text-slate-400" />
-                    <span>期日: {new Date(task.due_date).toLocaleDateString('ja-JP')}</span>
                   </div>
-                )}
 
-                {/* メモ */}
-                <div>
-                  <label className="text-xs font-medium text-slate-500 mb-1 block">メモ</label>
+                  {/* 状況 */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">状況</span>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={task.status}
+                        onChange={(e) => handleStatusChange(e.target.value)}
+                        className={cn(
+                          'text-xs font-medium px-2.5 py-1 rounded-full border-0 appearance-none cursor-pointer',
+                          STATUS_OPTIONS.find(s => s.value === task.status)?.color || 'bg-slate-100 text-slate-600'
+                        )}
+                      >
+                        {STATUS_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* 担当 */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">担当</span>
+                    <div className="flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-sm text-nm-text">
+                        {task.assignee_name || '自分'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 作成元 */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">作成元</span>
+                    <div className="flex items-center gap-1.5">
+                      {getSourceIcon(task.source_type)}
+                      <span className="text-sm text-nm-text">
+                        {task.source_info?.label || '手動作成'}
+                      </span>
+                    </div>
+                  </div>
+                  {task.source_info?.detail && (
+                    <div className="flex items-center">
+                      <span className="w-20 shrink-0" />
+                      <span className="text-xs text-slate-400">{task.source_info.detail}</span>
+                    </div>
+                  )}
+
+                  {/* プロジェクト */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">プロジェクト</span>
+                    <div className="flex items-center gap-1.5">
+                      <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-sm text-nm-text">
+                        {task.project_name || '未設定'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 区切り線 */}
+                <div className="border-t border-slate-100 my-4" />
+
+                {/* === 詳細メモ === */}
+                <div className="mb-5">
+                  <h3 className="text-sm font-semibold text-nm-text mb-2">詳細</h3>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     onBlur={handleSaveDescription}
-                    placeholder="メモを追加..."
+                    placeholder="詳細を追加"
                     rows={3}
-                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 resize-none"
+                    className="w-full text-sm text-slate-600 border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-400 resize-none placeholder:text-slate-300"
                   />
                   {isSavingDescription && (
                     <span className="text-[10px] text-slate-400">保存中...</span>
                   )}
                 </div>
 
-                {/* AIに相談ボタン */}
-                <button
-                  onClick={() => setShowChat(true)}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
-                >
-                  <MessageCircle className="w-4 h-4" />
-                  AIに相談
-                  {task.conversations.length > 0 && (
-                    <span className="text-[10px] bg-blue-500 px-1.5 py-0.5 rounded-full">
-                      {task.conversations.filter(c => c.role === 'user').length}回の相談履歴
-                    </span>
-                  )}
-                  <ChevronRight className="w-4 h-4 ml-auto" />
-                </button>
+                {/* 区切り線 */}
+                <div className="border-t border-slate-100 my-4" />
 
-                {/* 過去の会話サマリー（あれば） */}
-                {task.conversations.length > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 mb-2 block">
-                      過去のAI相談（{task.conversations.filter(c => c.role === 'user').length}回）
-                    </label>
-                    <div className="space-y-2 max-h-40 overflow-y-auto">
-                      {task.conversations
-                        .filter(c => c.role === 'user')
-                        .slice(-3)
-                        .map((conv) => (
-                          <div
-                            key={conv.id}
-                            onClick={() => setShowChat(true)}
-                            className="text-xs text-slate-600 bg-slate-50 rounded-lg px-3 py-2 cursor-pointer hover:bg-slate-100 transition-colors"
-                          >
-                            <span className="text-[10px] text-slate-400">
-                              {new Date(conv.created_at).toLocaleDateString('ja-JP')}
-                            </span>
-                            <p className="line-clamp-2 mt-0.5">{conv.content}</p>
-                          </div>
-                        ))}
-                    </div>
+                {/* === AI要約 === */}
+                <div className="mb-5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="text-sm font-semibold text-nm-text">AI要約</h3>
+                    {task.conversations.length > 0 && (
+                      <span className="text-[10px] text-slate-400">
+                        作成: {new Date(task.conversations[0].created_at).toLocaleDateString('ja-JP')}
+                      </span>
+                    )}
                   </div>
-                )}
 
-                {/* 関連資料 */}
+                  {task.conversations.length > 0 ? (
+                    <div className="bg-slate-50 rounded-lg px-3 py-2.5 text-sm text-slate-600 space-y-2">
+                      {/* 最新のAI応答から要約を表示 */}
+                      {task.conversations
+                        .filter(c => c.role === 'assistant')
+                        .slice(-1)
+                        .map(conv => (
+                          <p key={conv.id} className="line-clamp-4 leading-relaxed">
+                            {conv.content.substring(0, 200)}
+                            {conv.content.length > 200 ? '...' : ''}
+                          </p>
+                        ))}
+                      <button
+                        onClick={() => setShowChat(true)}
+                        className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                      >
+                        会話履歴を見る →
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-3">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>やりとりが少ないため、要約はまだありません</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* 区切り線 */}
+                <div className="border-t border-slate-100 my-4" />
+
+                {/* === 関連資料 === */}
                 {task.documents.length > 0 && (
-                  <div>
-                    <label className="text-xs font-medium text-slate-500 mb-2 block">
-                      関連資料（{task.documents.length}件）
-                    </label>
+                  <div className="mb-5">
+                    <h3 className="text-sm font-semibold text-nm-text mb-2">関連資料</h3>
                     <div className="space-y-1.5">
                       {task.documents.map(doc => (
                         <a
@@ -350,32 +352,19 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                     </div>
                   </div>
                 )}
-
-                {/* 保留ボタン */}
-                {task.status !== 'done' && (
-                  <button
-                    onClick={handleToggleHold}
-                    className={cn(
-                      'w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors border',
-                      task.status === 'on_hold'
-                        ? 'border-blue-200 text-blue-600 hover:bg-blue-50'
-                        : 'border-amber-200 text-amber-600 hover:bg-amber-50'
-                    )}
-                  >
-                    {task.status === 'on_hold' ? (
-                      <>
-                        <Play className="w-4 h-4" />
-                        保留を解除
-                      </>
-                    ) : (
-                      <>
-                        <Pause className="w-4 h-4" />
-                        保留にする
-                      </>
-                    )}
-                  </button>
-                )}
               </div>
+            </div>
+
+            {/* フッター: AIに相談ボタン */}
+            <div className="shrink-0 border-t border-slate-100 px-5 py-4">
+              <button
+                onClick={() => setShowChat(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
+              >
+                <MessageCircle className="w-4 h-4" />
+                AIに相談
+                <ChevronRight className="w-4 h-4 ml-auto" />
+              </button>
             </div>
           </>
         )}
