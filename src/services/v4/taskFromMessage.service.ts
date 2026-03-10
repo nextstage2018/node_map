@@ -28,84 +28,51 @@ async function extractTaskFromMessage(
   messageText: string,
   threadContext?: string
 ): Promise<TaskExtractionResult> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return {
-      title: messageText.slice(0, 100),
-      description: messageText,
-      priority: 'medium',
-      dueDate: null,
-    };
+  // シンプル抽出（Vercel環境でのAI API接続問題を回避）
+  const text = messageText.trim();
+
+  // 期限キーワードから日付を推定
+  let dueDate: string | null = null;
+  const today = new Date();
+
+  if (text.includes('今日') || text.includes('本日')) {
+    dueDate = today.toISOString().split('T')[0];
+  } else if (text.includes('明日')) {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    dueDate = tomorrow.toISOString().split('T')[0];
+  } else if (text.includes('今週') || text.includes('週末')) {
+    const friday = new Date(today);
+    friday.setDate(friday.getDate() + (5 - friday.getDay() + 7) % 7);
+    dueDate = friday.toISOString().split('T')[0];
+  } else if (text.includes('来週')) {
+    const nextWeek = new Date(today);
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    dueDate = nextWeek.toISOString().split('T')[0];
   }
 
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const contextPart = threadContext
-      ? `\n\n【スレッドの文脈】\n${threadContext}`
-      : '';
+  // 優先度キーワード
+  let priority: 'high' | 'medium' | 'low' = 'medium';
+  if (text.includes('急ぎ') || text.includes('至急') || text.includes('緊急') || text.includes('ASAP')) {
+    priority = 'high';
+  }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+  // タスクキーワードを除去してタイトルを生成
+  let title = text
+    .replace(/タスクにして|タスク化して|タスクにする|タスク化する|タスク登録|タスク作成|やることに追加|TODO|task|タスクお願い/gi, '')
+    .replace(/今日|明日|今週|来週|週末|まで|までに/g, '')
+    .replace(/急ぎ|至急|緊急|ASAP/gi, '')
+    .trim();
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 500,
-        messages: [
-          {
-            role: 'user',
-            content: `以下のメッセージからタスク情報を抽出してJSON形式で返してください。
-今日の日付: ${today}
-
-【メッセージ】
-${messageText}${contextPart}
-
-以下のJSON形式で返してください（他のテキストは不要）:
-{
-  "title": "タスクのタイトル（簡潔に）",
-  "description": "タスクの詳細説明",
-  "priority": "high/medium/low",
-  "dueDate": "YYYY-MM-DD形式の期限（不明ならnull）"
-}`,
-          },
-        ],
-      }),
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`AI API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '';
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      return {
-        title: parsed.title || messageText.slice(0, 100),
-        description: parsed.description || messageText,
-        priority: ['high', 'medium', 'low'].includes(parsed.priority) ? parsed.priority : 'medium',
-        dueDate: parsed.dueDate || null,
-      };
-    }
-  } catch (error) {
-    console.error('[taskFromMessage] AI抽出エラー:', error);
+  if (!title || title.length < 2) {
+    title = text.slice(0, 100);
   }
 
   return {
-    title: messageText.slice(0, 100),
-    description: messageText,
-    priority: 'medium',
-    dueDate: null,
+    title: title.slice(0, 100),
+    description: text,
+    priority,
+    dueDate,
   };
 }
 
