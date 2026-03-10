@@ -491,7 +491,7 @@ export async function POST(request: NextRequest) {
         name,
         company_name: company_name || null,
         department: department || null,
-        relationship_type: relationship_type || 'unknown',
+        relationship_type: relationship_type || 'internal',
         owner_user_id: userId,
         organization_id: autoOrganizationId,
       });
@@ -585,7 +585,7 @@ export async function PUT(request: NextRequest) {
         .insert({
           id: newId,
           name: name || '',
-          relationship_type: relationshipType || 'unknown',
+          relationship_type: relationshipType || 'internal',
           company_name: companyName || null,
           department: department || null,
           notes: notes || null,
