@@ -35,6 +35,9 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
   const [selectedNode, setSelectedNode] = useState<DecisionTreeNodeData | null>(null);
   const [meetingRecords, setMeetingRecords] = useState<MeetingRecord[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // v3.4: ノード別の未確定事項・決定ログ件数
+  const [nodeIssueCounts, setNodeIssueCounts] = useState<Record<string, number>>({});
+  const [nodeDecisionCounts, setNodeDecisionCounts] = useState<Record<string, number>>({});
 
   const fetchTree = useCallback(async () => {
     setIsLoading(true);
@@ -78,10 +81,45 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     }
   }, [projectId]);
 
+  // v3.4: プロジェクト全体の未確定事項・決定ログを取得してノード別にカウント
+  const fetchV34Counts = useCallback(async () => {
+    try {
+      const [issuesRes, decisionsRes] = await Promise.all([
+        fetch(`/api/projects/${projectId}/open-issues`),
+        fetch(`/api/projects/${projectId}/decision-log`),
+      ]);
+      const issuesData = await issuesRes.json();
+      const decisionsData = await decisionsRes.json();
+
+      if (issuesData.success && issuesData.data) {
+        const counts: Record<string, number> = {};
+        for (const issue of issuesData.data) {
+          if (issue.related_decision_node_id) {
+            counts[issue.related_decision_node_id] = (counts[issue.related_decision_node_id] || 0) + 1;
+          }
+        }
+        setNodeIssueCounts(counts);
+      }
+
+      if (decisionsData.success && decisionsData.data) {
+        const counts: Record<string, number> = {};
+        for (const d of decisionsData.data) {
+          if (d.decision_tree_node_id) {
+            counts[d.decision_tree_node_id] = (counts[d.decision_tree_node_id] || 0) + 1;
+          }
+        }
+        setNodeDecisionCounts(counts);
+      }
+    } catch (err) {
+      console.error('v3.4カウント取得エラー:', err);
+    }
+  }, [projectId]);
+
   useEffect(() => {
     fetchTree();
     fetchMeetingRecords();
-  }, [fetchTree, fetchMeetingRecords, refreshKey]);
+    fetchV34Counts();
+  }, [fetchTree, fetchMeetingRecords, fetchV34Counts, refreshKey]);
 
   const handleNodeClick = (node: DecisionTreeNodeData) => {
     setSelectedNode(node);
@@ -254,6 +292,8 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
                 depth={0}
                 onNodeClick={handleNodeClick}
                 selectedNodeId={selectedNode?.id || null}
+                nodeIssueCounts={nodeIssueCounts}
+                nodeDecisionCounts={nodeDecisionCounts}
               />
             ))}
           </div>
@@ -263,6 +303,7 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
         {selectedNode && (
           <NodeDetailPanel
             node={selectedNode}
+            projectId={projectId}
             onClose={() => setSelectedNode(null)}
             onDelete={handleDeleteNode}
             onStatusChange={handleStatusChange}

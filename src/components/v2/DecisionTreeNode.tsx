@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { ChevronRight, Check, X, Pause, Minus } from 'lucide-react';
+import { ChevronRight, Check, X, Pause, Minus, CircleDot, CheckCircle2 } from 'lucide-react';
 
 export interface DecisionTreeNodeData {
   id: string;
@@ -26,6 +26,8 @@ interface DecisionTreeNodeProps {
   depth: number;
   onNodeClick: (node: DecisionTreeNodeData) => void;
   selectedNodeId: string | null;
+  nodeIssueCounts?: Record<string, number>;
+  nodeDecisionCounts?: Record<string, number>;
 }
 
 // ステータス別の設定
@@ -72,7 +74,7 @@ const typeStyles = {
   action: { label: 'アクション', badge: 'bg-orange-100 text-orange-700', size: 'px-2.5 py-1.5' },
 };
 
-export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNodeId }: DecisionTreeNodeProps) {
+export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNodeId, nodeIssueCounts = {}, nodeDecisionCounts = {} }: DecisionTreeNodeProps) {
   const [isExpanded, setIsExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
   const style = statusStyles[node.status] || statusStyles.active;
@@ -80,6 +82,8 @@ export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNod
   const isSelected = selectedNodeId === node.id;
   const StatusIcon = style.icon;
   const isTopic = node.node_type === 'topic';
+  const issueCount = nodeIssueCounts[node.id] || 0;
+  const decisionCount = nodeDecisionCounts[node.id] || 0;
 
   return (
     <div className="flex items-start gap-0">
@@ -109,11 +113,23 @@ export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNod
             </span>
           </div>
 
-          {/* ノードタイプバッジ */}
-          <div className="mt-1">
+          {/* ノードタイプバッジ + v3.4インジケーター */}
+          <div className="mt-1 flex items-center gap-1 flex-wrap">
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${typeStyle.badge}`}>
               {typeStyle.label}
             </span>
+            {issueCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
+                <CircleDot className="w-2.5 h-2.5" />
+                {issueCount}
+              </span>
+            )}
+            {decisionCount > 0 && (
+              <span className="flex items-center gap-0.5 text-[9px] px-1 py-0.5 rounded-full bg-green-50 text-green-600 border border-green-200">
+                <CheckCircle2 className="w-2.5 h-2.5" />
+                {decisionCount}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -170,6 +186,8 @@ export default function DecisionTreeNode({ node, depth, onNodeClick, selectedNod
                     depth={depth + 1}
                     onNodeClick={onNodeClick}
                     selectedNodeId={selectedNodeId}
+                    nodeIssueCounts={nodeIssueCounts}
+                    nodeDecisionCounts={nodeDecisionCounts}
                   />
                 </div>
               ))}

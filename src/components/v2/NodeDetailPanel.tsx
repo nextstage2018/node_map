@@ -2,8 +2,26 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Clock, FileText, Trash2, MoreHorizontal, AlertCircle } from 'lucide-react';
+import { X, Clock, FileText, Trash2, MoreHorizontal, AlertCircle, CircleDot, CheckCircle2, ArrowRight } from 'lucide-react';
 import type { DecisionTreeNodeData } from './DecisionTreeNode';
+
+interface OpenIssue {
+  id: string;
+  title: string;
+  status: 'open' | 'resolved' | 'stale';
+  priority_level: 'low' | 'medium' | 'high' | 'critical';
+  days_stagnant: number;
+  created_at: string;
+}
+
+interface DecisionLogEntry {
+  id: string;
+  title: string;
+  decision_content: string;
+  status: 'active' | 'superseded' | 'reverted' | 'on_hold';
+  previous_decision_id: string | null;
+  created_at: string;
+}
 
 interface NodeHistory {
   id: string;
@@ -17,6 +35,7 @@ interface NodeHistory {
 
 interface NodeDetailPanelProps {
   node: DecisionTreeNodeData;
+  projectId: string;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
   onStatusChange: (nodeId: string, newStatus: string, reason?: string) => void;
@@ -37,8 +56,37 @@ const statusColors: Record<string, string> = {
   on_hold: 'bg-slate-100 text-slate-600',
 };
 
+const priorityColors: Record<string, string> = {
+  low: 'text-slate-500',
+  medium: 'text-blue-600',
+  high: 'text-amber-600',
+  critical: 'text-red-600',
+};
+
+const priorityLabels: Record<string, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  critical: '緊急',
+};
+
+const decisionStatusLabels: Record<string, string> = {
+  active: '有効',
+  superseded: '変更済',
+  reverted: '差戻',
+  on_hold: '保留',
+};
+
+const decisionStatusColors: Record<string, string> = {
+  active: 'bg-green-100 text-green-700',
+  superseded: 'bg-slate-100 text-slate-500',
+  reverted: 'bg-amber-100 text-amber-700',
+  on_hold: 'bg-slate-100 text-slate-600',
+};
+
 export default function NodeDetailPanel({
   node,
+  projectId,
   onClose,
   onDelete,
   onStatusChange,
@@ -48,6 +96,9 @@ export default function NodeDetailPanel({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [openIssues, setOpenIssues] = useState<OpenIssue[]>([]);
+  const [decisionLogs, setDecisionLogs] = useState<DecisionLogEntry[]>([]);
+  const [isLoadingV34, setIsLoadingV34] = useState(false);
 
   // ノード詳細（履歴含む）を取得
   useEffect(() => {
@@ -68,6 +119,29 @@ export default function NodeDetailPanel({
 
     fetchDetail();
   }, [node.id]);
+
+  // v3.4: 関連する未確定事項・決定ログを取得
+  useEffect(() => {
+    if (!projectId) return;
+    const fetchV34Data = async () => {
+      setIsLoadingV34(true);
+      try {
+        const [issuesRes, decisionsRes] = await Promise.all([
+          fetch(`/api/projects/${projectId}/open-issues?node_id=${node.id}`),
+          fetch(`/api/projects/${projectId}/decision-log?node_id=${node.id}`),
+        ]);
+        const issuesData = await issuesRes.json();
+        const decisionsData = await decisionsRes.json();
+        if (issuesData.success) setOpenIssues(issuesData.data || []);
+        if (decisionsData.success) setDecisionLogs(decisionsData.data || []);
+      } catch (err) {
+        console.error('v3.4データ取得エラー:', err);
+      } finally {
+        setIsLoadingV34(false);
+      }
+    };
+    fetchV34Data();
+  }, [projectId, node.id]);
 
   const sourceMeeting = meetingRecords.find(m => m.id === node.source_meeting_id);
   const cancelMeeting = meetingRecords.find(m => m.id === node.cancel_meeting_id);
@@ -185,6 +259,75 @@ export default function NodeDetailPanel({
               </p>
             )}
           </div>
+        )}
+
+        {/* v3.4: 関連する未確定事項 */}
+        {isLoadingV34 ? (
+          <div className="text-xs text-slate-400 py-1">関連データを読み込み中...</div>
+        ) : (
+          <>
+            {openIssues.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-2">未確定事項</p>
+                <div className="space-y-1.5">
+                  {openIssues.map((issue) => (
+                    <div key={issue.id} className="p-2 bg-slate-50 border border-slate-100 rounded-lg">
+                      <div className="flex items-start gap-1.5">
+                        <CircleDot className={`w-3 h-3 mt-0.5 shrink-0 ${issue.status === 'stale' ? 'text-amber-500' : 'text-blue-500'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-700 font-medium truncate">{issue.title}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-[10px] font-medium ${priorityColors[issue.priority_level]}`}>
+                              {priorityLabels[issue.priority_level]}
+                            </span>
+                            {issue.days_stagnant > 0 && (
+                              <span className="text-[10px] text-slate-400">{issue.days_stagnant}日経過</span>
+                            )}
+                            {issue.status === 'stale' && (
+                              <span className="text-[10px] px-1 py-0.5 bg-amber-100 text-amber-600 rounded">停滞</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {decisionLogs.length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-2">決定履歴</p>
+                <div className="space-y-1.5">
+                  {decisionLogs.map((decision) => (
+                    <div key={decision.id} className="p-2 bg-slate-50 border border-slate-100 rounded-lg">
+                      <div className="flex items-start gap-1.5">
+                        <CheckCircle2 className={`w-3 h-3 mt-0.5 shrink-0 ${decision.status === 'active' ? 'text-green-500' : 'text-slate-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs text-slate-700 font-medium truncate flex-1">{decision.title}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${decisionStatusColors[decision.status]}`}>
+                              {decisionStatusLabels[decision.status]}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{decision.decision_content}</p>
+                          {decision.previous_decision_id && (
+                            <div className="flex items-center gap-0.5 mt-0.5">
+                              <ArrowRight className="w-2.5 h-2.5 text-slate-300" />
+                              <span className="text-[10px] text-slate-400">変更チェーン</span>
+                            </div>
+                          )}
+                          <p className="text-[10px] text-slate-300 mt-0.5">
+                            {new Date(decision.created_at).toLocaleDateString('ja-JP')}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {/* 変更履歴 */}
