@@ -212,7 +212,7 @@ export async function createTaskFromMessage(params: {
       source_type: serviceName,
       source_message_id: messageId,
       source_channel_id: channelId,
-      phase: 'plan',
+      phase: 'ideation',
     });
 
     if (error) {
