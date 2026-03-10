@@ -703,7 +703,7 @@ export async function recordDocument(params: {
     file_name: params.fileName,
     file_size_bytes: params.fileSizeBytes || null,
     mime_type: params.mimeType || null,
-    drive_url: params.driveUrl || `https://drive.google.com/file/d/${params.driveFileId}/view`,
+    web_view_link: params.driveUrl || `https://drive.google.com/file/d/${params.driveFileId}/view`,
     source_channel: params.sourceChannel || null,
     source_message_id: params.sourceMessageId || null,
     synced_at: new Date().toISOString(),
@@ -1690,7 +1690,7 @@ export async function recordDocumentLink(params: {
       user_id: params.userId,
       file_name: fileName,
       drive_file_id: params.documentId,
-      drive_url: params.url,
+      web_view_link: params.url,
       mime_type: params.linkType === 'sheet' ? 'application/vnd.google-apps.spreadsheet'
         : params.linkType === 'doc' ? 'application/vnd.google-apps.document'
         : 'application/octet-stream',

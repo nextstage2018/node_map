@@ -222,9 +222,12 @@ export default function ProjectResources({ projectId, projectName, organizationI
     }
   };
 
+  // MS or ジョブ必須チェック
+  const hasLocation = !!(formMsId || formJobId);
+
   // URL登録
   const submitUrl = async () => {
-    if (!formUrl.trim() || !formTitle.trim() || !formDocType) return;
+    if (!formUrl.trim() || !formTitle.trim() || !formDocType || !hasLocation) return;
     const tags = buildTags(formDocType, formMsId, formTaskId, formJobId, formExtraTags);
     const displayTitle = buildFileName(formDocType, formTitle.trim());
     try {
@@ -259,7 +262,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
 
   // ファイルアップロード
   const submitFile = async () => {
-    if (!selectedFile || !formTitle.trim() || !formDocType) return;
+    if (!selectedFile || !formTitle.trim() || !formDocType || !hasLocation) return;
     setIsUploading(true);
     try {
       // Base64変換
@@ -267,7 +270,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
       const base64 = btoa(
         new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
       );
-      const uploadFileName = buildFileName(formDocType, selectedFile.name);
+      // ファイル名はAPI側のgenerateV33FileNameで命名規則適用（日付二重付与防止）
       const tags = buildTags(formDocType, formMsId, formTaskId, formJobId, formExtraTags);
 
       const res = await fetch('/api/drive/documents', {
@@ -278,7 +281,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
           projectName,
           organizationId,
           organizationName,
-          fileName: uploadFileName,
+          fileName: selectedFile.name,
           mimeType: selectedFile.type || 'application/octet-stream',
           fileData: base64,
           milestoneId: formMsId || undefined,
@@ -435,11 +438,19 @@ export default function ProjectResources({ projectId, projectName, organizationI
   };
 
   // 格納先セレクト群（共通）
-  const LocationSelects = ({ msId, setMsId, taskId, setTaskId, jobId, setJobId }: {
+  const LocationSelects = ({ msId, setMsId, taskId, setTaskId, jobId, setJobId, required }: {
     msId: string; setMsId: (v: string) => void;
     taskId: string; setTaskId: (v: string) => void;
     jobId: string; setJobId: (v: string) => void;
+    required?: boolean;
   }) => (
+    <div>
+      {required && (
+        <p className="text-[10px] text-slate-500 mb-1">
+          格納先 <span className="text-red-500">*</span>
+          <span className="text-slate-400 ml-1">マイルストーンまたはジョブのどちらかを選択してください</span>
+        </p>
+      )}
     <div className="grid grid-cols-3 gap-2">
       <div>
         <label className="text-[10px] text-slate-500 mb-0.5 block">マイルストーン</label>
@@ -465,6 +476,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
           {jobs.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
         </select>
       </div>
+    </div>
     </div>
   );
 
@@ -605,11 +617,12 @@ export default function ProjectResources({ projectId, projectName, organizationI
             )}
           </div>
 
-          {/* 格納先 */}
+          {/* 格納先（MS or ジョブ必須） */}
           <LocationSelects
             msId={formMsId} setMsId={setFormMsId}
             taskId={formTaskId} setTaskId={setFormTaskId}
             jobId={formJobId} setJobId={setFormJobId}
+            required
           />
 
           {/* 追加タグ */}
@@ -634,7 +647,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
             <button
               onClick={addMode === 'file' ? submitFile : submitUrl}
               disabled={
-                !formDocType || !formTitle.trim() ||
+                !formDocType || !formTitle.trim() || !hasLocation ||
                 (addMode === 'file' ? !selectedFile || isUploading : !formUrl.trim())
               }
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
