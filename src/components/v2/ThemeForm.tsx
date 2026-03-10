@@ -1,3 +1,5 @@
+// @deprecated v4.0 で GoalForm.tsx にリネーム。このファイルは後方互換のため残しています。
+// 新規コードでは GoalForm.tsx を使用してください。
 // V2-C: テーマ作成・編集フォーム（モーダル）
 'use client';
 

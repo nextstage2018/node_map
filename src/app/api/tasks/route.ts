@@ -266,6 +266,16 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // v4.0 Phase 6: タスク完了時にSlack/Chatworkへ通知
+    if (body.status === 'done') {
+      try {
+        const { notifyTaskCompletion } = await import('@/services/v4/taskCompletionNotify.service');
+        await notifyTaskCompletion(body.id, userId);
+      } catch (notifyErr) {
+        console.error('[Tasks API] 完了通知エラー（タスク完了は成功）:', notifyErr);
+      }
+    }
+
     // タスク完了時: ビジネスログにアーカイブ → タスクを削除
     if (body.status === 'done') {
       try {

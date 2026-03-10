@@ -40,6 +40,16 @@ function isTaskRequest(text: string): boolean {
   return keywords.some(kw => lower.includes(kw.toLowerCase()));
 }
 
+// v4.0 Phase 6: タスク完了リクエスト判定
+function isTaskCompleteRequest(text: string): boolean {
+  const keywords = [
+    'タスク完了', '完了しました', '完了した', 'done', '終わった', '終わりました',
+    'タスク終了', '対応完了', '対応しました',
+  ];
+  const lower = text.toLowerCase();
+  return keywords.some(kw => lower.includes(kw.toLowerCase()));
+}
+
 function cleanToTags(body: string): string {
   return body.replace(/\[To:\d+\][^\n]*/g, '').trim();
 }
@@ -88,6 +98,15 @@ export async function POST(request: NextRequest) {
     const messageBody = event.body;
     const cleanedText = cleanToTags(messageBody);
 
+    // v4.0 Phase 6: タスク完了リクエスト
+    if (isTaskCompleteRequest(messageBody)) {
+      processTaskCompletion({
+        roomId: String(event.room_id),
+        fromAccountId: event.from_account_id,
+      }).catch(err => console.error('[Chatwork Webhook] タスク完了処理エラー:', err));
+      return NextResponse.json({ ok: true });
+    }
+
     if (!isTaskRequest(messageBody)) {
       return NextResponse.json({ ok: true });
     }
@@ -103,6 +122,53 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[Chatwork Webhook] エラー:', error);
     return NextResponse.json({ ok: true });
+  }
+}
+
+// v4.0 Phase 6: Chatworkからのタスク完了処理
+async function processTaskCompletion(params: {
+  roomId: string;
+  fromAccountId: number;
+}) {
+  const { roomId, fromAccountId } = params;
+
+  try {
+    const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
+    if (!ownerUserId) {
+      console.error('[Chatwork Webhook] ENV_TOKEN_OWNER_ID が未設定');
+      return;
+    }
+
+    // このルームに紐づくChatwork由来の未完了タスクを検索
+    const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return;
+
+    // source_message_id が "chatwork-{roomId}-" で始まるタスクを検索（最新1件）
+    const { data: tasks } = await supabase
+      .from('tasks')
+      .select('id, title, source_message_id')
+      .like('source_message_id', `chatwork-${roomId}-%`)
+      .neq('status', 'done')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!tasks || tasks.length === 0) {
+      await sendReply(roomId, `[To:${fromAccountId}]\n完了対象のタスクが見つかりませんでした。`);
+      return;
+    }
+
+    const task = tasks[0];
+    const { completeTaskBySourceMessage } = await import('@/services/v4/taskCompletionNotify.service');
+    const result = await completeTaskBySourceMessage(task.source_message_id, ownerUserId);
+
+    if (result.success) {
+      await sendReply(roomId, `[To:${fromAccountId}]\n✅ タスク完了: ${result.taskTitle}`);
+    } else {
+      await sendReply(roomId, `[To:${fromAccountId}]\nタスクの完了処理に失敗しました。`);
+    }
+  } catch (error) {
+    console.error('[Chatwork Webhook] タスク完了処理エラー:', error);
   }
 }
 

@@ -142,7 +142,30 @@ async function processReactionTaskCreation(params: {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
     if (!ownerUserId) return;
 
-    // 即レス：処理開始を通知（軽量版）
+    const sourceMessageId = `slack-${channelId}-${messageTs}`;
+
+    // v4.0 Phase 6: 既存タスクがあれば完了にする（双方向同期）
+    try {
+      const { findTaskBySourceMessage, completeTaskBySourceMessage } = await import('@/services/v4/taskCompletionNotify.service');
+      const existingTask = await findTaskBySourceMessage(sourceMessageId);
+
+      if (existingTask) {
+        const completeResult = await completeTaskBySourceMessage(sourceMessageId, ownerUserId);
+        if (completeResult.success) {
+          await sendSlackReply(
+            channelId,
+            messageTs,
+            `✅ タスク完了: *${completeResult.taskTitle}*`,
+            ownerUserId
+          );
+        }
+        return;
+      }
+    } catch (checkErr) {
+      console.error('[Slack Events] 既存タスクチェックエラー:', checkErr);
+    }
+
+    // 既存タスクがなければ新規作成（従来の動作）
     sendQuickReply(channelId, messageTs, 'タスク処理を開始します...');
 
     const messageText = await fetchMessageText(channelId, messageTs, ownerUserId);
@@ -153,7 +176,7 @@ async function processReactionTaskCreation(params: {
       messageText,
       serviceName: 'slack',
       channelId,
-      messageId: `slack-${channelId}-${messageTs}`,
+      messageId: sourceMessageId,
       userId: ownerUserId,
     });
 
