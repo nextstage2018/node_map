@@ -93,8 +93,8 @@ async function processTaskCreation(params: {
       return;
     }
 
-    // 即レス：処理開始を通知
-    await sendSlackReply(channelId, threadTs, 'タスク処理を開始します...', ownerUserId);
+    // 即レス：処理開始を通知（軽量版）
+    sendQuickReply(channelId, threadTs, 'タスク処理を開始します...');
 
     let threadContext: string | undefined;
     if (threadTs && threadTs !== messageTs) {
@@ -142,8 +142,8 @@ async function processReactionTaskCreation(params: {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
     if (!ownerUserId) return;
 
-    // 即レス：処理開始を通知
-    await sendSlackReply(channelId, messageTs, 'タスク処理を開始します...', ownerUserId);
+    // 即レス：処理開始を通知（軽量版）
+    sendQuickReply(channelId, messageTs, 'タスク処理を開始します...');
 
     const messageText = await fetchMessageText(channelId, messageTs, ownerUserId);
     if (!messageText) return;
@@ -168,6 +168,23 @@ async function processReactionTaskCreation(params: {
   } catch (error) {
     console.error('[Slack Events] リアクションタスク処理エラー:', error);
   }
+}
+
+
+// 即レス専用：DB検索・ライブラリ不要の超軽量返信
+async function sendQuickReply(channelId: string, threadTs: string, text: string) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) return;
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ channel: channelId, text, thread_ts: threadTs }),
+    });
+  } catch { /* 即レス失敗は無視 */ }
 }
 
 async function getSlackClient(userId: string) {
