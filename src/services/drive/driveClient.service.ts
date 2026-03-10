@@ -688,6 +688,7 @@ export async function recordDocument(params: {
   milestoneId?: string;
   jobId?: string;
   taskId?: string;
+  tags?: string[];
 }): Promise<string | null> {
   const sb = createServerClient();
   if (!sb) return null;
@@ -718,6 +719,7 @@ export async function recordDocument(params: {
   if (params.milestoneId) insertData.milestone_id = params.milestoneId;
   if (params.jobId) insertData.job_id = params.jobId;
   if (params.taskId) insertData.task_id = params.taskId;
+  if (params.tags && params.tags.length > 0) insertData.tags = params.tags;
 
   const { data, error } = await sb
     .from('drive_documents')

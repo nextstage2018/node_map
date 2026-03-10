@@ -80,7 +80,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { file_name, milestone_id, task_id, job_id, tags } = body;
+    const { file_name, milestone_id, task_id, job_id, tags, document_type } = body;
 
     // 更新対象のフィールドを構築
     const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -89,6 +89,7 @@ export async function PUT(
     if (task_id !== undefined) updates.task_id = task_id || null;
     if (job_id !== undefined) updates.job_id = job_id || null;
     if (tags !== undefined) updates.tags = tags;
+    if (document_type !== undefined) updates.document_type = document_type || null;
 
     const { data: doc, error: updateErr } = await sb
       .from('drive_documents')

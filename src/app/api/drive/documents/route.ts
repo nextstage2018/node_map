@@ -1,7 +1,7 @@
 // Google Drive ドキュメント管理API
 // GET: ドキュメント一覧 / POST: 手動アップロード / DELETE: 削除
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerUserId } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserDisplayName } from '@/lib/serverAuth';
 import { createServerClient } from '@/lib/supabase';
 import * as DriveService from '@/services/drive/driveClient.service';
 
@@ -62,6 +62,14 @@ export async function POST(request: NextRequest) {
       if (!supabase) {
         return NextResponse.json({ success: false, error: 'DB未設定' }, { status: 500 });
       }
+
+      // ログインユーザー名を自動タグに追加
+      const uploaderName = await getServerUserDisplayName();
+      const baseTags: string[] = tags || [];
+      if (uploaderName && !baseTags.includes(uploaderName)) {
+        baseTags.push(uploaderName);
+      }
+
       // drive_file_id(NOT NULL UNIQUE) にURL用のユニークIDを生成
       const urlDriveFileId = `url_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const { data: doc, error: insertErr } = await supabase
@@ -76,11 +84,11 @@ export async function POST(request: NextRequest) {
           link_url: google_drive_url,
           web_view_link: google_drive_url,
           link_type: 'external_url',
-          document_type: 'reference',
+          document_type: documentType || 'reference',
           task_id: taskId || null,
           milestone_id: milestoneId || null,
           job_id: jobId || null,
-          tags: tags || null,
+          tags: baseTags.length > 0 ? baseTags : null,
         })
         .select('id')
         .single();
@@ -167,7 +175,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DBに記録（v3.3: milestone_id, job_id, task_id 対応）
+    // ログインユーザー名を自動タグに追加
+    const uploaderName = await getServerUserDisplayName();
+    const uploadTags: string[] = tags || [];
+    if (uploaderName && !uploadTags.includes(uploaderName)) {
+      uploadTags.push(uploaderName);
+    }
+
+    // DBに記録（v3.3: milestone_id, job_id, task_id, tags, document_type 対応）
     const docId = await DriveService.recordDocument({
       userId,
       organizationId: organizationId || undefined,
@@ -181,6 +196,8 @@ export async function POST(request: NextRequest) {
       milestoneId: milestoneId || undefined,
       jobId: jobId || undefined,
       taskId: taskId || undefined,
+      documentType: documentType || undefined,
+      tags: uploadTags.length > 0 ? uploadTags : undefined,
     });
 
     return NextResponse.json({
