@@ -1,6 +1,7 @@
 // V2-D: 会議録AI解析エンドポイント
 // 会議録テキストをAIに送り、要約・検討ツリー素材・マイルストーンフィードバックを同時抽出
 // V2-G: milestone_feedbackから自動学習抽出を追加
+// v3.4: open_issues / decision_log コンテキスト注入 + 自動検出・自動クローズ
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -8,6 +9,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { extractLearningsFromMeetingFeedback } from '@/lib/services/evaluationLearning.service';
 import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { matchContactByName } from '@/services/businessLog/taskSuggestion.service';
+import { getOpenIssuesForContext, processAIOpenIssues } from '@/services/v34/openIssues.service';
+import { getRecentDecisionsForContext, processAIDecisions } from '@/services/v34/decisionLog.service';
+import type { AIDetectedOpenIssue, AIResolvedIssue } from '@/services/v34/openIssues.service';
+import type { AIDetectedDecision } from '@/services/v34/decisionLog.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +42,10 @@ interface AnalysisResult {
   topics: AnalysisTopic[];
   milestone_feedback: MilestoneFeedback[] | null;
   action_items: ActionItem[];
+  // v3.4: 未確定事項・決定事項の自動検出
+  new_open_issues: AIDetectedOpenIssue[];
+  resolved_issues: AIResolvedIssue[];
+  new_decisions: AIDetectedDecision[];
 }
 
 export async function POST(
@@ -68,14 +77,63 @@ export async function POST(
       return NextResponse.json({ success: false, error: '会議録が見つかりません' }, { status: 404 });
     }
 
-    // 2. AI解析の実行
+    // 2. v3.4: プロジェクトコンテキスト取得（open_issues + decision_log + tasks）
+    let contextBlock = '';
+    try {
+      const [openIssues, recentDecisions, inProgressTasks] = await Promise.all([
+        getOpenIssuesForContext(record.project_id, 20),
+        getRecentDecisionsForContext(record.project_id, 10),
+        (async () => {
+          const { data } = await supabase
+            .from('tasks')
+            .select('id, title, status, due_date')
+            .eq('project_id', record.project_id)
+            .eq('status', 'in_progress')
+            .order('due_date', { ascending: true })
+            .limit(15);
+          return data || [];
+        })(),
+      ]);
+
+      if (openIssues.length > 0) {
+        contextBlock += `\n\n## このプロジェクトの未確定事項（${openIssues.length}件）\n`;
+        openIssues.forEach((issue, i) => {
+          contextBlock += `${i + 1}. 「${issue.title}」（${issue.status}、滞留${issue.days_stagnant}日、優先度: ${issue.priority_level}）\n`;
+          if (issue.description) contextBlock += `   補足: ${issue.description}\n`;
+        });
+      }
+
+      if (recentDecisions.length > 0) {
+        contextBlock += `\n\n## このプロジェクトの直近の決定事項（${recentDecisions.length}件）\n`;
+        recentDecisions.forEach((dec, i) => {
+          contextBlock += `${i + 1}. 「${dec.title}」: ${dec.decision_content}（${dec.created_at.slice(0, 10)}）\n`;
+        });
+      }
+
+      if (inProgressTasks.length > 0) {
+        contextBlock += `\n\n## 進行中タスク（${inProgressTasks.length}件）\n`;
+        inProgressTasks.forEach((task: { title: string; due_date: string | null }, i: number) => {
+          contextBlock += `${i + 1}. ${task.title}${task.due_date ? `（期限: ${task.due_date}）` : ''}\n`;
+        });
+      }
+
+      if (contextBlock) {
+        console.log(`[MeetingRecords Analyze] v3.4コンテキスト注入: open_issues=${openIssues.length}, decisions=${recentDecisions.length}, tasks=${inProgressTasks.length}`);
+      }
+    } catch (contextError) {
+      // コンテキスト取得失敗しても解析は続行
+      console.error('[MeetingRecords Analyze] v3.4コンテキスト取得エラー:', contextError);
+    }
+
+    // 3. AI解析の実行
     let analysisResult: AnalysisResult;
     try {
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 2500,
-        system: `あなたは会議録を構造化するアシスタントです。以下の会議録から4つの情報を抽出してください。
+        max_tokens: 3500,
+        system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
+${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文脈です。会議内容と照らし合わせて分析してください。${contextBlock}` : ''}
 
 必ず以下のJSON形式で返してください（JSONのみ、他のテキストは不要）:
 {
@@ -103,6 +161,26 @@ export async function POST(
       "priority": "high または medium または low",
       "related_topic": "関連する議題のタイトル"
     }
+  ],
+  "new_open_issues": [
+    {
+      "title": "結論が出なかった事項のタイトル",
+      "description": "何が未確定か、何を決める必要があるか",
+      "priority": "low または medium または high または critical"
+    }
+  ],
+  "resolved_issues": [
+    {
+      "issue_title": "解決された未確定事項のタイトル（上記「未確定事項」リストと一致させる）",
+      "resolution_note": "どのように解決されたかの説明"
+    }
+  ],
+  "new_decisions": [
+    {
+      "title": "決定事項のタイトル",
+      "decision_content": "具体的に何が決まったか",
+      "rationale": "なぜその決定に至ったか"
+    }
   ]
 }
 
@@ -113,6 +191,10 @@ export async function POST(
 - action_itemsは決定事項・依頼事項・確認事項など、具体的で実行可能なアクションを抽出してください
 - 曖昧な内容（「検討する」「考えておく」等）はaction_itemsに含めないでください
 - action_itemsがなければ空配列にしてください
+- new_open_issues: 議論したが結論が出なかった事項を抽出。既存の未確定事項と同じ内容は含めない
+- resolved_issues: 上記「未確定事項」リストの中で、今回の会議で結論が出た・解決したものを判定。タイトルは正確に一致させる
+- new_decisions: 明確に「こうする」と決まった事項。topicsのdecisionフィールドと対応させる
+- 該当なしの項目は空配列にしてください
 - 必ず有効なJSONを返してください`,
         messages: [
           {
@@ -133,6 +215,9 @@ export async function POST(
       analysisResult = {
         ...parsed,
         action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+        new_open_issues: Array.isArray(parsed.new_open_issues) ? parsed.new_open_issues : [],
+        resolved_issues: Array.isArray(parsed.resolved_issues) ? parsed.resolved_issues : [],
+        new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
       } as AnalysisResult;
     } catch (aiError) {
       console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
@@ -142,10 +227,13 @@ export async function POST(
         topics: [],
         milestone_feedback: null,
         action_items: [],
+        new_open_issues: [],
+        resolved_issues: [],
+        new_decisions: [],
       };
     }
 
-    // 3. 会議録を更新（ai_summary + processed フラグ）
+    // 4. 会議録を更新（ai_summary + processed フラグ）
     const { data: updatedRecord, error: updateError } = await supabase
       .from('meeting_records')
       .update({
@@ -162,7 +250,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    // 4. ビジネスイベント自動登録
+    // 5. ビジネスイベント自動登録
     try {
       await supabase.from('business_events').insert({
         user_id: userId,
@@ -179,7 +267,7 @@ export async function POST(
       console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventError);
     }
 
-    // 5. v3.0: 会議録テキストからナレッジ（キーワード）を自動抽出
+    // 6. v3.0: 会議録テキストからナレッジ（キーワード）を自動抽出
     let knowledgeExtracted = 0;
     try {
       const extractResult = await ThoughtNodeService.extractAndLinkFromText({
@@ -198,7 +286,7 @@ export async function POST(
       console.error('[MeetingRecords Analyze] ナレッジ抽出エラー:', knowledgeError);
     }
 
-    // 6. V2-G: milestone_feedbackから自動学習抽出
+    // 7. V2-G: milestone_feedbackから自動学習抽出
     let learningsInserted = 0;
     if (analysisResult.milestone_feedback && analysisResult.milestone_feedback.length > 0) {
       try {
@@ -216,7 +304,7 @@ export async function POST(
       }
     }
 
-    // 7. v3.0: action_items からタスク提案を自動生成 → task_suggestions に保存
+    // 8. v3.0: action_items からタスク提案を自動生成 → task_suggestions に保存
     let actionItemsSaved = 0;
     if (analysisResult.action_items && analysisResult.action_items.length > 0) {
       try {
@@ -257,6 +345,44 @@ export async function POST(
       }
     }
 
+    // 9. v3.4: open_issues / decision_log 自動生成・自動クローズ
+    let openIssuesCreated = 0;
+    let openIssuesResolved = 0;
+    let decisionsCreated = 0;
+    try {
+      // 未確定事項の作成・クローズ
+      if (analysisResult.new_open_issues.length > 0 || analysisResult.resolved_issues.length > 0) {
+        const issueResult = await processAIOpenIssues(
+          record.project_id,
+          userId,
+          id,
+          analysisResult.new_open_issues,
+          analysisResult.resolved_issues
+        );
+        openIssuesCreated = issueResult.created;
+        openIssuesResolved = issueResult.resolved;
+        if (openIssuesCreated > 0 || openIssuesResolved > 0) {
+          console.log(`[MeetingRecords Analyze] v3.4 open_issues: ${openIssuesCreated}件作成, ${openIssuesResolved}件クローズ`);
+        }
+      }
+
+      // 決定事項の記録
+      if (analysisResult.new_decisions.length > 0) {
+        decisionsCreated = await processAIDecisions(
+          record.project_id,
+          userId,
+          id,
+          analysisResult.new_decisions
+        );
+        if (decisionsCreated > 0) {
+          console.log(`[MeetingRecords Analyze] v3.4 decision_log: ${decisionsCreated}件記録`);
+        }
+      }
+    } catch (v34Error) {
+      // v3.4処理失敗してもメイン処理はブロックしない
+      console.error('[MeetingRecords Analyze] v3.4処理エラー:', v34Error);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -265,6 +391,10 @@ export async function POST(
         knowledge_extracted: knowledgeExtracted,
         learnings_inserted: learningsInserted,
         action_items_saved: actionItemsSaved,
+        // v3.4
+        open_issues_created: openIssuesCreated,
+        open_issues_resolved: openIssuesResolved,
+        decisions_created: decisionsCreated,
       },
     });
   } catch (error) {

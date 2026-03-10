@@ -489,6 +489,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | `/api/cron/cluster-knowledge-weekly` | **月曜 02:30** | 週次ナレッジクラスタリング |
 | `/api/cron/compute-patterns` | 毎日 03:00 | コンタクトパターン計算 |
 | `/api/cron/analyze-thinking-tendency` | 毎日 04:00 | 思考傾向AI分析 |
+| `/api/cron/update-open-issues` | 毎日 04:30 | 未確定事項の滞留日数・優先度・stale更新（v3.4） |
 | `/api/cron/sync-calendar-events` | 毎日 06:00 | Googleカレンダー同期 |
 
 ---
