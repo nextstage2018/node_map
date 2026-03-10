@@ -110,10 +110,10 @@ function OverviewTab() {
       </SectionCard>
 
       <SectionCard title="5階層のデータ構造" icon={Layers}>
-        <FlowStep steps={['組織', 'プロジェクト', 'テーマ（任意）', 'マイルストーン', 'タスク']} />
+        <FlowStep steps={['組織', 'プロジェクト', 'ゴール（フェーズ）', 'マイルストーン', 'タスク']} />
         <p className="mt-2">
-          組織の中にプロジェクトがあり、プロジェクトの中にマイルストーン（1週間単位の目標）、
-          その下にタスクがぶら下がります。テーマは任意の中間レイヤーです。
+          組織の中にプロジェクトがあり、ゴール（フェーズ）でプロジェクトの段階を管理します。
+          マイルストーン（1週間単位の目標）の下にタスクがぶら下がります。
         </p>
       </SectionCard>
 
@@ -138,6 +138,7 @@ function OverviewTab() {
         <div className="space-y-2">
           {[
             { icon: Bot, label: '秘書', desc: 'ホーム画面。AIに話しかけてすべての操作の起点に' },
+            { icon: ClipboardList, label: 'タスク', desc: '個人タスクを横断表示。今日/今週/期限切れでフィルター' },
             { icon: Inbox, label: 'インボックス', desc: 'メール・Slack・Chatworkの受信メッセージ一覧' },
             { icon: Building2, label: '組織・プロジェクト', desc: '組織とプロジェクトの管理。タイムライン・検討ツリー等' },
             { icon: Settings, label: '設定', desc: 'チャネル接続・プロフィール・ナレッジ確認' },
@@ -313,7 +314,7 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ListTodo className="w-4 h-4 text-blue-500" /> タスク
             </p>
-            <p>テーマ → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
+            <p>ゴール → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
