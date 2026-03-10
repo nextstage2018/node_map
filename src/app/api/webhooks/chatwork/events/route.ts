@@ -153,9 +153,20 @@ async function processTaskCreation(params: {
 }
 
 async function sendReply(roomId: string, body: string) {
+  const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
+  if (!token) {
+    console.log('[Chatwork Webhook] トークン未設定のため返信スキップ');
+    return;
+  }
   try {
-    const { sendChatworkMessage } = await import('@/services/chatwork/chatworkClient.service');
-    await sendChatworkMessage(roomId, body);
+    await fetch(\`https://api.chatwork.com/v2/rooms/\${roomId}/messages\`, {
+      method: 'POST',
+      headers: {
+        'X-ChatWorkToken': token,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: \`body=\${encodeURIComponent(body)}\`,
+    });
   } catch (error) {
     console.error('[Chatwork Webhook] 返信エラー:', error);
   }
@@ -165,7 +176,7 @@ let cachedMyAccountId: number | null = null;
 
 async function getMyAccountId(): Promise<number | null> {
   if (cachedMyAccountId !== null) return cachedMyAccountId;
-  const token = process.env.CHATWORK_API_TOKEN;
+  const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
   if (!token) return null;
   try {
     const res = await fetch('https://api.chatwork.com/v2/me', {
