@@ -93,6 +93,9 @@ async function processTaskCreation(params: {
       return;
     }
 
+    // 即レス：処理開始を通知
+    await sendSlackReply(channelId, threadTs, 'タスク処理を開始します...', ownerUserId);
+
     let threadContext: string | undefined;
     if (threadTs && threadTs !== messageTs) {
       threadContext = await fetchThreadContext(channelId, threadTs, ownerUserId);
@@ -138,6 +141,9 @@ async function processReactionTaskCreation(params: {
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
     if (!ownerUserId) return;
+
+    // 即レス：処理開始を通知
+    await sendSlackReply(channelId, messageTs, 'タスク処理を開始します...', ownerUserId);
 
     const messageText = await fetchMessageText(channelId, messageTs, ownerUserId);
     if (!messageText) return;
