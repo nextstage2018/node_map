@@ -56,10 +56,14 @@
 - **会議録AI解析のレスポンス構造**: `analyzeData.data.analysis.topics`（× `analyzeData.data.topics` ではない）
 - **検討ツリーのデータフロー**: 会議録登録 → AI解析 → 検討ツリー自動生成 → ビジネスイベント自動追加
 - **タイムラインは読み取り専用**: 手動イベント登録は廃止。すべて会議録・チャネルメッセージ・Cronから自動生成
+- **⚠️ open_issues.status の制約**: CHECK制約あり。許可値は `'open'`, `'resolved'`, `'stale'` の3つのみ
+- **⚠️ decision_log.status の制約**: CHECK制約あり。許可値は `'active'`, `'superseded'`, `'reverted'`, `'on_hold'` の4つのみ
+- **⚠️ decision_log の変更チェーン**: 決定変更時は新レコード作成＋旧レコードを `superseded` に。previous_decision_id で辿る
+- **⚠️ meeting_agenda**: 1PJ1日1アジェンダ（UNIQUE制約）。items は JSONB 配列
 
 ---
 
-## 設計原則（v3.0 + v3.2）
+## 設計原則（v3.0 + v3.2 + v3.4）
 
 ### 議事録ファースト
 
@@ -69,6 +73,36 @@
 データの流入経路（2つのみ）:
   1. 会議録 → 検討ツリータブで登録 or MeetGeek Webhook自動連携
   2. チャネルメッセージ → Slack/Chatwork同期（Cron）
+```
+
+### v3.4: 検討ツリー・タイムライン強化（3つの常設データ）
+
+AI解析に過去の文脈を注入するため、プロジェクト単位で3つの常設データを新設。
+
+```
+① open_issues（未確定事項トラッカー）
+  - 結論が出なかった事項を追跡。滞留日数で優先度自動算出
+  - AI解析で解決検知 → 自動クローズ
+  - 3週間以上放置 → stale に自動変更
+
+② decision_log（意思決定ログ）
+  - 「決まったこと」の不変ログ。previous_decision_id で変更チェーン
+  - decision_tree_nodes と連動
+  - implementation_status で実行状況を別管理
+
+③ meeting_agenda（会議アジェンダ）
+  - ①未確定事項 + ②決定確認 + タスク進捗 から自動生成
+  - items は JSONB 配列（type: open_issue/decision_review/task_progress/custom）
+  - 1PJ1日1アジェンダ
+```
+
+```
+AI解析の改修イメージ:
+  【現在】AI入力 = 会議テキストのみ
+  【v3.4】AI入力 = 会議テキスト
+                 ＋ 未確定事項リスト（①から最大20件）
+                 ＋ 直近の決定事項（②から最大10件）
+                 ＋ 進行中タスク一覧（既存tasksから）
 ```
 
 ### 秘書コンテキスト自動注入
@@ -218,6 +252,9 @@
 | `milestone_evaluations` | チェックポイント評価結果 | UUID | milestone_id FK CASCADE |
 | `evaluation_learnings` | 評価エージェント学習データ | UUID | AI判定 vs 人間判定の差分 |
 | `seeds` | 種ボックス（廃止済み） | UUID | 参照のみ。新規作成しない |
+| `open_issues` | 未確定事項トラッカー | UUID | project_id必須。**status CHECK: open/resolved/stale**。priority_score自動算出。days_stagnant Cron更新。UNIQUE(project_id, title, source_type) |
+| `decision_log` | 意思決定ログ | UUID | project_id必須。previous_decision_idで変更チェーン。**status CHECK: active/superseded/reverted/on_hold**。implementation_status別管理 |
+| `meeting_agenda` | 会議アジェンダ | UUID | project_id必須。items JSONB配列。**status CHECK: draft/confirmed/completed**。UNIQUE(project_id, meeting_date)。自動生成→確認→完了のライフサイクル |
 
 ---
 
@@ -519,6 +556,9 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
 - **秘書チャットUI**: `formatAssistantMessage()`でリッチ表示。`suggestions`（動的選択肢）対応
 - **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
+- **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
+- **v3.4 決定ログ**: decision_log テーブル。不変ログ＋変更チェーン。decision_tree_nodes と連動
+- **v3.4 アジェンダ**: meeting_agenda テーブル。open_issues + decision_log + tasks から自動生成。JSONB items
 
 ### 検討ツリー データフロー
 

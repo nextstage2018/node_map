@@ -1724,6 +1724,167 @@ CREATE INDEX idx_user_service_tokens_service_name ON user_service_tokens(service
 
 ---
 
+### open_issues（未確定事項トラッカー）[v3.4]
+
+**目的**: 会議やメッセージで話題に出たが結論が出なかった事項を追跡。自動クローズ・優先度自動計算対応。
+
+```sql
+CREATE TABLE open_issues (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'resolved', 'stale')),
+  source_type TEXT NOT NULL DEFAULT 'meeting'
+    CHECK (source_type IN ('meeting', 'channel', 'manual')),
+  source_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  source_message_ids TEXT[] DEFAULT '{}',
+  related_decision_node_id UUID REFERENCES decision_tree_nodes(id) ON DELETE SET NULL,
+  assigned_contact_id TEXT REFERENCES contact_persons(id) ON DELETE SET NULL,
+  priority_level TEXT NOT NULL DEFAULT 'medium'
+    CHECK (priority_level IN ('low', 'medium', 'high', 'critical')),
+  priority_score NUMERIC(5,2) DEFAULT 0 CHECK (priority_score >= 0),
+  days_stagnant INT DEFAULT 0,
+  last_mention_at TIMESTAMPTZ,
+  resolved_at TIMESTAMPTZ,
+  resolution_note TEXT,
+  resolved_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  resolved_by_decision_node_id UUID REFERENCES decision_tree_nodes(id) ON DELETE SET NULL,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(project_id, title, source_type)
+);
+```
+
+#### インデックス
+```sql
+CREATE INDEX idx_open_issues_project_user ON open_issues(project_id, user_id);
+CREATE INDEX idx_open_issues_status ON open_issues(status) WHERE status IN ('open', 'stale');
+CREATE INDEX idx_open_issues_priority ON open_issues(priority_score DESC) WHERE status != 'resolved';
+CREATE INDEX idx_open_issues_days_stagnant ON open_issues(days_stagnant DESC) WHERE status IN ('open', 'stale');
+CREATE INDEX idx_open_issues_decision_node ON open_issues(related_decision_node_id) WHERE related_decision_node_id IS NOT NULL;
+CREATE INDEX idx_open_issues_source_meeting ON open_issues(source_meeting_record_id) WHERE source_meeting_record_id IS NOT NULL;
+```
+
+#### 注意事項
+- **status**: `open`=未解決、`resolved`=解決済み、`stale`=3週間以上放置（Cronで自動更新）
+- **priority_score**: Cronで自動計算 `(priority_level点数 × 0.6) + (days_stagnant/30 × 0.4)`
+- **自動クローズ**: AI解析で「解決済み」判定→status='resolved'、resolved_at/resolved_meeting_record_id自動設定
+- **metadata**: `{mentions_count, related_tasks: [uuid], context_snippet, ai_suggested_next_steps}`
+
+---
+
+### decision_log（意思決定ログ）[v3.4]
+
+**目的**: 「決まったこと」の変遷を不変ログとして記録。変更時は新レコード作成＋旧レコードをsuperseded。
+
+```sql
+CREATE TABLE decision_log (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  decision_content TEXT NOT NULL,
+  rationale TEXT,
+  decision_tree_node_id UUID REFERENCES decision_tree_nodes(id) ON DELETE SET NULL,
+  previous_decision_id UUID REFERENCES decision_log(id) ON DELETE SET NULL,
+  change_reason TEXT,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'superseded', 'reverted', 'on_hold')),
+  source_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  source_type TEXT DEFAULT 'meeting'
+    CHECK (source_type IN ('meeting', 'channel', 'manual')),
+  decided_by_contact_id TEXT REFERENCES contact_persons(id) ON DELETE SET NULL,
+  implementation_status TEXT DEFAULT 'pending'
+    CHECK (implementation_status IN ('pending', 'in_progress', 'completed', 'blocked')),
+  implementation_notes TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(project_id, title, created_at)
+);
+```
+
+#### インデックス
+```sql
+CREATE INDEX idx_decision_log_project_status ON decision_log(project_id, user_id, status) WHERE status = 'active';
+CREATE INDEX idx_decision_log_project_date ON decision_log(project_id, created_at DESC);
+CREATE INDEX idx_decision_log_previous ON decision_log(previous_decision_id) WHERE previous_decision_id IS NOT NULL;
+CREATE INDEX idx_decision_log_tree_node ON decision_log(decision_tree_node_id) WHERE decision_tree_node_id IS NOT NULL;
+CREATE INDEX idx_decision_log_source_meeting ON decision_log(source_meeting_record_id) WHERE source_meeting_record_id IS NOT NULL;
+CREATE INDEX idx_decision_log_implementation ON decision_log(implementation_status) WHERE status = 'active';
+```
+
+#### 注意事項
+- **変更チェーン**: D1(active)→D2作成時にD1を`superseded`、D2.previous_decision_id=D1.id
+- **status**: `active`=現在有効、`superseded`=新しい決定で置き換え済み、`reverted`=取り消し、`on_hold`=一時保留
+- **implementation_status**: 決定が実行に移されたか（decision_tree_nodes.statusとは独立）
+- **metadata**: `{impact_areas: [string], stakeholders: [contact_id], deadline: timestamp}`
+
+---
+
+### meeting_agenda（会議アジェンダ）[v3.4]
+
+**目的**: 次回会議で話すべきことを自動生成。open_issues + decision_log + タスク進捗から構成。
+
+```sql
+CREATE TABLE meeting_agenda (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  meeting_date DATE NOT NULL,
+  title TEXT DEFAULT 'Agenda',
+  status TEXT NOT NULL DEFAULT 'draft'
+    CHECK (status IN ('draft', 'confirmed', 'completed')),
+  linked_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  items JSONB NOT NULL DEFAULT '[]'::jsonb,
+  generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  confirmed_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  notes TEXT,
+  metadata JSONB DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(project_id, meeting_date)
+);
+```
+
+#### インデックス
+```sql
+CREATE INDEX idx_meeting_agenda_project_date ON meeting_agenda(project_id, meeting_date DESC);
+CREATE INDEX idx_meeting_agenda_project_status ON meeting_agenda(project_id, status) WHERE status IN ('draft', 'confirmed');
+CREATE INDEX idx_meeting_agenda_linked_meeting ON meeting_agenda(linked_meeting_record_id) WHERE linked_meeting_record_id IS NOT NULL;
+CREATE INDEX idx_meeting_agenda_user_upcoming ON meeting_agenda(user_id, meeting_date) WHERE status IN ('draft', 'confirmed');
+```
+
+#### items JSONB構造
+```json
+[{
+  "id": "uuid string",
+  "type": "open_issue | decision_review | task_progress | custom",
+  "reference_id": "参照先テーブルのID (open_issues/decision_log/tasks)",
+  "title": "議題タイトル",
+  "description": "補足説明",
+  "priority": "low | medium | high | critical",
+  "assigned_contact_id": "contact_persons.id or null",
+  "discussed": false,
+  "resolution_note": null,
+  "estimated_minutes": 15
+}]
+```
+
+#### 注意事項
+- **UNIQUE**: 1プロジェクト1日1アジェンダ
+- **status**: `draft`=自動生成直後、`confirmed`=ユーザー確認済み、`completed`=会議実施後
+- **linked_meeting_record_id**: 会議実施後にmeeting_recordsと紐づけ
+- **items**: JSONB配列（Phase 3で個別追跡が必要になれば別テーブルに分離検討）
+- **自動生成**: Cronで open_issues(優先度順) + decision_log(最新) + tasks(進行中) からアジェンダ項目を構成
+
+---
+
 ## 🔑 テーブル間の主要な関係性（ER図）
 
 ```
@@ -1749,6 +1910,9 @@ users (Supabase auth)
   │     │  ├─ thought_task_nodes (seed_id)
   │     │  └─ thought_edges (seed_id)
   │     ├─ business_events (project_id)
+  │     ├─ open_issues (project_id) [v3.4]
+  │     ├─ decision_log (project_id) [v3.4]
+  │     ├─ meeting_agenda (project_id) [v3.4]
   │     └─ drive_folders (project_id)
   ├─ drive_folders (user_id)
   ├─ drive_documents (user_id)
@@ -1797,4 +1961,4 @@ users (Supabase auth)
 ---
 
 **This document serves as the single source of truth for NodeMap database schema.**
-Last updated: 2026-03-05 (Phase 62)
+Last updated: 2026-03-10 (v3.4 Phase 1)
