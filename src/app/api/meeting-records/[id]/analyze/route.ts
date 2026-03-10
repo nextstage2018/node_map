@@ -2,6 +2,7 @@
 // 会議録テキストをAIに送り、要約・検討ツリー素材・マイルストーンフィードバックを同時抽出
 // V2-G: milestone_feedbackから自動学習抽出を追加
 // v3.4: open_issues / decision_log コンテキスト注入 + 自動検出・自動クローズ
+// v4.0-Phase5: goal_suggestions（ゴール/MS/タスク階層一括提案）を追加
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -37,6 +38,26 @@ interface ActionItem {
   related_topic: string;
 }
 
+// v4.0-Phase5: ゴール提案の型定義
+interface GoalSuggestionTask {
+  title: string;
+  assignee_hint: string;
+  due_date: string | null;
+  priority: 'high' | 'medium' | 'low';
+}
+
+interface GoalSuggestionMilestone {
+  title: string;
+  target_date: string | null;
+  tasks: GoalSuggestionTask[];
+}
+
+interface GoalSuggestion {
+  title: string;
+  description: string;
+  milestones: GoalSuggestionMilestone[];
+}
+
 interface AnalysisResult {
   summary: string;
   topics: AnalysisTopic[];
@@ -46,6 +67,8 @@ interface AnalysisResult {
   new_open_issues: AIDetectedOpenIssue[];
   resolved_issues: AIResolvedIssue[];
   new_decisions: AIDetectedDecision[];
+  // v4.0-Phase5: ゴール/MS/タスク階層一括提案
+  goal_suggestions: GoalSuggestion[];
 }
 
 export async function POST(
@@ -181,6 +204,26 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       "decision_content": "具体的に何が決まったか",
       "rationale": "なぜその決定に至ったか"
     }
+  ],
+  "goal_suggestions": [
+    {
+      "title": "ゴール名（フェーズや段階名。例: Phase1: 現状分析）",
+      "description": "このゴールの目的・概要",
+      "milestones": [
+        {
+          "title": "マイルストーン名（到達点）",
+          "target_date": "YYYY-MM-DD（不明ならnull）",
+          "tasks": [
+            {
+              "title": "具体的な作業名（動詞で始める）",
+              "assignee_hint": "担当者名（不明なら空文字）",
+              "due_date": "YYYY-MM-DD（不明ならnull）",
+              "priority": "high または medium または low"
+            }
+          ]
+        }
+      ]
+    }
   ]
 }
 
@@ -195,6 +238,12 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
 - resolved_issues: 上記「未確定事項」リストの中で、今回の会議で結論が出た・解決したものを判定。タイトルは正確に一致させる
 - new_decisions: 明確に「こうする」と決まった事項。topicsのdecisionフィールドと対応させる
 - 該当なしの項目は空配列にしてください
+- goal_suggestions: 会議内容からプロジェクトの段階・フェーズが読み取れる場合にゴール/マイルストーン/タスクの階層構造を提案してください
+  - ゴールは時系列のフェーズ（例: Phase1: 現状分析 → Phase2: 戦略策定）で構成
+  - 各ゴール配下に1つ以上のマイルストーン（到達点）
+  - 各マイルストーン配下に具体的なタスクを配置
+  - 期限は会議内容から推定できる場合のみ設定（不明ならnull）
+  - 会議内容から階層構造が読み取れない場合は空配列にしてください
 - 必ず有効なJSONを返してください`,
         messages: [
           {
@@ -218,6 +267,7 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         new_open_issues: Array.isArray(parsed.new_open_issues) ? parsed.new_open_issues : [],
         resolved_issues: Array.isArray(parsed.resolved_issues) ? parsed.resolved_issues : [],
         new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
+        goal_suggestions: Array.isArray(parsed.goal_suggestions) ? parsed.goal_suggestions : [],
       } as AnalysisResult;
     } catch (aiError) {
       console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
@@ -230,6 +280,7 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         new_open_issues: [],
         resolved_issues: [],
         new_decisions: [],
+        goal_suggestions: [],
       };
     }
 
@@ -395,6 +446,8 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         open_issues_created: openIssuesCreated,
         open_issues_resolved: openIssuesResolved,
         decisions_created: decisionsCreated,
+        // v4.0-Phase5
+        goal_suggestions_count: analysisResult.goal_suggestions?.length || 0,
       },
     });
   } catch (error) {

@@ -1,8 +1,10 @@
 // V2-D/V2-E: 会議録アップロードフォーム（検討ツリー反映機能付き）
+// v4.0-Phase5: GoalSuggestionReview 統合（ゴール/MS/タスク一括承認UI）
 'use client';
 
 import { useState } from 'react';
 import { FileText, Loader2, Sparkles, GitBranch } from 'lucide-react';
+import GoalSuggestionReview from './GoalSuggestionReview';
 
 interface AnalysisTopics {
   title: string;
@@ -11,13 +13,30 @@ interface AnalysisTopics {
   status: 'active' | 'completed' | 'cancelled';
 }
 
+// v4.0-Phase5: ゴール提案の型
+interface GoalSuggestion {
+  title: string;
+  description: string;
+  milestones: {
+    title: string;
+    target_date: string | null;
+    tasks: {
+      title: string;
+      assignee_hint: string;
+      due_date: string | null;
+      priority: 'high' | 'medium' | 'low';
+    }[];
+  }[];
+}
+
 interface MeetingRecordUploadProps {
   projectId: string;
   onRecordCreated?: () => void;
   onTreeUpdated?: () => void;
+  onGoalsCreated?: () => void;  // v4.0-Phase5
 }
 
-export default function MeetingRecordUpload({ projectId, onRecordCreated, onTreeUpdated }: MeetingRecordUploadProps) {
+export default function MeetingRecordUpload({ projectId, onRecordCreated, onTreeUpdated, onGoalsCreated }: MeetingRecordUploadProps) {
   const [title, setTitle] = useState('');
   const [meetingDate, setMeetingDate] = useState(
     new Date().toISOString().split('T')[0]
@@ -35,6 +54,12 @@ export default function MeetingRecordUpload({ projectId, onRecordCreated, onTree
   const [isGeneratingTree, setIsGeneratingTree] = useState(false);
   const [treeMessage, setTreeMessage] = useState<string | null>(null);
 
+  // v4.0-Phase5: ゴール提案
+  const [goalSuggestions, setGoalSuggestions] = useState<{
+    recordId: string;
+    suggestions: GoalSuggestion[];
+  } | null>(null);
+
   const handleSubmit = async () => {
     if (!title.trim() || !content.trim() || !meetingDate) {
       setError('タイトル、日付、会議内容は全て必須です');
@@ -46,6 +71,7 @@ export default function MeetingRecordUpload({ projectId, onRecordCreated, onTree
     setSuccessMessage(null);
     setAnalysisResult(null);
     setTreeMessage(null);
+    setGoalSuggestions(null);
 
     try {
       // 1. 会議録を登録
@@ -109,6 +135,12 @@ export default function MeetingRecordUpload({ projectId, onRecordCreated, onTree
           }
         } else {
           setSuccessMessage('会議録を登録し、AI解析が完了しました');
+        }
+
+        // v4.0-Phase5: ゴール提案があれば表示
+        const goalSugs = analyzeData.data?.analysis?.goal_suggestions;
+        if (goalSugs && goalSugs.length > 0) {
+          setGoalSuggestions({ recordId, suggestions: goalSugs });
         }
       }
 
@@ -255,6 +287,19 @@ export default function MeetingRecordUpload({ projectId, onRecordCreated, onTree
           }`}>
             {treeMessage}
           </div>
+        )}
+
+        {/* v4.0-Phase5: ゴール提案承認UI */}
+        {goalSuggestions && (
+          <GoalSuggestionReview
+            projectId={projectId}
+            meetingRecordId={goalSuggestions.recordId}
+            suggestions={goalSuggestions.suggestions}
+            onComplete={() => {
+              onGoalsCreated?.();
+            }}
+            onDismiss={() => setGoalSuggestions(null)}
+          />
         )}
 
         {/* 送信ボタン */}
