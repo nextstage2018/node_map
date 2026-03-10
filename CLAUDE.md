@@ -119,7 +119,7 @@
 
 組織には「設定」タブのみ。名前・ドメイン・関係性等の基本情報管理。配下にプロジェクト一覧。
 
-### プロジェクト詳細（/organizations/[id]）タブ構成（v3.3: 8タブ）
+### プロジェクト詳細（/organizations/[id]）タブ構成（v3.3: 7タブ）
 
 | タブ | 内容 | 主なテーブル |
 |---|---|---|
@@ -128,8 +128,7 @@
 | 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
 | タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
 | ジョブ | 定型業務 / やることメモ | jobs |
-| メンバー | PJ関係者管理（v3.3で組織から移動） | project_members, contact_persons |
-| チャネル | PJ紐づけチャネル（1メディア=1推奨） | project_channels |
+| メンバー | チャネル登録＋メンバー管理を統合。チャネルからメンバー自動取り込み対応 | project_channels, project_members, contact_persons, contact_channels |
 | 関連資料 | ドキュメント・スプレッドシートURL一覧。タグ検索対応 | drive_documents |
 
 ### リダイレクトページ

@@ -23,7 +23,7 @@ import DecisionTreeView from '@/components/v2/DecisionTreeView';
 import ThoughtMapTab from '@/components/v2/ThoughtMapTab';
 import MilestoneSection from '@/components/v2/MilestoneSection';
 import ProjectMembers from '@/components/project/ProjectMembers';
-import ProjectChannels from '@/components/project/ProjectChannels';
+// ProjectChannels は ProjectMembers に統合済み（v3.3）
 import ProjectResources from '@/components/project/ProjectResources';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
@@ -90,10 +90,10 @@ interface Task {
 // ========================================
 // ツリーナビのノードタイプ
 // ========================================
-// v3.3: 組織=設定のみ、プロジェクト=8タブ
+// v3.3: 組織=設定のみ、プロジェクト=7タブ（メンバー＆チャネル統合）
 type NavNode =
   | { type: 'org'; tab: 'settings' }
-  | { type: 'project'; projectId: string; tab: 'timeline' | 'decision_tree' | 'thought_map' | 'tasks' | 'jobs' | 'members' | 'channels' | 'resources' };
+  | { type: 'project'; projectId: string; tab: 'timeline' | 'decision_tree' | 'thought_map' | 'tasks' | 'jobs' | 'members' | 'resources' };
 
 // ========================================
 // サービスアイコン
@@ -477,7 +477,6 @@ export default function OrganizationDetailPage() {
                             { tab: 'tasks' as const, label: 'タスク', icon: CheckSquare },
                             { tab: 'jobs' as const, label: 'ジョブ', icon: StickyNote },
                             { tab: 'members' as const, label: 'メンバー', icon: Users },
-                            { tab: 'channels' as const, label: 'チャネル', icon: Link2 },
                             { tab: 'resources' as const, label: '関連資料', icon: Bookmark },
                           ].map(sub => (
                             <button
@@ -703,11 +702,6 @@ export default function OrganizationDetailPage() {
               {/* v3.3 PJレベル: メンバー（組織から移動） */}
               {activeNav.type === 'project' && activeNav.tab === 'members' && currentProject && (
                 <ProjectMembers projectId={currentProject.id} projectName={currentProject.name} />
-              )}
-
-              {/* v3.3 PJレベル: チャネル（組織から移動。1メディア=1推奨） */}
-              {activeNav.type === 'project' && activeNav.tab === 'channels' && currentProject && (
-                <ProjectChannels projectId={currentProject.id} projectName={currentProject.name} />
               )}
 
               {/* v3.3 PJレベル: 関連資料（旧ドキュメント統合 + URL管理 + タグ検索） */}
