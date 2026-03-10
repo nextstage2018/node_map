@@ -61,29 +61,10 @@ export async function GET(
 
     if (error) {
       console.error('[Project Members API] 取得エラー:', error);
-      // フォールバック: 組織メンバーを返す
-      if (project.organization_id) {
-        const { data: orgMembers } = await supabase
-          .from('contact_persons')
-          .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, company_name, linked_user_id')
-          .eq('organization_id', project.organization_id)
-          .order('name', { ascending: true });
-        return NextResponse.json({
-          success: true,
-          data: (orgMembers || []).map(m => ({
-            id: null, // project_memberレコードなし
-            contact_id: m.id,
-            role: 'member',
-            contact: m,
-            is_fallback: true,
-          })),
-          fallback: true,
-        });
-      }
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    // レスポンス整形
+    // レスポンス整形（フォールバックなし: 空なら空を返す）
     const members = (data || []).map(pm => ({
       id: pm.id,
       contact_id: pm.contact_id,
@@ -92,26 +73,6 @@ export async function GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       contact: (pm as any).contact_persons,
     }));
-
-    // project_members が空なら組織メンバーにフォールバック
-    if (members.length === 0 && project.organization_id) {
-      const { data: orgMembers } = await supabase
-        .from('contact_persons')
-        .select('id, name, relationship_type, main_channel, message_count, last_contact_at, is_team_member, company_name, linked_user_id')
-        .eq('organization_id', project.organization_id)
-        .order('name', { ascending: true });
-      return NextResponse.json({
-        success: true,
-        data: (orgMembers || []).map(m => ({
-          id: null,
-          contact_id: m.id,
-          role: 'member',
-          contact: m,
-          is_fallback: true,
-        })),
-        fallback: true,
-      });
-    }
 
     return NextResponse.json({ success: true, data: members });
   } catch (error) {

@@ -38,7 +38,7 @@ interface ProjectMember {
   id: string | null;
   contact_id: string;
   role: string;
-  is_fallback?: boolean;
+
   contact: {
     id: string;
     name: string;
@@ -116,7 +116,6 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
 
   // メンバー関連
   const [members, setMembers] = useState<ProjectMember[]>([]);
-  const [isFallback, setIsFallback] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
   const [allContacts, setAllContacts] = useState<Contact[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
@@ -232,7 +231,6 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
       const data = await res.json();
       if (data.success) {
         setMembers(data.data || []);
-        setIsFallback(!!data.fallback);
       }
     } catch { /* */ }
   }, [projectId]);
@@ -648,11 +646,6 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
           <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
             <Users className="w-4 h-4 text-slate-500" />メンバー
             <span className="text-[10px] text-slate-400 font-normal">{members.length}人</span>
-            {isFallback && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-600 border border-amber-200">
-                組織メンバー表示中
-              </span>
-            )}
           </h2>
           <button
             onClick={() => { setShowAddMember(!showAddMember); setMemberSearch(''); }}
@@ -662,11 +655,6 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
           </button>
         </div>
 
-        {isFallback && (
-          <div className="px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-            プロジェクト専用メンバー未設定のため、組織メンバーを表示中。チャネルからの自動取り込みまたは手動追加で設定できます。
-          </div>
-        )}
 
         {/* 手動メンバー追加フォーム */}
         {showAddMember && (
@@ -755,12 +743,10 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
-                        {!isFallback && (
-                          <button onClick={(e) => { e.stopPropagation(); removeMember(m.id, m.contact_id); }}
-                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="外す">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
+                        <button onClick={(e) => { e.stopPropagation(); removeMember(m.id, m.contact_id); }}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="外す">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                         {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
                       </div>
                     </div>
