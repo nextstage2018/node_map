@@ -338,7 +338,31 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ClipboardList className="w-4 h-4 text-blue-500" /> 関連資料
             </p>
-            <p>プロジェクトに関連するドキュメント・スプレッドシート・外部URLを一覧管理します。マイルストーン・タスク・ジョブをプルダウンで指定して格納先を明確化できます。</p>
+            <p className="mb-2">プロジェクトの資料を一元管理するタブです。ファイルのアップロードとURL登録の両方に対応しています。</p>
+
+            <div className="mt-2 space-y-2">
+              <p className="font-medium text-slate-700 text-xs">2つのサブタブ</p>
+              <div className="flex gap-2">
+                <Badge color="blue" label="登録資料" />
+                <span className="text-xs text-slate-500">自分で登録した資料（アップロード・URL）</span>
+              </div>
+              <div className="flex gap-2">
+                <Badge color="slate" label="受領資料" />
+                <span className="text-xs text-slate-500">Slack・Chatwork等から自動取り込まれた資料</span>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1.5 text-xs text-slate-600">
+              <p className="font-medium text-slate-700">登録時の機能</p>
+              <div className="space-y-1 pl-2">
+                <p>• <span className="font-medium">書類種別</span>: 提案資料・見積書・契約書・請求書・レポート・議事録・マニュアル・デザイン・仕様書・その他の10種から選択</p>
+                <p>• <span className="font-medium">格納先の指定</span>: マイルストーンまたはジョブの選択が必須。タスクも選択可能</p>
+                <p>• <span className="font-medium">命名規則の自動適用</span>: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_資料名.拡張子</span></p>
+                <p>• <span className="font-medium">タグの自動付与</span>: 書類種別・MS名・タスク名・ジョブ名・登録者名が自動でタグ付け。手動追加も可能</p>
+                <p>• <span className="font-medium">編集・削除</span>: 登録済み資料の種別・格納先・タグの変更、削除に対応</p>
+              </div>
+            </div>
+            <FlowStep steps={['ファイル選択 or URL入力', '種別＋格納先を選択', 'タグ自動付与', 'Drive保存＋DB記録']} />
           </div>
         </div>
       </SectionCard>
@@ -356,7 +380,21 @@ function OrganizationsTab() {
         </div>
         <div className="mt-3 space-y-1 text-xs text-slate-500">
           <p>ファイル名ルール: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_原名.ext</span></p>
-          <p>メタデータタグ: プロジェクト・マイルストーン・タスク・ジョブで検索可能</p>
+          <p>メタデータタグ: 書類種別・MS名・タスク名・ジョブ名・登録者名で自動タグ付け＋手動追加可能</p>
+          <p>フォルダ自動生成: 組織・プロジェクトは作成時、ジョブ/会議議事録/MS/タスクはファイル保存時に動的生成</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="MeetGeek連携" icon={Calendar}>
+        <p className="mb-2">
+          MeetGeek（オンライン会議録サービス）と連携すると、会議終了後に自動でNodeMapに取り込まれます。
+        </p>
+        <FlowStep steps={['会議終了', 'Webhook受信', '参加者からPJ自動判定', '議事録DB保存', 'AI解析', 'Drive保存']} />
+        <div className="space-y-2 mt-3 text-xs text-slate-600">
+          <p>• 取り込みデータ: 会議詳細・サマリー・全文トランスクリプト・ハイライト（アクションアイテム等）</p>
+          <p>• プロジェクト自動判定: 参加者メール → コンタクト → 組織 → プロジェクトの順で照合</p>
+          <p>• AI解析の結果: 検討ツリー自動更新、ビジネスイベント追加、ナレッジ抽出、タスク候補生成</p>
+          <p>• Drive保存: PJ配下の「会議議事録」フォルダに年月別で自動保存</p>
         </div>
       </SectionCard>
 
