@@ -10,7 +10,7 @@ import MilestoneForm from './MilestoneForm';
 interface Milestone {
   id: string;
   project_id: string;
-  theme_id: string | null;
+  goal_id: string | null;
   title: string;
   description: string | null;
   start_context: string | null;

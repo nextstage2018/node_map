@@ -3,7 +3,7 @@
 最終更新: 2026-03-10
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0〜v3.3 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.4 + v4.0 Phase1 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -160,7 +160,7 @@ AI解析の改修イメージ:
 | タイムライン | ビジネスログ（**読み取り専用**） | business_events |
 | 検討ツリー | 会議録からAI生成 | decision_trees, decision_tree_nodes, meeting_records |
 | 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
-| タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
+| タスク | ゴール→MS→タスク階層 | goals, milestones, tasks |
 | ジョブ | 定型業務 / やることメモ | jobs |
 | メンバー | チャネル登録＋メンバー管理を統合。チャネルからメンバー自動取り込み対応 | project_channels, project_members, contact_persons, contact_channels |
 | 関連資料 | ドキュメント・スプレッドシートURL一覧。タグ検索対応 | drive_documents |
@@ -243,8 +243,8 @@ AI解析の改修イメージ:
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
 | `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
-| `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
-| `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
+| `goals` | ゴール（フェーズ・段階的目標）— v4.0: themes からリネーム | UUID | project_id 必須。phase_order でフェーズ順序管理 |
+| `milestones` | マイルストーン | UUID | project_id 必須、goal_id nullable（v4.0: theme_id → goal_id）。**status CHECK: pending/in_progress/achieved/missed のみ** |
 | `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型。v3.0: participants/meeting_start_at/meeting_end_at/metadata/highlights 追加 |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造。v3.0: source_type/confidence_score/source_message_ids 追加 |
@@ -545,7 +545,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - AI文体学習: `getUserWritingStyle()` で過去送信10件を参照
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
-- **5階層**: Organization > Project > Theme（任意） > Milestone > Task
+- **5階層**: Organization > Project > Goal（フェーズ。v4.0: Theme → Goal リネーム） > Milestone > Task
 - **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務 or やることメモ（PJ配下。SEOレポート・定例MTG等の定期実行に便利）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定

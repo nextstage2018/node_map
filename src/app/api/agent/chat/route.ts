@@ -2843,7 +2843,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
         // 進行中のマイルストーンを取得（配下タスクのステータスも含む）
         const { data: milestones } = await supabase
           .from('milestones')
-          .select('id, title, status, target_date, project_id, theme_id, projects(id, name, organization_id, organizations(name)), themes(title)')
+          .select('id, title, status, target_date, project_id, goal_id, projects(id, name, organization_id, organizations(name)), goals(title)')
           .in('status', ['pending', 'in_progress'])
           .order('target_date', { ascending: true })
           .limit(20);
@@ -2860,7 +2860,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
               title: string;
               status: string;
               targetDate: string | null;
-              themeName?: string | null;
+              goalName?: string | null;
               taskTotal: number;
               taskDone: number;
             }>;
@@ -2882,7 +2882,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
               ? (ms.projects.organizations as { name: string }).name : undefined;
             const orgId = ms.projects && typeof ms.projects === 'object' && 'organization_id' in ms.projects
               ? (ms.projects as { organization_id: string }).organization_id : undefined;
-            const themeName = ms.themes && typeof ms.themes === 'object' && 'title' in ms.themes ? (ms.themes as { title: string }).title : null;
+            const goalName = ms.goals && typeof ms.goals === 'object' && 'title' in ms.goals ? (ms.goals as { title: string }).title : null;
 
             if (!projectMap[ms.project_id]) {
               projectMap[ms.project_id] = {
@@ -2899,7 +2899,7 @@ ${topKeywords.length > 0 ? `- 頻出キーワード: ${topKeywords.join(', ')}` 
               title: ms.title,
               status: ms.status,
               targetDate: ms.target_date,
-              themeName,
+              goalName,
               taskTotal: totalTasks,
               taskDone: doneTasks,
             });
@@ -3943,7 +3943,7 @@ function buildSystemPrompt(contextSummary: string, intent: Intent, hasCards: boo
 - マイルストーン状況確認（「マイルストーンの進捗」→全PJ横断or指定PJのMS達成率・配下タスク完了率を一覧表示）
 - 検討ツリー表示（「検討ツリーを見せて」→アクティブな検討ツリーとノードの状況表示）
 - チェックポイント評価（「MSの評価を実行」→評価可能なMSを表示→評価エージェント実行へ誘導）
-- マイルストーン作成（「マイルストーンを作成して」→PJ・テーマ・タイトル・ゴール・期限を設定するフォーム表示）
+- マイルストーン作成（「マイルストーンを作成して」→PJ・ゴール・タイトル・到達条件・期限を設定するフォーム表示）
 
 ## コンタクト・組織・プロジェクトの管理
 ユーザーが「コンタクトを登録して」「○○さんを追加」と言ったら:

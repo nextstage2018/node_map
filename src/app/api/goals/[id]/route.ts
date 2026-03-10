@@ -1,11 +1,11 @@
-// V2-C: マイルストーン個別 API（GET / PUT / DELETE）
+// v4.0: ゴール個別 API（GET / PUT / DELETE）— 旧 /api/themes/[id]
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-// マイルストーン詳細取得（配下タスク数・完了数を含む）
+// ゴール詳細取得
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,31 +24,24 @@ export async function GET(
     const { id } = await params;
 
     const { data, error } = await supabase
-      .from('milestones')
-      .select('*, tasks:tasks(id, title, status, priority, due_date, phase, created_at)')
+      .from('goals')
+      .select('*, milestones(id, title, status)')
       .eq('id', id)
       .single();
 
     if (error) {
-      console.error('[Milestones API] 詳細取得エラー:', error);
+      console.error('[Goals API] 詳細取得エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    const tasks = data.tasks || [];
-    const enriched = {
-      ...data,
-      task_count: tasks.length,
-      completed_task_count: tasks.filter((t: any) => t.status === 'done').length,
-    };
-
-    return NextResponse.json({ success: true, data: enriched });
+    return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error('[Milestones API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'マイルストーンの取得に失敗しました' }, { status: 500 });
+    console.error('[Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの取得に失敗しました' }, { status: 500 });
   }
 }
 
-// マイルストーン更新
+// ゴール更新
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -66,41 +59,37 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, start_context, target_date, achieved_date, status, sort_order, goal_id, theme_id } = body;
+    const { title, description, status, phase_order, sort_order } = body;
 
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
     };
     if (title !== undefined) updateData.title = title.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
-    if (start_context !== undefined) updateData.start_context = start_context?.trim() || null;
-    if (target_date !== undefined) updateData.target_date = target_date || null;
-    if (achieved_date !== undefined) updateData.achieved_date = achieved_date || null;
     if (status !== undefined) updateData.status = status;
-    if (sort_order !== undefined) updateData.sort_order = sort_order;
-    if (goal_id !== undefined) updateData.goal_id = goal_id || null;
-    if (theme_id !== undefined && goal_id === undefined) updateData.goal_id = theme_id || null; // 後方互換
+    if (phase_order !== undefined) updateData.phase_order = phase_order;
+    if (sort_order !== undefined) updateData.phase_order = sort_order;
 
     const { data, error } = await supabase
-      .from('milestones')
+      .from('goals')
       .update(updateData)
       .eq('id', id)
       .select()
       .single();
 
     if (error) {
-      console.error('[Milestones API] 更新エラー:', error);
+      console.error('[Goals API] 更新エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error('[Milestones API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'マイルストーンの更新に失敗しました' }, { status: 500 });
+    console.error('[Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの更新に失敗しました' }, { status: 500 });
   }
 }
 
-// マイルストーン削除（tasks.milestone_id は ON DELETE SET NULL）
+// ゴール削除（milestones.goal_id は ON DELETE SET NULL）
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -119,18 +108,18 @@ export async function DELETE(
     const { id } = await params;
 
     const { error } = await supabase
-      .from('milestones')
+      .from('goals')
       .delete()
       .eq('id', id);
 
     if (error) {
-      console.error('[Milestones API] 削除エラー:', error);
+      console.error('[Goals API] 削除エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[Milestones API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'マイルストーンの削除に失敗しました' }, { status: 500 });
+    console.error('[Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの削除に失敗しました' }, { status: 500 });
   }
 }

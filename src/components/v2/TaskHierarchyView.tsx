@@ -1,11 +1,11 @@
-// V2-C: テーマ→マイルストーン→タスクの3階層表示（親コンポーネント）
+// v4.0: ゴール→マイルストーン→タスクの3階層表示（親コンポーネント）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, FolderOpen, Flag } from 'lucide-react';
-import ThemeSection from './ThemeSection';
+import GoalSection from './GoalSection';
 import MilestoneSection from './MilestoneSection';
-import ThemeForm from './ThemeForm';
+import GoalForm from './GoalForm';
 import MilestoneForm from './MilestoneForm';
 
 // ========================================
@@ -30,12 +30,12 @@ interface Milestone {
   target_date: string | null;
   achieved_date: string | null;
   status: string;
-  theme_id: string | null;
+  goal_id: string | null;
   task_count: number;
   completed_task_count: number;
 }
 
-interface Theme {
+interface Goal {
   id: string;
   title: string;
   description: string | null;
@@ -120,17 +120,17 @@ function InlineTaskForm({
 // メインコンポーネント
 // ========================================
 export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps) {
-  const [themes, setThemes] = useState<Theme[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // モーダル状態
-  const [showThemeForm, setShowThemeForm] = useState(false);
-  const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
-  const [milestoneThemeId, setMilestoneThemeId] = useState<string | null>(null);
+  const [milestoneGoalId, setMilestoneGoalId] = useState<string | null>(null);
 
   // インラインタスク作成
   const [addingTaskForMilestone, setAddingTaskForMilestone] = useState<string | null>(null);
@@ -143,17 +143,17 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [themesRes, milestonesRes, tasksRes] = await Promise.all([
-        fetch(`/api/themes?project_id=${projectId}`),
+      const [goalsRes, milestonesRes, tasksRes] = await Promise.all([
+        fetch(`/api/goals?project_id=${projectId}`),
         fetch(`/api/milestones?project_id=${projectId}`),
         fetch(`/api/tasks?project_id=${projectId}`),
       ]);
-      const [themesData, milestonesData, tasksData] = await Promise.all([
-        themesRes.json(),
+      const [goalsData, milestonesData, tasksData] = await Promise.all([
+        goalsRes.json(),
         milestonesRes.json(),
         tasksRes.json(),
       ]);
-      if (themesData.success) setThemes(themesData.data || []);
+      if (goalsData.success) setGoals(goalsData.data || []);
       if (milestonesData.success) setMilestones(milestonesData.data || []);
       if (tasksData.success) setTasks(tasksData.data || []);
     } catch { /* ignore */ }
@@ -165,46 +165,46 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   }, [fetchAll]);
 
   // ========================================
-  // テーマ操作
+  // ゴール操作
   // ========================================
-  const handleCreateTheme = async (data: { title: string; description: string }) => {
+  const handleCreateGoal = async (data: { title: string; description: string }) => {
     setIsSubmitting(true);
     try {
-      const res = await fetch('/api/themes', {
+      const res = await fetch('/api/goals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: projectId, title: data.title, description: data.description }),
       });
       const result = await res.json();
       if (result.success) {
-        setShowThemeForm(false);
+        setShowGoalForm(false);
         fetchAll();
       }
     } catch { /* ignore */ }
     finally { setIsSubmitting(false); }
   };
 
-  const handleUpdateTheme = async (data: { title: string; description: string; status?: string }) => {
-    if (!editingTheme) return;
+  const handleUpdateGoal = async (data: { title: string; description: string; status?: string }) => {
+    if (!editingGoal) return;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/themes/${editingTheme.id}`, {
+      const res = await fetch(`/api/goals/${editingGoal.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
       const result = await res.json();
       if (result.success) {
-        setEditingTheme(null);
+        setEditingGoal(null);
         fetchAll();
       }
     } catch { /* ignore */ }
     finally { setIsSubmitting(false); }
   };
 
-  const handleDeleteTheme = async (themeId: string) => {
+  const handleDeleteGoal = async (goalId: string) => {
     try {
-      const res = await fetch(`/api/themes/${themeId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/goals/${goalId}`, { method: 'DELETE' });
       const result = await res.json();
       if (result.success) fetchAll();
     } catch { /* ignore */ }
@@ -226,7 +226,7 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: projectId,
-          theme_id: milestoneThemeId,
+          goal_id: milestoneGoalId,
           title: data.title,
           description: data.description,
           start_context: data.start_context,
@@ -236,7 +236,7 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
       const result = await res.json();
       if (result.success) {
         setShowMilestoneForm(false);
-        setMilestoneThemeId(null);
+        setMilestoneGoalId(null);
         fetchAll();
       }
     } catch { /* ignore */ }
@@ -285,12 +285,12 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   // データ分類
   // ========================================
-  // テーマ付きマイルストーン
-  const themedMilestones = (themeId: string) =>
-    milestones.filter((ms) => ms.theme_id === themeId);
+  // ゴール付きマイルストーン
+  const goalMilestones = (goalId: string) =>
+    milestones.filter((ms) => ms.goal_id === goalId);
 
-  // テーマなしマイルストーン
-  const unthemedMilestones = milestones.filter((ms) => !ms.theme_id);
+  // ゴールなしマイルストーン
+  const unassignedMilestones = milestones.filter((ms) => !ms.goal_id);
 
   // マイルストーンなしタスク（orphan）
   const orphanTasks = tasks.filter((t) => !t.milestone_id);
@@ -312,28 +312,28 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   // 空状態
   // ========================================
-  if (themes.length === 0 && milestones.length === 0 && tasks.length === 0) {
+  if (goals.length === 0 && milestones.length === 0 && tasks.length === 0) {
     return (
       <div className="py-6">
         <div className="flex items-center justify-center h-32 text-slate-400">
           <div className="text-center">
             <FolderOpen className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-            <p className="text-xs mb-3">テーマ・マイルストーンがありません</p>
+            <p className="text-xs mb-3">ゴール・マイルストーンがありません</p>
             <button
-              onClick={() => setShowThemeForm(true)}
+              onClick={() => setShowGoalForm(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              テーマを追加
+              ゴールを追加
             </button>
           </div>
         </div>
 
-        {/* テーマ作成モーダル */}
-        <ThemeForm
-          isOpen={showThemeForm}
-          onClose={() => setShowThemeForm(false)}
-          onSubmit={handleCreateTheme}
+        {/* ゴール作成モーダル */}
+        <GoalForm
+          isOpen={showGoalForm}
+          onClose={() => setShowGoalForm(false)}
+          onSubmit={handleCreateGoal}
           isLoading={isSubmitting}
         />
       </div>
@@ -345,31 +345,31 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   return (
     <div className="py-2 space-y-3">
-      {/* テーマ追加ボタン */}
+      {/* ゴール追加ボタン */}
       <div className="flex justify-end">
         <button
-          onClick={() => setShowThemeForm(true)}
+          onClick={() => setShowGoalForm(true)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          テーマ追加
+          ゴール追加
         </button>
       </div>
 
-      {/* テーマ付きセクション */}
-      {themes.map((theme) => (
-        <ThemeSection
-          key={theme.id}
-          theme={theme}
-          milestones={themedMilestones(theme.id)}
+      {/* ゴール付きセクション */}
+      {goals.map((goal) => (
+        <GoalSection
+          key={goal.id}
+          goal={goal}
+          milestones={goalMilestones(goal.id)}
           tasks={tasks.filter((t) => {
-            const themeMsIds = themedMilestones(theme.id).map((ms) => ms.id);
-            return t.milestone_id && themeMsIds.includes(t.milestone_id);
+            const goalMsIds = goalMilestones(goal.id).map((ms) => ms.id);
+            return t.milestone_id && goalMsIds.includes(t.milestone_id);
           })}
-          onEditTheme={() => setEditingTheme(theme)}
-          onDeleteTheme={() => handleDeleteTheme(theme.id)}
+          onEditGoal={() => setEditingGoal(goal)}
+          onDeleteGoal={() => handleDeleteGoal(goal.id)}
           onAddMilestone={() => {
-            setMilestoneThemeId(theme.id);
+            setMilestoneGoalId(goal.id);
             setShowMilestoneForm(true);
           }}
           onEditMilestone={(ms) => setEditingMilestone(ms)}
@@ -379,15 +379,15 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
         />
       ))}
 
-      {/* テーマなしセクション */}
-      {(unthemedMilestones.length > 0 || orphanTasks.length > 0) && (
+      {/* ゴールなしセクション */}
+      {(unassignedMilestones.length > 0 || orphanTasks.length > 0) && (
         <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50">
             <Flag className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-medium text-slate-500">テーマなし</span>
+            <span className="text-xs font-medium text-slate-500">ゴールなし</span>
           </div>
           <div className="px-3 py-2 space-y-1">
-            {unthemedMilestones.map((ms) => {
+            {unassignedMilestones.map((ms) => {
               const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
               return (
                 <MilestoneSection
@@ -421,10 +421,10 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
               </div>
             )}
 
-            {/* テーマなしマイルストーン追加 */}
+            {/* ゴールなしマイルストーン追加 */}
             <button
               onClick={() => {
-                setMilestoneThemeId(null);
+                setMilestoneGoalId(null);
                 setShowMilestoneForm(true);
               }}
               className="flex items-center gap-1.5 ml-4 px-2.5 py-1.5 text-[10px] text-slate-400 hover:text-blue-600 transition-colors"
@@ -449,15 +449,15 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
         />
       )}
 
-      {/* テーマ作成/編集モーダル */}
-      <ThemeForm
-        isOpen={showThemeForm || !!editingTheme}
-        onClose={() => { setShowThemeForm(false); setEditingTheme(null); }}
-        onSubmit={editingTheme ? handleUpdateTheme : handleCreateTheme}
-        initialData={editingTheme ? {
-          title: editingTheme.title,
-          description: editingTheme.description || '',
-          status: editingTheme.status,
+      {/* ゴール作成/編集モーダル */}
+      <GoalForm
+        isOpen={showGoalForm || !!editingGoal}
+        onClose={() => { setShowGoalForm(false); setEditingGoal(null); }}
+        onSubmit={editingGoal ? handleUpdateGoal : handleCreateGoal}
+        initialData={editingGoal ? {
+          title: editingGoal.title,
+          description: editingGoal.description || '',
+          status: editingGoal.status,
         } : undefined}
         isLoading={isSubmitting}
       />
@@ -465,7 +465,7 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
       {/* マイルストーン作成/編集モーダル */}
       <MilestoneForm
         isOpen={showMilestoneForm || !!editingMilestone}
-        onClose={() => { setShowMilestoneForm(false); setEditingMilestone(null); setMilestoneThemeId(null); }}
+        onClose={() => { setShowMilestoneForm(false); setEditingMilestone(null); setMilestoneGoalId(null); }}
         onSubmit={editingMilestone ? handleUpdateMilestone : handleCreateMilestone}
         initialData={editingMilestone ? {
           title: editingMilestone.title,

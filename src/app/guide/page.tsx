@@ -110,10 +110,10 @@ function OverviewTab() {
       </SectionCard>
 
       <SectionCard title="5階層のデータ構造" icon={Layers}>
-        <FlowStep steps={['組織', 'プロジェクト', 'テーマ（任意）', 'マイルストーン', 'タスク']} />
+        <FlowStep steps={['組織', 'プロジェクト', 'ゴール（フェーズ）', 'マイルストーン', 'タスク']} />
         <p className="mt-2">
-          組織の中にプロジェクトがあり、プロジェクトの中にマイルストーン（1週間単位の目標）、
-          その下にタスクがぶら下がります。テーマは任意の中間レイヤーです。
+          組織の中にプロジェクトがあり、プロジェクトの中にゴール（フェーズ・段階的な目標）、
+          その下にマイルストーン（1週間単位の到達点）とタスクがぶら下がります。
         </p>
       </SectionCard>
 
@@ -313,7 +313,7 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ListTodo className="w-4 h-4 text-blue-500" /> タスク
             </p>
-            <p>テーマ → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
+            <p>ゴール → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">

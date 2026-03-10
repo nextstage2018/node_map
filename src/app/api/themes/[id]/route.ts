@@ -1,11 +1,11 @@
-// V2-C: テーマ個別 API（GET / PUT / DELETE）
+// v4.0: 後方互換 — /api/themes/[id] → goals テーブル参照
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-// テーマ詳細取得
+// ゴール詳細取得
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,24 +24,24 @@ export async function GET(
     const { id } = await params;
 
     const { data, error } = await supabase
-      .from('themes')
+      .from('goals')
       .select('*, milestones(id, title, status)')
       .eq('id', id)
       .single();
 
     if (error) {
-      console.error('[Themes API] 詳細取得エラー:', error);
+      console.error('[Themes→Goals API] 詳細取得エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error('[Themes API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'テーマの取得に失敗しました' }, { status: 500 });
+    console.error('[Themes→Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの取得に失敗しました' }, { status: 500 });
   }
 }
 
-// テーマ更新
+// ゴール更新
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -59,7 +59,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, status, sort_order } = body;
+    const { title, description, status, sort_order, phase_order } = body;
 
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -67,28 +67,29 @@ export async function PUT(
     if (title !== undefined) updateData.title = title.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
     if (status !== undefined) updateData.status = status;
-    if (sort_order !== undefined) updateData.sort_order = sort_order;
+    if (phase_order !== undefined) updateData.phase_order = phase_order;
+    if (sort_order !== undefined) updateData.phase_order = sort_order;
 
     const { data, error } = await supabase
-      .from('themes')
+      .from('goals')
       .update(updateData)
       .eq('id', id)
       .select()
       .single();
 
     if (error) {
-      console.error('[Themes API] 更新エラー:', error);
+      console.error('[Themes→Goals API] 更新エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
-    console.error('[Themes API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'テーマの更新に失敗しました' }, { status: 500 });
+    console.error('[Themes→Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの更新に失敗しました' }, { status: 500 });
   }
 }
 
-// テーマ削除（milestones.theme_id は ON DELETE SET NULL）
+// ゴール削除（milestones.goal_id は ON DELETE SET NULL）
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -107,18 +108,18 @@ export async function DELETE(
     const { id } = await params;
 
     const { error } = await supabase
-      .from('themes')
+      .from('goals')
       .delete()
       .eq('id', id);
 
     if (error) {
-      console.error('[Themes API] 削除エラー:', error);
+      console.error('[Themes→Goals API] 削除エラー:', error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[Themes API] エラー:', error);
-    return NextResponse.json({ success: false, error: 'テーマの削除に失敗しました' }, { status: 500 });
+    console.error('[Themes→Goals API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'ゴールの削除に失敗しました' }, { status: 500 });
   }
 }

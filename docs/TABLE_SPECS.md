@@ -348,6 +348,41 @@ CREATE INDEX idx_project_members_contact_id ON project_members(contact_id);
 
 ## 3. タスク・ジョブ・メモ関連テーブル
 
+### goals（ゴール — v4.0: themes からリネーム）
+
+**目的**: プロジェクト内のフェーズ・段階的な目標を管理
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE goals (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  phase_order INT DEFAULT 0,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_goals_project_id ON goals(project_id);
+CREATE INDEX idx_goals_status ON goals(status);
+```
+
+#### 注意事項
+
+- **v4.0 変更**: 旧 `themes` テーブルからリネーム。`sort_order` → `phase_order` に変更
+- **status CHECK**: `'active'`, `'completed'`, `'archived'` のみ
+- **RLS**: authenticated ユーザーは全操作可能
+- **milestones との関係**: `milestones.goal_id` で紐づけ（旧 `theme_id`）
+
+---
+
 ### tasks（タスク）
 
 **目的**: ユーザーのタスク・プロジェクト作業

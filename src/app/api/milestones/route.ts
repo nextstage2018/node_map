@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { project_id, theme_id, title, description, start_context, target_date } = body;
+    const { project_id, goal_id, title, description, start_context, target_date } = body;
 
     if (!project_id) {
       return NextResponse.json({ success: false, error: 'project_id は必須です' }, { status: 400 });
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       .from('milestones')
       .insert({
         project_id,
-        theme_id: theme_id || null,
+        goal_id: goal_id || null,
         title,
         description: description || null,
         start_context: start_context || null,

@@ -3906,7 +3906,7 @@ interface MilestoneOverviewProject {
     title: string;
     status: string;
     targetDate: string | null;
-    themeName?: string | null;
+    goalName?: string | null;
     taskTotal: number;
     taskDone: number;
   }>;
@@ -4030,9 +4030,9 @@ function MilestoneOverviewCard({
                             </span>
                           </div>
 
-                          {/* テーマ名 */}
-                          {ms.themeName && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">テーマ: {ms.themeName}</p>
+                          {/* ゴール名 */}
+                          {ms.goalName && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">ゴール: {ms.goalName}</p>
                           )}
 
                           {/* 期限 + タスク進捗 */}

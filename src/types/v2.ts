@@ -2,23 +2,28 @@
 // V2 新規テーブル TypeScript型定義
 // ============================================================
 
-/** テーマ（任意の中間レイヤー） */
-export interface Theme {
+/** ゴール（フェーズ・段階的なゴール） — v4.0: Theme → Goal リネーム */
+export interface Goal {
   id: string;
   project_id: string;
   title: string;
   description: string | null;
-  sort_order: number;
+  phase_order: number;
   status: 'active' | 'completed' | 'archived';
   created_at: string;
   updated_at: string;
 }
 
+/** @deprecated v4.0 で Goal にリネーム。後方互換のため残す */
+export type Theme = Goal;
+
 /** マイルストーン（1週間チェックポイント） */
 export interface Milestone {
   id: string;
   project_id: string;
-  theme_id: string | null;
+  goal_id: string | null;
+  /** @deprecated v4.0 で goal_id にリネーム */
+  theme_id?: string | null;
   title: string;
   description: string | null;
   start_context: string | null;
