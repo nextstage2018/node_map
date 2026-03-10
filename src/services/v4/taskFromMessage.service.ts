@@ -44,8 +44,12 @@ async function extractTaskFromMessage(
       ? `\n\n【スレッドの文脈】\n${threadContext}`
       : '';
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
+      signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
@@ -74,6 +78,8 @@ ${messageText}${contextPart}
         ],
       }),
     });
+
+    clearTimeout(timeout);
 
     if (!response.ok) {
       throw new Error(`AI API error: ${response.status}`);
