@@ -1,9 +1,9 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-09
+最終更新: 2026-03-10
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0アップグレード + v3.1 UI改善 + v3.2 秘書チャット改善 + v3.3 Phase 0〜2（ドキュメント・DB・UI） 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.3 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -191,7 +191,7 @@
 | `organization_channels` | 組織チャネル | UUID | UNIQUE(org_id, service_name, channel_id) |
 | `projects` | プロジェクト | UUID | organization_id で組織に紐づく |
 | `project_channels` | プロジェクトチャネル | UUID | UNIQUE(project_id, service_name, identifier) |
-| `project_members` | プロジェクトメンバー | UUID | UNIQUE(project_id, contact_id)。空なら組織メンバーにフォールバック |
+| `project_members` | プロジェクトメンバー | UUID | UNIQUE(project_id, contact_id)。チャネルから自動取り込み or 手動追加 |
 | `tasks` | タスク | UUID | milestone_id / project_id / due_date / scheduled_start/end |
 | `task_members` | グループタスクメンバー | UUID | UNIQUE(task_id, user_id) |
 | `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE |
@@ -203,7 +203,7 @@
 | `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable。v3.0: source_meeting_record_id 追加 |
 | `drive_file_staging` | ファイルステージング | UUID | AI分類→承認→最終配置 |
 | `drive_folders` | Driveフォルダ | UUID | v3.3新構造: 組織/PJ/（ジョブ\|会議議事録\|MS）/タスク。L1-L2は作成時自動生成、L3以降は動的生成 |
-| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。v3.3: milestone_id, job_id 追加予定。タグ検索対応 |
+| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。milestone_id, job_id 追加済み。タグ検索対応 |
 | `thought_snapshots` | スナップショット | UUID | initial_goal / final_landing |
 | `secretary_conversations` | 秘書会話 | UUID | AIコンテキスト用（UI復元なし） |
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
@@ -296,7 +296,7 @@
 - **原則**: 1つのSlack/Chatworkグループチャンネル = 1つのプロジェクト
 - **推奨構成**: Slack 1チャネル、Chatwork 1ルーム、メール 任意（現在休眠中）
 - **実装**: `resolveProjectFromChannel()` で `project_channels` テーブルを検索
-- **管理場所**: v3.3よりプロジェクト配下「チャネル」タブで管理（組織レベルから移動）
+- **管理場所**: v3.3よりプロジェクト配下「メンバー」タブ上部で管理（チャネル＋メンバー統合）
 - **例外**: メール・LINEなど1:1のやり取りは手動紐づけ
 
 ### メール休眠フラグ
@@ -515,12 +515,10 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **対称データパイプライン**: 会議録(A-1)とチャネルメッセージ(A-2)から business_events / decision_trees / knowledge が対称的に自動生成
 - **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
 - **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得
-- **~~既知バグ~~ 修正済み**: MilestoneSection.tsx — MilestoneCard に projectId は正しく渡されている（v3.3 Phase 2で修正済み）
-- **v3.2 カレンダー修正**: `getAllCalendarEvents` はprimaryカレンダーのみ取得（他人の「業務」ブロックで全時間が埋まる問題を修正済み）
-- **v3.2 タスクカード**: TaskProgressCard / TaskResumeCard から`sendMessage`による無限ループを除去済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
-- **v3.2 秘書チャットUI**: `formatAssistantMessage()`でアシスタントメッセージをリッチ表示。APIは`suggestions`（動的選択肢）を返却
-- **v3.2 intent判定順序**: `create_milestone` → `checkpoint_evaluation` → `milestone_status` → `project_status` の順に配置（`project_status`の「進捗+教えて」がMSを横取りしないよう修正済み）
-- **v3.2 マイルストーンカード**: `milestone_overview`カード（プロジェクト単位グルーピング・開閉式）を追加。ただしDB上にactive MSがないとテキスト応答のみ
+- **カレンダー**: `getAllCalendarEvents` はprimaryカレンダーのみ取得
+- **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
+- **秘書チャットUI**: `formatAssistantMessage()`でリッチ表示。`suggestions`（動的選択肢）対応
+- **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
 
 ### 検討ツリー データフロー
 
@@ -548,16 +546,33 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 ## v3.3 プロジェクト中心リストラクチャリング（全Phase完了）
 
 ### 概要
-組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。Driveフォルダ構造を用途別に再設計。
+組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。チャネルとメンバーを1タブに統合。Driveフォルダ構造を用途別に再設計。
 
-### 実装済み（Phase 0〜2）
-- **組織レベル**: 「設定」タブのみに縮小完了（メンバー・チャネルUI削除済み）
-- **プロジェクト配下**: 8タブ化完了（タイムライン/検討ツリー/思考マップ/タスク/ジョブ/メンバー/チャネル/関連資料）
-- **DB**: `project_members`テーブル作成済み、`drive_documents`に`milestone_id`/`job_id`追加済み
-- **新コンポーネント**: `ProjectMembers.tsx`、`ProjectChannels.tsx`、`ProjectResources.tsx` 作成済み
-- **チャネル推奨**: Slack 1、Chatwork 1、メール任意（休眠中）— UI上に推奨ガイド表示済み
+### 現在の構成
+- **組織レベル**: 「設定」タブのみ（メンバー・チャネルUI削除済み）
+- **プロジェクト配下**: 7タブ（タイムライン/検討ツリー/思考マップ/タスク/ジョブ/メンバー/関連資料）
+- **メンバータブ**: チャネル管理 + メンバー管理を統合。チャネル登録→自動取り込み→展開式カードで編集/削除
+- **フォールバックなし**: 新PJはメンバー0人で開始。チャネルからの自動取り込みが正規フロー
+- **コンポーネント**: `ProjectMembers.tsx`（チャネル＋メンバー統合）、`ProjectResources.tsx`
 
-### Driveフォルダ新構造
+### メンバータブのフロー
+```
+1. チャネル登録（Slack/Chatwork/Email）
+2. 「チャネルからメンバーを自動取り込み」ボタン
+   → POST /api/projects/[id]/members/detect
+   → inbox_messagesから送信者検出 → contact_persons自動作成 → project_members追加
+3. メンバーカード展開 → 基本情報編集 + 連絡先チャネル管理
+   → PUT /api/contacts（name/company/department/relationship_type/notes）
+   → GET/POST/DELETE /api/contacts/[id]/channels（email/slack/chatwork）
+4. 不要メンバーは削除（外す）ボタンで除外
+```
+
+### 関連資料タブ
+- ドキュメント・スプレッドシートURL・外部リンクを一覧管理
+- MS/タスク/ジョブをプルダウンで指定して格納先を明確化
+- カード内にフォルダパス表示
+
+### Driveフォルダ構造
 ```
 [NodeMap] 組織名/
 └── プロジェクト名/
@@ -567,26 +582,6 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
         └── MS名/
             └── タスク名/   ← タスク関連ドキュメント蓄積
 ```
-- L1（組織）・L2（PJ）: 作成時に自動生成
-- L3以降: ファイル保存時に動的生成
-- ファイル名: `YYYY-MM-DD_種別_原名.ext`
-- メタデータタグ: PJ・MS・タスク・ジョブで検索可能
-
-### 関連資料タブ（v3.3新設）
-- ドキュメント・スプレッドシートURL・外部リンクを一覧管理
-- タグ（PJ/MS/タスク/ジョブ）で絞り込み検索
-- 各アイテムにリンクショートカット
-
-### ジョブの2種類
-- **定型業務**: SEOレポート、定例MTGなど定期実行
-- **やることメモ**: 一時的なTODO
-
-### 実装フェーズ（詳細: docs/RESTRUCTURING_V3.3.md）
-- ✅ Phase 0: ドキュメント先行更新（`ef28529`）
-- ✅ Phase 1: DBスキーマ拡張（`23a5124`, `fff0455`）
-- ✅ Phase 2: UIリストラクチャリング（`1b9e861`）
-- ✅ Phase 3: Driveフォルダ再構築（driveClient.service.ts 拡張 — 新関数4つ追加）
-- ✅ Phase 4: Cron・AIパイプライン更新（sync-drive-documents命名規則 + MeetGeek Drive保存）
 
 ---
 

@@ -9,7 +9,7 @@ import {
   Clock, Brain, Flag, ChevronRight, Lightbulb,
   Calendar, FileText, BarChart, CheckCircle,
   ArrowRight, Layers, Users, FolderOpen,
-  Link2, HardDrive, ClipboardList, StickyNote
+  HardDrive, ClipboardList
 } from 'lucide-react';
 
 const TABS = [
@@ -279,7 +279,7 @@ function OrganizationsTab() {
         <p>組織の作成は画面右上ボタン、または秘書に「組織を作成して」と依頼します。同じドメインの組織は1つだけです。</p>
       </SectionCard>
 
-      <SectionCard title="プロジェクト配下の8タブ" icon={FolderOpen}>
+      <SectionCard title="プロジェクト配下の7タブ" icon={FolderOpen}>
         <p className="mb-3 text-slate-500">プロジェクトがすべての情報のハブです。メンバー・チャネル・資料もプロジェクト単位で管理します。</p>
         <div className="space-y-3 mt-2">
           <div className="p-3 bg-white rounded border border-slate-200">
@@ -327,16 +327,10 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-blue-500" /> メンバー
             </p>
-            <p>プロジェクトに関わるメンバーを管理します。コンタクト一覧から追加、またはメッセージ履歴から自動検出できます。</p>
-          </div>
-
-          <div className="p-3 bg-white rounded border border-blue-200 bg-blue-50">
-            <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
-              <Link2 className="w-4 h-4 text-blue-500" /> チャネル
-            </p>
-            <p>プロジェクトに紐づくSlack・Chatworkチャネルを設定します。1プロジェクト = 1チャネルが原則です。</p>
+            <p>チャネル管理とメンバー管理を1つのタブに統合。上部でSlack・Chatworkチャネルを登録し、「チャネルからメンバーを自動取り込み」ボタンでメッセージ履歴から参加者を自動検出・追加します。</p>
+            <FlowStep steps={['チャネル登録', '自動取り込み', 'メンバー編集・削除']} />
             <div className="mt-2 p-2 bg-white rounded border border-slate-200 text-xs text-slate-500">
-              推奨: Slack 1チャネル、Chatwork 1ルーム、メール 任意（現在休眠中）
+              推奨: Slack 1チャネル、Chatwork 1ルーム、メール 任意（現在休眠中）。各メンバーカードを展開して会社名・関係性・連絡先チャネルを編集できます。
             </div>
           </div>
 
@@ -344,7 +338,7 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ClipboardList className="w-4 h-4 text-blue-500" /> 関連資料
             </p>
-            <p>プロジェクトに関連するドキュメント・スプレッドシート・外部URLを一覧管理します。タグ（プロジェクト・マイルストーン・タスク・ジョブ）で絞り込み検索ができます。</p>
+            <p>プロジェクトに関連するドキュメント・スプレッドシート・外部URLを一覧管理します。マイルストーン・タスク・ジョブをプルダウンで指定して格納先を明確化できます。</p>
           </div>
         </div>
       </SectionCard>

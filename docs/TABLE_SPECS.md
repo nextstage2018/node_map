@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-09（V2全フェーズ + v3.0 対称パイプライン + MeetGeek連携強化 まで反映）
+最終更新: 2026-03-10（v3.3 プロジェクト中心リストラクチャリング + メンバー自動取り込み まで反映）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -308,6 +308,41 @@ CREATE INDEX idx_project_channels_org_channel_id ON project_channels(organizatio
 - **UNIQUE(project_id, service_name, channel_identifier)**
 - 種化時のプロジェクト自動検出（チャネル → project_channels → projects）で利用
 - `/api/projects/[id]/messages` でプロジェクト関連メッセージ取得
+
+---
+
+### project_members（プロジェクトメンバー）
+
+**目的**: プロジェクト単位のメンバー管理。チャネルからの自動取り込み or 手動追加。フォールバックなし（空なら空）
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE project_members (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  contact_id TEXT NOT NULL REFERENCES contact_persons(id) ON DELETE CASCADE,
+  role TEXT NOT NULL DEFAULT 'member',
+  user_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(project_id, contact_id)
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_project_members_project_id ON project_members(project_id);
+CREATE INDEX idx_project_members_contact_id ON project_members(contact_id);
+```
+
+#### 注意事項
+
+- **UNIQUE(project_id, contact_id)**: 同一コンタクトの重複追加を防止
+- **フォールバック廃止**: project_membersが空でも組織メンバーを返さない
+- **自動取り込み**: `POST /api/projects/[id]/members/detect` でチャネルのメッセージ送信者を自動検出・追加
+- role: 'owner' / 'member' / 'viewer'
+- メンバーカード展開で contact_persons の編集 + contact_channels の管理が可能
 
 ---
 
