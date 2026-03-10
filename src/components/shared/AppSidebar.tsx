@@ -4,14 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Bot, Inbox, Building2, Settings,
-  ChevronLeft, ChevronRight, BookOpen,
+  ChevronLeft, ChevronRight, BookOpen, CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
-// V2: サイドメニュー4項目化（タスク・思考マップはプロジェクト詳細に統合）
+// v4.0: サイドメニュー6項目（タスク管理ページ新設）
 const NAV_ITEMS = [
   { href: '/', label: '秘書', icon: Bot },
+  { href: '/tasks', label: 'タスク', icon: CheckSquare },
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
   { href: '/settings', label: '設定', icon: Settings },

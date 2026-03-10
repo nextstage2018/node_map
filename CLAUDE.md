@@ -139,11 +139,12 @@ AI解析の改修イメージ:
 
 ## 画面・ルート一覧
 
-### サイドメニュー（4項目）
+### サイドメニュー（6項目 — v4.0でタスク追加）
 
 | 画面 | URL | 主なテーブル |
 |---|---|---|
 | 秘書 | / | secretary_conversations, inbox_messages, tasks |
+| タスク | /tasks | tasks, milestones, goals, projects（v4.0新設） |
 | インボックス | /inbox | inbox_messages |
 | 組織・プロジェクト | /organizations | organizations, projects, business_events |
 | 設定 | /settings | 個人設定 |
@@ -169,7 +170,7 @@ AI解析の改修イメージ:
 
 | 旧URL | リダイレクト先 |
 |---|---|
-| /tasks | / |
+| /tasks | **v4.0で専用ページ化（リダイレクト解除）** |
 | /thought-map | / |
 | /jobs | / |
 | /memos | / |
@@ -555,7 +556,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **タスク提案**: 会議録AI解析でaction_items抽出 → task_suggestions → 秘書ブリーフィングで承認UI
 - **MeetGeek全データ取得**: 会議詳細・サマリー・トランスクリプト・ハイライトを保存。録画はオンデマンド取得
 - **カレンダー**: `getAllCalendarEvents` はprimaryカレンダーのみ取得
-- **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
+- **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。v4.0で `/tasks` は個人タスク管理ページに変更
 - **秘書チャットUI**: `formatAssistantMessage()`でリッチ表示。`suggestions`（動的選択肢）対応
 - **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
