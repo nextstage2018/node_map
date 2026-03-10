@@ -296,6 +296,10 @@ function OrganizationsTab() {
             </p>
             <p>会議録を登録すると、AIが自動解析して検討項目をツリー構造で整理します。意思決定の経緯が可視化されます。</p>
             <FlowStep steps={['会議録登録', 'AI解析', 'ツリー自動生成', 'ビジネスイベント追加']} />
+            <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-100 text-xs text-slate-600">
+              <p className="font-medium text-slate-700 mb-1">v3.4 新機能: コンテキスト連携</p>
+              <p>AI解析時に過去の未確定事項・決定事項・タスク進捗を自動注入。ノードカードにはバッジ（<span className="text-amber-600">未確定事項</span>・<span className="text-green-600">決定ログ</span>の件数）が表示されます。ノードをクリックすると詳細パネルで未確定事項の停滞日数や決定の変更チェーンを確認できます。</p>
+            </div>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
@@ -407,6 +411,24 @@ function OrganizationsTab() {
           <Badge color="amber" label="ファイル共有" />
           <Badge color="red" label="マイルストーン" />
           <Badge color="indigo" label="週次サマリー" />
+        </div>
+      </SectionCard>
+
+      <SectionCard title="3つの常設データ（v3.4）" icon={ClipboardList}>
+        <p className="mb-3">プロジェクトごとに以下の3つのデータが自動で蓄積・更新されます。AI解析の精度向上と会議準備の効率化に使われます。</p>
+        <div className="space-y-2">
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <p className="font-medium text-slate-800 mb-1">未確定事項トラッカー</p>
+            <p className="text-xs text-slate-600">会議で結論が出なかった事項を自動追跡。滞留日数に応じて優先度が自動算出され、3週間以上放置されると「停滞」に変わります。次の会議で解決が検出されると自動クローズされます。</p>
+          </div>
+          <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+            <p className="font-medium text-slate-800 mb-1">意思決定ログ</p>
+            <p className="text-xs text-slate-600">「決まったこと」を不変のログとして記録。決定が変更された場合は新しいレコードが作成され、変更チェーンとして辿れます。検討ツリーのノードとも連動しています。</p>
+          </div>
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="font-medium text-slate-800 mb-1">会議アジェンダ</p>
+            <p className="text-xs text-slate-600">翌営業日の会議アジェンダが毎日自動生成されます。未確定事項・直近の決定確認・タスク進捗から構成され、見積もり時間も自動算出されます。</p>
+          </div>
         </div>
       </SectionCard>
     </div>

@@ -2,7 +2,7 @@
 
 最終更新: 2026-03-10
 
-> **ステータス**: V2全9フェーズ + v3.0〜v3.3 実装完了
+> **ステータス**: V2全9フェーズ + v3.0〜v3.4 実装完了
 > **前提**: CLAUDE.md が SSOT。本ファイルはアーキテクチャ詳細の補足
 
 ---
@@ -406,6 +406,62 @@ Week N+1:
 - MS/タスク/ジョブをプルダウン指定 → フォルダパスをカード内表示
 - drive_documentsにmilestone_id/job_id追加
 
+### v3.4: 検討ツリー・タイムライン強化（3つの常設データ）
+
+**課題**: AI解析は会議テキストのみを入力としていたため、過去の未確定事項や決定変更を追跡できなかった。
+
+**解決策**: プロジェクト単位で3つの常設データを新設し、AI解析に過去の文脈を自動注入。
+
+```
+① open_issues（未確定事項トラッカー）
+  - 結論が出なかった事項を追跡。滞留日数で優先度自動算出
+  - AI解析で解決検知 → 自動クローズ
+  - 3週間以上放置 → stale に自動変更（Cron: update-open-issues）
+  - 優先度スコア: (levelPoints × 0.6) + (daysSince/30 × 40), max 100
+
+② decision_log（意思決定ログ）
+  - 「決まったこと」の不変ログ。previous_decision_id で変更チェーン
+  - decision_tree_nodes と連動
+  - 変更時: 新レコード作成 + 旧レコードを superseded に更新
+
+③ meeting_agenda（会議アジェンダ）
+  - ①未確定事項 + ②決定確認 + タスク進捗 から自動生成（Cron: generate-meeting-agendas）
+  - items は JSONB 配列（type: open_issue/decision_review/task_progress/custom）
+  - 1PJ1日1アジェンダ（UNIQUE制約）
+```
+
+**AI解析のコンテキスト注入**:
+
+```
+【v3.3以前】AI入力 = 会議テキストのみ
+【v3.4】    AI入力 = 会議テキスト
+                   ＋ 未確定事項リスト（open_issuesから最大20件）
+                   ＋ 直近の決定事項（decision_logから最大10件）
+                   ＋ 進行中タスク一覧（tasksから最大15件）
+```
+
+**検討ツリーUI拡張**:
+- ノードカードに未確定事項（黄バッジ）・決定ログ（緑バッジ）の件数表示
+- ノード詳細パネルに「未確定事項」「決定履歴」セクション追加
+- DecisionTreeViewでプロジェクト全体のカウントを一括取得→子コンポーネントに配布
+
+**新規Cronジョブ**:
+
+| Cron | スケジュール | 用途 |
+|---|---|---|
+| `update-open-issues` | 毎日 04:30 UTC | 滞留日数・優先度更新、21日超で stale |
+| `generate-meeting-agendas` | 毎日 05:00 UTC | 翌営業日アジェンダ自動生成 |
+
+**新規APIエンドポイント**:
+
+| エンドポイント | メソッド | 用途 |
+|---|---|---|
+| `/api/projects/[id]/open-issues` | GET | プロジェクトの未確定事項取得 |
+| `/api/projects/[id]/decision-log` | GET | プロジェクトの決定ログ取得 |
+| `/api/projects/[id]/agenda` | GET/POST/PATCH | アジェンダ取得・生成・更新 |
+| `/api/cron/update-open-issues` | GET | Cron: 未確定事項更新 |
+| `/api/cron/generate-meeting-agendas` | GET | Cron: アジェンダ生成 |
+
 ---
 
 ## 7. 新規テーブル設計（概要）
@@ -424,6 +480,9 @@ Week N+1:
 | `meeting_records` | 会議録 | UUID |
 | `milestone_evaluations` | チェックポイント評価結果 | UUID |
 | `evaluation_learnings` | 評価エージェント学習データ | UUID |
+| `open_issues` | 未確定事項トラッカー（v3.4） | UUID |
+| `decision_log` | 意思決定ログ（v3.4） | UUID |
+| `meeting_agenda` | 会議アジェンダ（v3.4） | UUID |
 
 ### 7.2 既存テーブルへの変更
 
@@ -659,6 +718,11 @@ V1（現行）              V2
 | v3.0-1 | 対称データパイプライン（会議録⇔チャネル） | ✅ 完了 |
 | v3.0-2 | タスク提案パイプライン（action_items → 秘書承認UI） | ✅ 完了 |
 | v3.0-3 | MeetGeek連携強化（全データ取得・録画リンクAPI） | ✅ 完了 |
+| v3.3 | プロジェクト中心リストラクチャリング（7タブ・メンバー統合） | ✅ 完了 |
+| v3.4-1 | テーブル設計（open_issues / decision_log / meeting_agenda） | ✅ 完了 |
+| v3.4-2 | AI解析コンテキスト注入 + サービス層 + Cron | ✅ 完了 |
+| v3.4-3 | 検討ツリーUI拡張（バッジ・詳細パネル） | ✅ 完了 |
+| v3.4-4 | アジェンダ自動生成（サービス・API・Cron） | ✅ 完了 |
 
 ---
 
