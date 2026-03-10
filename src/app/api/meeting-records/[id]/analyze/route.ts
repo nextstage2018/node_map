@@ -12,6 +12,7 @@ import { ThoughtNodeService } from '@/services/nodemap/thoughtNode.service';
 import { matchContactByName } from '@/services/businessLog/taskSuggestion.service';
 import { getOpenIssuesForContext, processAIOpenIssues } from '@/services/v34/openIssues.service';
 import { getRecentDecisionsForContext, processAIDecisions } from '@/services/v34/decisionLog.service';
+import { getSuggestionLearningContext } from '@/services/v4/suggestionLearning.service';
 import type { AIDetectedOpenIssue, AIResolvedIssue } from '@/services/v34/openIssues.service';
 import type { AIDetectedDecision } from '@/services/v34/decisionLog.service';
 
@@ -138,6 +139,17 @@ export async function POST(
         inProgressTasks.forEach((task: { title: string; due_date: string | null }, i: number) => {
           contextBlock += `${i + 1}. ${task.title}${task.due_date ? `（期限: ${task.due_date}）` : ''}\n`;
         });
+      }
+
+      // v4.0: タスク提案の採択傾向を注入
+      try {
+        const learningCtx = await getSuggestionLearningContext(userId);
+        if (learningCtx) {
+          contextBlock += `\n\n## ユーザーのタスク採択傾向\n${learningCtx.contextText}`;
+          console.log(`[MeetingRecords Analyze] 学習コンテキスト注入: 承認率${Math.round(learningCtx.acceptanceRate * 100)}%`);
+        }
+      } catch (learningError) {
+        console.error('[MeetingRecords Analyze] 学習コンテキスト取得エラー:', learningError);
       }
 
       if (contextBlock) {

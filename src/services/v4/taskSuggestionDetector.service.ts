@@ -3,6 +3,7 @@
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import { resolveProjectFromChannel } from '@/services/inbox/channelProjectLink.service';
+import { shouldSuppressSuggestion } from '@/services/v4/suggestionLearning.service';
 
 // タスク提案キーワード（依頼・指示系のメッセージを検出）
 const TASK_KEYWORDS = [
@@ -103,6 +104,13 @@ export async function suggestTaskFromMessage(params: {
 
     const supabase = getServerSupabase() || getSupabase();
     if (!supabase) return false;
+
+    // 学習フィードバック: 却下されやすいパターンか判定
+    const suppress = await shouldSuppressSuggestion(ownerUserId, messageText);
+    if (suppress) {
+      console.log(`[TaskSuggestionDetector] 学習に基づき提案抑制: "${messageText.substring(0, 30)}..."`);
+      return false;
+    }
 
     // プロジェクト判定
     const projectResult = await resolveProjectFromChannel(serviceName, channelId);

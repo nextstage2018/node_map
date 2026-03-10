@@ -29,9 +29,10 @@ const PRIORITY_DOT: Record<string, string> = {
 interface TeamTaskCardProps {
   task: MyTask;
   onComplete?: (taskId: string) => void;
+  onClick?: (taskId: string) => void;
 }
 
-export default function TeamTaskCard({ task, onComplete }: TeamTaskCardProps) {
+export default function TeamTaskCard({ task, onComplete, onClick }: TeamTaskCardProps) {
   const {
     attributes,
     listeners,
@@ -58,9 +59,11 @@ export default function TeamTaskCard({ task, onComplete }: TeamTaskCardProps) {
       style={style}
       {...attributes}
       {...listeners}
+      onClick={() => onClick?.(task.id)}
       className={cn(
         'rounded-lg border bg-white cursor-grab active:cursor-grabbing transition-all duration-300',
         'hover:shadow-md',
+        onClick && 'cursor-pointer',
         task.status === 'done' && 'opacity-60',
         task.isFading && 'transition-opacity duration-1000',
         isDragging ? 'shadow-xl ring-2 ring-blue-300 z-50' : 'border-nm-border hover:border-slate-300',

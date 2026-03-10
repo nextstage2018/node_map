@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import TaskStageColumn from './TaskStageColumn';
 import MyTaskCard, { MyTask } from './MyTaskCard';
 import QuickTaskForm from './QuickTaskForm';
+import TaskDetailPanel from './TaskDetailPanel';
 
 type FilterType = 'all' | 'today' | 'this_week' | 'overdue';
 
@@ -33,6 +34,7 @@ export default function PersonalTaskBoard() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<MyTask | null>(null);
   const [fadingTasks, setFadingTasks] = useState<Set<string>>(new Set());
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -252,7 +254,7 @@ export default function PersonalTaskBoard() {
               }
             >
               {todoTasks.map(task => (
-                <MyTaskCard key={task.id} task={task} onComplete={handleComplete} />
+                <MyTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
               ))}
             </TaskStageColumn>
 
@@ -263,7 +265,7 @@ export default function PersonalTaskBoard() {
               count={inProgressTasks.length}
             >
               {inProgressTasks.map(task => (
-                <MyTaskCard key={task.id} task={task} onComplete={handleComplete} />
+                <MyTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
               ))}
             </TaskStageColumn>
 
@@ -289,6 +291,19 @@ export default function PersonalTaskBoard() {
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {/* タスク詳細パネル */}
+      {selectedTaskId && (
+        <TaskDetailPanel
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+          onStatusChange={(taskId, newStatus) => {
+            setTasks(prev => prev.map(t =>
+              t.id === taskId ? { ...t, status: newStatus } : t
+            ));
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import TeamTaskCard from './TeamTaskCard';
 import AiProposalCard, { AiProposal, ProposalItem } from './AiProposalCard';
 import AssigneeSelector from './AssigneeSelector';
 import type { MyTask } from './MyTaskCard';
+import TaskDetailPanel from './TaskDetailPanel';
 
 interface Project {
   id: string;
@@ -33,6 +34,8 @@ export default function TeamTaskBoard() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeTask, setActiveTask] = useState<MyTask | null>(null);
   const [fadingTasks, setFadingTasks] = useState<Set<string>>(new Set());
+
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // 担当者選択モーダル
   const [assigneeModal, setAssigneeModal] = useState<{
@@ -331,7 +334,7 @@ export default function TeamTaskBoard() {
                 count={todoTasks.length}
               >
                 {todoTasks.map(task => (
-                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} />
+                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
                 ))}
               </TaskStageColumn>
 
@@ -342,7 +345,7 @@ export default function TeamTaskBoard() {
                 count={inProgressTasks.length}
               >
                 {inProgressTasks.map(task => (
-                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} />
+                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
                 ))}
               </TaskStageColumn>
 
@@ -379,6 +382,19 @@ export default function TeamTaskBoard() {
           items={assigneeModal.items}
           onConfirm={handleAssignConfirm}
           onCancel={() => setAssigneeModal(null)}
+        />
+      )}
+
+      {/* タスク詳細パネル */}
+      {selectedTaskId && (
+        <TaskDetailPanel
+          taskId={selectedTaskId}
+          onClose={() => setSelectedTaskId(null)}
+          onStatusChange={(taskId, newStatus) => {
+            setTasks(prev => prev.map(t =>
+              t.id === taskId ? { ...t, status: newStatus } : t
+            ));
+          }}
         />
       )}
     </div>

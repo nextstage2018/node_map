@@ -1,5 +1,5 @@
 // v3.4: 会議アジェンダ（meeting_agenda）サービス
-// open_issues + decision_log + tasks から次回アジェンダを自動生成
+// open_issues + decision_log + tasks + completed_tasks(v4.0) から次回アジェンダを自動生成
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
@@ -9,7 +9,7 @@ import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
 export interface AgendaItem {
   id: string;
-  type: 'open_issue' | 'decision_review' | 'task_progress' | 'custom';
+  type: 'open_issue' | 'decision_review' | 'task_progress' | 'task_completed' | 'custom';
   reference_id: string | null;
   title: string;
   description: string;
@@ -168,6 +168,35 @@ export async function generateAgenda(
           discussed: false,
           resolution_note: null,
           estimated_minutes: 5,
+        });
+      }
+    }
+
+    // 4. v4.0: 直近1週間の完了タスク（business_events から成果報告）
+    const { data: completedTasks } = await supabase
+      .from('business_events')
+      .select('id, title, content, event_date, created_at')
+      .eq('project_id', projectId)
+      .eq('event_type', 'task_completed')
+      .gte('created_at', weekAgo)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (completedTasks) {
+      for (const event of completedTasks) {
+        // タイトルから「タスク完了: 」プレフィックスを除去
+        const cleanTitle = (event.title || event.content || '').replace(/^タスク完了:\s*/, '');
+        items.push({
+          id: crypto.randomUUID(),
+          type: 'task_completed',
+          reference_id: event.id,
+          title: `【成果報告】${cleanTitle}`,
+          description: event.content || `完了日: ${new Date(event.event_date || event.created_at).toLocaleDateString('ja-JP')}`,
+          priority: 'low',
+          assigned_contact_id: null,
+          discussed: false,
+          resolution_note: null,
+          estimated_minutes: 3,
         });
       }
     }
