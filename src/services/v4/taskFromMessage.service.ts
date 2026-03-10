@@ -60,7 +60,8 @@ async function extractTaskFromMessage(
   // タスクキーワードを除去してタイトルを生成
   let title = text
     .replace(/タスクにして|タスク化して|タスクにする|タスク化する|タスク登録|タスク作成|やることに追加|TODO|task|タスクお願い/gi, '')
-    .replace(/今日|明日|今週|来週|週末|まで|までに/g, '')
+    .replace(/今日中?|明日中?|今週中?|来週中?|週末中?|までに|まで/g, '')
+    .replace(/^[にをはがのでと、。\s]+/, '')
     .replace(/急ぎ|至急|緊急|ASAP/gi, '')
     .trim();
 
