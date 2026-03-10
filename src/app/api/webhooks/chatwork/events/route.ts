@@ -108,6 +108,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isTaskRequest(messageBody)) {
+      // v4.0: タスク指示でないメッセージ → アクションアイテム検出 → タスク提案
+      processMessageSuggestion({
+        text: cleanedText,
+        roomId: String(event.room_id),
+      }).catch(err => console.error('[Chatwork Webhook] メッセージ提案エラー:', err));
       return NextResponse.json({ ok: true });
     }
 
@@ -249,5 +254,28 @@ async function getMyAccountId(): Promise<number | null> {
     return cachedMyAccountId;
   } catch {
     return null;
+  }
+}
+
+// v4.0: 通常メッセージからアクションアイテムを検出 → タスク提案として保存
+async function processMessageSuggestion(params: {
+  text: string;
+  roomId: string;
+}) {
+  const { text, roomId } = params;
+  if (!text || !roomId) return;
+
+  try {
+    const { isActionableMessage, suggestTaskFromMessage } = await import('@/services/v4/taskSuggestionDetector.service');
+
+    if (!isActionableMessage(text)) return;
+
+    await suggestTaskFromMessage({
+      messageText: text,
+      serviceName: 'chatwork',
+      channelId: roomId,
+    });
+  } catch (error) {
+    console.error('[Chatwork Webhook] メッセージ提案処理エラー:', error);
   }
 }

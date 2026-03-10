@@ -57,6 +57,14 @@ export async function POST(request: NextRequest) {
           teamId,
         }).catch(err => console.error('[Slack Events] バックグラウンド処理エラー:', err));
       }
+    } else if (event.type === 'message' && !event.bot_id && !event.subtype) {
+      // v4.0: 通常メッセージ → アクションアイテム検出 → タスク提案
+      const text = event.text || '';
+      processMessageSuggestion({
+        text,
+        channelId: event.channel,
+        senderName: undefined, // Slack APIで別途取得が必要な場合
+      }).catch(err => console.error('[Slack Events] メッセージ提案エラー:', err));
     } else if (event.type === 'reaction_added') {
       const reaction = event.reaction || '';
       if (['white_check_mark', 'ballot_box_with_check', 'heavy_check_mark'].includes(reaction)) {
@@ -279,5 +287,30 @@ async function fetchThreadContext(channelId: string, threadTs: string, userId: s
       .join('\n---\n');
   } catch {
     return undefined;
+  }
+}
+
+// v4.0: 通常メッセージからアクションアイテムを検出 → タスク提案として保存
+async function processMessageSuggestion(params: {
+  text: string;
+  channelId: string;
+  senderName?: string;
+}) {
+  const { text, channelId, senderName } = params;
+  if (!text || !channelId) return;
+
+  try {
+    const { isActionableMessage, suggestTaskFromMessage } = await import('@/services/v4/taskSuggestionDetector.service');
+
+    if (!isActionableMessage(text)) return;
+
+    await suggestTaskFromMessage({
+      messageText: text,
+      serviceName: 'slack',
+      channelId,
+      senderName,
+    });
+  } catch (error) {
+    console.error('[Slack Events] メッセージ提案処理エラー:', error);
   }
 }

@@ -65,6 +65,10 @@
     {
       "path": "/api/cron/generate-meeting-agendas",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/suggest-tasks-from-channels",
+      "schedule": "30 2 * * *"
     }
   ]
 }
