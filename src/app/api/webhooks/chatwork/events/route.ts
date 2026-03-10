@@ -159,13 +159,13 @@ async function sendReply(roomId: string, body: string) {
     return;
   }
   try {
-    await fetch(\`https://api.chatwork.com/v2/rooms/\${roomId}/messages\`, {
+    await fetch(`https://api.chatwork.com/v2/rooms/${roomId}/messages`, {
       method: 'POST',
       headers: {
         'X-ChatWorkToken': token,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: \`body=\${encodeURIComponent(body)}\`,
+      body: `body=${encodeURIComponent(body)}`,
     });
   } catch (error) {
     console.error('[Chatwork Webhook] 返信エラー:', error);
