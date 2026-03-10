@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     const body: ChatworkWebhookBody = JSON.parse(rawBody);
 
-    if (body.webhook_event_type !== 'message_created') {
+    if (body.webhook_event_type !== 'message_created' && body.webhook_event_type !== 'mention_to_me') {
       return NextResponse.json({ ok: true });
     }
 
