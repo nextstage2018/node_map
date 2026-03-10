@@ -2,11 +2,11 @@
 // カンバンのカードクリックで右からスライドイン
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X, Calendar, MessageCircle, FileText, Pause, Play,
   ChevronRight, ExternalLink, Loader2, User, FolderOpen,
-  MessageSquare, Bot, Clock,
+  MessageSquare, Bot, Clock, Pencil, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskChatView from './TaskChatView';
@@ -92,6 +92,10 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [showChat, setShowChat] = useState(false);
   const [editDescription, setEditDescription] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -101,6 +105,7 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
         if (data.success) {
           setTask(data.data);
           setEditDescription(data.data.description || '');
+          setEditTitle(data.data.title || '');
         }
       }
     } catch (error) {
@@ -131,6 +136,44 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
       console.error('メモ更新エラー:', error);
     } finally {
       setIsSavingDescription(false);
+    }
+  };
+
+  // タイトル保存
+  const handleSaveTitle = async () => {
+    if (!task || !editTitle.trim() || editTitle === task.title) {
+      setIsEditingTitle(false);
+      return;
+    }
+    setIsSavingTitle(true);
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle.trim() }),
+      });
+      setTask(prev => prev ? { ...prev, title: editTitle.trim() } : prev);
+    } catch (error) {
+      console.error('タイトル更新エラー:', error);
+    } finally {
+      setIsSavingTitle(false);
+      setIsEditingTitle(false);
+    }
+  };
+
+  // 期限保存
+  const handleSaveDueDate = async (newDate: string) => {
+    if (!task) return;
+    const value = newDate || null;
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ due_date: value }),
+      });
+      setTask(prev => prev ? { ...prev, due_date: value || undefined } : prev);
+    } catch (error) {
+      console.error('期限更新エラー:', error);
     }
   };
 
@@ -192,21 +235,60 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             {/* コンテンツ */}
             <div className="flex-1 overflow-y-auto">
               <div className="px-5 py-4">
-                {/* タスク名 */}
-                <h2 className="text-lg font-bold text-nm-text leading-snug mb-5">
-                  {task.title}
-                </h2>
+                {/* タスク名（編集可能） */}
+                {isEditingTitle ? (
+                  <div className="flex items-center gap-2 mb-5">
+                    <input
+                      ref={titleInputRef}
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      onBlur={handleSaveTitle}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveTitle();
+                        if (e.key === 'Escape') { setIsEditingTitle(false); setEditTitle(task.title); }
+                      }}
+                      autoFocus
+                      className="flex-1 text-lg font-bold text-nm-text leading-snug border-b-2 border-blue-400 focus:outline-none bg-transparent"
+                    />
+                    {isSavingTitle && <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />}
+                  </div>
+                ) : (
+                  <div
+                    className="group flex items-start gap-2 mb-5 cursor-pointer"
+                    onClick={() => { setIsEditingTitle(true); setEditTitle(task.title); }}
+                  >
+                    <h2 className="text-lg font-bold text-nm-text leading-snug flex-1">
+                      {task.title}
+                    </h2>
+                    <Pencil className="w-3.5 h-3.5 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity mt-1.5 shrink-0" />
+                  </div>
+                )}
 
                 {/* === 基本情報テーブル（サポっとさん風） === */}
                 <div className="space-y-3 mb-6">
-                  {/* 期限 */}
+                  {/* 期限（編集可能） */}
                   <div className="flex items-center">
                     <span className="w-20 text-xs text-slate-400 shrink-0">期限</span>
-                    <span className="text-sm text-nm-text">
-                      {task.due_date
-                        ? new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric' })
-                        : '未設定'}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <input
+                        type="date"
+                        value={task.due_date || ''}
+                        onChange={(e) => handleSaveDueDate(e.target.value)}
+                        className="text-sm text-nm-text bg-transparent border-0 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors"
+                      />
+                      {task.due_date && (() => {
+                        const due = new Date(task.due_date!);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                        if (diff < 0) return <span className="text-[10px] text-red-500 font-medium">{Math.abs(diff)}日超過</span>;
+                        if (diff === 0) return <span className="text-[10px] text-amber-500 font-medium">今日</span>;
+                        if (diff <= 3) return <span className="text-[10px] text-amber-500 font-medium">{diff}日後</span>;
+                        return null;
+                      })()}
+                    </div>
                   </div>
 
                   {/* 状況 */}
