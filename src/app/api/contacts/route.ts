@@ -235,7 +235,7 @@ export async function GET(request: NextRequest) {
     const { data: existingContacts } = await supabase
       .from('contact_persons')
       .select('*, contact_channels(*), organizations(relationship_type)')
-      .or(`user_id.eq.${userId},user_id.is.null`);
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     // 3. Phase 35: senderの統計情報をアドレス/名前で引けるマップに変換
     // 「Me」やログインユーザーのアドレスを除外
@@ -483,7 +483,7 @@ export async function POST(request: NextRequest) {
     const emailDomain = email?.includes('@') ? email.toLowerCase().split('@')[1] : null;
     const autoOrganizationId = await findOrCreateOrganization(supabase, userId, company_name, emailDomain);
 
-    // 1. コンタクト本体を作成
+    // 1. コンタクト本体を作成（email/phoneはcontact_channelsに入れる）
     const { error: contactError } = await supabase
       .from('contact_persons')
       .insert({
@@ -492,9 +492,7 @@ export async function POST(request: NextRequest) {
         company_name: company_name || null,
         department: department || null,
         relationship_type: relationship_type || 'unknown',
-        email: email || null,
-        phone: phone || null,
-        user_id: userId,
+        owner_user_id: userId,
         organization_id: autoOrganizationId,
       });
 
@@ -591,9 +589,11 @@ export async function PUT(request: NextRequest) {
           company_name: companyName || null,
           department: department || null,
           notes: notes || null,
-          email: address?.includes('@') ? address : null,
-          last_contacted: body.lastContactAt || null,
-          user_id: userId,
+          confirmed: !!confirmed,
+          main_channel: mainChannel || 'email',
+          visibility,
+          last_contact_at: body.lastContactAt || null,
+          owner_user_id: userId,
           organization_id: autoOrganizationId,
         });
 
@@ -629,7 +629,7 @@ export async function PUT(request: NextRequest) {
         .from('contact_persons')
         .select('organization_id, contact_channels(address, channel)')
         .eq('id', id)
-        .or(`user_id.eq.${userId},user_id.is.null`)
+        .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
         .single();
 
       if (currentContact && !currentContact.organization_id) {
@@ -647,7 +647,7 @@ export async function PUT(request: NextRequest) {
       .from('contact_persons')
       .update(updateData)
       .eq('id', id)
-      .or(`user_id.eq.${userId},user_id.is.null`);
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
 
     if (error) {
       console.error('[Contacts API] 更新エラー:', error);

@@ -34,32 +34,35 @@
 
 ```sql
 CREATE TABLE contact_persons (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
+  id TEXT PRIMARY KEY,                           -- 手動生成: team_${Date.now()}_${random}
   name TEXT NOT NULL,
-  kana TEXT,
+  relationship_type TEXT NOT NULL DEFAULT 'internal',
+  confidence NUMERIC NOT NULL DEFAULT 0.0,
+  confirmed BOOLEAN NOT NULL DEFAULT false,
+  main_channel TEXT,
+  associated_node_ids TEXT[] DEFAULT '{}',
+  message_count INTEGER NOT NULL DEFAULT 0,
+  last_contact_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   company_name TEXT,
   department TEXT,
-  position TEXT,
-  email TEXT,
-  phone TEXT,
-  relationship_type TEXT,
   notes TEXT,
-  ai_context TEXT,
-  tags TEXT[],
-  linked_user_id UUID,
-  avatar_url TEXT,
+  visibility TEXT DEFAULT 'private',
+  owner_user_id UUID,                            -- ※ user_id ではない！UUID型
   organization_id UUID REFERENCES organizations(id) ON DELETE SET NULL,
-  last_contacted TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  is_team_member BOOLEAN DEFAULT false,
+  ai_context TEXT,
+  ai_analyzed_at TIMESTAMPTZ,
+  auto_added_to_org BOOLEAN DEFAULT false,
+  linked_user_id UUID
 );
 ```
 
 #### インデックス
 
 ```sql
-CREATE INDEX idx_contact_persons_user_id ON contact_persons(user_id);
+CREATE INDEX idx_contact_persons_owner_user_id ON contact_persons(owner_user_id);
 CREATE INDEX idx_contact_persons_organization_id ON contact_persons(organization_id);
 CREATE INDEX idx_contact_persons_linked_user_id ON contact_persons(linked_user_id);
 ```
@@ -67,7 +70,9 @@ CREATE INDEX idx_contact_persons_linked_user_id ON contact_persons(linked_user_i
 #### 注意事項
 
 - **ID型**: TEXT。自動生成なし。形式: `team_${Date.now()}_${random}`
-- **RLS**: user_id でフィルタ
+- **⚠️ owner_user_id**: UUID型。`user_id` ではない。コード内で間違えやすいので注意
+- **email/phone カラムは存在しない**: メール・電話は `contact_channels` テーブルに格納
+- **RLS**: owner_user_id でフィルタ
 - contact_id → contact_channels（1対多）
 - contact_id → organization_id（多対1）。1コンタクトは最大1組織にのみ所属可
 - 同一ユーザー内での名前は UNIQUE（推奨 but 強制なし）

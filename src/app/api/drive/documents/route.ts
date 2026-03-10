@@ -78,6 +78,8 @@ export async function POST(request: NextRequest) {
           link_type: 'external_url',
           document_type: 'reference',
           task_id: taskId || null,
+          milestone_id: milestoneId || null,
+          job_id: jobId || null,
         })
         .select('id')
         .single();

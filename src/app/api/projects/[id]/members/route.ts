@@ -166,10 +166,11 @@ export async function POST(
         .from('contact_persons')
         .insert({
           id: newContactId,
-          user_id: userId,
+          owner_user_id: userId,
           name: contactName || 'Unknown',
           company_name: companyName || null,
           organization_id: project.organization_id || null,
+          relationship_type: 'unknown',
         });
       if (createErr) {
         console.error('[Project Members API] コンタクト自動作成エラー:', createErr);

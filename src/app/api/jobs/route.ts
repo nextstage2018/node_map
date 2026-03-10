@@ -40,19 +40,28 @@ function mapJobFromDb(row: Record<string, unknown>) {
 }
 
 // GET: ジョブ一覧取得
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const userId = await getServerUserId();
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get('projectId') || searchParams.get('project_id');
+
     const sb = getServerSupabase() || getSupabase();
-    const { data, error } = await sb
+    let query = sb
       .from('jobs')
       .select('*')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
+
+    if (projectId) {
+      query = query.eq('project_id', projectId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('ジョブ一覧取得エラー:', error);

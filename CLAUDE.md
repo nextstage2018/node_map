@@ -44,6 +44,8 @@
 
 ### 追加の注意
 
+- **⚠️ contact_persons.owner_user_id**: カラム名は `owner_user_id`（UUID型）。`user_id` ではない。`email`/`phone` カラムも存在しない（`contact_channels` に格納）
+- **⚠️ business_events.content**: カラム名は `content`。`description` ではない
 - **Vercel互換params**: `{ params }: { params: Promise<{ id: string }> }` — Promiseで受ける
 - **zshブラケット**: `git add "src/app/api/tasks/[id]/route.ts"` — 引用符で囲む
 - **knowledge_master_entries.id**: TEXT型、`me_auto_${Date.now()}_${random}` で手動生成
