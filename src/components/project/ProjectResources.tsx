@@ -65,6 +65,8 @@ export default function ProjectResources({ projectId, projectName, organizationI
     || user?.email
     || '';
 
+  // サブタブ: 'registered' | 'received'
+  const [activeSubTab, setActiveSubTab] = useState<'registered' | 'received'>('registered');
   const [documents, setDocuments] = useState<DriveDocument[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
@@ -144,15 +146,16 @@ export default function ProjectResources({ projectId, projectName, organizationI
     return Array.from(tagSet);
   };
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchDocuments = useCallback(async (category?: string) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`/api/drive/documents?projectId=${projectId}`);
+      const cat = category || activeSubTab;
+      const res = await fetch(`/api/drive/documents?projectId=${projectId}&category=${cat}`);
       const data = await res.json();
       if (data.success) setDocuments(data.data || []);
     } catch { /* */ }
     setIsLoading(false);
-  }, [projectId]);
+  }, [projectId, activeSubTab]);
 
   const fetchProjectData = useCallback(async () => {
     try {
@@ -186,6 +189,12 @@ export default function ProjectResources({ projectId, projectName, organizationI
     fetchDocuments();
     fetchProjectData();
   }, [fetchDocuments, fetchProjectData]);
+
+  // サブタブ切り替え時にデータ再取得
+  useEffect(() => {
+    fetchDocuments(activeSubTab);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSubTab]);
 
   // 全タグ（フィルタ用）
   const allTags = useMemo(() => {
@@ -505,7 +514,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
 
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold text-slate-800">関連資料</h2>
-        {!addMode && (
+        {!addMode && activeSubTab === 'registered' && (
           <div className="flex gap-2">
             <button
               onClick={() => setAddMode('file')}
@@ -521,6 +530,26 @@ export default function ProjectResources({ projectId, projectName, organizationI
             </button>
           </div>
         )}
+      </div>
+
+      {/* サブタブ: 登録資料 / 受領資料 */}
+      <div className="flex border-b border-slate-200">
+        <button
+          onClick={() => { setActiveSubTab('registered'); setSearchQuery(''); setSearchTag(''); }}
+          className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            activeSubTab === 'registered'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >登録資料</button>
+        <button
+          onClick={() => { setActiveSubTab('received'); setSearchQuery(''); setSearchTag(''); }}
+          className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+            activeSubTab === 'received'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >受領資料</button>
       </div>
 
       {message && (

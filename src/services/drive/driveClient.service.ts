@@ -741,6 +741,8 @@ export async function getDocuments(params: {
   organizationId?: string;
   projectId?: string;
   limit?: number;
+  // v3.3: カテゴリフィルタ — registered=手動登録, received=自動取り込み
+  category?: string;
 }): Promise<Record<string, unknown>[]> {
   const sb = createServerClient();
   if (!sb) return [];
@@ -750,13 +752,20 @@ export async function getDocuments(params: {
     .select('*')
     .eq('user_id', params.userId)
     .order('created_at', { ascending: false })
-    .limit(params.limit || 50);
+    .limit(params.limit || 100);
 
   if (params.organizationId) {
     query = query.eq('organization_id', params.organizationId);
   }
   if (params.projectId) {
     query = query.eq('project_id', params.projectId);
+  }
+
+  // カテゴリフィルタ: 受領=source_channelがある or direction='received'、登録=それ以外
+  if (params.category === 'received') {
+    query = query.or('source_channel.neq.null,direction.eq.received');
+  } else if (params.category === 'registered') {
+    query = query.is('source_channel', null).neq('direction', 'received');
   }
 
   const { data, error } = await query;

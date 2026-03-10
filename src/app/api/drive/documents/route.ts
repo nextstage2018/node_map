@@ -18,13 +18,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const organizationId = searchParams.get('organizationId') || undefined;
     const projectId = searchParams.get('projectId') || undefined;
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const limit = parseInt(searchParams.get('limit') || '100', 10);
+    // v3.3: category フィルタ（registered=手動登録, received=自動取り込み受領）
+    const category = searchParams.get('category') || undefined;
 
     const documents = await DriveService.getDocuments({
       userId,
       organizationId,
       projectId,
       limit,
+      category,
     });
 
     return NextResponse.json({ success: true, data: documents });
