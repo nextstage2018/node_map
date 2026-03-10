@@ -3,7 +3,7 @@
 // 対象: 過去24hのSlack/Chatworkメッセージからアクションアイテムを抽出
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
-import { resolveProjectFromChannel } from '@/services/channelProjectLink.service';
+import { resolveProjectFromChannel } from '@/services/inbox/channelProjectLink.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
 
       if (channelId && serviceName) {
         try {
-          const result = await resolveProjectFromChannel(serviceName, channelId, supabase);
+          const result = await resolveProjectFromChannel(serviceName, channelId);
           if (result) {
             projectId = result.projectId;
             projectName = result.projectName;
