@@ -289,7 +289,6 @@ export default function ProjectResources({ projectId, projectName, organizationI
           jobName: formJobId ? jobMap[formJobId] : undefined,
           documentType: formDocType,
           tags,
-          folderTarget: formJobId ? 'job' : formMsId ? 'milestone' : undefined,
         }),
       });
       const data = await res.json();

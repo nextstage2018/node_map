@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       fileName, mimeType, fileData,
       // v3.3 Phase 3: 用途別フォルダ対応
       milestoneId, milestoneName, jobId, jobName, taskId, taskName,
-      folderTarget, documentType,
+      documentType,
       // v3.3: URL登録モード（Drive不要）
       is_external_url, title, google_drive_url, tags,
     } = body;
@@ -119,34 +119,40 @@ export async function POST(request: NextRequest) {
     // フォルダ取得 or 作成
     let folderId: string | null = null;
 
-    // v3.3 新構造: folderTarget指定があればそちらを優先
-    if (folderTarget && organizationId && organizationName && projectId && projectName) {
-      folderId = await DriveService.ensureNewStructureFolder(
-        userId, organizationId, organizationName, projectId, projectName,
-        folderTarget
-      );
-    } else if (organizationId && organizationName) {
-      // 旧構造フォールバック
-      const orgFolderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
-      if (!orgFolderId) {
-        return NextResponse.json(
-          { success: false, error: '組織フォルダの作成に失敗しました' },
-          { status: 500 }
+    if (organizationId && organizationName && projectId && projectName) {
+      // v3.3 新構造: 用途別フォルダにターゲット指定
+      if (jobId && jobName) {
+        folderId = await DriveService.ensureNewStructureFolder(
+          userId, organizationId, organizationName, projectId, projectName,
+          { type: 'job', jobId, jobName }
         );
-      }
-
-      if (projectId && projectName) {
-        folderId = await DriveService.getOrCreateProjectFolder(
-          userId, organizationId, projectId, projectName
+      } else if (taskId && taskName && milestoneId && milestoneName) {
+        folderId = await DriveService.ensureNewStructureFolder(
+          userId, organizationId, organizationName, projectId, projectName,
+          { type: 'task', milestoneId, milestoneName, taskId, taskName }
+        );
+      } else if (milestoneId && milestoneName) {
+        folderId = await DriveService.ensureNewStructureFolder(
+          userId, organizationId, organizationName, projectId, projectName,
+          { type: 'milestone', milestoneId, milestoneName }
         );
       } else {
-        folderId = orgFolderId;
+        // MS/タスク/ジョブ未指定 → プロジェクトフォルダ直下
+        const orgFolderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
+        if (orgFolderId) {
+          folderId = await DriveService.getOrCreateProjectFolder(
+            userId, organizationId, projectId, projectName
+          );
+        }
       }
+    } else if (organizationId && organizationName) {
+      // 組織のみ（PJ未指定）
+      folderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
     }
 
     if (!folderId) {
       return NextResponse.json(
-        { success: false, error: 'アップロード先フォルダが特定できません' },
+        { success: false, error: 'アップロード先フォルダが特定できません。組織・プロジェクトが設定されているか確認してください' },
         { status: 400 }
       );
     }
