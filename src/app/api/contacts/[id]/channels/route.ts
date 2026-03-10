@@ -1,9 +1,57 @@
-// Phase 35: コンタクトチャンネル追加 API
+// Phase 35: コンタクトチャンネル管理 API（GET / POST / DELETE）
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
+
+// GET: 指定コンタクトのチャンネル一覧取得
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: true, data: [] });
+    }
+
+    const { id: contactId } = await params;
+
+    // コンタクトの所有確認
+    const { data: contact } = await supabase
+      .from('contact_persons')
+      .select('id')
+      .eq('id', contactId)
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
+      .single();
+
+    if (!contact) {
+      return NextResponse.json({ success: false, error: 'コンタクトが見つかりません' }, { status: 404 });
+    }
+
+    const { data, error } = await supabase
+      .from('contact_channels')
+      .select('id, channel, address, label, is_primary, created_at')
+      .eq('contact_id', contactId)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('[Contacts Channels API] 取得エラー:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, data: data || [] });
+  } catch (error) {
+    console.error('[Contacts Channels API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'チャンネル一覧の取得に失敗しました' }, { status: 500 });
+  }
+}
 
 // POST: 指定コンタクトにチャンネルを追加
 export async function POST(
@@ -68,6 +116,7 @@ export async function POST(
         contact_id: contactId,
         channel,
         address: address.trim(),
+        user_id: userId,
       })
       .select()
       .single();
@@ -94,5 +143,59 @@ export async function POST(
       { success: false, error: 'チャンネルの追加に失敗しました' },
       { status: 500 }
     );
+  }
+}
+
+// DELETE: チャンネル削除
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
+    }
+
+    const supabase = createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
+    }
+
+    const { id: contactId } = await params;
+    const { searchParams } = new URL(request.url);
+    const channelId = searchParams.get('channelId');
+
+    if (!channelId) {
+      return NextResponse.json({ success: false, error: 'channelId は必須です' }, { status: 400 });
+    }
+
+    // コンタクトの所有確認
+    const { data: contact } = await supabase
+      .from('contact_persons')
+      .select('id')
+      .eq('id', contactId)
+      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
+      .single();
+
+    if (!contact) {
+      return NextResponse.json({ success: false, error: 'コンタクトが見つかりません' }, { status: 404 });
+    }
+
+    const { error } = await supabase
+      .from('contact_channels')
+      .delete()
+      .eq('id', channelId)
+      .eq('contact_id', contactId);
+
+    if (error) {
+      console.error('[Contacts Channels API] 削除エラー:', error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[Contacts Channels API] エラー:', error);
+    return NextResponse.json({ success: false, error: 'チャンネルの削除に失敗しました' }, { status: 500 });
   }
 }
