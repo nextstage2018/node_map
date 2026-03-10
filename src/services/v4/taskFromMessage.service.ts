@@ -176,7 +176,7 @@ export async function createTaskFromMessage(params: {
       id: taskId,
       title: extracted.title,
       description: extracted.description,
-      status: 'not_started',
+      status: 'todo',
       priority: extracted.priority,
       due_date: extracted.dueDate,
       project_id: project?.projectId || null,
