@@ -1192,6 +1192,8 @@ CREATE TABLE drive_documents (
   organization_id UUID REFERENCES organizations(id),
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+  milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
+  job_id UUID REFERENCES jobs(id) ON DELETE SET NULL,
   link_type TEXT,
   link_url TEXT,
   direction TEXT,
@@ -1200,6 +1202,7 @@ CREATE TABLE drive_documents (
   original_file_name TEXT,
   web_view_link TEXT,
   shared_with_emails TEXT[],
+  tags TEXT[],
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -1211,16 +1214,22 @@ CREATE TABLE drive_documents (
 CREATE INDEX idx_drive_documents_user_id ON drive_documents(user_id);
 CREATE INDEX idx_drive_documents_project_id ON drive_documents(project_id);
 CREATE INDEX idx_drive_documents_task_id ON drive_documents(task_id);
+CREATE INDEX idx_drive_documents_milestone_id ON drive_documents(milestone_id);
+CREATE INDEX idx_drive_documents_job_id ON drive_documents(job_id);
 CREATE INDEX idx_drive_documents_drive_file_id ON drive_documents(drive_file_id);
+CREATE INDEX idx_drive_documents_tags ON drive_documents USING GIN(tags);
 ```
 
 #### 注意事項
 
-- link_type: Phase 45a: 'embed'/'link'
-- document_type: Phase 44: 書類種別（'見積書'/'契約書'等）
+- link_type: Phase 45a: 'embed'/'link'/'external_url'（v3.3）
+- document_type: Phase 44: 書類種別（'見積書'/'契約書'等）/ 'reference'（v3.3 URL登録）
 - direction: Phase 44: 'received'/'submitted'
+- tags: TEXT[] — v3.3: タグ検索対応。GINインデックスで高速検索
+- milestone_id: v3.3追加。マイルストーン紐づけ（ON DELETE SET NULL）
+- job_id: v3.3追加。ジョブ紐づけ（ON DELETE SET NULL）
 - **RLS**: user_id でフィルタ
-- task_id ON DELETE SET NULL — タスク削除時はファイルは残存
+- task_id / milestone_id / job_id ON DELETE SET NULL — 親削除時はファイルは残存
 
 ---
 

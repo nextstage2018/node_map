@@ -80,6 +80,7 @@ export async function POST(request: NextRequest) {
           task_id: taskId || null,
           milestone_id: milestoneId || null,
           job_id: jobId || null,
+          tags: tags || null,
         })
         .select('id')
         .single();

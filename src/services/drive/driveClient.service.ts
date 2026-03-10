@@ -747,7 +747,7 @@ export async function getDocuments(params: {
     .from('drive_documents')
     .select('*')
     .eq('user_id', params.userId)
-    .order('uploaded_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(params.limit || 50);
 
   if (params.organizationId) {
@@ -797,7 +797,7 @@ export function formatDocumentsForContext(
     const name = d.file_name as string;
     const size = d.file_size_bytes as number;
     const sizeStr = size ? `${(size / 1024).toFixed(0)}KB` : '不明';
-    const date = d.uploaded_at ? new Date(d.uploaded_at as string).toLocaleDateString('ja-JP') : '';
+    const date = (d.uploaded_at || d.created_at) ? new Date((d.uploaded_at || d.created_at) as string).toLocaleDateString('ja-JP') : '';
     const channel = d.source_channel ? `[${d.source_channel}]` : '';
     const dir = d.direction === 'submitted' ? '[提出]' : '[受領]';
     const docType = d.document_type ? `(${d.document_type})` : '';
