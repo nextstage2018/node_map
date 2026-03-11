@@ -11,7 +11,7 @@ import {
   ArrowRight, Layers, Users, FolderOpen,
   HardDrive, ClipboardList, KanbanSquare,
   UserCheck, User, Sparkles, ThumbsUp, ThumbsDown,
-  Pencil, GripVertical, Eye
+  Pencil, GripVertical, Eye, RefreshCw, Hash, Bell, Send
 } from 'lucide-react';
 
 const TABS = [
@@ -459,6 +459,76 @@ function TasksTab() {
           </div>
         </div>
       </SectionCard>
+
+      <SectionCard title="カレンダー連携" icon={Calendar}>
+        <p className="mb-3">
+          タスクをGoogleカレンダーに自動登録できます。「いつ何をやるか」がカレンダー上で可視化され、工数管理にも活用できます。
+        </p>
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium text-slate-700 mb-1">カレンダー予定の種類</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="p-2.5 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                <p className="text-xs font-semibold text-blue-700">[NM-Task]</p>
+                <p className="text-[10px] text-blue-600 mt-0.5">タスクの作業予定</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">空き判定: 除外（空きとみなす）</p>
+              </div>
+              <div className="p-2.5 bg-green-50 rounded-lg border border-green-100 text-center">
+                <p className="text-xs font-semibold text-green-700">[NM-Meeting]</p>
+                <p className="text-[10px] text-green-600 mt-0.5">会議の予定</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">空き判定: 含む（実拘束時間）</p>
+              </div>
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-100 text-center">
+                <p className="text-xs font-semibold text-amber-700">[NM-Job]</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">ジョブの予定</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">空き判定: 除外（空きとみなす）</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 mb-1">工数管理</p>
+            <p className="text-sm text-slate-600">タスク作成時に見積もり工数（時間）を設定 → カレンダーに作業ブロックを配置 → 完了時に実績時間を記録。見積もりと実績の差から精度を改善できます。</p>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 mb-1">会議アジェンダの自動注入</p>
+            <p className="text-sm text-slate-600">会議のカレンダー予定には、未確定事項・決定確認・タスク進捗から自動生成されたアジェンダが説明欄に注入されます。毎朝5:00に初回生成、21:00に最終更新されます。</p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="繰り返しルール" icon={RefreshCw}>
+        <p className="mb-3">
+          定期的な会議・タスク・ジョブを自動生成するルールを設定できます。プロジェクトの「ジョブ」タブ下部で管理します。
+        </p>
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium text-slate-700 mb-1">3つの種別</p>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
+                <Badge color="blue">会議</Badge>
+                <p className="text-sm text-slate-600">定例MTGを自動生成。カレンダー同期ONで[NM-Meeting]予定も登録。MeetGeekと自動照合して「第N回」をカウント。</p>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-green-50 rounded border border-green-100">
+                <Badge color="green">タスク</Badge>
+                <p className="text-sm text-slate-600">月次レポートなど定期タスクを事前生成日数前に自動作成。最新マイルストーンに自動配置。</p>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-100">
+                <Badge color="amber">ジョブ</Badge>
+                <p className="text-sm text-slate-600">週次清掃チェックなど定型業務を自動生成。</p>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 mb-1">設定項目</p>
+            <div className="text-sm text-slate-600 space-y-1">
+              <p><span className="font-medium">繰り返し</span> — 毎週月曜、毎月1日、隔週など（テンプレートから選択）</p>
+              <p><span className="font-medium">事前生成日数</span> — ルール実行日の何日前にデータを作成するか（デフォルト: 7日）</p>
+              <p><span className="font-medium">自動生成</span> — ONで毎日のCronが自動実行。OFFなら手動のみ</p>
+              <p><span className="font-medium">カレンダー同期</span> — 会議タイプのみ。ONでGoogleカレンダーにも自動登録</p>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
     </div>
   );
 }
@@ -662,6 +732,84 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 mb-1">会議アジェンダ</p>
             <p className="text-xs text-slate-600">翌営業日の会議アジェンダが毎日自動生成されます。未確定事項・直近の決定確認・タスク進捗から構成され、見積もり時間も自動算出されます。</p>
           </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="チャネルボット（メンション応答）" icon={Hash}>
+        <p className="mb-3">
+          Slack・Chatworkのチャネルで <span className="font-mono bg-slate-100 px-1 rounded text-sm">@NodeMap</span> にメンションすると、プロジェクト情報を返答します。読み取り専用で、変更操作はNodeMap画面に誘導します。
+        </p>
+        <div className="space-y-3">
+          <div>
+            <p className="font-medium text-slate-700 mb-1.5">使えるコマンド（6種）</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-sm">
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">課題は？</span>
+                <span className="text-slate-500">→ 未確定事項リスト</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">決定事項は？</span>
+                <span className="text-slate-500">→ 直近2週間の決定</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">タスク状況</span>
+                <span className="text-slate-500">→ 進行中タスク一覧</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">アジェンダ</span>
+                <span className="text-slate-500">→ 次回会議の議題</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">今週のまとめ</span>
+                <span className="text-slate-500">→ 週次サマリー</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">ヘルプ</span>
+                <span className="text-slate-500">→ コマンド一覧</span>
+              </div>
+            </div>
+          </div>
+          <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+            <p className="font-medium text-slate-800 mb-1">公開レベルについて</p>
+            <p className="text-xs text-slate-600">
+              社外チャネル（クライアント・パートナー）では、<strong>未確定事項は非表示</strong>になります。決定事項・タスク進捗は社外にも表示されます。社内の検討途中の情報が漏れないよう自動的にフィルタされます。
+            </p>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="チャネルボット（定期配信）" icon={Bell}>
+        <p className="mb-3">
+          プロジェクトのSlack・Chatworkチャネルに、週次レポートやアラートを自動配信します。
+        </p>
+        <div className="space-y-2">
+          <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <Calendar className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">月曜ブリーフィング（9:00配信）</p>
+              <p className="text-xs text-slate-600">今週のタスク一覧・予定会議・未確定事項の件数をまとめて配信。週の頭に全体像を把握できます。</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-100">
+            <BarChart className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">金曜レポート（17:00配信）</p>
+              <p className="text-xs text-slate-600">今週の完了タスク・新規決定事項・新たな未確定事項をまとめた成果レポート。振り返りに最適です。</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg border border-red-100">
+            <Bell className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">アラート（毎日9:30チェック）</p>
+              <p className="text-xs text-slate-600">停滞中の未確定事項・期限超過タスク・マイルストーン期限接近（2日以内）があればチャネルに通知。問題がなければ配信されません。</p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200">
+          <p className="font-medium text-slate-800 mb-1">社外チャネルの配信内容</p>
+          <p className="text-xs text-slate-600">
+            メンション応答と同様に、社外チャネルでは未確定事項・停滞アラートは配信されません。タスク進捗と決定事項のみが共有されます。
+          </p>
         </div>
       </SectionCard>
     </div>
