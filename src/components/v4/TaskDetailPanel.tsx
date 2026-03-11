@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X, Calendar, MessageCircle, FileText, Pause, Play,
   ChevronRight, ExternalLink, Loader2, User, UserCheck, FolderOpen,
-  MessageSquare, Bot, Clock, Pencil, Check,
+  MessageSquare, Bot, Clock, Pencil, Check, Info, Upload, Plus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskChatView from './TaskChatView';
@@ -97,6 +97,10 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [showAddDoc, setShowAddDoc] = useState(false);
+  const [newDocTitle, setNewDocTitle] = useState('');
+  const [newDocUrl, setNewDocUrl] = useState('');
+  const [isSavingDoc, setIsSavingDoc] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDetail = useCallback(async () => {
@@ -192,6 +196,37 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
       onStatusChange?.(taskId, newStatus);
     } catch (error) {
       console.error('ステータス更新エラー:', error);
+    }
+  };
+
+  // 関連資料追加（URL登録モード）
+  const handleAddDocument = async () => {
+    if (!newDocTitle.trim() || !newDocUrl.trim() || !task) return;
+    setIsSavingDoc(true);
+    try {
+      const res = await fetch('/api/drive/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          is_external_url: true,
+          title: newDocTitle.trim(),
+          google_drive_url: newDocUrl.trim(),
+          taskId: taskId,
+          projectId: task.project_id || undefined,
+          milestoneId: task.milestone_id || undefined,
+          documentType: 'link',
+        }),
+      });
+      if (res.ok) {
+        setNewDocTitle('');
+        setNewDocUrl('');
+        setShowAddDoc(false);
+        fetchDetail(); // リロード
+      }
+    } catch (error) {
+      console.error('資料追加エラー:', error);
+    } finally {
+      setIsSavingDoc(false);
     }
   };
 
@@ -368,7 +403,15 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
 
                 {/* === 詳細メモ === */}
                 <div className="mb-5">
-                  <h3 className="text-sm font-semibold text-nm-text mb-2">詳細</h3>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <h3 className="text-sm font-semibold text-nm-text">詳細</h3>
+                    <div className="group relative">
+                      <Info className="w-3.5 h-3.5 text-slate-300 cursor-help" />
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 px-3 py-2 bg-slate-800 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed">
+                        スレッドの前後のやり取りがある場合は自動で挿入されます。手動で編集も可能です。
+                      </div>
+                    </div>
+                  </div>
                   <textarea
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
@@ -387,8 +430,14 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
 
                 {/* === AI要約 === */}
                 <div className="mb-5">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-1.5 mb-2">
                     <h3 className="text-sm font-semibold text-nm-text">AI要約</h3>
+                    <div className="group relative">
+                      <Info className="w-3.5 h-3.5 text-slate-300 cursor-help" />
+                      <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 px-3 py-2 bg-slate-800 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed">
+                        「AIに相談」で壁打ちを重ねると、やり取りの要約が自動生成されます。
+                      </div>
+                    </div>
                     {task.conversations.length > 0 && (
                       <span className="text-[10px] text-slate-400">
                         作成: {new Date(task.conversations[0].created_at).toLocaleDateString('ja-JP')}
@@ -427,9 +476,62 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                 <div className="border-t border-slate-100 my-4" />
 
                 {/* === 関連資料 === */}
-                {task.documents.length > 0 && (
-                  <div className="mb-5">
-                    <h3 className="text-sm font-semibold text-nm-text mb-2">関連資料</h3>
+                <div className="mb-5">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-sm font-semibold text-nm-text">関連資料</h3>
+                      <div className="group relative">
+                        <Info className="w-3.5 h-3.5 text-slate-300 cursor-help" />
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 w-56 px-3 py-2 bg-slate-800 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed">
+                          ドキュメントやスプレッドシートのURLを追加できます。プロジェクト・タスクに紐づけて管理されます。
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowAddDoc(!showAddDoc)}
+                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      追加
+                    </button>
+                  </div>
+
+                  {/* 追加フォーム */}
+                  {showAddDoc && (
+                    <div className="bg-slate-50 rounded-lg p-3 mb-2 space-y-2">
+                      <input
+                        type="text"
+                        placeholder="資料名"
+                        value={newDocTitle}
+                        onChange={(e) => setNewDocTitle(e.target.value)}
+                        className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
+                      />
+                      <input
+                        type="url"
+                        placeholder="https://..."
+                        value={newDocUrl}
+                        onChange={(e) => setNewDocUrl(e.target.value)}
+                        className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
+                      />
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => { setShowAddDoc(false); setNewDocTitle(''); setNewDocUrl(''); }}
+                          className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
+                        >
+                          キャンセル
+                        </button>
+                        <button
+                          onClick={handleAddDocument}
+                          disabled={!newDocTitle.trim() || !newDocUrl.trim() || isSavingDoc}
+                          className="text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded px-3 py-1 transition-colors"
+                        >
+                          {isSavingDoc ? '保存中...' : '追加'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {task.documents.length > 0 ? (
                     <div className="space-y-1.5">
                       {task.documents.map(doc => (
                         <a
@@ -445,8 +547,13 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                         </a>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : !showAddDoc ? (
+                    <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-3">
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>関連資料はまだありません</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 

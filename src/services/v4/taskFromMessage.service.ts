@@ -69,9 +69,15 @@ async function extractTaskFromMessage(
     title = text.slice(0, 100);
   }
 
+  // 詳細: スレッドコンテキストがある場合は背景情報として付与
+  let description = text;
+  if (threadContext && threadContext.trim()) {
+    description = `${text}\n\n--- スレッドの前後のやり取り ---\n${threadContext.trim()}`;
+  }
+
   return {
     title: title.slice(0, 100),
-    description: text,
+    description,
     priority,
     dueDate,
   };

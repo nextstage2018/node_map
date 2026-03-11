@@ -52,9 +52,13 @@ export async function GET(
       // プロジェクトチャネル情報（作成元特定用）
       const { data: channels } = await supabase
         .from('project_channels')
-        .select('service_name, identifier, channel_name')
+        .select('service_name, channel_identifier, channel_label')
         .eq('project_id', task.project_id);
-      if (channels) projectChannels = channels;
+      if (channels) projectChannels = channels.map(c => ({
+        service_name: c.service_name,
+        identifier: c.channel_identifier,
+        channel_name: c.channel_label,
+      }));
     }
 
     // 3. マイルストーン・テーマ情報
@@ -130,11 +134,16 @@ export async function GET(
       };
     } else if (task.source_type === 'slack' || task.source_type === 'chatwork') {
       const channelLabel = task.source_type === 'slack' ? 'Slack' : 'Chatwork';
-      const channel = projectChannels.find(c => c.service_name === task.source_type);
+      // source_channel_id でマッチするチャネルを優先、なければservice_nameで
+      const channel = projectChannels.find(c =>
+        c.service_name === task.source_type && c.identifier === task.source_channel_id
+      ) || projectChannels.find(c => c.service_name === task.source_type);
+      const channelName = channel?.channel_name;
       sourceInfo = {
         type: task.source_type,
-        label: `${channelLabel}から生成`,
-        detail: channel?.channel_name || channel?.identifier || undefined,
+        label: channelName
+          ? `${channelLabel} ${channelName} から生成`
+          : `${channelLabel}から生成`,
       };
     } else {
       sourceInfo = {
