@@ -42,6 +42,16 @@ function isTaskRequest(text: string): boolean {
 
 export async function POST(request: NextRequest) {
   try {
+    // ★ Slackリトライ対策: リトライリクエストは即座に200を返す
+    // Slackは3秒以内に200が返らないとリトライする。
+    // 初回は全処理を完了してからreturnするため3秒を超える可能性があるが、
+    // リトライ時は重複処理を避けるため即座に200を返す。
+    const retryNum = request.headers.get('X-Slack-Retry-Num');
+    if (retryNum) {
+      console.log(`[Slack Events] リトライ検知 (retry #${retryNum}), スキップ`);
+      return NextResponse.json({ ok: true });
+    }
+
     const body = await request.json();
 
     const challengeRes = handleChallenge(body);
@@ -63,48 +73,60 @@ export async function POST(request: NextRequest) {
       const channelId = event.channel;
       const threadTs = event.thread_ts || event.ts;
 
-      // ★★★ 即レスをHTTPレスポンス返却前に同期送信（最重要）★★★
-      // Vercelではreturn後のバックグラウンド処理が遅延するため、
-      // 即レスだけはリクエストライフサイクル内で確実に送信する
+      // ★★★ 即レスをHTTPレスポンス返却前に同期送信 ★★★
       await sendQuickReply(channelId, threadTs, '確認中です...');
 
-      if (isTaskRequest(text)) {
-        processTaskCreation({
-          text: text.replace(/<@[A-Z0-9]+>/g, '').trim(),
-          channelId,
-          messageTs: event.ts,
-          threadTs,
-          userId: event.user,
-          teamId,
-          skipInstantReply: true, // 即レスは送信済み
-        }).catch(err => console.error('[Slack Events] バックグラウンド処理エラー:', err));
-      } else {
-        // v4.3: チャネルボット — メンション応答
-        processBotMention({
-          text,
-          channelId,
-          threadTs,
-          teamId,
-          skipInstantReply: true, // 即レスは送信済み
-        }).catch(err => console.error('[Slack Events] ボット応答エラー:', err));
+      // ★★★ 重要: 全処理をawaitで完了してからreturnする ★★★
+      // Vercelはreturn後にバックグラウンド処理を打ち切るため、
+      // fire-and-forget（.catch()のみ）ではタスク作成が完了しない。
+      // Slackリトライはヘッダーチェックで回避済み。
+      try {
+        if (isTaskRequest(text)) {
+          await processTaskCreation({
+            text: text.replace(/<@[A-Z0-9]+>/g, '').trim(),
+            channelId,
+            messageTs: event.ts,
+            threadTs,
+            userId: event.user,
+            teamId,
+            skipInstantReply: true,
+          });
+        } else {
+          await processBotMention({
+            text,
+            channelId,
+            threadTs,
+            teamId,
+            skipInstantReply: true,
+          });
+        }
+      } catch (err) {
+        console.error('[Slack Events] 処理エラー:', err);
       }
     } else if (event.type === 'message' && !event.bot_id && !event.subtype) {
-      // v4.0: 通常メッセージ → アクションアイテム検出 → タスク提案
       const text = event.text || '';
-      processMessageSuggestion({
-        text,
-        channelId: event.channel,
-        senderName: undefined,
-      }).catch(err => console.error('[Slack Events] メッセージ提案エラー:', err));
+      try {
+        await processMessageSuggestion({
+          text,
+          channelId: event.channel,
+          senderName: undefined,
+        });
+      } catch (err) {
+        console.error('[Slack Events] メッセージ提案エラー:', err);
+      }
     } else if (event.type === 'reaction_added') {
       const reaction = event.reaction || '';
       if (['white_check_mark', 'ballot_box_with_check', 'heavy_check_mark'].includes(reaction)) {
-        processReactionTaskCreation({
-          channelId: event.item?.channel,
-          messageTs: event.item?.ts,
-          userId: event.user,
-          teamId,
-        }).catch(err => console.error('[Slack Events] リアクション処理エラー:', err));
+        try {
+          await processReactionTaskCreation({
+            channelId: event.item?.channel,
+            messageTs: event.item?.ts,
+            userId: event.user,
+            teamId,
+          });
+        } catch (err) {
+          console.error('[Slack Events] リアクション処理エラー:', err);
+        }
       }
     }
 
@@ -416,17 +438,20 @@ async function processBotMention(params: {
 
     // タスク作成依頼と判定された場合 → 作成フローへ
     if (classification.isTaskCreate) {
-      processTaskCreation({
-        text: cleanText,
-        channelId,
-        messageTs: threadTs,
-        threadTs,
-        userId: ownerUserId,
-        teamId: '',
-      }).catch(err => {
+      try {
+        await processTaskCreation({
+          text: cleanText,
+          channelId,
+          messageTs: threadTs,
+          threadTs,
+          userId: ownerUserId,
+          teamId: '',
+          skipInstantReply: true, // 即レスは送信済み
+        });
+      } catch (err) {
         console.error('[Slack Events] ボット→タスク作成リダイレクトエラー:', err);
-        sendQuickReply(channelId, threadTs, 'タスク作成中にエラーが発生しました。').catch(() => {});
-      });
+        await sendQuickReply(channelId, threadTs, 'タスク作成中にエラーが発生しました。').catch(() => {});
+      }
       return;
     }
 

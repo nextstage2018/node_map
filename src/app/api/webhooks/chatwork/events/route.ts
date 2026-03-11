@@ -111,12 +111,20 @@ export async function POST(request: NextRequest) {
     const messageBody = event.body;
     const cleanedText = cleanToTags(messageBody);
 
+    // ★★★ 重要: 全処理をawaitで完了してからreturnする ★★★
+    // Vercelはreturn後にバックグラウンド処理を打ち切るため、
+    // fire-and-forget（.catch()のみ）ではタスク作成が完了しない。
+
     // v4.0 Phase 6: タスク完了リクエスト
     if (isTaskCompleteRequest(messageBody)) {
-      processTaskCompletion({
-        roomId: String(event.room_id),
-        fromAccountId: event.from_account_id,
-      }).catch(err => console.error('[Chatwork Webhook] タスク完了処理エラー:', err));
+      try {
+        await processTaskCompletion({
+          roomId: String(event.room_id),
+          fromAccountId: event.from_account_id,
+        });
+      } catch (err) {
+        console.error('[Chatwork Webhook] タスク完了処理エラー:', err);
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -126,35 +134,47 @@ export async function POST(request: NextRequest) {
       // v4.3: メンション先がNodeMapの場合はボット応答
       const isMentionToMe = body.webhook_event_type === 'mention_to_me' || isMentionedToBot(messageBody, myAccountId);
       if (isMentionToMe) {
-        // ★★★ 即レスをHTTPレスポンス返却前に同期送信（最重要）★★★
+        // ★★★ 即レスをHTTPレスポンス返却前に同期送信 ★★★
         await sendReply(roomId, '確認中です...');
 
-        processBotMention({
-          text: cleanedText,
-          roomId,
-          skipInstantReply: true, // 即レスは送信済み
-        }).catch(err => console.error('[Chatwork Webhook] ボット応答エラー:', err));
+        try {
+          await processBotMention({
+            text: cleanedText,
+            roomId,
+            skipInstantReply: true,
+          });
+        } catch (err) {
+          console.error('[Chatwork Webhook] ボット応答エラー:', err);
+        }
         return NextResponse.json({ ok: true });
       }
 
       // v4.0: タスク指示でないメッセージ → アクションアイテム検出 → タスク提案
-      processMessageSuggestion({
-        text: cleanedText,
-        roomId,
-      }).catch(err => console.error('[Chatwork Webhook] メッセージ提案エラー:', err));
+      try {
+        await processMessageSuggestion({
+          text: cleanedText,
+          roomId,
+        });
+      } catch (err) {
+        console.error('[Chatwork Webhook] メッセージ提案エラー:', err);
+      }
       return NextResponse.json({ ok: true });
     }
 
     // ★★★ タスク作成時も即レスを同期送信 ★★★
     await sendReply(roomId, '確認中です...');
 
-    processTaskCreation({
-      text: cleanedText,
-      roomId,
-      messageId: String(event.message_id),
-      fromAccountId: event.from_account_id,
-      skipInstantReply: true, // 即レスは送信済み
-    }).catch(err => console.error('[Chatwork Webhook] バックグラウンド処理エラー:', err));
+    try {
+      await processTaskCreation({
+        text: cleanedText,
+        roomId,
+        messageId: String(event.message_id),
+        fromAccountId: event.from_account_id,
+        skipInstantReply: true,
+      });
+    } catch (err) {
+      console.error('[Chatwork Webhook] バックグラウンド処理エラー:', err);
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -415,15 +435,18 @@ async function processBotMention(params: {
 
     // タスク作成依頼と判定された場合 → 作成フローへ
     if (classification.isTaskCreate) {
-      processTaskCreation({
-        text: cleanText,
-        roomId,
-        messageId: '',
-        fromAccountId: 0,
-      }).catch(err => {
+      try {
+        await processTaskCreation({
+          text: cleanText,
+          roomId,
+          messageId: '',
+          fromAccountId: 0,
+          skipInstantReply: true, // 即レスは送信済み
+        });
+      } catch (err) {
         console.error('[Chatwork Webhook] ボット→タスク作成リダイレクトエラー:', err);
-        sendReply(roomId, 'タスク作成中にエラーが発生しました。').catch(() => {});
-      });
+        await sendReply(roomId, 'タスク作成中にエラーが発生しました。').catch(() => {});
+      }
       return;
     }
 
