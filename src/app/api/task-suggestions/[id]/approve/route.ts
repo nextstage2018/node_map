@@ -54,23 +54,73 @@ export async function POST(
       return NextResponse.json({ error: 'この提案は既に処理済みです' }, { status: 400 });
     }
 
-    const projectId = (suggestion.suggestions as Record<string, unknown>)?.projectId as string | undefined;
+    const suggestionsData = suggestion.suggestions as Record<string, unknown>;
+    const projectId = suggestionsData?.projectId as string | undefined;
+
+    // v4.0: 依頼者・担当候補をcontact_personsから自動解決
+    let requesterContactId: string | null = null;
+    let autoAssigneeContactId: string | null = null;
+
+    const requesterAddress = suggestionsData?.requester_address as string | undefined;
+    const assigneeAddresses = (suggestionsData?.assignee_addresses || []) as string[];
+
+    // address → contact_id の解決関数
+    async function resolveContactByAddress(address: string): Promise<string | null> {
+      if (!address) return null;
+      // まず contact_channels.address で検索
+      const { data: channelMatch } = await supabase
+        .from('contact_channels')
+        .select('contact_id')
+        .eq('address', address)
+        .limit(1);
+      if (channelMatch && channelMatch.length > 0) return channelMatch[0].contact_id;
+
+      // フォールバック: contact_persons.id が直接アドレスと一致するケース
+      const { data: directMatch } = await supabase
+        .from('contact_persons')
+        .select('id')
+        .eq('id', address)
+        .limit(1);
+      if (directMatch && directMatch.length > 0) return directMatch[0].id;
+
+      return null;
+    }
+
+    // 依頼者の解決
+    if (requesterAddress) {
+      requesterContactId = await resolveContactByAddress(requesterAddress);
+    }
+
+    // 担当候補の解決（TO先の最初の1人）
+    if (assigneeAddresses.length > 0) {
+      for (const addr of assigneeAddresses) {
+        const contactId = await resolveContactByAddress(addr);
+        if (contactId) {
+          autoAssigneeContactId = contactId;
+          break;
+        }
+      }
+    }
 
     // タスクを一括作成
     const createdTasks = [];
     for (const item of items) {
+      // UIから指定されたassigned_contact_idがあればそれを優先、なければ自動解決
+      const finalAssignee = item.assigned_contact_id || autoAssigneeContactId || null;
+
       const taskData: Record<string, unknown> = {
         user_id: userId,
         title: item.title,
         status: 'todo',
         priority: item.priority || 'medium',
         phase: 'ideation',
-        task_type: item.assigned_contact_id ? 'group' : 'personal',
-        source_type: suggestion.meeting_record_id ? 'meeting_record' : 'manual',
+        task_type: finalAssignee ? 'group' : 'personal',
+        source_type: suggestion.meeting_record_id ? 'meeting_record' : (suggestionsData?.channel || 'manual'),
         due_date: item.due_date || null,
         project_id: projectId || null,
         milestone_id: item.milestone_id || null,
-        assigned_contact_id: item.assigned_contact_id || null,
+        assigned_contact_id: finalAssignee,
+        requester_contact_id: requesterContactId,
       };
 
       const { data: task, error: taskError } = await supabase
@@ -88,7 +138,7 @@ export async function POST(
         createdTasks.push(task);
 
         // グループタスクの場合、task_membersにオーナーを追加
-        if (item.assigned_contact_id) {
+        if (finalAssignee) {
           await supabase.from('task_members').upsert(
             { task_id: task.id, user_id: userId, role: 'owner' },
             { onConflict: 'task_id,user_id' }

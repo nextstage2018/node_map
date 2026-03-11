@@ -84,10 +84,21 @@ export async function GET(
     if (task.assigned_contact_id) {
       const { data: contact } = await supabase
         .from('contact_persons')
-        .select('full_name, display_name')
+        .select('full_name, display_name, name')
         .eq('id', task.assigned_contact_id)
         .single();
-      if (contact) assigneeName = contact.display_name || contact.full_name;
+      if (contact) assigneeName = contact.display_name || contact.full_name || contact.name;
+    }
+
+    // 4b. 依頼者情報（v4.0）
+    let requesterName: string | null = null;
+    if (task.requester_contact_id) {
+      const { data: requester } = await supabase
+        .from('contact_persons')
+        .select('full_name, display_name, name')
+        .eq('id', task.requester_contact_id)
+        .single();
+      if (requester) requesterName = requester.display_name || requester.full_name || requester.name;
     }
 
     // 5. 会話履歴取得
@@ -149,6 +160,8 @@ export async function GET(
         source_info: sourceInfo,
         assigned_contact_id: task.assigned_contact_id,
         assignee_name: assigneeName,
+        requester_contact_id: task.requester_contact_id,
+        requester_name: requesterName,
         user_id: task.user_id,
         project_id: task.project_id,
         project_name: projectName,

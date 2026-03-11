@@ -372,6 +372,12 @@ CREATE TABLE tasks (
   scheduled_start TIMESTAMPTZ,
   scheduled_end TIMESTAMPTZ,
   calendar_event_id TEXT,
+  assigned_contact_id TEXT REFERENCES contact_persons(id) ON DELETE SET NULL,
+  requester_contact_id TEXT REFERENCES contact_persons(id) ON DELETE SET NULL,
+  source_type TEXT,
+  source_message_id TEXT,
+  milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
+  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -385,6 +391,8 @@ CREATE INDEX idx_tasks_project_id ON tasks(project_id);
 CREATE INDEX idx_tasks_seed_id ON tasks(seed_id);
 CREATE INDEX idx_tasks_status ON tasks(status);
 CREATE INDEX idx_tasks_phase ON tasks(phase);
+CREATE INDEX idx_tasks_requester ON tasks(requester_contact_id);
+CREATE INDEX idx_tasks_assigned ON tasks(assigned_contact_id);
 CREATE INDEX idx_tasks_scheduled_start ON tasks(scheduled_start);
 CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 ```

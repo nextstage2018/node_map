@@ -5,7 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X, Calendar, MessageCircle, FileText, Pause, Play,
-  ChevronRight, ExternalLink, Loader2, User, FolderOpen,
+  ChevronRight, ExternalLink, Loader2, User, UserCheck, FolderOpen,
   MessageSquare, Bot, Clock, Pencil, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -48,6 +48,8 @@ interface TaskDetail {
   source_info?: SourceInfo;
   assigned_contact_id?: string;
   assignee_name?: string;
+  requester_contact_id?: string;
+  requester_name?: string;
   user_id?: string;
   project_id?: string;
   project_name?: string;
@@ -307,6 +309,17 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+
+                  {/* 依頼者（v4.0） */}
+                  <div className="flex items-center">
+                    <span className="w-20 text-xs text-slate-400 shrink-0">依頼者</span>
+                    <div className="flex items-center gap-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
+                      <span className="text-sm text-nm-text">
+                        {task.requester_name || '未設定'}
+                      </span>
                     </div>
                   </div>
 

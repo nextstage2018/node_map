@@ -87,6 +87,27 @@ function extractTitle(body: string): string {
 }
 
 /**
+ * メッセージ本文からTO先（メンション）のアドレスを抽出
+ * Slack: <@UXXXXX> → ['UXXXXX']
+ * Chatwork: [To:12345] → ['12345']
+ */
+export function extractMentions(body: string, channel: string): string[] {
+  const mentions: string[] = [];
+  if (channel === 'slack') {
+    const matches = body.matchAll(/<@([A-Z0-9_]+)>/g);
+    for (const m of matches) {
+      if (!mentions.includes(m[1])) mentions.push(m[1]);
+    }
+  } else if (channel === 'chatwork') {
+    const matches = body.matchAll(/\[To:(\d+)\]/g);
+    for (const m of matches) {
+      if (!mentions.includes(m[1])) mentions.push(m[1]);
+    }
+  }
+  return mentions;
+}
+
+/**
  * メッセージからタスク提案を生成し、task_suggestionsに保存
  * Webhookからリアルタイムで呼ばれる
  */
@@ -95,8 +116,9 @@ export async function suggestTaskFromMessage(params: {
   serviceName: string;      // 'slack' | 'chatwork'
   channelId: string;        // Slackチャネル or ChatworkルームID
   senderName?: string;
+  senderAddress?: string;   // v4.0: from_address（Slack userId / CW accountId）
 }): Promise<boolean> {
-  const { messageText, serviceName, channelId, senderName } = params;
+  const { messageText, serviceName, channelId, senderName, senderAddress } = params;
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
@@ -123,6 +145,9 @@ export async function suggestTaskFromMessage(params: {
 
     const sourceName = serviceName === 'slack' ? 'Slackメッセージ' : 'Chatworkメッセージ';
 
+    // v4.0: TO先（メンション）を抽出 → 担当候補
+    const assigneeAddresses = extractMentions(messageText, serviceName);
+
     // task_suggestions に保存
     const { error } = await supabase.from('task_suggestions').insert({
       user_id: ownerUserId,
@@ -130,6 +155,11 @@ export async function suggestTaskFromMessage(params: {
         meetingTitle: `${sourceName}からの提案`,
         meetingDate: new Date().toISOString().split('T')[0],
         projectId: projectResult.projectId,
+        // v4.0: 依頼者・担当候補情報
+        requester_address: senderAddress || '',
+        requester_name: senderName || '',
+        assignee_addresses: assigneeAddresses,
+        channel: serviceName,
         items: [{
           title,
           assignee: senderName || '',

@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { resolveProjectFromChannel } from '@/services/inbox/channelProjectLink.service';
+import { extractMentions } from '@/services/v4/taskSuggestionDetector.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -109,7 +110,7 @@ export async function GET(request: NextRequest) {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: messages, error: fetchError } = await supabase
       .from('inbox_messages')
-      .select('id, subject, body, channel, from_name, metadata, received_at')
+      .select('id, subject, body, channel, from_name, from_address, metadata, received_at')
       .in('channel', ['slack', 'chatwork'])
       .eq('direction', 'received')
       .gte('received_at', since)
@@ -135,6 +136,10 @@ export async function GET(request: NextRequest) {
     const projectItems: Record<string, {
       projectId: string;
       projectName?: string;
+      requester_address: string;
+      requester_name: string;
+      assignee_addresses: string[];
+      channel: string;
       items: Array<{
         title: string;
         assignee: string;
@@ -176,8 +181,26 @@ export async function GET(request: NextRequest) {
       const deadline = extractDeadline(body);
       const priority = body.includes('至急') || body.includes('緊急') || body.includes('ASAP') ? 'high' : 'medium';
 
+      // v4.0: メンション抽出（TO先 → 担当候補）
+      const mentionAddresses = extractMentions(body, serviceName);
+
       if (!projectItems[projectId]) {
-        projectItems[projectId] = { projectId, projectName: projectName || undefined, items: [] };
+        projectItems[projectId] = {
+          projectId,
+          projectName: projectName || undefined,
+          requester_address: msg.from_address || '',
+          requester_name: msg.from_name || '',
+          assignee_addresses: mentionAddresses,
+          channel: serviceName,
+          items: [],
+        };
+      } else {
+        // 複数メッセージの場合、メンションをマージ
+        for (const addr of mentionAddresses) {
+          if (!projectItems[projectId].assignee_addresses.includes(addr)) {
+            projectItems[projectId].assignee_addresses.push(addr);
+          }
+        }
       }
 
       projectItems[projectId].items.push({
@@ -200,6 +223,11 @@ export async function GET(request: NextRequest) {
             meetingTitle: `チャネルメッセージ提案 (${new Date().toLocaleDateString('ja-JP')})`,
             meetingDate: new Date().toISOString().split('T')[0],
             projectId,
+            // v4.0: 依頼者・担当候補情報
+            requester_address: group.requester_address,
+            requester_name: group.requester_name,
+            assignee_addresses: group.assignee_addresses,
+            channel: group.channel,
             items: group.items,
           },
           status: 'pending',
