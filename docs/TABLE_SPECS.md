@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-11（v4.2 繰り返しルール — project_recurring_rules 新設、meeting_records に recurring_rule_id 追加）
+最終更新: 2026-03-12（v4.3 チャネルボット実装 — tasks に source_channel_id 追加、Webhook処理フロー確定）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -376,6 +376,7 @@ CREATE TABLE tasks (
   requester_contact_id TEXT REFERENCES contact_persons(id) ON DELETE SET NULL,
   source_type TEXT,
   source_message_id TEXT,
+  source_channel_id TEXT,                                          -- v4.3: チャネルID（Slack channel_id / Chatwork room_id）
   milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
   theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
   estimated_hours NUMERIC(6,2) DEFAULT NULL,              -- v4.1: 見積もり工数（時間）
@@ -407,6 +408,8 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - phase: 'ideation'/'progress'/'result'
 - task_type: 'personal'/'group'
 - **v4.1**: estimated_hours / actual_hours で工数管理（見積もり vs 実績）
+- **v4.3**: source_channel_id でチャネルID保持。source_message_id 形式: `slack-{channelId}-{ts}` / `chatwork-{roomId}-{msgId}`
+- **v4.3**: requester_contact_id はチャネルメッセージ送信者から `contact_channels` 経由で自動解決
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）

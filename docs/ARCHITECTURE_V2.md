@@ -1,8 +1,8 @@
 # NodeMap V2 アーキテクチャ設計書
 
-最終更新: 2026-03-10
+最終更新: 2026-03-12
 
-> **ステータス**: V2全9フェーズ + v3.0〜v3.4 実装完了
+> **ステータス**: V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.4 実装完了
 > **前提**: CLAUDE.md が SSOT。本ファイルはアーキテクチャ詳細の補足
 
 ---
@@ -723,6 +723,11 @@ V1（現行）              V2
 | v3.4-2 | AI解析コンテキスト注入 + サービス層 + Cron | ✅ 完了 |
 | v3.4-3 | 検討ツリーUI拡張（バッジ・詳細パネル） | ✅ 完了 |
 | v3.4-4 | アジェンダ自動生成（サービス・API・Cron） | ✅ 完了 |
+| v4.0 | タスク管理カンバン（4列D&D + 個人/チーム切替 + AI提案） | ✅ 完了 |
+| v4.1 | カレンダー連携強化（テーブルカラム準備済み・API未実装） | ⏳ テーブル準備済み |
+| v4.2 | 繰り返しルール（project_recurring_rules テーブル準備済み） | ⏳ テーブル準備済み |
+| v4.3 | チャネルボット — メンション応答（Slack/Chatwork対応） | ✅ 完了 |
+| v4.4 | チャネルボット — 定期配信（月曜/金曜/アラート） | ✅ 完了 |
 
 ---
 
@@ -764,7 +769,53 @@ V1（現行）              V2
 
 ---
 
-## 11. 将来課題
+## 11. v4.0〜v4.4: タスク管理 + チャネルボット
+
+### 11.1 v4.0 タスク管理カンバン
+
+サイドメニューに「タスク」画面を新設。カンバンボード（個人/チーム切替）、タスク詳細パネル、AI提案カード。
+
+```
+データの流れ:
+  Slack/Chatwork メンション → Webhook → AI intent分類 → タスク自動生成
+  メッセージ → アクションアイテム検出 → task_suggestions → 承認/却下
+  リアクション（✅）→ 既存タスク完了 or 新規タスク作成
+```
+
+### 11.2 v4.3 チャネルボット — メンション応答
+
+Slack/Chatworkチャネルで @NodeMap メンション → プロジェクト情報を返答 + タスク作成。
+
+```
+処理フロー（全awaitで同期実行）:
+  1. POST受信 → Slackリトライチェック（X-Slack-Retry-Num）
+  2. await sendQuickReply("確認中です...")  ← HTTPレスポンス前に即座送信
+  3. await processTaskCreation() or processBotMention()
+     a. AI intent分類（Claude Haiku）→ フォールバック: キーワード分類
+     b. チャネルID → project_channels → プロジェクト解決
+     c. タスク作成: extractTask → resolveProject → resolveRequester → DB INSERT
+     d. ボット応答: generateBotResponse（公開レベルフィルタ付き）
+  4. await sendSlackReply/sendReply（結果返信）
+  5. return NextResponse.json({ ok: true })  ← 全処理完了後にreturn
+
+⚠️ 重要: Vercelはreturn後にバックグラウンド処理を打ち切る
+  → 全処理をawaitで完了してからreturnすること
+  → fire-and-forget（.catch()のみ）は絶対禁止
+```
+
+### 11.3 v4.4 チャネルボット — 定期配信
+
+Cron駆動で全PJチャネルに定期レポート配信。relationship_typeで社内/社外の情報公開範囲を制御。
+
+```
+月曜 09:00: 今週のブリーフィング（open_issues + タスク + 会議予定）
+金曜 17:00: 今週のレポート（完了タスク + 決定事項 + 新規未確定事項）
+毎日 09:30: アラート（stale + 期限超過 + MS期限接近）
+```
+
+---
+
+## 12. 将来課題
 
 | # | 課題 | 概要 | 関連 |
 |---|---|---|---|
