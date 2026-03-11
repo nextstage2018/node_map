@@ -31,13 +31,26 @@ async function verifySignature(
 }
 
 function isTaskRequest(text: string): boolean {
-  const keywords = [
+  const lower = text.toLowerCase();
+
+  // 完全一致キーワード
+  const exactKeywords = [
     'タスクにして', 'タスク化して', 'タスクにする', 'タスク化する',
     'タスク登録', 'タスク作成', 'やることに追加', 'TODO',
-    'task', 'タスクお願い',
+    'タスクお願い',
   ];
-  const lower = text.toLowerCase();
-  return keywords.some(kw => lower.includes(kw.toLowerCase()));
+  if (exactKeywords.some(kw => lower.includes(kw.toLowerCase()))) return true;
+
+  // パターンマッチ（助詞を挟む表現）
+  const patterns = [
+    /タスク.{0,3}(登録|作成|追加|入れ|いれ)/,    // 「タスクを登録して」「タスクとして登録」
+    /(登録|作成|追加).{0,3}タスク/,                // 「登録してタスクに」
+    /タスク.{0,5}(して|する|お願い|頼む|頼み)/,   // 「タスクにしてほしい」
+    /(やること|todo|ToDo).{0,3}(に|へ|として)/,   // 「やることに入れて」
+  ];
+  if (patterns.some(p => p.test(lower))) return true;
+
+  return false;
 }
 
 // v4.0 Phase 6: タスク完了リクエスト判定
@@ -202,12 +215,15 @@ async function processTaskCreation(params: {
       return;
     }
 
+    // ★ 即レス: タスク処理開始通知
+    sendReply(roomId, 'タスク処理を開始します...').catch(() => {});
+
     const { createTaskFromMessage } = await import('@/services/v4/taskFromMessage.service');
     const result = await createTaskFromMessage({
       messageText: text,
       serviceName: 'chatwork',
       channelId: roomId,
-      messageId: `chatwork-${roomId}-${messageId}`,
+      messageId: messageId ? `chatwork-${roomId}-${messageId}` : `chatwork-${roomId}-${Date.now()}`,
       userId: ownerUserId,
       senderName: undefined,
     });
@@ -298,7 +314,7 @@ function isMentionedToBot(body: string, myAccountId: number | null): boolean {
   return regex.test(body);
 }
 
-// v4.3: チャネルボット — メンション応答（読み取り専用）
+// v4.3: チャネルボット — メンション応答（AI分類 + 即レス対応）
 async function processBotMention(params: {
   text: string;
   roomId: string;
@@ -308,6 +324,9 @@ async function processBotMention(params: {
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
     if (!ownerUserId) return;
+
+    // ★ 即レス: 処理開始を即座に通知
+    sendReply(roomId, '確認中です...').catch(() => {});
 
     // ルームID → プロジェクト特定
     const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
@@ -326,17 +345,30 @@ async function processBotMention(params: {
       return;
     }
 
-    // Intent分類
-    const { classifyBotIntent, extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
+    // ★ AI intent分類（フォールバック: キーワードベース）
+    const { extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
     const cleanText = extractChatworkMentionText(text);
-    const intent = classifyBotIntent(cleanText);
+
+    const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
+    const classification = await classifyBotIntentWithAi(cleanText);
+
+    // タスク作成依頼と判定された場合 → 作成フローへ
+    if (classification.isTaskCreate) {
+      processTaskCreation({
+        text: cleanText,
+        roomId,
+        messageId: '',
+        fromAccountId: 0,
+      }).catch(err => console.error('[Chatwork Webhook] ボット→タスク作成リダイレクトエラー:', err));
+      return;
+    }
 
     // レスポンス生成
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
     const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
-    const response = await generateBotResponse(channel.project_id, intent, baseUrl);
+    const response = await generateBotResponse(channel.project_id, classification.intent, baseUrl);
 
-    // Chatwork返信（Markdownの**太字**をChatwork形式に変換不要 — そのまま投稿）
+    // Chatwork返信
     await sendChatworkReply(roomId, response.text);
   } catch (error) {
     console.error('[Chatwork Webhook] ボット応答処理エラー:', error);
