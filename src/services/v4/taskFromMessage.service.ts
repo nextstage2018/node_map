@@ -97,20 +97,49 @@ async function resolveProject(
     const { resolveProjectFromChannel } = await import(
       '@/services/inbox/channelProjectLink.service'
     );
-    const projectId = await resolveProjectFromChannel(serviceName, channelId);
-    if (!projectId) return null;
-
-    const { data: project } = await supabase
-      .from('projects')
-      .select('id, name')
-      .eq('id', projectId)
-      .single();
-
-    if (project) {
-      return { projectId: project.id, projectName: project.name };
+    const match = await resolveProjectFromChannel(serviceName, channelId);
+    if (!match) {
+      console.log(`[taskFromMessage] プロジェクト未発見: service=${serviceName}, channel=${channelId}`);
+      return null;
     }
+
+    // resolveProjectFromChannel は { projectId, projectName, organizationId } を返す
+    console.log(`[taskFromMessage] プロジェクト解決: ${match.projectName} (${match.projectId})`);
+    return { projectId: match.projectId, projectName: match.projectName };
   } catch (error) {
     console.error('[taskFromMessage] プロジェクト解決エラー:', error);
+  }
+
+  return null;
+}
+
+/**
+ * Slack/ChatworkユーザーIDから依頼者(contact_persons)を解決
+ */
+async function resolveRequester(
+  serviceName: 'slack' | 'chatwork',
+  senderIdentifier: string | undefined,
+  supabase: ReturnType<typeof getSupabase>
+): Promise<string | null> {
+  if (!supabase || !senderIdentifier) return null;
+
+  try {
+    // contact_channels から該当するコンタクトを検索
+    const channelType = serviceName === 'slack' ? 'slack' : 'chatwork';
+    const { data } = await supabase
+      .from('contact_channels')
+      .select('contact_id')
+      .eq('channel', channelType)
+      .eq('address', senderIdentifier)
+      .limit(1)
+      .maybeSingle();
+
+    if (data?.contact_id) {
+      console.log(`[taskFromMessage] 依頼者解決: contact_id=${data.contact_id}`);
+      return data.contact_id;
+    }
+  } catch (error) {
+    console.error('[taskFromMessage] 依頼者解決エラー:', error);
   }
 
   return null;
@@ -155,8 +184,9 @@ export async function createTaskFromMessage(params: {
   messageId: string;
   userId: string;
   senderName?: string;
+  senderIdentifier?: string; // Slack: user_id (U...), Chatwork: account_id
 }): Promise<CreatedTaskResult | null> {
-  const { messageText, threadContext, serviceName, channelId, messageId, userId, senderName } = params;
+  const { messageText, threadContext, serviceName, channelId, messageId, userId, senderName, senderIdentifier } = params;
 
   try {
     const supabase = getServerSupabase() || getSupabase();
@@ -177,7 +207,10 @@ export async function createTaskFromMessage(params: {
       milestone = await findNearestMilestone(project.projectId, supabase);
     }
 
-    // 4. タスクを作成
+    // 4. 依頼者を解決
+    const requesterId = await resolveRequester(serviceName, senderIdentifier, supabase);
+
+    // 5. タスクを作成
     const taskId = crypto.randomUUID();
     const { error } = await supabase.from('tasks').insert({
       id: taskId,
@@ -192,6 +225,7 @@ export async function createTaskFromMessage(params: {
       source_type: serviceName,
       source_message_id: messageId,
       source_channel_id: channelId,
+      requester_contact_id: requesterId,
       phase: 'ideation',
     });
 
@@ -200,7 +234,7 @@ export async function createTaskFromMessage(params: {
       return null;
     }
 
-    // 5. ビジネスイベント追加
+    // 6. ビジネスイベント追加
     if (project) {
       try {
         await supabase.from('business_events').insert({

@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
             channelId,
             threadTs,
             teamId,
+            slackUserId: event.user,
             skipInstantReply: true,
           });
         }
@@ -174,6 +175,7 @@ async function processTaskCreation(params: {
       messageId: `slack-${channelId}-${messageTs}`,
       userId: ownerUserId,
       senderName: undefined,
+      senderIdentifier: userId, // Slack user ID (U...)
     });
 
     if (!result) {
@@ -242,6 +244,7 @@ async function processReactionTaskCreation(params: {
       channelId,
       messageId: sourceMessageId,
       userId: ownerUserId,
+      senderIdentifier: userId, // Slack user ID (U...)
     });
 
     if (!result) return;
@@ -377,9 +380,10 @@ async function processBotMention(params: {
   channelId: string;
   threadTs: string;
   teamId: string;
+  slackUserId?: string;
   skipInstantReply?: boolean;
 }) {
-  const { text, channelId, threadTs, skipInstantReply } = params;
+  const { text, channelId, threadTs, slackUserId, skipInstantReply } = params;
 
   // ★ 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
   if (!skipInstantReply) {
@@ -444,7 +448,7 @@ async function processBotMention(params: {
           channelId,
           messageTs: threadTs,
           threadTs,
-          userId: ownerUserId,
+          userId: slackUserId || ownerUserId,
           teamId: '',
           skipInstantReply: true, // 即レスは送信済み
         });

@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
           await processBotMention({
             text: cleanedText,
             roomId,
+            fromAccountId: event.from_account_id,
             skipInstantReply: true,
           });
         } catch (err) {
@@ -259,6 +260,7 @@ async function processTaskCreation(params: {
       messageId: messageId ? `chatwork-${roomId}-${messageId}` : `chatwork-${roomId}-${Date.now()}`,
       userId: ownerUserId,
       senderName: undefined,
+      senderIdentifier: fromAccountId ? String(fromAccountId) : undefined, // Chatwork account_id
     });
 
     if (!result) {
@@ -351,9 +353,10 @@ function isMentionedToBot(body: string, myAccountId: number | null): boolean {
 async function processBotMention(params: {
   text: string;
   roomId: string;
+  fromAccountId?: number;
   skipInstantReply?: boolean;
 }) {
-  const { text, roomId, skipInstantReply } = params;
+  const { text, roomId, fromAccountId, skipInstantReply } = params;
 
   // 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
   if (!skipInstantReply) {
@@ -440,7 +443,7 @@ async function processBotMention(params: {
           text: cleanText,
           roomId,
           messageId: '',
-          fromAccountId: 0,
+          fromAccountId: fromAccountId || 0,
           skipInstantReply: true, // 即レスは送信済み
         });
       } catch (err) {
