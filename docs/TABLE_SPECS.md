@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-10（v3.4 検討ツリー・タイムライン強化 — open_issues / decision_log / meeting_agenda 追加まで反映）
+最終更新: 2026-03-11（v4.1 カレンダー連携強化 — tasks に estimated_hours/actual_hours、meeting_records に calendar_event_id 追加）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -378,6 +378,8 @@ CREATE TABLE tasks (
   source_message_id TEXT,
   milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
   theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
+  estimated_hours NUMERIC(6,2) DEFAULT NULL,              -- v4.1: 見積もり工数（時間）
+  actual_hours NUMERIC(6,2) DEFAULT NULL,                 -- v4.1: 実績工数（時間）
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -404,6 +406,7 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - status: 'todo' / 'in_progress' / 'done'。done 時に business_events にアーカイブ→削除
 - phase: 'ideation'/'progress'/'result'
 - task_type: 'personal'/'group'
+- **v4.1**: estimated_hours / actual_hours で工数管理（見積もり vs 実績）
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）
@@ -1503,6 +1506,7 @@ CREATE TABLE meeting_records (
   meeting_end_at TIMESTAMPTZ,                  -- 会議終了時刻（UTC）
   metadata JSONB DEFAULT '{}'::jsonb,          -- MeetGeekメタデータ {host_email, source, join_link, language, ...}
   highlights JSONB DEFAULT '[]'::jsonb,        -- MeetGeekハイライト [{highlightText, label}]
+  calendar_event_id TEXT DEFAULT NULL,           -- v4.1: Googleカレンダーのイベント ID
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -1529,6 +1533,7 @@ CREATE INDEX idx_meeting_records_source ON meeting_records(source_type, source_f
 - ai_summary: AI解析後に自動設定される要約テキスト（MeetGeekの場合は事前セットあり）
 - 会議録登録 → AI解析 → business_events自動追加 → 検討ツリー自動生成の一連パイプライン
 - MeetGeek重複防止: source_type='meetgeek' + source_file_id で一意チェック
+- **v4.1**: calendar_event_id で [NM-Meeting] カレンダーイベントと紐づけ
 - **RLS**: user_id でフィルタ（ただし user_id は nullable）
 
 ---

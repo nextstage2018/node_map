@@ -27,7 +27,7 @@ interface SyncToCalendarParams {
   description?: string;
   scheduledStart: string;  // ISO 8601
   scheduledEnd: string;    // ISO 8601
-  sourceType: 'task' | 'job';
+  sourceType: 'task' | 'job' | 'meeting';
   sourceId: string;
   attendees?: string[];    // メールアドレス配列
 }
@@ -140,8 +140,12 @@ async function createCalendarEventForSource(
   }
 
   try {
-    // Phase A: ソース種別に応じた命名プレフィックス
-    const prefix = params.sourceType === 'job' ? CALENDAR_PREFIX.job : CALENDAR_PREFIX.task;
+    // Phase A: ソース種別に応じた命名プレフィックス（v4.1: meeting追加）
+    const prefix = params.sourceType === 'meeting'
+      ? CALENDAR_PREFIX.meeting
+      : params.sourceType === 'job'
+        ? CALENDAR_PREFIX.job
+        : CALENDAR_PREFIX.task;
     const event = await createEventWithExtendedProps(params.userId, {
       summary: `${prefix} ${params.title}`,
       description: params.description,
@@ -154,14 +158,22 @@ async function createCalendarEventForSource(
       return { success: false, error: 'カレンダー予定作成に失敗' };
     }
 
-    // calendar_event_id をDB保存
+    // calendar_event_id をDB保存（v4.1: meeting対応追加）
     const sb = getServerSupabase() || getSupabase();
     if (sb) {
-      const table = params.sourceType === 'task' ? 'tasks' : 'jobs';
-      await sb
-        .from(table)
-        .update({ calendar_event_id: event.id })
-        .eq('id', params.sourceId);
+      if (params.sourceType === 'meeting') {
+        // 会議録テーブルに calendar_event_id を保存
+        await sb
+          .from('meeting_records')
+          .update({ calendar_event_id: event.id })
+          .eq('id', params.sourceId);
+      } else {
+        const table = params.sourceType === 'task' ? 'tasks' : 'jobs';
+        await sb
+          .from(table)
+          .update({ calendar_event_id: event.id })
+          .eq('id', params.sourceId);
+      }
     }
 
     return {
@@ -466,11 +478,58 @@ export async function syncGroupTaskToMembers(
 }
 
 // ========================================
+// 会議録 → カレンダー同期（v4.1）
+// ========================================
+export async function syncMeetingToCalendar(
+  meetingRecordId: string,
+  userId: string,
+  agendaDescription?: string
+): Promise<CalendarSyncResult> {
+  const sb = getServerSupabase() || getSupabase();
+  if (!sb) return { success: false, error: 'DB接続なし' };
+
+  // 会議録情報取得
+  const { data: meeting, error } = await sb
+    .from('meeting_records')
+    .select('title, meeting_start_at, meeting_end_at, calendar_event_id')
+    .eq('id', meetingRecordId)
+    .single();
+
+  if (error || !meeting) return { success: false, error: '会議録が見つかりません' };
+  if (!meeting.meeting_start_at || !meeting.meeting_end_at) {
+    return { success: false, error: '会議の開始・終了時刻が未設定です' };
+  }
+
+  // 既にカレンダー登録済みなら更新
+  if (meeting.calendar_event_id) {
+    return updateCalendarEvent(meeting.calendar_event_id, userId, {
+      summary: `${CALENDAR_PREFIX.meeting} ${meeting.title}`,
+      description: agendaDescription || undefined,
+      start: meeting.meeting_start_at,
+      end: meeting.meeting_end_at,
+      sourceType: 'meeting',
+      sourceId: meetingRecordId,
+    });
+  }
+
+  // 新規作成
+  return createCalendarEventForSource({
+    userId,
+    title: meeting.title,
+    description: agendaDescription || undefined,
+    scheduledStart: meeting.meeting_start_at,
+    scheduledEnd: meeting.meeting_end_at,
+    sourceType: 'meeting',
+    sourceId: meetingRecordId,
+  });
+}
+
+// ========================================
 // NodeMap由来の予定か判定（extendedProperties）
 // ========================================
 export function isNodeMapEvent(event: CalendarEvent & { extendedProperties?: { private?: Record<string, string> } }): {
   isNodeMap: boolean;
-  sourceType?: 'task' | 'job';
+  sourceType?: 'task' | 'job' | 'meeting';
   sourceId?: string;
 } {
   const props = event.extendedProperties?.private;
@@ -479,7 +538,7 @@ export function isNodeMapEvent(event: CalendarEvent & { extendedProperties?: { p
   }
   return {
     isNodeMap: true,
-    sourceType: props[NODEMAP_EXTENDED_PROP_KEY] as 'task' | 'job',
+    sourceType: props[NODEMAP_EXTENDED_PROP_KEY] as 'task' | 'job' | 'meeting',
     sourceId: props[NODEMAP_ID_PROP_KEY],
   };
 }

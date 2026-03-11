@@ -213,11 +213,30 @@ export function isJapaneseHoliday(date: Date): boolean {
 export const CALENDAR_PREFIX = {
   task: '[NM-Task]',
   job: '[NM-Job]',
+  meeting: '[NM-Meeting]',
 } as const;
 
 // NodeMap予定かどうかを判定するヘルパー
+// [NM-Task] / [NM-Job] → 空きとみなす（除外）
+// [NM-Meeting] → 実拘束時間（除外しない）
 export function isNodeMapEvent(summary: string): boolean {
   return summary.startsWith(CALENDAR_PREFIX.task) || summary.startsWith(CALENDAR_PREFIX.job);
+}
+
+// NodeMap会議予定かどうかを判定するヘルパー（v4.1）
+// [NM-Meeting] は実拘束時間なので空き判定では除外しない
+export function isNodeMapMeetingEvent(summary: string): boolean {
+  return summary.startsWith(CALENDAR_PREFIX.meeting);
+}
+
+// NodeMap由来の全予定かどうかを判定するヘルパー（v4.1）
+// [NM-Task] / [NM-Job] / [NM-Meeting] すべてを含む
+export function isAnyNodeMapEvent(summary: string): boolean {
+  return (
+    summary.startsWith(CALENDAR_PREFIX.task) ||
+    summary.startsWith(CALENDAR_PREFIX.job) ||
+    summary.startsWith(CALENDAR_PREFIX.meeting)
+  );
 }
 
 // ===== Phase 2: タスク関連定数 =====

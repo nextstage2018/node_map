@@ -287,14 +287,15 @@ export async function updateAgendaStatus(
 
 /**
  * Cron用: 全プロジェクトの翌営業日アジェンダを自動生成
+ * v4.1: 生成後にカレンダー備考にアジェンダを注入
  */
 export async function generateAgendasForAllProjects(
   userId: string
-): Promise<{ generated: number; skipped: number; errors: number }> {
+): Promise<{ generated: number; skipped: number; errors: number; calendarUpdated: number }> {
   const supabase = getServerSupabase() || getSupabase();
-  if (!supabase) return { generated: 0, skipped: 0, errors: 0 };
+  if (!supabase) return { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0 };
 
-  const stats = { generated: 0, skipped: 0, errors: 0 };
+  const stats = { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0 };
 
   try {
     // アクティブなプロジェクトを取得
@@ -317,6 +318,21 @@ export async function generateAgendasForAllProjects(
         const result = await generateAgenda(project.id, userId, meetingDate);
         if (result) {
           stats.generated++;
+
+          // v4.1: カレンダー備考にアジェンダを注入
+          try {
+            const calendarUpdated = await injectAgendaToCalendarEvents(
+              project.id,
+              meetingDate,
+              result.items,
+              userId
+            );
+            if (calendarUpdated > 0) {
+              stats.calendarUpdated += calendarUpdated;
+            }
+          } catch (calErr) {
+            console.warn(`[MeetingAgenda Cron] カレンダー注入失敗 PJ ${project.id}:`, calErr);
+          }
         } else {
           stats.skipped++;
         }
@@ -331,6 +347,86 @@ export async function generateAgendasForAllProjects(
     console.error('[MeetingAgenda Cron] 例外:', err);
     return stats;
   }
+}
+
+/**
+ * v4.1: アジェンダをカレンダーイベントの備考(description)に注入
+ * 該当日のNM-Meeting予定を検索し、descriptionを更新
+ */
+async function injectAgendaToCalendarEvents(
+  projectId: string,
+  meetingDate: string,
+  items: AgendaItem[],
+  userId: string
+): Promise<number> {
+  const supabase = getServerSupabase() || getSupabase();
+  if (!supabase) return 0;
+
+  // 該当日の会議録を取得（calendar_event_id が設定されているもの）
+  const dayStart = `${meetingDate}T00:00:00`;
+  const dayEnd = `${meetingDate}T23:59:59`;
+
+  const { data: meetings } = await supabase
+    .from('meeting_records')
+    .select('id, calendar_event_id')
+    .eq('project_id', projectId)
+    .not('calendar_event_id', 'is', null)
+    .gte('meeting_start_at', dayStart)
+    .lte('meeting_start_at', dayEnd);
+
+  if (!meetings || meetings.length === 0) return 0;
+
+  const description = formatAgendaForCalendarDescription(items);
+  let updated = 0;
+
+  for (const meeting of meetings) {
+    if (!meeting.calendar_event_id) continue;
+
+    try {
+      const { updateCalendarEvent } = await import('@/services/calendar/calendarSync.service');
+      const result = await updateCalendarEvent(meeting.calendar_event_id, userId, {
+        description,
+      });
+      if (result.success) updated++;
+    } catch {
+      // 個別失敗は無視
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * v4.1: アジェンダ items をカレンダー備考用テキストに変換
+ */
+function formatAgendaForCalendarDescription(items: AgendaItem[]): string {
+  if (!items || items.length === 0) return '';
+
+  const typeLabel: Record<string, string> = {
+    open_issue: '未確定事項',
+    decision_review: '決定確認',
+    task_progress: 'タスク進捗',
+    task_completed: '成果報告',
+    custom: 'その他',
+  };
+
+  const lines: string[] = ['【アジェンダ】\n'];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const label = typeLabel[item.type] || item.type;
+    const priorityIcon = item.priority === 'critical' ? '🔴' : item.priority === 'high' ? '🟠' : '';
+    lines.push(`${i + 1}. ${priorityIcon}[${label}] ${item.title} (${item.estimated_minutes}分)`);
+    if (item.description) {
+      lines.push(`   ${item.description}`);
+    }
+  }
+
+  const totalMinutes = items.reduce((sum, item) => sum + (item.estimated_minutes || 0), 0);
+  lines.push(`\n合計見積: 約${totalMinutes}分`);
+  lines.push(`\n--- NodeMap自動生成 ---`);
+
+  return lines.join('\n');
 }
 
 /**
