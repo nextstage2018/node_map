@@ -9,12 +9,15 @@ import {
   Clock, Brain, Flag, ChevronRight, Lightbulb,
   Calendar, FileText, BarChart, CheckCircle,
   ArrowRight, Layers, Users, FolderOpen,
-  HardDrive, ClipboardList
+  HardDrive, ClipboardList, KanbanSquare,
+  UserCheck, User, Sparkles, ThumbsUp, ThumbsDown,
+  Pencil, GripVertical, Eye
 } from 'lucide-react';
 
 const TABS = [
   { id: 'overview', label: 'はじめに', icon: BookOpen },
   { id: 'secretary', label: '秘書', icon: Bot },
+  { id: 'tasks', label: 'タスク', icon: KanbanSquare },
   { id: 'inbox', label: 'インボックス', icon: Inbox },
   { id: 'organizations', label: '組織・プロジェクト', icon: Building2 },
   { id: 'settings', label: '設定', icon: Settings },
@@ -123,22 +126,23 @@ function OverviewTab() {
             <p className="font-medium text-slate-800 mb-1 flex items-center gap-1">
               <CheckCircle className="w-4 h-4 text-blue-600" /> タスク
             </p>
-            <p>思考を伴う作業。マイルストーン配下に必ず配置。AIと壁打ちしながら進められます。</p>
+            <p>思考を伴う作業。マイルストーン配下に配置。カンバンボードで管理し、AIと壁打ちしながら進められます。Slack・Chatworkからの自動提案にも対応。</p>
           </div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <p className="font-medium text-slate-800 mb-1 flex items-center gap-1">
               <Briefcase className="w-4 h-4 text-slate-600" /> ジョブ
             </p>
-            <p>定型業務。プロジェクトへの紐づけは任意。AIに構造化や対応を任せられます。</p>
+            <p>定型業務ややることメモ。プロジェクトへの紐づけは任意。AIに構造化や対応を任せられます。</p>
           </div>
         </div>
+        <p className="text-xs text-slate-400 mt-2">※ 詳しくは「タスク」タブのガイドをご覧ください。</p>
       </SectionCard>
 
       <SectionCard title="画面構成" icon={BookOpen}>
         <div className="space-y-2">
           {[
             { icon: Bot, label: '秘書', desc: 'ホーム画面。AIに話しかけてすべての操作の起点に' },
-            { icon: ClipboardList, label: 'タスク', desc: '個人タスクを横断表示。今日/今週/期限切れでフィルター' },
+            { icon: KanbanSquare, label: 'タスク', desc: 'カンバンボードでタスク管理。AI提案の承認・詳細編集・AIに相談' },
             { icon: Inbox, label: 'インボックス', desc: 'メール・Slack・Chatworkの受信メッセージ一覧' },
             { icon: Building2, label: '組織・プロジェクト', desc: '組織とプロジェクトの管理。タイムライン・検討ツリー等' },
             { icon: Settings, label: '設定', desc: 'チャネル接続・プロフィール・ナレッジ確認' },
@@ -226,6 +230,234 @@ function SecretaryTab() {
           AIの回答の下に、青いチップボタンが表示されることがあります。
           これは今の文脈に合った次のアクション候補です。タップするとそのまま秘書に指示が送られます。
         </p>
+      </SectionCard>
+    </div>
+  );
+}
+
+function TasksTab() {
+  return (
+    <div>
+      <SectionCard title="タスク管理の全体像" icon={KanbanSquare}>
+        <p className="mb-3">
+          サイドメニューの「タスク」を開くと、自分が関わるタスクをカンバンボード形式で一覧できます。
+          カードをドラッグして状況を変えたり、クリックして詳細を確認・編集したりできます。
+        </p>
+        <div className="p-3 bg-blue-50 rounded-lg border border-blue-100 text-xs text-slate-600">
+          <p className="font-medium text-slate-700 mb-1">ポイント</p>
+          <p>タスクは手動で作ることもできますが、Slack・Chatworkのメッセージや会議録からAIが自動で提案してくれるのが特長です。</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="カンバンボード" icon={GripVertical}>
+        <p className="mb-3">
+          タスクは4つの列に分かれて表示されます。カードをドラッグ＆ドロップするだけで状況を更新できます。
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+          <div className="p-2 bg-slate-50 rounded border border-slate-200 text-center">
+            <p className="text-xs font-medium text-slate-500">未着手</p>
+            <p className="text-xs text-slate-400 mt-0.5">Todo</p>
+          </div>
+          <div className="p-2 bg-blue-50 rounded border border-blue-200 text-center">
+            <p className="text-xs font-medium text-blue-600">進行中</p>
+            <p className="text-xs text-blue-400 mt-0.5">In Progress</p>
+          </div>
+          <div className="p-2 bg-amber-50 rounded border border-amber-200 text-center">
+            <p className="text-xs font-medium text-amber-600">レビュー</p>
+            <p className="text-xs text-amber-400 mt-0.5">Review</p>
+          </div>
+          <div className="p-2 bg-green-50 rounded border border-green-200 text-center">
+            <p className="text-xs font-medium text-green-600">完了</p>
+            <p className="text-xs text-green-400 mt-0.5">Done</p>
+          </div>
+        </div>
+
+        <div className="space-y-2 mt-3">
+          <p className="font-medium text-slate-700 text-sm">個人タスクとチームタスク</p>
+          <div className="flex gap-2 items-start">
+            <Badge color="blue" label="個人" />
+            <span className="text-sm text-slate-600">自分だけのタスク。他の人には見えません。</span>
+          </div>
+          <div className="flex gap-2 items-start">
+            <Badge color="indigo" label="チーム" />
+            <span className="text-sm text-slate-600">チームメンバーと共有するタスク。依頼者や担当者が自動でセットされます。</span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">画面上部の切り替えボタンで個人/チームを切り替えられます。</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="タスク詳細パネル" icon={Eye}>
+        <p className="mb-3">
+          カンバン上のカードをクリックすると、右側にタスクの詳細パネルが開きます。ここでタスクの情報を確認・編集できます。
+        </p>
+        <div className="space-y-2">
+          <div className="flex items-start gap-3 p-2">
+            <Pencil className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-medium text-slate-800">タイトル</span>
+              <span className="text-slate-500"> — クリックするとその場で編集できます。Enterで保存、Escでキャンセルです。</span>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-2">
+            <Calendar className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-medium text-slate-800">期限</span>
+              <span className="text-slate-500"> — 日付を選ぶとすぐに保存されます。期限切れは赤、今日は黄色、余裕があれば緑で表示されます。</span>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-2">
+            <UserCheck className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-medium text-slate-800">依頼者</span>
+              <span className="text-slate-500"> — メッセージの送信者が自動でセットされます（後述の自動判定ルール参照）。</span>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-2">
+            <User className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-medium text-slate-800">担当者</span>
+              <span className="text-slate-500"> — メッセージのTO先（メンション先）が自動でセットされます。</span>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-2">
+            <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <div>
+              <span className="font-medium text-slate-800">AI要約</span>
+              <span className="text-slate-500"> — タスクに関するAIの会話がある場合、自動で要約が表示されます。</span>
+            </div>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="AIタスク提案のしくみ" icon={Sparkles}>
+        <p className="mb-3">
+          Slack・Chatworkのメッセージや会議録から、AIが「これはタスクにした方がいいかも」というものを自動で提案してくれます。
+        </p>
+        <FlowStep steps={['メッセージ受信', 'AIがアクション検知', '提案カード表示', 'あなたが承認/却下']} />
+
+        <div className="mt-3 space-y-2">
+          <p className="font-medium text-slate-700 text-sm">AIが検知するメッセージの例</p>
+          <ExampleBox>
+            「資料を作成して送ってください」<br />
+            「来週までに確認をお願いします」<br />
+            「至急対応してほしい件があります」
+          </ExampleBox>
+
+          <p className="font-medium text-slate-700 text-sm mt-3">提案カードでできること</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <ThumbsUp className="w-4 h-4 text-green-500" />
+              <span className="text-sm"><span className="font-medium">承認</span> — タスクとして登録されます。タイトル・期限・担当者を編集して承認できます。</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <ThumbsDown className="w-4 h-4 text-red-400" />
+              <span className="text-sm"><span className="font-medium">却下</span> — タスクにしません。AIはこの判断を学習し、次回から似たメッセージの提案を控えます。</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 bg-green-50 rounded-lg border border-green-200 text-xs text-slate-600">
+          <p className="font-medium text-slate-700 mb-1">AIの学習機能</p>
+          <p>却下した提案のパターンをAIが学習します。たとえば「了解しました」のような挨拶メッセージを何度か却下すると、以降は同じようなメッセージからは提案しなくなります。</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="依頼者・担当者の自動判定ルール" icon={UserCheck}>
+        <p className="mb-3">
+          チャネルメッセージからタスクが提案される際、「誰からの依頼か」「誰が担当すべきか」を以下のルールで自動判定します。
+        </p>
+
+        <div className="space-y-3">
+          <div className="p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+            <p className="font-medium text-slate-800 mb-1 flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-indigo-500" /> 依頼者 = メッセージの送り主
+            </p>
+            <p className="text-sm text-slate-600">
+              「〇〇をお願いします」と書いた人が依頼者になります。
+              社内メンバーでもクライアントでも同じルールです。
+            </p>
+          </div>
+
+          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <p className="font-medium text-slate-800 mb-1 flex items-center gap-2">
+              <User className="w-4 h-4 text-blue-500" /> 担当候補 = TO先・メンション先
+            </p>
+            <p className="text-sm text-slate-600">
+              SlackのTO先（@メンション）やChatworkのTO先がそのまま担当候補になります。
+              承認時に変更もできます。
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <p className="font-medium text-slate-700 text-sm mb-2">具体例</p>
+          <div className="space-y-2 text-sm text-slate-600">
+            <div className="flex items-start gap-2">
+              <span className="text-blue-500 font-mono text-xs bg-blue-50 px-1.5 py-0.5 rounded shrink-0">Slack</span>
+              <div>
+                <p className="font-mono text-xs bg-slate-100 px-2 py-1 rounded mb-1">田中さん: @佐藤 提案書の確認をお願いします</p>
+                <p>→ 依頼者: 田中さん、担当候補: 佐藤さん</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-teal-500 font-mono text-xs bg-teal-50 px-1.5 py-0.5 rounded shrink-0">CW</span>
+              <div>
+                <p className="font-mono text-xs bg-slate-100 px-2 py-1 rounded mb-1">[To:佐藤] 来週までに見積もり作成をお願いします</p>
+                <p>→ 依頼者: 送信者、担当候補: 佐藤さん</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 text-xs text-slate-600">
+          <p className="font-medium text-slate-700 mb-1">大事なルール: 1プロジェクト = 1チャネル</p>
+          <p>
+            タスクが正しいプロジェクトに紐づくためには、プロジェクトの「メンバー」タブでSlackチャネル（またはChatworkルーム）を登録しておく必要があります。
+            1つのチャネル = 1つのプロジェクトという対応関係がNodeMapの基本ルールです。
+          </p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="AIに相談する" icon={Brain}>
+        <p className="mb-2">
+          タスクの詳細パネルにある「AIに相談」ボタンをタップすると、そのタスクについてAIと壁打ちできます。
+        </p>
+        <div className="space-y-2 text-sm text-slate-600">
+          <p>AIはタスクの内容・プロジェクトの背景・過去の会話を踏まえて、一緒に考えてくれます。</p>
+          <ExampleBox>
+            「この提案書のアウトラインを考えて」<br />
+            「クライアントへの報告をどう構成するか相談したい」<br />
+            「このタスクの進め方がわからない」
+          </ExampleBox>
+          <p className="text-xs text-slate-400">※ AIとの会話内容は自動で要約され、タスク詳細パネルの「AI要約」に反映されます。</p>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="タスク作成のまとめ" icon={CheckCircle}>
+        <p className="mb-3 text-sm text-slate-600">タスクを作る方法は3通りあります。おすすめは自動提案からの承認です。</p>
+        <div className="space-y-2">
+          <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border border-green-100">
+            <Sparkles className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">AI自動提案から承認（おすすめ）</p>
+              <p className="text-sm text-slate-600">Slack・Chatwork・会議録からAIが検知。承認するだけでタスク化されます。依頼者・担当者も自動セット。</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+            <Bot className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">秘書に頼む</p>
+              <p className="text-sm text-slate-600">ホーム画面で「タスクを作成して」と話しかけると、秘書がプロジェクト・マイルストーンを聞いて作成します。</p>
+            </div>
+          </div>
+          <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+            <ListTodo className="w-5 h-5 text-slate-600 mt-0.5 shrink-0" />
+            <div>
+              <p className="font-medium text-slate-800">カンバンから手動作成</p>
+              <p className="text-sm text-slate-600">カンバンボードの「＋」ボタンから直接作成することもできます。</p>
+            </div>
+          </div>
+        </div>
       </SectionCard>
     </div>
   );
@@ -513,6 +745,7 @@ export default function GuidePage() {
   const tabContent: Record<string, React.ReactNode> = {
     overview: <OverviewTab />,
     secretary: <SecretaryTab />,
+    tasks: <TasksTab />,
     inbox: <InboxTab />,
     organizations: <OrganizationsTab />,
     settings: <SettingsTab />,
