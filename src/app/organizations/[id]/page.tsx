@@ -25,6 +25,7 @@ import MilestoneSection from '@/components/v2/MilestoneSection';
 import ProjectMembers from '@/components/project/ProjectMembers';
 // ProjectChannels は ProjectMembers に統合済み（v3.3）
 import ProjectResources from '@/components/project/ProjectResources';
+import RecurringRulesManager from '@/components/v42/RecurringRulesManager';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
 // ========================================
@@ -696,6 +697,8 @@ export default function OrganizationDetailPage() {
                       >秘書に相談</button>
                     </div>
                   </div>
+                  {/* v4.2: 繰り返しルール管理 */}
+                  <RecurringRulesManager projectId={currentProject.id} />
                 </div>
               )}
 

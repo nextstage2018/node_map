@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-11（v4.1 カレンダー連携強化 — tasks に estimated_hours/actual_hours、meeting_records に calendar_event_id 追加）
+最終更新: 2026-03-11（v4.2 繰り返しルール — project_recurring_rules 新設、meeting_records に recurring_rule_id 追加）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -1507,6 +1507,7 @@ CREATE TABLE meeting_records (
   metadata JSONB DEFAULT '{}'::jsonb,          -- MeetGeekメタデータ {host_email, source, join_link, language, ...}
   highlights JSONB DEFAULT '[]'::jsonb,        -- MeetGeekハイライト [{highlightText, label}]
   calendar_event_id TEXT DEFAULT NULL,           -- v4.1: Googleカレンダーのイベント ID
+  recurring_rule_id UUID REFERENCES project_recurring_rules(id) ON DELETE SET NULL DEFAULT NULL,  -- v4.2: 定例会ルール紐づけ
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -1534,6 +1535,7 @@ CREATE INDEX idx_meeting_records_source ON meeting_records(source_type, source_f
 - 会議録登録 → AI解析 → business_events自動追加 → 検討ツリー自動生成の一連パイプライン
 - MeetGeek重複防止: source_type='meetgeek' + source_file_id で一意チェック
 - **v4.1**: calendar_event_id で [NM-Meeting] カレンダーイベントと紐づけ
+- **v4.2**: recurring_rule_id で定例会ルールと紐づけ（MeetGeek照合で自動セット）
 - **RLS**: user_id でフィルタ（ただし user_id は nullable）
 
 ---
@@ -1895,6 +1897,49 @@ CREATE INDEX idx_meeting_agenda_user_upcoming ON meeting_agenda(user_id, meeting
 - **linked_meeting_record_id**: 会議実施後にmeeting_recordsと紐づけ
 - **items**: JSONB配列（Phase 3で個別追跡が必要になれば別テーブルに分離検討）
 - **自動生成**: Cronで open_issues(優先度順) + decision_log(最新) + tasks(進行中) からアジェンダ項目を構成
+
+---
+
+### project_recurring_rules（繰り返しルール）[v4.2]
+
+**目的**: プロジェクト単位の繰り返しルール管理（会議/タスク/ジョブの定期自動生成）
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE project_recurring_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('meeting', 'task', 'job')),
+  title TEXT NOT NULL,
+  rrule TEXT NOT NULL,                    -- iCal RRULE形式
+  lead_days INTEGER NOT NULL DEFAULT 7,   -- 事前生成日数
+  calendar_sync BOOLEAN NOT NULL DEFAULT false,
+  auto_create BOOLEAN NOT NULL DEFAULT true,
+  metadata JSONB DEFAULT '{}',            -- テンプレート情報等
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  occurrence_count INTEGER NOT NULL DEFAULT 0,  -- 累計実行回数
+  last_generated_at TIMESTAMPTZ DEFAULT NULL,   -- 最後に自動生成した日時
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_recurring_rules_project ON project_recurring_rules(project_id);
+CREATE INDEX idx_recurring_rules_enabled ON project_recurring_rules(enabled) WHERE enabled = true;
+```
+
+#### 注意事項
+
+- **rrule**: iCal RRULE形式。例: `FREQ=WEEKLY;BYDAY=MO`（毎週月曜）、`FREQ=MONTHLY;BYMONTHDAY=28`（毎月28日）
+- **lead_days**: この日数前にタスク/ジョブを自動生成（Cronが毎日チェック）
+- **occurrence_count**: MeetGeek照合時にも自動インクリメント（「第N回 〇〇」のカウント）
+- **calendar_sync**: type=meeting の場合のみ有効。[NM-Meeting] プレフィックスでカレンダー登録
+- **metadata**: type=meeting の場合 `{ start_hour: 10, duration_minutes: 60 }` 等
+- **meeting_records.recurring_rule_id**: MeetGeek照合でマッチしたルールを紐づけ
 
 ---
 

@@ -461,12 +461,34 @@ export async function POST(request: NextRequest) {
 
     console.log(`[MeetGeek Webhook] プロジェクトID: ${projectId} (判定方法: ${matchMethod})`);
 
+    // ---- v4.2: 定例会ルールとの照合 ----
+    let recurringRuleId: string | null = null;
+    let finalTitle = meetingTitle;
+    try {
+      const { matchRecurringMeeting } = await import('@/services/v42/recurringRules.service');
+      const { ruleId, occurrenceNumber } = await matchRecurringMeeting(
+        projectId,
+        meetingTitle,
+        meetingDate
+      );
+      if (ruleId) {
+        recurringRuleId = ruleId;
+        // 「第N回 〇〇」形式でタイトルを更新
+        if (occurrenceNumber > 0) {
+          finalTitle = `第${occurrenceNumber}回 ${meetingTitle}`;
+        }
+        console.log(`[MeetGeek Webhook] 定例会マッチ: ruleId=${ruleId}, 第${occurrenceNumber}回`);
+      }
+    } catch (recurErr) {
+      console.warn('[MeetGeek Webhook] 定例会照合エラー（続行）:', recurErr);
+    }
+
     // ---- meeting_recordsに保存 ----
     const { data: record, error: insertError } = await supabase
       .from('meeting_records')
       .insert({
         project_id: projectId,
-        title: meetingTitle,
+        title: finalTitle,
         meeting_date: meetingDate,
         content: transcriptText,
         source_type: 'meetgeek',
@@ -479,6 +501,8 @@ export async function POST(request: NextRequest) {
         meeting_end_at: endUtc || null,
         metadata,
         highlights,
+        // v4.2: 定例会ルール紐づけ
+        recurring_rule_id: recurringRuleId,
       })
       .select()
       .single();

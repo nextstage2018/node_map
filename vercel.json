@@ -73,6 +73,10 @@
     {
       "path": "/api/cron/update-meeting-agenda-descriptions",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/process-recurring-rules",
+      "schedule": "30 6 * * *"
     }
   ]
 }
