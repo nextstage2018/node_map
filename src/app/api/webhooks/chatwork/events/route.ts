@@ -120,13 +120,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    const roomId = String(event.room_id);
+
     if (!isTaskRequest(messageBody)) {
       // v4.3: メンション先がNodeMapの場合はボット応答
       const isMentionToMe = body.webhook_event_type === 'mention_to_me' || isMentionedToBot(messageBody, myAccountId);
       if (isMentionToMe) {
+        // ★★★ 即レスをHTTPレスポンス返却前に同期送信（最重要）★★★
+        await sendReply(roomId, '確認中です...');
+
         processBotMention({
           text: cleanedText,
-          roomId: String(event.room_id),
+          roomId,
+          skipInstantReply: true, // 即レスは送信済み
         }).catch(err => console.error('[Chatwork Webhook] ボット応答エラー:', err));
         return NextResponse.json({ ok: true });
       }
@@ -134,16 +140,20 @@ export async function POST(request: NextRequest) {
       // v4.0: タスク指示でないメッセージ → アクションアイテム検出 → タスク提案
       processMessageSuggestion({
         text: cleanedText,
-        roomId: String(event.room_id),
+        roomId,
       }).catch(err => console.error('[Chatwork Webhook] メッセージ提案エラー:', err));
       return NextResponse.json({ ok: true });
     }
 
+    // ★★★ タスク作成時も即レスを同期送信 ★★★
+    await sendReply(roomId, '確認中です...');
+
     processTaskCreation({
       text: cleanedText,
-      roomId: String(event.room_id),
+      roomId,
       messageId: String(event.message_id),
       fromAccountId: event.from_account_id,
+      skipInstantReply: true, // 即レスは送信済み
     }).catch(err => console.error('[Chatwork Webhook] バックグラウンド処理エラー:', err));
 
     return NextResponse.json({ ok: true });
@@ -205,8 +215,9 @@ async function processTaskCreation(params: {
   roomId: string;
   messageId: string;
   fromAccountId: number;
+  skipInstantReply?: boolean;
 }) {
-  const { text, roomId, messageId, fromAccountId } = params;
+  const { text, roomId, messageId, fromAccountId, skipInstantReply } = params;
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
@@ -215,8 +226,10 @@ async function processTaskCreation(params: {
       return;
     }
 
-    // ★ 即レス: タスク処理開始通知
-    sendReply(roomId, 'タスク処理を開始します...').catch(() => {});
+    // 即レス: POSTハンドラで送信済みの場合はスキップ
+    if (!skipInstantReply) {
+      sendReply(roomId, 'タスク処理を開始します...').catch(() => {});
+    }
 
     const { createTaskFromMessage } = await import('@/services/v4/taskFromMessage.service');
     const result = await createTaskFromMessage({
@@ -318,11 +331,14 @@ function isMentionedToBot(body: string, myAccountId: number | null): boolean {
 async function processBotMention(params: {
   text: string;
   roomId: string;
+  skipInstantReply?: boolean;
 }) {
-  const { text, roomId } = params;
+  const { text, roomId, skipInstantReply } = params;
 
-  // ★ 即レス: 処理開始を即座に通知（最優先）
-  await sendReply(roomId, '確認中です...').catch(() => {});
+  // 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
+  if (!skipInstantReply) {
+    await sendReply(roomId, '確認中です...').catch(() => {});
+  }
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;

@@ -60,22 +60,32 @@ export async function POST(request: NextRequest) {
 
     if (event.type === 'app_mention') {
       const text = event.text || '';
+      const channelId = event.channel;
+      const threadTs = event.thread_ts || event.ts;
+
+      // ★★★ 即レスをHTTPレスポンス返却前に同期送信（最重要）★★★
+      // Vercelではreturn後のバックグラウンド処理が遅延するため、
+      // 即レスだけはリクエストライフサイクル内で確実に送信する
+      await sendQuickReply(channelId, threadTs, '確認中です...');
+
       if (isTaskRequest(text)) {
         processTaskCreation({
           text: text.replace(/<@[A-Z0-9]+>/g, '').trim(),
-          channelId: event.channel,
+          channelId,
           messageTs: event.ts,
-          threadTs: event.thread_ts || event.ts,
+          threadTs,
           userId: event.user,
           teamId,
+          skipInstantReply: true, // 即レスは送信済み
         }).catch(err => console.error('[Slack Events] バックグラウンド処理エラー:', err));
       } else {
         // v4.3: チャネルボット — メンション応答
         processBotMention({
           text,
-          channelId: event.channel,
-          threadTs: event.thread_ts || event.ts,
+          channelId,
+          threadTs,
           teamId,
+          skipInstantReply: true, // 即レスは送信済み
         }).catch(err => console.error('[Slack Events] ボット応答エラー:', err));
       }
     } else if (event.type === 'message' && !event.bot_id && !event.subtype) {
@@ -84,7 +94,7 @@ export async function POST(request: NextRequest) {
       processMessageSuggestion({
         text,
         channelId: event.channel,
-        senderName: undefined, // Slack APIで別途取得が必要な場合
+        senderName: undefined,
       }).catch(err => console.error('[Slack Events] メッセージ提案エラー:', err));
     } else if (event.type === 'reaction_added') {
       const reaction = event.reaction || '';
@@ -112,8 +122,9 @@ async function processTaskCreation(params: {
   threadTs: string;
   userId: string;
   teamId: string;
+  skipInstantReply?: boolean;
 }) {
-  const { text, channelId, messageTs, threadTs, userId, teamId } = params;
+  const { text, channelId, messageTs, threadTs, userId, teamId, skipInstantReply } = params;
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
@@ -122,8 +133,10 @@ async function processTaskCreation(params: {
       return;
     }
 
-    // 即レス：処理開始を通知（軽量版）
-    sendQuickReply(channelId, threadTs, 'タスク処理を開始します...');
+    // 即レス：処理開始を通知（POSTハンドラで送信済みの場合はスキップ）
+    if (!skipInstantReply) {
+      sendQuickReply(channelId, threadTs, 'タスク処理を開始します...');
+    }
 
     let threadContext: string | undefined;
     if (threadTs && threadTs !== messageTs) {
@@ -342,11 +355,14 @@ async function processBotMention(params: {
   channelId: string;
   threadTs: string;
   teamId: string;
+  skipInstantReply?: boolean;
 }) {
-  const { text, channelId, threadTs } = params;
+  const { text, channelId, threadTs, skipInstantReply } = params;
 
-  // ★ 即レス: 処理開始を即座に通知（最優先・エラーでも先に送信）
-  await sendQuickReply(channelId, threadTs, '確認中です...');
+  // ★ 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
+  if (!skipInstantReply) {
+    await sendQuickReply(channelId, threadTs, '確認中です...');
+  }
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
