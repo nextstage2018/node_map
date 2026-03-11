@@ -108,6 +108,16 @@ export async function POST(request: NextRequest) {
     }
 
     if (!isTaskRequest(messageBody)) {
+      // v4.3: メンション先がNodeMapの場合はボット応答
+      const isMentionToMe = body.webhook_event_type === 'mention_to_me' || isMentionedToBot(messageBody, myAccountId);
+      if (isMentionToMe) {
+        processBotMention({
+          text: cleanedText,
+          roomId: String(event.room_id),
+        }).catch(err => console.error('[Chatwork Webhook] ボット応答エラー:', err));
+        return NextResponse.json({ ok: true });
+      }
+
       // v4.0: タスク指示でないメッセージ → アクションアイテム検出 → タスク提案
       processMessageSuggestion({
         text: cleanedText,
@@ -277,5 +287,76 @@ async function processMessageSuggestion(params: {
     });
   } catch (error) {
     console.error('[Chatwork Webhook] メッセージ提案処理エラー:', error);
+  }
+}
+
+// v4.3: メンション先がNodeMapボットかチェック
+function isMentionedToBot(body: string, myAccountId: number | null): boolean {
+  if (!myAccountId) return false;
+  // [To:12345] 形式でメンションされているかチェック
+  const regex = new RegExp(`\\[To:${myAccountId}\\]`);
+  return regex.test(body);
+}
+
+// v4.3: チャネルボット — メンション応答（読み取り専用）
+async function processBotMention(params: {
+  text: string;
+  roomId: string;
+}) {
+  const { text, roomId } = params;
+
+  try {
+    const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
+    if (!ownerUserId) return;
+
+    // ルームID → プロジェクト特定
+    const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return;
+
+    const { data: channel } = await supabase
+      .from('project_channels')
+      .select('project_id')
+      .eq('service_name', 'chatwork')
+      .eq('identifier', roomId)
+      .maybeSingle();
+
+    if (!channel?.project_id) {
+      await sendChatworkReply(roomId, 'このルームはNodeMapプロジェクトに紐づいていません。');
+      return;
+    }
+
+    // Intent分類
+    const { classifyBotIntent, extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
+    const cleanText = extractChatworkMentionText(text);
+    const intent = classifyBotIntent(cleanText);
+
+    // レスポンス生成
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
+    const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
+    const response = await generateBotResponse(channel.project_id, intent, baseUrl);
+
+    // Chatwork返信（Markdownの**太字**をChatwork形式に変換不要 — そのまま投稿）
+    await sendChatworkReply(roomId, response.text);
+  } catch (error) {
+    console.error('[Chatwork Webhook] ボット応答処理エラー:', error);
+  }
+}
+
+async function sendChatworkReply(roomId: string, text: string) {
+  const token = process.env.CHATWORK_API_TOKEN;
+  if (!token) return;
+
+  try {
+    await fetch(`https://api.chatwork.com/v2/rooms/${roomId}/messages`, {
+      method: 'POST',
+      headers: {
+        'X-ChatWorkToken': token,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `body=${encodeURIComponent(text)}`,
+    });
+  } catch (error) {
+    console.error('[Chatwork Webhook] 返信エラー:', error);
   }
 }

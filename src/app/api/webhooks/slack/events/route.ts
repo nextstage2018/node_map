@@ -56,6 +56,14 @@ export async function POST(request: NextRequest) {
           userId: event.user,
           teamId,
         }).catch(err => console.error('[Slack Events] バックグラウンド処理エラー:', err));
+      } else {
+        // v4.3: チャネルボット — メンション応答
+        processBotMention({
+          text,
+          channelId: event.channel,
+          threadTs: event.thread_ts || event.ts,
+          teamId,
+        }).catch(err => console.error('[Slack Events] ボット応答エラー:', err));
       }
     } else if (event.type === 'message' && !event.bot_id && !event.subtype) {
       // v4.0: 通常メッセージ → アクションアイテム検出 → タスク提案
@@ -312,5 +320,52 @@ async function processMessageSuggestion(params: {
     });
   } catch (error) {
     console.error('[Slack Events] メッセージ提案処理エラー:', error);
+  }
+}
+
+// v4.3: チャネルボット — メンション応答（読み取り専用）
+async function processBotMention(params: {
+  text: string;
+  channelId: string;
+  threadTs: string;
+  teamId: string;
+}) {
+  const { text, channelId, threadTs } = params;
+
+  try {
+    const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
+    if (!ownerUserId) return;
+
+    // チャネル → プロジェクト特定
+    const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return;
+
+    const { data: channel } = await supabase
+      .from('project_channels')
+      .select('project_id')
+      .eq('service_name', 'slack')
+      .eq('identifier', channelId)
+      .maybeSingle();
+
+    if (!channel?.project_id) {
+      sendQuickReply(channelId, threadTs, 'このチャネルはNodeMapプロジェクトに紐づいていません。');
+      return;
+    }
+
+    // Intent分類
+    const { classifyBotIntent, extractSlackMentionText } = await import('@/services/v43/botIntentClassifier.service');
+    const cleanText = extractSlackMentionText(text);
+    const intent = classifyBotIntent(cleanText);
+
+    // レスポンス生成
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
+    const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
+    const response = await generateBotResponse(channel.project_id, intent, baseUrl);
+
+    // Slack返信
+    await sendSlackReply(channelId, threadTs, response.text, ownerUserId);
+  } catch (error) {
+    console.error('[Slack Events] ボット応答処理エラー:', error);
   }
 }
