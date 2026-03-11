@@ -35,7 +35,7 @@ export async function getAllProjectChannels(): Promise<ProjectChannel[]> {
   try {
     const { data: channels } = await supabase
       .from('project_channels')
-      .select('project_id, service_name, identifier')
+      .select('project_id, service_name, channel_identifier')
       .in('service_name', ['slack', 'chatwork']);
 
     if (!channels || channels.length === 0) return [];
@@ -68,7 +68,7 @@ export async function getAllProjectChannels(): Promise<ProjectChannel[]> {
       .map(c => ({
         project_id: c.project_id,
         service_name: c.service_name as 'slack' | 'chatwork',
-        identifier: c.identifier,
+        identifier: c.channel_identifier,
         project_name: projectMap.get(c.project_id)?.name || '不明',
         relationship_type: projectMap.get(c.project_id)?.relType || 'internal',
       }));

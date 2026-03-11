@@ -318,7 +318,7 @@ async function processBotMention(params: {
       .from('project_channels')
       .select('project_id')
       .eq('service_name', 'chatwork')
-      .eq('identifier', roomId)
+      .eq('channel_identifier', roomId)
       .maybeSingle();
 
     if (!channel?.project_id) {

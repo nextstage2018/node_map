@@ -345,7 +345,7 @@ async function processBotMention(params: {
       .from('project_channels')
       .select('project_id')
       .eq('service_name', 'slack')
-      .eq('identifier', channelId)
+      .eq('channel_identifier', channelId)
       .maybeSingle();
 
     if (!channel?.project_id) {
