@@ -647,3 +647,288 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 rm -rf .next && npm run build              # キャッシュエラー
 rm -rf .next node_modules package-lock.json && npm install && npm run build  # 依存関係エラー
 ```
+
+---
+
+## v4.0 タスク管理カンバン（実装済み）
+
+### 概要
+サイドメニューに「タスク」画面を新設。カンバンボード（個人/チーム切替）+ タスク詳細パネル + AI提案カード。
+
+### 実装済み機能
+- **カンバンボード**: 4列（todo/in_progress/review/done）、ドラッグ&ドロップ対応
+- **個人/チーム切替**: 個人タスク（自分のみ）とチームタスク（project_members経由）
+- **タスク詳細パネル**: タイトルインライン編集、期限日付ピッカー、依頼者・担当者表示、AI要約、ステータスドロップダウン
+- **AI提案カード**: task_suggestions からの承認/却下UI、学習機能（却下パターン記録）
+- **依頼者・担当者自動判定**: メッセージ送信者→依頼者、TO先（Slack `<@U...>` / CW `[To:N]`）→担当候補
+- **AIに相談ボタン**: タスク単位でAI壁打ち
+
+### 主要コンポーネント
+- `src/components/v4/KanbanBoard.tsx` — カンバンボード本体
+- `src/components/v4/TaskDetailPanel.tsx` — 詳細パネル（インライン編集）
+- `src/components/v4/TaskSuggestionCards.tsx` — AI提案カード
+- `src/app/v4-tasks/page.tsx` — タスク画面ページ
+
+### 追加カラム（tasksテーブル）
+- `requester_contact_id` TEXT — 依頼者（contact_persons FK）
+- `assigned_contact_id` TEXT — 担当者（contact_persons FK）
+- `source_message_id` TEXT — 元メッセージID
+- `source_type` TEXT — 作成元（slack/chatwork/meeting等）
+
+---
+
+## v4.1 カレンダー連携強化（設計済み・未実装）
+
+### カレンダー命名ルール体系
+
+| プレフィックス | 用途 | 空き判定 |
+|---|---|---|
+| `[NM-Task]` | タスクの作業予定 | **除外**（空きとみなす） |
+| `[NM-Meeting]` | 会議の予定 | **含む**（実拘束時間） |
+| `[NM-Job]` | ジョブの予定 | **除外**（空きとみなす） |
+
+### 空き時間判定ロジック
+
+```
+空きなし = 個人で入れた予定 + [NM-Meeting]
+空きあり = [NM-Task] + [NM-Job] は無視
+→ 「本当に拘束される時間」だけで空き判定
+
+isNodeMapEvent() を拡張:
+  現行: [NM-Task] [NM-Job] → 除外
+  追加: [NM-Meeting] → 除外しない（実拘束）
+```
+
+### タスク → カレンダー登録
+
+```
+イベント種別: 時間枠（終日ではない）
+タイトル: [NM-Task] タスク名
+開始/終了: tasks.scheduled_start / tasks.scheduled_end
+目的: 工数管理 + 期限遵守
+
+工数管理フロー:
+  タスク作成時 → 見積もり工数（時間）を設定
+  → 空き時間にカレンダーブロック自動配置
+  → 完了時 → 実績時間を記録
+  → 見積もり vs 実績 → 精度改善データとして蓄積
+```
+
+### 会議 → カレンダー登録
+
+```
+タイトル: [NM-Meeting] 会議タイトル
+開始/終了: 会議時間
+備考(description): アジェンダ自動注入（2段階更新）
+
+アジェンダ備考の更新タイミング:
+  05:00 → 初回生成（generate-meeting-agendas Cron）
+  21:00 → 最終更新（当日の進捗・新規決定を反映してカレンダー備考を上書き）
+```
+
+### 実装タスク
+
+```
+1. CALENDAR_PREFIX に 'meeting' 追加（src/lib/constants.ts）
+2. isNodeMapEvent() を拡張 — [NM-Meeting] は除外しない分岐追加
+3. タスク→カレンダー登録API（POST /api/tasks/[id]/calendar-sync）
+4. 会議→カレンダー登録API（POST /api/meeting-records/[id]/calendar-sync）
+5. アジェンダ備考注入 — generate-meeting-agendas Cron に備考更新ロジック追加
+6. 21:00 最終更新Cron 新設（/api/cron/update-meeting-agenda-descriptions）
+7. 工数管理カラム追加（tasks: estimated_hours, actual_hours）
+```
+
+---
+
+## v4.2 繰り返しルール（設計済み・未実装）
+
+### 新テーブル: project_recurring_rules
+
+```sql
+CREATE TABLE project_recurring_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('meeting', 'task', 'job')),
+  title TEXT NOT NULL,
+  rrule TEXT NOT NULL,                    -- iCal RRULE形式
+  lead_days INTEGER NOT NULL DEFAULT 7,   -- 事前生成日数
+  calendar_sync BOOLEAN NOT NULL DEFAULT false,
+  auto_create BOOLEAN NOT NULL DEFAULT true,
+  metadata JSONB DEFAULT '{}',            -- テンプレート情報等
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX idx_recurring_rules_project ON project_recurring_rules(project_id);
+```
+
+### 動作仕様
+
+```
+type=meeting + calendar_sync=true:
+  → [NM-Meeting]でカレンダーイベント登録
+  → 備考にアジェンダ自動セット（v4.1の仕組みを利用）
+  → MeetGeek Webhook受信時に照合（同日 + タイトル類似度 > 閾値）
+  → 回数自動カウント「第N回 〇〇」
+
+type=task + auto_create=true:
+  → lead_days前にタスクを自動生成（Cron）
+  → 最新マイルストーンに自動配置
+  → 前回完了が遅れても次の期限は固定スケジュール
+  → 例: 月末レポート（毎月末締め）→ lead_days=7 → 毎月23日頃にタスク生成
+
+type=job:
+  → ジョブを自動生成（lead_days前）
+```
+
+### MeetGeek照合ロジック強化
+
+```
+MeetGeek Webhook受信時:
+  1. 現行: 参加者メール → コンタクト → 組織 → PJ
+  2. 追加: PJ確定後、recurring_rules(type=meeting) と照合
+     → 同日 + タイトル類似度 > 閾値 → 紐づけ
+     → meeting_records.recurring_rule_id に記録
+     → 「第N回 〇〇」のカウント自動付与
+```
+
+### 実装タスク
+
+```
+1. SQLマイグレーション（project_recurring_rules テーブル作成）
+2. 設定UI（プロジェクト設定内に繰り返しルール管理セクション）
+3. Cron: /api/cron/process-recurring-rules（毎日06:30）
+   → 各ルールの次回実行日を算出
+   → lead_days前に該当するものをタスク/ジョブ/会議として自動生成
+4. MeetGeek照合ロジック更新（webhooks/meetgeek/route.ts）
+5. meeting_records に recurring_rule_id カラム追加
+6. TABLE_SPECS.md 更新
+```
+
+---
+
+## v4.3 チャネルボット — メンション応答（設計済み・未実装）
+
+### 概要
+
+Slack・Chatworkのチャネル内で @NodeMap にメンションすると、プロジェクト情報を返答するボット。**読み取り専用**（変更操作はNodeMap画面に誘導）。
+
+### ボット Intent（6種）
+
+| Intent | トリガー例 | データソース |
+|---|---|---|
+| `bot_issues` | 「課題は？」「未確定事項を教えて」 | open_issues |
+| `bot_decisions` | 「決定事項は？」「先週何が決まった？」 | decision_log |
+| `bot_tasks` | 「タスク状況は？」「佐藤さんの進捗は？」 | tasks |
+| `bot_agenda` | 「次の会議のアジェンダは？」 | meeting_agenda |
+| `bot_summary` | 「今週のまとめは？」 | business_events + tasks |
+| `bot_help` | 「何ができる？」 | 静的テキスト |
+
+### 公開レベル（organizations.relationship_type で分岐）
+
+```
+internal（自社チャネル）:
+  ✅ open_issues（未確定事項）
+  ✅ decision_log（意思決定）
+  ✅ タスク進捗
+  ❌ 思考ログ（thought_task_nodes / thought_edges）
+
+client / partner（社外チャネル）:
+  ❌ open_issues（社内の迷いは非公開）
+  ✅ decision_log（意思決定 = 共有すべき）
+  ✅ タスク進捗（進捗報告として有用）
+  ❌ 思考ログ
+
+判定フロー:
+  チャネル → project_channels → project → organization → relationship_type
+```
+
+### 原則: 参照OK、変更NG
+
+```
+変更操作リクエスト時:
+  「タスク作成して」→ 「NodeMapの秘書画面から作成できます: [リンク]」
+  「この課題をクローズして」→ 「NodeMapから操作してください: [リンク]」
+```
+
+### 検知方法
+
+```
+Slack: Events API — app_mention イベント
+  → POST /api/webhooks/slack/mention
+  → チャネルID → project_channels → PJ特定
+  → intent分類 → データ取得 → 公開レベルフィルタ → Slack API で返信
+
+Chatwork: Webhook — メンション検知
+  → POST /api/webhooks/chatwork/mention
+  → ルームID → project_channels → PJ特定
+  → intent分類 → データ取得 → 公開レベルフィルタ → Chatwork API で返信
+```
+
+### 実装タスク
+
+```
+1. Slack Events API 設定（app_mention スコープ追加）
+2. Chatwork Webhook 設定
+3. POST /api/webhooks/slack/mention — Slack メンション応答API
+4. POST /api/webhooks/chatwork/mention — Chatwork メンション応答API
+5. botIntentClassifier.service.ts — ボット用intent分類（6種）
+6. botResponseGenerator.service.ts — 公開レベルフィルタ付きレスポンス生成
+7. 環境変数追加: SLACK_APP_ID, CHATWORK_WEBHOOK_TOKEN
+```
+
+---
+
+## v4.4 チャネルボット — 定期配信（設計済み・未実装）
+
+### 定期配信スケジュール
+
+| タイミング | 内容 | 配信先 |
+|---|---|---|
+| **月曜 09:00** | 今週のアジェンダサマリー（open_issues件数 + 今週のタスク + 予定会議） | 全PJチャネル |
+| **金曜 17:00** | 今週の成果レポート（完了タスク + 新規決定事項 + 新たな未確定事項） | 全PJチャネル |
+| **随時（Cron検知）** | アラート（stale未確定事項 / タスク期限超過 / MS期限接近） | 該当PJチャネル |
+
+### 配信内容のrelationship_type分岐
+
+```
+internal（自社チャネル）:
+  月曜: open_issues + タスク一覧 + 会議予定
+  金曜: 完了タスク + 決定事項 + 新規未確定事項
+  アラート: stale + 期限超過 + MS接近
+
+client / partner（社外チャネル）:
+  月曜: タスク一覧 + 会議予定（open_issuesなし）
+  金曜: 完了タスク + 決定事項（未確定事項なし）
+  アラート: タスク期限超過 + MS接近（staleなし）
+```
+
+### 実装タスク
+
+```
+1. Cron: /api/cron/bot-weekly-briefing（月曜 09:00 = UTC 00:00）
+   → 全PJの project_channels を取得
+   → relationship_type で配信内容分岐
+   → Slack/Chatwork API で投稿
+2. Cron: /api/cron/bot-weekly-report（金曜 17:00 = UTC 08:00）
+   → 同上
+3. Cron: /api/cron/bot-alerts（毎日 09:30 = UTC 00:30）
+   → stale検知（open_issues.status = 'stale'）
+   → タスク期限超過（tasks.due_date < today, status != 'done'）
+   → MS期限接近（milestones.due_date - today <= 2）
+   → 該当PJチャネルにアラート投稿
+4. botMessageFormatter.service.ts — Slack/CW用メッセージフォーマット
+5. vercel.json にCronスケジュール追加
+```
+
+---
+
+## 開発フェーズ順序
+
+```
+v4.0 タスク管理カンバン           ← 実装済み
+v4.1 カレンダー連携強化           ← 次に実装
+v4.2 繰り返しルール               ← v4.1の後
+v4.3 チャネルボット（メンション応答）← v4.2の後
+v4.4 チャネルボット（定期配信）     ← v4.3の後
+```
