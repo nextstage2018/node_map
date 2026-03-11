@@ -321,36 +321,81 @@ async function processBotMention(params: {
 }) {
   const { text, roomId } = params;
 
+  // ★ 即レス: 処理開始を即座に通知（最優先）
+  await sendReply(roomId, '確認中です...').catch(() => {});
+
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
-    if (!ownerUserId) return;
-
-    // ★ 即レス: 処理開始を即座に通知
-    sendReply(roomId, '確認中です...').catch(() => {});
+    if (!ownerUserId) {
+      console.error('[Chatwork Webhook] ENV_TOKEN_OWNER_ID が未設定');
+      await sendReply(roomId, '設定エラーが発生しました。管理者にお問い合わせください。');
+      return;
+    }
 
     // ルームID → プロジェクト特定
     const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
     const supabase = getServerSupabase() || getSupabase();
-    if (!supabase) return;
+    if (!supabase) {
+      await sendReply(roomId, 'データベースに接続できません。');
+      return;
+    }
 
-    const { data: channel } = await supabase
+    // デバッグ: channel_identifier の値を確認
+    console.log(`[Chatwork Webhook] チャネル検索: service=chatwork, channel_identifier=${roomId}`);
+
+    // まず完全一致で検索
+    let channel = await supabase
       .from('project_channels')
-      .select('project_id')
+      .select('project_id, channel_identifier')
       .eq('service_name', 'chatwork')
       .eq('channel_identifier', roomId)
       .maybeSingle();
 
-    if (!channel?.project_id) {
-      await sendChatworkReply(roomId, 'このルームはNodeMapプロジェクトに紐づいていません。');
+    console.log(`[Chatwork Webhook] 検索結果: ${JSON.stringify(channel.data)}`);
+
+    // 完全一致がなければ、部分一致やlike検索を試す（roomIdが含まれるか）
+    if (!channel.data?.project_id) {
+      const { data: allChannels } = await supabase
+        .from('project_channels')
+        .select('project_id, channel_identifier, service_name')
+        .eq('service_name', 'chatwork');
+      console.log(`[Chatwork Webhook] chatworkチャネル一覧: ${JSON.stringify(allChannels)}`);
+
+      // channel_identifier にroomIdが含まれるか部分マッチ
+      const match = allChannels?.find(c =>
+        c.channel_identifier === roomId ||
+        c.channel_identifier === String(roomId) ||
+        String(c.channel_identifier).includes(String(roomId))
+      );
+      if (match) {
+        channel = { data: match, error: null, count: null, status: 200, statusText: 'OK' } as any;
+        console.log(`[Chatwork Webhook] 部分一致で発見: ${JSON.stringify(match)}`);
+      }
+    }
+
+    if (!channel.data?.project_id) {
+      await sendReply(roomId, `このルームはNodeMapプロジェクトに紐づいていません。\n(roomId: ${roomId})`);
       return;
     }
 
     // ★ AI intent分類（フォールバック: キーワードベース）
-    const { extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
-    const cleanText = extractChatworkMentionText(text);
+    let cleanText: string;
+    try {
+      const { extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
+      cleanText = extractChatworkMentionText(text);
+    } catch (importErr) {
+      console.error('[Chatwork Webhook] botIntentClassifier import エラー:', importErr);
+      cleanText = text.replace(/\[To:\d+\][^\n]*/g, '').trim();
+    }
 
-    const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
-    const classification = await classifyBotIntentWithAi(cleanText);
+    let classification;
+    try {
+      const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
+      classification = await classifyBotIntentWithAi(cleanText);
+    } catch (aiErr) {
+      console.error('[Chatwork Webhook] AI分類 import/実行エラー:', aiErr);
+      classification = { intent: 'bot_help' as const, isTaskCreate: false, source: 'keyword' as const };
+    }
 
     // タスク作成依頼と判定された場合 → 作成フローへ
     if (classification.isTaskCreate) {
@@ -359,36 +404,26 @@ async function processBotMention(params: {
         roomId,
         messageId: '',
         fromAccountId: 0,
-      }).catch(err => console.error('[Chatwork Webhook] ボット→タスク作成リダイレクトエラー:', err));
+      }).catch(err => {
+        console.error('[Chatwork Webhook] ボット→タスク作成リダイレクトエラー:', err);
+        sendReply(roomId, 'タスク作成中にエラーが発生しました。').catch(() => {});
+      });
       return;
     }
 
     // レスポンス生成
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
     const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
-    const response = await generateBotResponse(channel.project_id, classification.intent, baseUrl);
+    const response = await generateBotResponse(channel.data.project_id, classification.intent, baseUrl);
 
     // Chatwork返信
-    await sendChatworkReply(roomId, response.text);
+    await sendReply(roomId, response.text);
   } catch (error) {
     console.error('[Chatwork Webhook] ボット応答処理エラー:', error);
+    // ★ エラーでも必ず返信する
+    await sendReply(roomId, '処理中にエラーが発生しました。もう一度お試しください。').catch(() => {});
   }
 }
 
-async function sendChatworkReply(roomId: string, text: string) {
-  const token = process.env.CHATWORK_API_TOKEN;
-  if (!token) return;
-
-  try {
-    await fetch(`https://api.chatwork.com/v2/rooms/${roomId}/messages`, {
-      method: 'POST',
-      headers: {
-        'X-ChatWorkToken': token,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: `body=${encodeURIComponent(text)}`,
-    });
-  } catch (error) {
-    console.error('[Chatwork Webhook] 返信エラー:', error);
-  }
-}
+// ★ 注意: すべてのChatwork返信は sendReply() を使用すること
+// sendReply は CHATWORK_BOT_API_TOKEN を優先使用し、BOTアカウントから送信する

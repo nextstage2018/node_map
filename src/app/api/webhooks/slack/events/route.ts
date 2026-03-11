@@ -345,17 +345,24 @@ async function processBotMention(params: {
 }) {
   const { text, channelId, threadTs } = params;
 
+  // ★ 即レス: 処理開始を即座に通知（最優先・エラーでも先に送信）
+  await sendQuickReply(channelId, threadTs, '確認中です...');
+
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
-    if (!ownerUserId) return;
-
-    // ★ 即レス: 処理開始を即座に通知
-    sendQuickReply(channelId, threadTs, '確認中です...');
+    if (!ownerUserId) {
+      console.error('[Slack Events] ENV_TOKEN_OWNER_ID が未設定');
+      await sendQuickReply(channelId, threadTs, '設定エラーが発生しました。管理者にお問い合わせください。');
+      return;
+    }
 
     // チャネル → プロジェクト特定
     const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
     const supabase = getServerSupabase() || getSupabase();
-    if (!supabase) return;
+    if (!supabase) {
+      await sendQuickReply(channelId, threadTs, 'データベースに接続できません。');
+      return;
+    }
 
     const { data: channel } = await supabase
       .from('project_channels')
@@ -364,17 +371,32 @@ async function processBotMention(params: {
       .eq('channel_identifier', channelId)
       .maybeSingle();
 
+    console.log(`[Slack Events] チャネル検索: service=slack, channel_identifier=${channelId}, 結果=${JSON.stringify(channel)}`);
+
     if (!channel?.project_id) {
-      await sendSlackReply(channelId, threadTs, 'このチャネルはNodeMapプロジェクトに紐づいていません。', ownerUserId);
+      await sendQuickReply(channelId, threadTs, 'このチャネルはNodeMapプロジェクトに紐づいていません。');
       return;
     }
 
     // ★ AI intent分類（フォールバック: キーワードベース）
-    const { extractSlackMentionText } = await import('@/services/v43/botIntentClassifier.service');
-    const cleanText = extractSlackMentionText(text);
+    let cleanText: string;
+    try {
+      const { extractSlackMentionText } = await import('@/services/v43/botIntentClassifier.service');
+      cleanText = extractSlackMentionText(text);
+    } catch (importErr) {
+      console.error('[Slack Events] botIntentClassifier import エラー:', importErr);
+      cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
+    }
 
-    const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
-    const classification = await classifyBotIntentWithAi(cleanText);
+    let classification;
+    try {
+      const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
+      classification = await classifyBotIntentWithAi(cleanText);
+    } catch (aiErr) {
+      console.error('[Slack Events] AI分類 import/実行エラー:', aiErr);
+      // フォールバック: ヘルプを返す
+      classification = { intent: 'bot_help' as const, isTaskCreate: false, source: 'keyword' as const };
+    }
 
     // タスク作成依頼と判定された場合 → 作成フローへ
     if (classification.isTaskCreate) {
@@ -385,7 +407,10 @@ async function processBotMention(params: {
         threadTs,
         userId: ownerUserId,
         teamId: '',
-      }).catch(err => console.error('[Slack Events] ボット→タスク作成リダイレクトエラー:', err));
+      }).catch(err => {
+        console.error('[Slack Events] ボット→タスク作成リダイレクトエラー:', err);
+        sendQuickReply(channelId, threadTs, 'タスク作成中にエラーが発生しました。').catch(() => {});
+      });
       return;
     }
 
@@ -398,5 +423,7 @@ async function processBotMention(params: {
     await sendSlackReply(channelId, threadTs, response.text, ownerUserId);
   } catch (error) {
     console.error('[Slack Events] ボット応答処理エラー:', error);
+    // ★ エラーでも必ず返信する
+    await sendQuickReply(channelId, threadTs, '処理中にエラーが発生しました。もう一度お試しください。').catch(() => {});
   }
 }

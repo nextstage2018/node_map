@@ -3,7 +3,7 @@
 // フォールバック: AI失敗時はキーワードベースに戻る
 
 import Anthropic from '@anthropic-ai/sdk';
-import { BotIntent, classifyBotIntent } from './botIntentClassifier.service';
+import { BotIntent, classifyBotIntent, isTaskCreateRequest as isTaskCreateRequestFn } from './botIntentClassifier.service';
 
 const MODEL = 'claude-haiku-4-5-20251001'; // 高速・低コスト
 const MAX_TOKENS = 100;
@@ -86,9 +86,8 @@ export async function classifyBotIntentWithAi(text: string): Promise<AiClassifyR
 }
 
 function fallbackClassify(text: string): AiClassifyResult {
-  // 既存のキーワードベース判定
-  const { isTaskCreateRequest } = require('./botIntentClassifier.service');
-  if (isTaskCreateRequest(text)) {
+  // 既存のキーワードベース判定（トップレベルimportを使用）
+  if (isTaskCreateRequestFn(text)) {
     return { intent: 'task_create' as any, isTaskCreate: true, source: 'keyword' };
   }
   const intent = classifyBotIntent(text);
