@@ -130,6 +130,16 @@ async function refreshTokenIfNeeded(userId: string, token: TokenData): Promise<s
 }
 
 // ========================================
+// 外部サービス向け: 有効なアクセストークン取得
+// calendarSync.service.ts 等から利用
+// ========================================
+export async function getValidAccessToken(userId: string): Promise<string | null> {
+  const token = await getGoogleToken(userId);
+  if (!token) return null;
+  return refreshTokenIfNeeded(userId, token);
+}
+
+// ========================================
 // API呼び出しヘルパー
 // ========================================
 async function calendarFetch(

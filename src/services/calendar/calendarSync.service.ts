@@ -1,7 +1,6 @@
 // Calendar × タスク/ジョブ 同期サービス
 // タスク/ジョブの作成・更新・完了時にGoogleカレンダーと自動同期
 
-import { createServerClient } from '@/lib/supabase';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import { CALENDAR_PREFIX } from '@/lib/constants';
 import {
@@ -193,28 +192,20 @@ async function createCalendarEventForSource(
 async function createEventWithExtendedProps(
   userId: string,
   eventParams: CreateEventParams,
-  sourceType: 'task' | 'job',
+  sourceType: 'task' | 'job' | 'meeting',
   sourceId: string
 ): Promise<CalendarEvent | null> {
   // calendarClient の calendarFetch を直接使いたいが、
   // createEvent はラッパーなので、description にメタデータを埋め込む方式と
   // Google Calendar API の extendedProperties を併用する
 
-  const sb = createServerClient();
-  if (!sb) return null;
-
-  // トークン取得（calendarClient の内部関数を再利用できないため簡易実装）
-  const { data: tokenRow } = await sb
-    .from('user_service_tokens')
-    .select('token_data')
-    .eq('user_id', userId)
-    .eq('service_name', 'gmail')
-    .eq('is_active', true)
-    .single();
-
-  if (!tokenRow?.token_data) return null;
-  const tokenData = tokenRow.token_data as { access_token: string; refresh_token?: string; expiry?: string };
-  const accessToken = tokenData.access_token;
+  // トークン取得 + リフレッシュ（calendarClient の関数を利用）
+  const { getValidAccessToken } = await import('./calendarClient.service');
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) {
+    console.error('[CalendarSync] 有効なGoogleトークンを取得できません');
+    return null;
+  }
 
   const timeZone = eventParams.timeZone || 'Asia/Tokyo';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -287,25 +278,16 @@ export async function updateCalendarEvent(
     description?: string;
     start?: string;
     end?: string;
-    sourceType?: 'task' | 'job';
+    sourceType?: 'task' | 'job' | 'meeting';
     sourceId?: string;
   }
 ): Promise<CalendarSyncResult> {
-  const sb = createServerClient();
-  if (!sb) return { success: false, error: 'DB接続なし' };
-
-  const { data: tokenRow } = await sb
-    .from('user_service_tokens')
-    .select('token_data')
-    .eq('user_id', userId)
-    .eq('service_name', 'gmail')
-    .eq('is_active', true)
-    .single();
-
-  if (!tokenRow?.token_data) {
+  // トークン取得 + リフレッシュ
+  const { getValidAccessToken } = await import('./calendarClient.service');
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) {
     return { success: false, error: 'Googleトークンなし' };
   }
-  const tokenData = tokenRow.token_data as { access_token: string };
   const timeZone = 'Asia/Tokyo';
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -329,7 +311,7 @@ export async function updateCalendarEvent(
       {
         method: 'PATCH',
         headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(patchBody),
@@ -355,21 +337,12 @@ export async function deleteCalendarEvent(
   calendarEventId: string,
   userId: string
 ): Promise<CalendarSyncResult> {
-  const sb = createServerClient();
-  if (!sb) return { success: false, error: 'DB接続なし' };
-
-  const { data: tokenRow } = await sb
-    .from('user_service_tokens')
-    .select('token_data')
-    .eq('user_id', userId)
-    .eq('service_name', 'gmail')
-    .eq('is_active', true)
-    .single();
-
-  if (!tokenRow?.token_data) {
+  // トークン取得 + リフレッシュ
+  const { getValidAccessToken } = await import('./calendarClient.service');
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) {
     return { success: false, error: 'Googleトークンなし' };
   }
-  const tokenData = tokenRow.token_data as { access_token: string };
 
   try {
     const res = await fetch(
@@ -377,7 +350,7 @@ export async function deleteCalendarEvent(
       {
         method: 'DELETE',
         headers: {
-          Authorization: `Bearer ${tokenData.access_token}`,
+          Authorization: `Bearer ${accessToken}`,
         },
       }
     );

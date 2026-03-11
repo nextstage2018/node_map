@@ -4,7 +4,7 @@
 // プロジェクト詳細のジョブタブ下部に配置
 
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, Plus, Trash2, Edit2, X, Check, ToggleLeft, ToggleRight } from 'lucide-react';
+import { RefreshCw, Plus, Trash2, Edit2, X, Check, ToggleLeft, ToggleRight, Info } from 'lucide-react';
 
 interface RecurringRule {
   id: string;
@@ -316,15 +316,27 @@ export default function RecurringRulesManager({ projectId }: Props) {
           )}
 
           <div className="flex items-center gap-4 mb-2 text-[11px]">
-            <label className="flex items-center gap-1 text-slate-600 cursor-pointer">
-              <input type="checkbox" checked={formAutoCreate} onChange={(e) => setFormAutoCreate(e.target.checked)} className="rounded" />
-              自動生成
-            </label>
-            {formType === 'meeting' && (
+            <div className="relative group">
               <label className="flex items-center gap-1 text-slate-600 cursor-pointer">
-                <input type="checkbox" checked={formCalendarSync} onChange={(e) => setFormCalendarSync(e.target.checked)} className="rounded" />
-                カレンダー同期
+                <input type="checkbox" checked={formAutoCreate} onChange={(e) => setFormAutoCreate(e.target.checked)} className="rounded" />
+                自動生成
+                <Info className="w-3 h-3 text-slate-400" />
               </label>
+              <div className="absolute bottom-full left-0 mb-1 w-56 px-2.5 py-1.5 bg-slate-800 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 leading-relaxed">
+                ONにすると、設定した周期の「事前生成日数」前にタスクやジョブが自動作成されます。毎日のCronジョブが自動実行します。
+              </div>
+            </div>
+            {formType === 'meeting' && (
+              <div className="relative group">
+                <label className="flex items-center gap-1 text-slate-600 cursor-pointer">
+                  <input type="checkbox" checked={formCalendarSync} onChange={(e) => setFormCalendarSync(e.target.checked)} className="rounded" />
+                  カレンダー同期
+                  <Info className="w-3 h-3 text-slate-400" />
+                </label>
+                <div className="absolute bottom-full left-0 mb-1 w-56 px-2.5 py-1.5 bg-slate-800 text-white text-[10px] rounded shadow-lg opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 leading-relaxed">
+                  ONにすると、会議がGoogleカレンダーにも自動登録されます。Google Calendar連携（設定画面）が必要です。
+                </div>
+              </div>
             )}
           </div>
 
