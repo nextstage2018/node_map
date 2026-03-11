@@ -77,6 +77,18 @@
     {
       "path": "/api/cron/process-recurring-rules",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/bot-weekly-briefing",
+      "schedule": "0 0 * * 1"
+    },
+    {
+      "path": "/api/cron/bot-weekly-report",
+      "schedule": "0 8 * * 5"
+    },
+    {
+      "path": "/api/cron/bot-alerts",
+      "schedule": "30 0 * * *"
     }
   ]
 }
