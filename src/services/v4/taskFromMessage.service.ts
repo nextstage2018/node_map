@@ -36,8 +36,35 @@ async function extractTaskFromMessage(
   let dueDate: string | null = null;
   const today = new Date();
 
-  if (text.includes('今日') || text.includes('本日')) {
+  // 具体的な日付パターン: 3/15, 3月15日, 2026/3/15 など
+  const specificDateMatch = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/) ||
+    text.match(/(\d{1,2})[\/\-](\d{1,2})(?:[までに\s]|$)/) ||
+    text.match(/(\d{1,2})月(\d{1,2})日/);
+
+  if (specificDateMatch) {
+    if (specificDateMatch.length === 4) {
+      // YYYY/MM/DD
+      const year = parseInt(specificDateMatch[1]);
+      const month = parseInt(specificDateMatch[2]) - 1;
+      const day = parseInt(specificDateMatch[3]);
+      dueDate = new Date(year, month, day).toISOString().split('T')[0];
+    } else {
+      // MM/DD or M月D日
+      const month = parseInt(specificDateMatch[1]) - 1;
+      const day = parseInt(specificDateMatch[2]);
+      const targetDate = new Date(today.getFullYear(), month, day);
+      // 過去日なら来年
+      if (targetDate < today) {
+        targetDate.setFullYear(targetDate.getFullYear() + 1);
+      }
+      dueDate = targetDate.toISOString().split('T')[0];
+    }
+  } else if (text.includes('今日') || text.includes('本日')) {
     dueDate = today.toISOString().split('T')[0];
+  } else if (text.includes('明後日') || text.includes('あさって')) {
+    const dayAfterTomorrow = new Date(today);
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
+    dueDate = dayAfterTomorrow.toISOString().split('T')[0];
   } else if (text.includes('明日')) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -50,6 +77,14 @@ async function extractTaskFromMessage(
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
     dueDate = nextWeek.toISOString().split('T')[0];
+  } else {
+    // N日後、N日以内 パターン
+    const daysLaterMatch = text.match(/(\d+)日[後以内にまで]/);
+    if (daysLaterMatch) {
+      const daysLater = new Date(today);
+      daysLater.setDate(daysLater.getDate() + parseInt(daysLaterMatch[1]));
+      dueDate = daysLater.toISOString().split('T')[0];
+    }
   }
 
   // 優先度キーワード
@@ -61,7 +96,7 @@ async function extractTaskFromMessage(
   // タスクキーワードを除去してタイトルを生成
   let title = text
     .replace(/タスクにして|タスク化して|タスクにする|タスク化する|タスク登録|タスク作成|やることに追加|TODO|task|タスクお願い/gi, '')
-    .replace(/今日中?|明日中?|今週中?|来週中?|週末中?|までに|まで/g, '')
+    .replace(/今日中?|明後日|あさって|明日中?|今週中?|来週中?|週末中?|\d+日[後以内]+|(\d{1,2})[\/月](\d{1,2})[日]?|までに|まで/g, '')
     .replace(/^[にをはがのでと、。\s]+/, '')
     .replace(/急ぎ|至急|緊急|ASAP/gi, '')
     .trim();
