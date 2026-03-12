@@ -85,6 +85,24 @@ async function getRelationshipType(projectId: string): Promise<RelationshipType>
 }
 
 // ========================================
+// プロジェクト名取得
+// ========================================
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getProjectName(supabase: any, projectId: string): Promise<string> {
+  try {
+    const { data } = await supabase
+      .from('projects')
+      .select('name')
+      .eq('id', projectId)
+      .single();
+    return data?.name || 'プロジェクト';
+  } catch {
+    return 'プロジェクト';
+  }
+}
+
+// ========================================
 // データ取得 + レスポンス生成
 // ========================================
 
@@ -105,22 +123,25 @@ export async function generateBotResponse(
     };
   }
 
+  // プロジェクト名を取得（応答にPJ名を含めて読み込み結果であることを明示）
+  const projectName = await getProjectName(supabase, projectId);
+
   try {
     switch (intent) {
       case 'bot_issues':
-        return await generateIssuesResponse(supabase, projectId);
+        return await generateIssuesResponse(supabase, projectId, projectName);
 
       case 'bot_decisions':
-        return await generateDecisionsResponse(supabase, projectId);
+        return await generateDecisionsResponse(supabase, projectId, projectName);
 
       case 'bot_tasks':
-        return await generateTasksResponse(supabase, projectId);
+        return await generateTasksResponse(supabase, projectId, projectName);
 
       case 'bot_agenda':
-        return await generateAgendaResponse(supabase, projectId);
+        return await generateAgendaResponse(supabase, projectId, projectName);
 
       case 'bot_summary':
-        return await generateSummaryResponse(supabase, projectId);
+        return await generateSummaryResponse(supabase, projectId, projectName);
 
       case 'bot_menu':
         return generateMenuResponse(projectId, relType);
@@ -190,7 +211,7 @@ function generateMenuResponse(projectId: string, relType: RelationshipType): Bot
 // ========================================
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateIssuesResponse(supabase: any, projectId: string): Promise<BotResponse> {
+async function generateIssuesResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
   const { data: issues } = await supabase
     .from('open_issues')
     .select('title, priority_level, days_stagnant, status')
@@ -200,14 +221,14 @@ async function generateIssuesResponse(supabase: any, projectId: string): Promise
     .limit(10);
 
   if (!issues || issues.length === 0) {
-    return { text: '現在、未確定事項はありません。', intent: 'bot_issues' };
+    return { text: `${projectName} の未確定事項は現在ありません。`, intent: 'bot_issues' };
   }
 
   const priorityIcon: Record<string, string> = {
     critical: '🔴', high: '🟠', medium: '🟡', low: '⚪',
   };
 
-  const lines = [`未確定事項（${issues.length}件）`, ''];
+  const lines = [`${projectName} の未確定事項（${issues.length}件）`, ''];
   for (const issue of issues) {
     const icon = priorityIcon[issue.priority_level] || '⚪';
     const stale = issue.status === 'stale' ? '  ※停滞中' : '';
@@ -218,7 +239,7 @@ async function generateIssuesResponse(supabase: any, projectId: string): Promise
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateDecisionsResponse(supabase: any, projectId: string): Promise<BotResponse> {
+async function generateDecisionsResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
   const weekAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: decisions } = await supabase
@@ -231,14 +252,14 @@ async function generateDecisionsResponse(supabase: any, projectId: string): Prom
     .limit(10);
 
   if (!decisions || decisions.length === 0) {
-    return { text: '直近2週間で新しい決定事項はありません。', intent: 'bot_decisions' };
+    return { text: `${projectName} の直近2週間で新しい決定事項はありません。`, intent: 'bot_decisions' };
   }
 
   const statusIcon: Record<string, string> = {
     pending: '⏳', in_progress: '🔄', completed: '✅', blocked: '🚫',
   };
 
-  const lines = [`決定事項 - 直近2週間（${decisions.length}件）`, ''];
+  const lines = [`${projectName} の決定事項 - 直近2週間（${decisions.length}件）`, ''];
   for (const d of decisions) {
     const icon = statusIcon[d.implementation_status] || '⏳';
     const date = new Date(d.created_at).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
@@ -252,44 +273,59 @@ async function generateDecisionsResponse(supabase: any, projectId: string): Prom
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateTasksResponse(supabase: any, projectId: string): Promise<BotResponse> {
+async function generateTasksResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
+  // assigned_contact_id → contact_persons.name を結合して担当者名を取得
   const { data: tasks } = await supabase
     .from('tasks')
-    .select('title, status, due_date, assigned_to')
+    .select('title, status, due_date, assigned_contact_id, contact_persons:assigned_contact_id(name)')
     .eq('project_id', projectId)
     .in('status', ['todo', 'in_progress'])
     .order('due_date', { ascending: true, nullsFirst: false })
-    .limit(15);
+    .limit(20);
 
   if (!tasks || tasks.length === 0) {
-    return { text: '現在、進行中のタスクはありません。', intent: 'bot_tasks' };
+    return { text: `${projectName} に進行中のタスクはありません。`, intent: 'bot_tasks' };
   }
 
   const statusIcon: Record<string, string> = {
     todo: '📝', in_progress: '🔄',
   };
 
-  const lines = [`タスク状況（${tasks.length}件）`, ''];
-  const today = new Date();
-
+  // 担当者でグルーピング
+  const byAssignee = new Map<string, typeof tasks>();
   for (const task of tasks) {
-    const icon = statusIcon[task.status] || '📝';
-    let dueLine = '';
-    if (task.due_date) {
-      const dueDate = new Date(task.due_date);
-      const isOverdue = dueDate < today;
-      dueLine = isOverdue
-        ? `  ※期限超過（${dueDate.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}）`
-        : ` 〜${dueDate.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}`;
+    const assigneeName = (task.contact_persons as { name: string } | null)?.name || '未割当';
+    if (!byAssignee.has(assigneeName)) {
+      byAssignee.set(assigneeName, []);
     }
-    lines.push(`${icon} ${task.title}${dueLine}`);
+    byAssignee.get(assigneeName)!.push(task);
   }
 
-  return { text: lines.join('\n'), intent: 'bot_tasks' };
+  const lines = [`${projectName} のタスク状況（${tasks.length}件）`, ''];
+  const today = new Date();
+
+  for (const [assignee, assigneeTasks] of byAssignee) {
+    lines.push(`■ ${assignee}`);
+    for (const task of assigneeTasks) {
+      const icon = statusIcon[task.status] || '📝';
+      let dueLine = '';
+      if (task.due_date) {
+        const dueDate = new Date(task.due_date);
+        const isOverdue = dueDate < today;
+        dueLine = isOverdue
+          ? `  ※期限超過（${dueDate.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}）`
+          : ` 〜${dueDate.toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}`;
+      }
+      lines.push(`  ${icon} ${task.title}${dueLine}`);
+    }
+    lines.push('');
+  }
+
+  return { text: lines.join('\n').trimEnd(), intent: 'bot_tasks' };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateAgendaResponse(supabase: any, projectId: string): Promise<BotResponse> {
+async function generateAgendaResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
   const todayStr = new Date().toISOString().split('T')[0];
 
   const { data: agenda } = await supabase
@@ -302,7 +338,7 @@ async function generateAgendaResponse(supabase: any, projectId: string): Promise
     .maybeSingle();
 
   if (!agenda) {
-    return { text: '直近で予定されているアジェンダはありません。', intent: 'bot_agenda' };
+    return { text: `${projectName} の直近で予定されているアジェンダはありません。`, intent: 'bot_agenda' };
   }
 
   const typeLabel: Record<string, string> = {
@@ -311,7 +347,7 @@ async function generateAgendaResponse(supabase: any, projectId: string): Promise
   };
 
   const date = new Date(agenda.meeting_date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
-  const lines = [`${date}のアジェンダ`, ''];
+  const lines = [`${projectName}｜${date}のアジェンダ`, ''];
 
   const items = agenda.items || [];
   for (let i = 0; i < items.length; i++) {
@@ -327,7 +363,7 @@ async function generateAgendaResponse(supabase: any, projectId: string): Promise
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function generateSummaryResponse(supabase: any, projectId: string): Promise<BotResponse> {
+async function generateSummaryResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   // 完了タスク
@@ -355,7 +391,7 @@ async function generateSummaryResponse(supabase: any, projectId: string): Promis
     .eq('project_id', projectId)
     .in('status', ['todo', 'in_progress']);
 
-  const lines = ['今週のまとめ', ''];
+  const lines = [`${projectName} の今週のまとめ`, ''];
 
   if (completedTasks && completedTasks.length > 0) {
     lines.push(`完了タスク: ${completedTasks.length}件`);
