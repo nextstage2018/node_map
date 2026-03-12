@@ -55,6 +55,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, steps });
     }
 
+    // Step 3b: DB内の全gmailトークン行を確認（user_id不一致の検出用）
+    const { data: allRows } = await sb
+      .from('user_service_tokens')
+      .select('user_id, is_active, connected_at, updated_at')
+      .eq('service_name', 'gmail')
+      .order('updated_at', { ascending: false })
+      .limit(5);
+    steps.push({
+      step: '3b. DB内の全gmailトークン行',
+      result: `${allRows?.length || 0}行`,
+      detail: allRows?.map(r => ({
+        user_id: r.user_id,
+        is_active: r.is_active,
+        updated_at: r.updated_at,
+        matches_owner: r.user_id === ownerId,
+      })),
+    });
+
     // Step 4: トークン取得（Cronと同じクエリ）
     const { data: tokenRow, error: tokenErr } = await sb
       .from('user_service_tokens')
