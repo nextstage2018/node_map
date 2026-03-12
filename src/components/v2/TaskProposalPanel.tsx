@@ -4,7 +4,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { CheckCircle2, X, User, Calendar, Loader2, ListTodo, Copy, ChevronDown, ChevronUp } from 'lucide-react';
+import { CheckCircle2, X, User, Calendar, Loader2, ListTodo, Copy, ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ProposalItem {
@@ -156,6 +156,16 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
       if (next.has(index)) next.delete(index);
       else next.add(index);
       return { ...prev, [suggestionId]: { ...state, expandedContext: next } };
+    });
+  };
+
+  // アイテム削除
+  const removeItem = (suggestionId: string, index: number) => {
+    setEditState(prev => {
+      const state = prev[suggestionId];
+      if (!state) return prev;
+      const newItems = state.items.filter((_, idx) => idx !== index);
+      return { ...prev, [suggestionId]: { ...state, items: newItems } };
     });
   };
 
@@ -341,6 +351,13 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
                     >
                       <Copy className="w-3.5 h-3.5" />
                     </button>
+                    <button
+                      onClick={() => removeItem(suggestion.id, i)}
+                      className="p-1 text-slate-300 hover:text-red-500 transition-colors shrink-0"
+                      title="この提案を削除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                   </div>
 
                   {/* コンテキスト（展開/折りたたみ） */}
@@ -374,7 +391,7 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
                         onChange={(e) => updateItem(suggestion.id, i, { assigneeContactId: e.target.value })}
                         className="text-xs bg-transparent border border-slate-200 rounded px-1.5 py-0.5 focus:border-blue-400 focus:outline-none"
                       >
-                        <option value="">未割り当て</option>
+                        <option value="">自分</option>
                         {members.map(m => (
                           <option key={m.contact_id} value={m.contact_id}>{m.name}</option>
                         ))}
