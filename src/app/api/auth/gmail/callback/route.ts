@@ -39,6 +39,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 認証コードをトークンに交換
+    console.log('[OAuth Callback] トークン交換開始', {
+      hasCode: !!code,
+      codeLength: code?.length,
+      userId: state,
+      redirectUri: REDIRECT_URI,
+    });
+
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -53,9 +60,12 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok) {
       const errBody = await tokenResponse.text();
-      console.error('Gmail トークン取得失敗:', errBody);
+      console.error('[OAuth Callback] トークン取得失敗:', errBody);
+      console.error('[OAuth Callback] 使用したredirect_uri:', REDIRECT_URI);
       return NextResponse.redirect(`${appUrl}/settings?error=gmail_token_failed`);
     }
+
+    console.log('[OAuth Callback] トークン交換成功');
 
     const tokenData = await tokenResponse.json();
 
@@ -103,10 +113,11 @@ export async function GET(request: NextRequest) {
         );
 
       if (dbError) {
-        console.error('Gmail トークンDB保存エラー:', dbError);
+        console.error('[OAuth Callback] トークンDB保存エラー:', dbError);
         const errDetail = encodeURIComponent(dbError.message || JSON.stringify(dbError));
         return NextResponse.redirect(`${appUrl}/settings?error=gmail_save_failed&detail=${errDetail}`);
       }
+      console.log('[OAuth Callback] トークンDB保存成功 userId:', userId, 'email:', userEmail);
     } else {
       console.error('Supabase未設定のためトークン保存をスキップ');
     }
