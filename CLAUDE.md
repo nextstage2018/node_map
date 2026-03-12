@@ -34,7 +34,7 @@
 | 1 | サービス層で `getServerSupabase()` を使う | RLS違反エラー | `const supabase = getServerSupabase() \|\| getSupabase();` |
 | 2 | `contact_persons.id` はTEXT型・手動生成 | NOT NULL制約違反 | `team_${Date.now()}_${random}` |
 | 3 | `unified_messages` を使わない | 結果が常に空 | `inbox_messages` を使う |
-| 4 | `inbox_messages.user_id` は存在しない | カラム不存在エラー | `direction` カラムで送受信を区別 |
+| 4 | `inbox_messages` クエリには必ず `.eq('user_id', userId)` を付ける | 他ユーザーのメッセージが漏洩 | ユーザー向けAPIでは必須。Cronジョブ（横断処理）は除く |
 | 5 | 既読更新後にキャッシュ無効化 | 既読→未読に戻る | `cache.invalidateByPrefix('messages:')` |
 | 6 | タスクIDは `crypto.randomUUID()` | 挿入が静かに失敗 | UUID型。`task-${Date.now()}` は禁止 |
 | 7 | Calendar API前に `isCalendarConnected()` | 403エラー | 古いトークンはスコープなし |
@@ -64,6 +64,9 @@
 - **⚠️ Slackリトライ対策**: `X-Slack-Retry-Num` ヘッダーがある場合は即座に200を返す（重複処理防止）
 - **⚠️ Chatwork BOTトークン**: `CHATWORK_BOT_API_TOKEN` を優先使用。`CHATWORK_API_TOKEN` はフォールバック。BOTアカウントから送信するため
 - **⚠️ resolveProjectFromChannel() の戻り値**: `{ projectId, projectName, organizationId }` オブジェクトを返す（文字列IDではない）
+- **⚠️ inbox_messages.user_id は存在する**: TEXT NOT NULL。ユーザー向けAPIでは必ず `.eq('user_id', userId)` でフィルタすること。Cronジョブ（プロジェクト横断処理）では不要
+- **⚠️ inbox_messages のチャネル制限**: `EMAIL_ENABLED=false` 時、バッジ・メッセージ一覧では `.in('channel', ['slack', 'chatwork'])` でメール除外。`excludeEmail` オプション対応済み
+- **⚠️ インボックスポーリング間隔**: メッセージ取得 30秒（`INBOX_POLL_INTERVAL`）、バッジ更新 30秒（AppSidebar）
 
 ---
 
@@ -344,7 +347,7 @@ AI解析の改修イメージ:
 
 - **フラグ**: `NEXT_PUBLIC_EMAIL_ENABLED=false` でメール機能をUI非表示（デフォルト: true）
 - **定数**: `EMAIL_ENABLED`（`src/lib/constants.ts`）
-- **影響**: メール取得スキップ、フィルタ非表示、ブリーフィングから除外
+- **影響**: メール取得スキップ、フィルタ非表示、ブリーフィングから除外、インボックスバッジ・メッセージ一覧からemail除外（`.in('channel', ['slack', 'chatwork'])`）
 - **復帰**: 環境変数を `true` に設定するだけ（ソースコード削除なし）
 
 ### 伸二メソッド思考プリセット
@@ -568,6 +571,9 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
 - **v3.4 決定ログ**: decision_log テーブル。不変ログ＋変更チェーン。decision_tree_nodes と連動
 - **v3.4 アジェンダ**: meeting_agenda テーブル。open_issues + decision_log + tasks から自動生成。JSONB items
+- **インボックス ユーザー分離**: 全ユーザー向けAPIの `inbox_messages` クエリに `.eq('user_id', userId)` 適用済み（14箇所）。Cronジョブはプロジェクト横断処理のため user_id フィルタなし（意図的）
+- **インボックス メール除外**: `EMAIL_ENABLED=false` 時、バッジAPI・メッセージ一覧・秘書チャットで email チャネルを除外。`inboxStorage.service.ts` の `loadMessages` に `excludeEmail` オプションあり
+- **インボックス ポーリング**: メッセージ取得 `INBOX_POLL_INTERVAL=30秒`（`src/lib/constants.ts`）、バッジ更新 30秒（`AppSidebar.tsx`）
 
 ### 検討ツリー データフロー
 
