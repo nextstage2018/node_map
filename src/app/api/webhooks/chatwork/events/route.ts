@@ -134,9 +134,6 @@ export async function POST(request: NextRequest) {
       // v4.3: メンション先がNodeMapの場合はボット応答
       const isMentionToMe = body.webhook_event_type === 'mention_to_me' || isMentionedToBot(messageBody, myAccountId);
       if (isMentionToMe) {
-        // ★★★ 即レスをHTTPレスポンス返却前に同期送信 ★★★
-        await sendReply(roomId, '確認中です...');
-
         try {
           await processBotMention({
             text: cleanedText,
@@ -161,9 +158,6 @@ export async function POST(request: NextRequest) {
       }
       return NextResponse.json({ ok: true });
     }
-
-    // ★★★ タスク作成時も即レスを同期送信 ★★★
-    await sendReply(roomId, '確認中です...');
 
     try {
       await processTaskCreation({
@@ -383,11 +377,6 @@ async function processBotMention(params: {
   skipInstantReply?: boolean;
 }) {
   const { text, roomId, fromAccountId, skipInstantReply } = params;
-
-  // 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
-  if (!skipInstantReply) {
-    await sendReply(roomId, '確認中です...').catch(() => {});
-  }
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;

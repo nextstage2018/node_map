@@ -73,9 +73,6 @@ export async function POST(request: NextRequest) {
       const channelId = event.channel;
       const threadTs = event.thread_ts || event.ts;
 
-      // ★★★ 即レスをHTTPレスポンス返却前に同期送信 ★★★
-      await sendQuickReply(channelId, threadTs, '確認中です...');
-
       // ★★★ 重要: 全処理をawaitで完了してからreturnする ★★★
       // Vercelはreturn後にバックグラウンド処理を打ち切るため、
       // fire-and-forget（.catch()のみ）ではタスク作成が完了しない。
@@ -414,11 +411,6 @@ async function processBotMention(params: {
   skipInstantReply?: boolean;
 }) {
   const { text, channelId, threadTs, slackUserId, skipInstantReply } = params;
-
-  // ★ 即レスは原則POSTハンドラで送信済み。未送信の場合のみここで送信
-  if (!skipInstantReply) {
-    await sendQuickReply(channelId, threadTs, '確認中です...');
-  }
 
   try {
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID;
