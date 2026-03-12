@@ -354,6 +354,7 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
     }
 
     // 5. ビジネスイベント自動登録（重複チェック付き。カラム名は content）
+    let businessEventId: string | null = null;
     try {
       // 既存チェック（同一meeting_record_idで既にあれば更新、なければ挿入）
       const { data: existingEvent } = await supabase
@@ -365,12 +366,13 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
 
       if (existingEvent) {
         // 既存あり → 更新
+        businessEventId = existingEvent.id;
         await supabase.from('business_events')
           .update({ content: analysisResult.summary || record.title, updated_at: new Date().toISOString() })
           .eq('id', existingEvent.id);
       } else {
         // 新規挿入
-        const { error: eventInsertError } = await supabase.from('business_events').insert({
+        const { data: newEvent, error: eventInsertError } = await supabase.from('business_events').insert({
           user_id: userId,
           project_id: record.project_id,
           event_type: 'meeting',
@@ -379,9 +381,11 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
           event_date: record.meeting_date,
           meeting_record_id: record.id,
           ai_generated: true,
-        });
+        }).select('id').single();
         if (eventInsertError) {
           console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventInsertError);
+        } else if (newEvent) {
+          businessEventId = newEvent.id;
         }
       }
     } catch (eventError) {
@@ -448,9 +452,10 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
           })
         );
 
-        await supabase.from('task_suggestions').insert({
+        const { error: tsError } = await supabase.from('task_suggestions').insert({
           user_id: userId,
           meeting_record_id: id,
+          business_event_id: businessEventId,
           suggestions: {
             meetingTitle: record.title,
             meetingDate: record.meeting_date,
@@ -459,6 +464,9 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
           },
           status: 'pending',
         });
+        if (tsError) {
+          console.error('[MeetingRecords Analyze] task_suggestions INSERT エラー:', tsError);
+        }
         actionItemsSaved = itemsWithContacts.length;
         console.log(`[MeetingRecords Analyze] ${actionItemsSaved}件のアクションアイテムを提案として保存しました`);
       } catch (actionError) {
