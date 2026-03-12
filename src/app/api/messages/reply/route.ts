@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      await saveMessages([sentMessage]);
+      await saveMessages([sentMessage], userId);
       console.log(`[Reply API] Phase 38: 返信メッセージをDBに保存 id=${sentReplyId}`);
     } catch (saveErr) {
       console.error('[Reply API] 返信メッセージの保存に失敗（送信は成功）:', saveErr);

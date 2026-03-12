@@ -29,6 +29,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('inbox_messages')
       .select('id, channel, from_name, from_address, subject, body, direction, is_read, timestamp, created_at, metadata')
+      .eq('user_id', userId)
+      .in('channel', ['slack', 'chatwork'])
       .or(`from_address.eq.${fromAddress},to_address.eq.${fromAddress}`)
       .order('timestamp', { ascending: false })
       .limit(limit);

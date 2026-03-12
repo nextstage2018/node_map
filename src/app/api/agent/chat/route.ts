@@ -370,6 +370,8 @@ async function fetchDataAndBuildCards(
           .from('inbox_messages')
           .select('id, channel, from_name, from_address, subject, body, is_read, direction, created_at, metadata')
           .eq('direction', 'received')
+          .eq('user_id', userId)
+          .in('channel', ['slack', 'chatwork'])
           .order('created_at', { ascending: false })
           .limit(20)
           .then((res: { data: MessageRow[] | null }) => { messages = res.data || []; })

@@ -128,22 +128,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // DB上のメッセージ情報を取得（元サービス既読に必要）
+    // DB上のメッセージ情報を取得（元サービス既読に必要・user_idで所有権チェック）
     const supabase = createServerClient();
     let messageRows: { id: string; channel: string; metadata: Record<string, unknown> }[] = [];
     if (supabase) {
       const { data } = await supabase
         .from('inbox_messages')
         .select('id, channel, metadata')
-        .in('id', messageIds);
+        .in('id', messageIds)
+        .eq('user_id', userId);
       messageRows = data || [];
     }
 
-    // 1. DB既読を更新
+    // 1. DB既読を更新（user_idで所有権チェック）
     let updated = 0;
     for (const id of messageIds) {
       try {
-        await markAsRead(id);
+        await markAsRead(id, userId);
         updated++;
       } catch (err) {
         console.error(`[Messages/Read] DB既読エラー (${id}):`, err);

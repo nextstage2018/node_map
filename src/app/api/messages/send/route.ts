@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
     };
 
     try {
-      await saveMessages([sentMessage]);
+      await saveMessages([sentMessage], userId);
     } catch (saveErr) {
       console.error('Failed to save sent message:', saveErr);
     }

@@ -292,12 +292,19 @@ function isBlocked(address: string, blocklist: BlocklistEntry[]): boolean {
 // ================================
 // 既読マーク
 // ================================
-export async function markAsRead(messageId: string) {
+export async function markAsRead(messageId: string, userId?: string) {
   const supabase = getSupabase();
   if (!supabase) return;
 
-  await supabase
+  let query = supabase
     .from('inbox_messages')
     .update({ is_read: true, status: 'read' })
     .eq('id', messageId);
+
+  // ユーザー分離: user_idが渡された場合は所有権チェック
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  await query;
 }

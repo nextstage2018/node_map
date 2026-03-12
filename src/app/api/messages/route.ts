@@ -248,7 +248,7 @@ async function fetchDiffInBackground(
 
     if (newMessages.length > 0) {
       console.log(`[Messages API] バックグラウンド差分取得 ${newMessages.length}件の新着`);
-      await saveMessages(newMessages);
+      await saveMessages(newMessages, userId);
       // キャッシュ無効化（次のリクエストでDB最新を返す）
       cache.invalidateByPrefix('messages:');
       runSpamCheck(newMessages).catch(() => {});
