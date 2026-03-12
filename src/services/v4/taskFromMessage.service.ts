@@ -193,8 +193,9 @@ export async function createTaskFromMessage(params: {
   userId: string;
   senderName?: string;
   senderIdentifier?: string; // Slack: user_id (U...), Chatwork: account_id
+  threadTs?: string;          // v4.5: Slack スレッドts（Block Kitカードをスレッド内に投稿するため）
 }): Promise<CreatedTaskResult | null> {
-  const { messageText, threadContext, serviceName, channelId, messageId, userId, senderName, senderIdentifier } = params;
+  const { messageText, threadContext, serviceName, channelId, messageId, userId, senderName, senderIdentifier, threadTs } = params;
 
   try {
     const supabase = getServerSupabase() || getSupabase();
@@ -270,7 +271,7 @@ export async function createTaskFromMessage(params: {
         requesterName: requester?.name || null,
         serviceName,
         channelId,
-        threadTs: undefined, // Webhook route 側でスレッドtsを渡す場合は拡張
+        threadTs,           // v4.5: Slackスレッド内にカードを投稿
         assigneeIdentifier: senderIdentifier, // 依頼者=担当者（デフォルト）
       });
     } catch (syncError) {

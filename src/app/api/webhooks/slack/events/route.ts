@@ -176,6 +176,7 @@ async function processTaskCreation(params: {
       userId: ownerUserId,
       senderName: undefined,
       senderIdentifier: userId, // Slack user ID (U...)
+      threadTs,                  // v4.5: Block Kitカードをスレッド内に投稿
     });
 
     if (!result) {
@@ -260,6 +261,7 @@ async function processReactionTaskCreation(params: {
       messageId: sourceMessageId,
       userId: ownerUserId,
       senderIdentifier: userId, // Slack user ID (U...)
+      threadTs: messageTs,       // v4.5: Block Kitカードをスレッド内に投稿
     });
 
     if (!result) return;

@@ -188,7 +188,7 @@ function buildSlackTaskCard(params: ExternalTaskParams): Record<string, unknown>
       {
         type: 'button',
         text: { type: 'plain_text', text: 'NodeMapで開く', emoji: true },
-        url: `${baseUrl}/v4-tasks`,
+        url: `${baseUrl}/tasks`,
         action_id: `nm_task_open_${params.taskId}`,
       },
     ],
