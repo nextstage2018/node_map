@@ -1,5 +1,5 @@
 // Gmail OAuth 2.0 コールバック
-// Googleからのリダイレクトを受け取り、トークン交換→DB保存→設定画面にリダイレクト
+// 結果をHTML画面に直接表示（リダイレクトだと問題が見えないため）
 import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -9,39 +9,55 @@ const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
 const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI
   || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/gmail/callback`;
 
-export async function GET(request: NextRequest) {
+// 結果をHTML画面で表示するヘルパー
+function htmlResponse(title: string, steps: { label: string; status: string; detail?: string }[]) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const rows = steps.map(s => {
+    const icon = s.status === 'OK' ? '✅' : s.status === 'SKIP' ? '⏭️' : '❌';
+    const detail = s.detail ? `<div style="color:#888;font-size:13px;margin-top:2px">${s.detail}</div>` : '';
+    return `<div style="margin:8px 0;padding:8px 12px;background:#f9f9f9;border-radius:6px">${icon} <strong>${s.label}</strong>: ${s.status}${detail}</div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title></head>
+<body style="font-family:sans-serif;max-width:600px;margin:40px auto;padding:0 20px">
+<h2>${title}</h2>${rows}
+<a href="${appUrl}/settings" style="display:inline-block;margin-top:16px;padding:8px 20px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none">設定画面に戻る</a>
+</body></html>`;
+
+  return new NextResponse(html, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+}
+
+export async function GET(request: NextRequest) {
+  const steps: { label: string; status: string; detail?: string }[] = [];
 
   try {
-    // URLパラメータ取得
+    // 1. URLパラメータ
     const code = request.nextUrl.searchParams.get('code');
     const error = request.nextUrl.searchParams.get('error');
 
-    console.log('[OAuth Callback] 受信', {
-      hasCode: !!code,
-      codeLength: code?.length,
-      codePrefix: code?.substring(0, 10),
-      error,
-    });
-
     if (error) {
-      console.error('[OAuth Callback] Google側エラー:', error);
-      return NextResponse.redirect(`${appUrl}/settings?error=${error}`);
+      steps.push({ label: '認証コード', status: 'NG', detail: `Google側エラー: ${error}` });
+      return htmlResponse('Google認証エラー', steps);
     }
 
     if (!code) {
-      console.error('[OAuth Callback] codeパラメータなし');
-      return NextResponse.redirect(`${appUrl}/settings?error=no_code`);
+      steps.push({ label: '認証コード', status: 'NG', detail: 'codeパラメータが見つかりません' });
+      return htmlResponse('Google認証エラー', steps);
     }
 
-    // ENV_TOKEN_OWNER_IDを直接使用
+    steps.push({ label: '認証コード受信', status: 'OK', detail: `長さ=${code.length}, 先頭=${code.substring(0, 8)}...` });
+
+    // 2. ENV_TOKEN_OWNER_ID
     const userId = process.env.ENV_TOKEN_OWNER_ID;
     if (!userId) {
-      console.error('[OAuth Callback] ENV_TOKEN_OWNER_ID未設定');
-      return NextResponse.redirect(`${appUrl}/settings?error=no_owner_id`);
+      steps.push({ label: 'ユーザーID', status: 'NG', detail: 'ENV_TOKEN_OWNER_ID未設定' });
+      return htmlResponse('設定エラー', steps);
     }
+    steps.push({ label: 'ユーザーID', status: 'OK', detail: userId.substring(0, 8) + '...' });
 
-    // トークン交換
+    // 3. トークン交換
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -56,18 +72,27 @@ export async function GET(request: NextRequest) {
 
     if (!tokenResponse.ok) {
       const errBody = await tokenResponse.text();
-      console.error('[OAuth Callback] トークン交換失敗:', tokenResponse.status, errBody);
-      return NextResponse.redirect(`${appUrl}/settings?error=token_exchange_failed`);
+      steps.push({ label: 'トークン交換', status: 'NG', detail: `HTTP ${tokenResponse.status}: ${errBody.substring(0, 200)}` });
+      return htmlResponse('トークン交換失敗', steps);
     }
 
     const tokenData = await tokenResponse.json();
-    console.log('[OAuth Callback] トークン交換成功', {
-      has_access_token: !!tokenData.access_token,
-      has_refresh_token: !!tokenData.refresh_token,
-      scope: tokenData.scope,
+    steps.push({
+      label: 'トークン交換',
+      status: 'OK',
+      detail: `access_token=${!!tokenData.access_token}, refresh_token=${!!tokenData.refresh_token}, scope=${tokenData.scope || '(なし)'}`,
     });
 
-    // メールアドレス取得
+    // 4. スコープ確認
+    const scope = tokenData.scope || '';
+    const hasDriveReadonly = scope.includes('drive.readonly');
+    steps.push({
+      label: 'drive.readonly スコープ',
+      status: hasDriveReadonly ? 'OK' : 'NG',
+      detail: hasDriveReadonly ? '含まれています' : `スコープ一覧: ${scope}`,
+    });
+
+    // 5. メールアドレス取得
     let userEmail = '';
     try {
       const profileRes = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
@@ -76,18 +101,21 @@ export async function GET(request: NextRequest) {
       if (profileRes.ok) {
         const profile = await profileRes.json();
         userEmail = profile.emailAddress || '';
+        steps.push({ label: 'メールアドレス', status: 'OK', detail: userEmail });
+      } else {
+        steps.push({ label: 'メールアドレス', status: 'SKIP', detail: `取得失敗 (${profileRes.status})` });
       }
     } catch {
-      // 非致命的
+      steps.push({ label: 'メールアドレス', status: 'SKIP', detail: '取得エラー' });
     }
 
-    // DB保存: Supabase REST APIを直接使用（JSクライアント経由だと更新されないため）
+    // 6. DB保存（REST API直接）
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('[OAuth Callback] Supabase環境変数未設定');
-      return NextResponse.redirect(`${appUrl}/settings?error=db_error`);
+      steps.push({ label: 'DB保存', status: 'NG', detail: 'Supabase環境変数未設定' });
+      return htmlResponse('DB設定エラー', steps);
     }
 
     const now = new Date().toISOString();
@@ -99,20 +127,11 @@ export async function GET(request: NextRequest) {
         ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
         : null,
       email: userEmail,
-      scope: tokenData.scope || '',
+      scope: scope,
     };
 
-    // PATCH (UPDATE) via REST API
+    // PATCH via REST API
     const updateUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail`;
-    const updateBody = JSON.stringify({
-      token_data: newTokenData,
-      is_active: true,
-      connected_at: now,
-      updated_at: now,
-    });
-
-    console.log('[OAuth Callback] REST API UPDATE実行:', updateUrl);
-
     const updateRes = await fetch(updateUrl, {
       method: 'PATCH',
       headers: {
@@ -121,25 +140,24 @@ export async function GET(request: NextRequest) {
         'Authorization': `Bearer ${serviceRoleKey}`,
         'Prefer': 'return=representation',
       },
-      body: updateBody,
+      body: JSON.stringify({
+        token_data: newTokenData,
+        is_active: true,
+        connected_at: now,
+        updated_at: now,
+      }),
     });
 
-    const updateResText = await updateRes.text();
-    console.log('[OAuth Callback] REST API UPDATE結果:', {
-      status: updateRes.status,
-      body: updateResText.substring(0, 200),
-    });
-
+    const updateResBody = await updateRes.text();
     let updateRows: unknown[] = [];
-    try {
-      updateRows = JSON.parse(updateResText);
-    } catch {
-      // パース失敗
-    }
+    try { updateRows = JSON.parse(updateResBody); } catch { /* */ }
 
-    // UPDATEで0行の場合はINSERT
-    if (!Array.isArray(updateRows) || updateRows.length === 0) {
-      console.log('[OAuth Callback] UPDATE 0行 → INSERT実行');
+    if (Array.isArray(updateRows) && updateRows.length > 0) {
+      steps.push({ label: 'DB保存 (UPDATE)', status: 'OK', detail: `${updateRows.length}行更新` });
+    } else {
+      steps.push({ label: 'DB保存 (UPDATE)', status: 'NG', detail: `HTTP ${updateRes.status}: ${updateResBody.substring(0, 150)}` });
+
+      // INSERT試行
       const insertUrl = `${supabaseUrl}/rest/v1/user_service_tokens`;
       const insertRes = await fetch(insertUrl, {
         method: 'POST',
@@ -158,10 +176,11 @@ export async function GET(request: NextRequest) {
           updated_at: now,
         }),
       });
-      console.log('[OAuth Callback] INSERT結果:', insertRes.status, await insertRes.text().catch(() => ''));
+      const insertBody = await insertRes.text();
+      steps.push({ label: 'DB保存 (INSERT)', status: insertRes.ok ? 'OK' : 'NG', detail: `HTTP ${insertRes.status}: ${insertBody.substring(0, 150)}` });
     }
 
-    // 読み戻し検証
+    // 7. 読み戻し検証
     const verifyUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail&select=updated_at,token_data`;
     const verifyRes = await fetch(verifyUrl, {
       headers: {
@@ -172,17 +191,19 @@ export async function GET(request: NextRequest) {
     const verifyRows = await verifyRes.json().catch(() => []);
     const verifyRow = Array.isArray(verifyRows) ? verifyRows[0] : null;
     const savedScope = verifyRow?.token_data?.scope || '';
+    const savedUpdatedAt = verifyRow?.updated_at || '';
 
-    console.log('[OAuth Callback] 検証:', {
-      updated_at: verifyRow?.updated_at,
-      savedScope: String(savedScope).substring(0, 100),
-      hasDriveReadonly: String(savedScope).includes('drive.readonly'),
+    steps.push({
+      label: 'DB検証',
+      status: String(savedScope).includes('drive.readonly') ? 'OK' : 'NG',
+      detail: `updated_at=${savedUpdatedAt}, drive.readonly=${String(savedScope).includes('drive.readonly')}`,
     });
 
-    console.log('[OAuth Callback] 完了 userId:', userId, 'email:', userEmail);
-    return NextResponse.redirect(`${appUrl}/settings?auth=success&service=Gmail`);
+    const allOk = steps.every(s => s.status === 'OK' || s.status === 'SKIP');
+    return htmlResponse(allOk ? 'Google認証 成功！' : 'Google認証 一部問題あり', steps);
+
   } catch (err) {
-    console.error('[OAuth Callback] 予期せぬエラー:', err);
-    return NextResponse.redirect(`${appUrl}/settings?error=unexpected`);
+    steps.push({ label: '予期せぬエラー', status: 'NG', detail: String(err) });
+    return htmlResponse('Google認証エラー', steps);
   }
 }
