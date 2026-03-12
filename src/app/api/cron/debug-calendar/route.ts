@@ -73,14 +73,14 @@ export async function GET(request: NextRequest) {
       })),
     });
 
-    // Step 4: トークン取得（Cronと同じクエリ）
+    // Step 4: トークン取得（全カラム取得して整合性チェック）
     const { data: tokenRow, error: tokenErr } = await sb
       .from('user_service_tokens')
-      .select('token_data, is_active, connected_at, updated_at')
+      .select('*')
       .eq('user_id', ownerId)
       .eq('service_name', 'gmail')
       .eq('is_active', true)
-      .single();
+      .maybeSingle();
 
     if (tokenErr || !tokenRow?.token_data) {
       steps.push({
@@ -192,10 +192,46 @@ export async function GET(request: NextRequest) {
               .eq('service_name', 'gmail');
             steps.push({ step: '6c. DB更新', result: 'OK' });
           } else {
+            const retryErr = await retryRes.text().catch(() => '');
             steps.push({
               step: '6b. Calendar API再テスト (refreshed token)',
               result: `FAIL: HTTP ${retryRes.status}`,
+              detail: { error: retryErr.substring(0, 300) },
             });
+
+            // Step 6d: 他のGoogle APIでトークンをテスト（Calendar固有の問題か切り分け）
+            try {
+              const tokenInfoRes = await fetch(
+                `https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(workingToken)}`
+              );
+              const tokenInfoData = await tokenInfoRes.json();
+              steps.push({
+                step: '6d. tokeninfo (トークン検証)',
+                result: tokenInfoRes.ok ? 'OK: トークンは有効' : `FAIL: HTTP ${tokenInfoRes.status}`,
+                detail: tokenInfoRes.ok ? {
+                  scope: tokenInfoData.scope,
+                  expires_in: tokenInfoData.expires_in,
+                  email: tokenInfoData.email,
+                  audience: tokenInfoData.aud?.substring(0, 30) + '...',
+                } : tokenInfoData,
+              });
+            } catch (tiErr) {
+              steps.push({ step: '6d. tokeninfo', result: `ERROR: ${String(tiErr)}` });
+            }
+
+            // Step 6e: Gmail APIでもテスト
+            try {
+              const gmailRes = await fetch(
+                'https://www.googleapis.com/gmail/v1/users/me/profile',
+                { headers: { Authorization: `Bearer ${workingToken}` } }
+              );
+              steps.push({
+                step: '6e. Gmail API テスト',
+                result: gmailRes.ok ? `OK: ${gmailRes.status}` : `FAIL: HTTP ${gmailRes.status}`,
+              });
+            } catch (gmErr) {
+              steps.push({ step: '6e. Gmail API テスト', result: `ERROR: ${String(gmErr)}` });
+            }
           }
         } else {
           const refreshErr = await refreshRes.text().catch(() => '');
