@@ -29,10 +29,10 @@ export async function notifyTaskCompletion(
     const supabase = getServerSupabase() || getSupabase();
     if (!supabase) return false;
 
-    // タスクのソース情報を取得
+    // タスクのソース情報を取得（v4.5: 外部同期カラムも含む）
     const { data: task } = await supabase
       .from('tasks')
-      .select('id, title, source_type, source_message_id, source_channel_id')
+      .select('id, title, source_type, source_message_id, source_channel_id, slack_message_ts, external_task_id')
       .eq('id', taskId)
       .single();
 
@@ -46,6 +46,15 @@ export async function notifyTaskCompletion(
       await syncTaskCompletionToExternal(taskId, userId);
     } catch (syncErr) {
       console.error('[TaskCompletionNotify] 外部同期エラー（無視して続行）:', syncErr);
+    }
+
+    // v4.5: Block Kitカードまたは外部タスクが存在する場合、
+    // カード更新だけで十分なのでテキスト通知はスキップ（2重通知防止）
+    const hasSlackCard = !!(task as Record<string, unknown>).slack_message_ts;
+    const hasChatworkTask = !!(task as Record<string, unknown>).external_task_id;
+    if (hasSlackCard || hasChatworkTask) {
+      console.log(`[TaskCompletionNotify] 外部タスク同期済み、テキスト通知スキップ: ${typedTask.title}`);
+      return true;
     }
 
     // source_type がない、またはmanual/secretary/meeting_recordの場合はスキップ

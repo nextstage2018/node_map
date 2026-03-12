@@ -180,16 +180,16 @@ function buildSlackTaskCard(params: ExternalTaskParams): Record<string, unknown>
     elements: [
       {
         type: 'button',
-        text: { type: 'plain_text', text: '完了 ✨', emoji: true },
-        style: 'primary',
-        action_id: `nm_task_complete_${params.taskId}`,
+        text: { type: 'plain_text', text: '編集 ✏️', emoji: true },
+        action_id: `nm_task_edit_${params.taskId}`,
         value: params.taskId,
       },
       {
         type: 'button',
-        text: { type: 'plain_text', text: 'NodeMapで開く', emoji: true },
-        url: `${baseUrl}/tasks`,
-        action_id: `nm_task_open_${params.taskId}`,
+        text: { type: 'plain_text', text: '完了 ✨', emoji: true },
+        style: 'primary',
+        action_id: `nm_task_complete_${params.taskId}`,
+        value: params.taskId,
       },
     ],
   });
@@ -568,5 +568,205 @@ export async function handleSlackTaskComplete(payload: {
   } catch (error) {
     console.error('[ExternalTaskSync] Slackボタン完了エラー:', error);
     return { ok: false, message: '処理エラー' };
+  }
+}
+
+// ============================================================
+// Slack 編集モーダル
+// ============================================================
+
+/**
+ * Slack 編集モーダルを開く
+ * 「編集」ボタン押下時に trigger_id を使ってモーダルを表示
+ */
+export async function openSlackEditModal(payload: {
+  trigger_id: string;
+  taskId: string;
+}): Promise<{ ok: boolean }> {
+  const { trigger_id, taskId } = payload;
+
+  try {
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return { ok: false };
+
+    // タスク情報を取得
+    const { data: task } = await supabase
+      .from('tasks')
+      .select('id, title, due_date, description')
+      .eq('id', taskId)
+      .single();
+
+    if (!task) return { ok: false };
+
+    const token = await getSlackBotToken(process.env.ENV_TOKEN_OWNER_ID || '');
+    if (!token) return { ok: false };
+
+    // モーダルのビュー定義
+    const view: Record<string, unknown> = {
+      type: 'modal',
+      callback_id: 'nm_task_edit_submit',
+      private_metadata: taskId,
+      title: { type: 'plain_text', text: 'タスクを編集する' },
+      submit: { type: 'plain_text', text: 'OK！' },
+      close: { type: 'plain_text', text: 'やめとく' },
+      blocks: [
+        {
+          type: 'input',
+          block_id: 'task_title_block',
+          label: { type: 'plain_text', text: '内容' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'task_title',
+            initial_value: task.title || '',
+            max_length: 100,
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'task_due_date_block',
+          label: { type: 'plain_text', text: '期限' },
+          optional: true,
+          element: {
+            type: 'datepicker',
+            action_id: 'task_due_date',
+            initial_date: task.due_date || undefined,
+            placeholder: { type: 'plain_text', text: '期限を選択' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'task_description_block',
+          label: { type: 'plain_text', text: '詳細' },
+          optional: true,
+          element: {
+            type: 'plain_text_input',
+            action_id: 'task_description',
+            multiline: true,
+            initial_value: task.description || '',
+            max_length: 500,
+          },
+        },
+      ],
+    };
+
+    const res = await fetch('https://slack.com/api/views.open', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ trigger_id, view }),
+    });
+
+    const data = await res.json();
+    if (!data.ok) {
+      console.error('[ExternalTaskSync] モーダルオープンエラー:', data.error);
+      return { ok: false };
+    }
+
+    console.log(`[ExternalTaskSync] 編集モーダル表示: ${task.title}`);
+    return { ok: true };
+  } catch (error) {
+    console.error('[ExternalTaskSync] モーダルオープン例外:', error);
+    return { ok: false };
+  }
+}
+
+/**
+ * モーダル送信（view_submission）を処理してタスクを更新
+ */
+export async function handleSlackEditSubmission(payload: {
+  taskId: string;
+  title: string;
+  dueDate: string | null;
+  description: string | null;
+  channel_id: string;
+  message_ts: string;
+}): Promise<{ ok: boolean }> {
+  const { taskId, title, dueDate, description } = payload;
+
+  try {
+    const supabase = getServerSupabase() || getSupabase();
+    if (!supabase) return { ok: false };
+
+    // タスクを更新
+    const updates: Record<string, unknown> = {
+      title,
+      updated_at: new Date().toISOString(),
+    };
+    if (dueDate !== undefined) updates.due_date = dueDate;
+    if (description !== undefined) updates.description = description;
+
+    const { error } = await supabase
+      .from('tasks')
+      .update(updates)
+      .eq('id', taskId);
+
+    if (error) {
+      console.error('[ExternalTaskSync] タスク更新エラー:', error);
+      return { ok: false };
+    }
+
+    // Slack カードも更新（タスク情報を再取得してカードを差し替え）
+    const { data: updatedTask } = await supabase
+      .from('tasks')
+      .select('id, title, due_date, project_id, milestone_id, slack_message_ts, source_channel_id, requester_contact_id')
+      .eq('id', taskId)
+      .single();
+
+    if (updatedTask?.slack_message_ts && updatedTask?.source_channel_id) {
+      // プロジェクト名・MS名・依頼者名を取得
+      let projectName: string | null = null;
+      let milestoneName: string | null = null;
+      let requesterName: string | null = null;
+
+      if (updatedTask.project_id) {
+        const { data: pj } = await supabase.from('projects').select('name').eq('id', updatedTask.project_id).single();
+        projectName = pj?.name || null;
+      }
+      if (updatedTask.milestone_id) {
+        const { data: ms } = await supabase.from('milestones').select('title').eq('id', updatedTask.milestone_id).single();
+        milestoneName = ms?.title || null;
+      }
+      if (updatedTask.requester_contact_id) {
+        const { data: req } = await supabase.from('contact_persons').select('name').eq('id', updatedTask.requester_contact_id).single();
+        requesterName = req?.name || null;
+      }
+
+      // 新しいカードを生成して差し替え
+      const blocks = buildSlackTaskCard({
+        taskId,
+        title: updatedTask.title,
+        dueDate: updatedTask.due_date,
+        projectName,
+        milestoneName,
+        requesterName,
+        serviceName: 'slack',
+        channelId: updatedTask.source_channel_id,
+      });
+
+      const token = await getSlackBotToken(process.env.ENV_TOKEN_OWNER_ID || '');
+      if (token) {
+        await fetch('https://slack.com/api/chat.update', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            channel: updatedTask.source_channel_id,
+            ts: updatedTask.slack_message_ts,
+            blocks,
+            text: `タスク更新: ${updatedTask.title}`,
+          }),
+        });
+      }
+    }
+
+    console.log(`[ExternalTaskSync] タスク編集完了: ${title}`);
+    return { ok: true };
+  } catch (error) {
+    console.error('[ExternalTaskSync] タスク編集エラー:', error);
+    return { ok: false };
   }
 }
