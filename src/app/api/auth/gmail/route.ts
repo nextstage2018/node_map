@@ -23,7 +23,16 @@ const SCOPES = [
 export async function GET() {
   try {
     // 認証確認
-    const userId = await getServerUserId();
+    let userId = await getServerUserId();
+
+    // demo-user-001 の場合、ENV_TOKEN_OWNER_ID にフォールバック
+    // （APIルートではCookieが読めない場合がある）
+    if (userId === 'demo-user-001' && process.env.ENV_TOKEN_OWNER_ID) {
+      console.log('[OAuth Start] getServerUserId()がdemo-user-001を返したため、ENV_TOKEN_OWNER_IDを使用:', process.env.ENV_TOKEN_OWNER_ID);
+      userId = process.env.ENV_TOKEN_OWNER_ID;
+    }
+
+    console.log('[OAuth Start] userId:', userId);
 
     if (!GOOGLE_CLIENT_ID) {
       return NextResponse.json(

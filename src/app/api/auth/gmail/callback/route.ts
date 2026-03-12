@@ -85,7 +85,14 @@ export async function GET(request: NextRequest) {
 
     // トークンをDBに保存（Service Role Key でRLSをバイパス）
     const sb = createServerClient();
-    const userId = state;
+    // state が demo-user-001 の場合、ENV_TOKEN_OWNER_ID にフォールバック
+    // （OAuth開始時にCookieが読めず demo-user-001 がstateに入った場合の救済）
+    let userId = state;
+    if (userId === 'demo-user-001' && process.env.ENV_TOKEN_OWNER_ID) {
+      console.log('[OAuth Callback] stateがdemo-user-001のため、ENV_TOKEN_OWNER_IDを使用:', process.env.ENV_TOKEN_OWNER_ID);
+      userId = process.env.ENV_TOKEN_OWNER_ID;
+    }
+    console.log('[OAuth Callback] 最終userId:', userId, '(state:', state, ')');
     const now = new Date().toISOString();
 
     if (sb) {
