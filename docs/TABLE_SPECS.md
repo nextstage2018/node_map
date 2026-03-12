@@ -14,7 +14,7 @@
 |---|---|---|
 | `contact_persons` の id を自動生成 | `'team_${Date.now()}_${random}'` 形式で手動生成してから INSERT | TEXT型のため自動生成機能がない |
 | `tasks` の id を `task-${Date.now()}` 形式で生成 | `crypto.randomUUID()` または DB の `gen_random_uuid()` を使用 | UUID型。形式を変えるとコード全体に影響 |
-| `inbox_messages` に `user_id` カラムがあると仮定 | `direction` カラム（'received'/'sent'）で判別 | user_id カラムは存在しない |
+| `inbox_messages` クエリに `user_id` フィルタを忘れる | `.eq('user_id', userId)` を必ず付ける（ユーザー向けAPI） | 他ユーザーのメッセージが漏洩する。Cronジョブは除く |
 | `unified_messages` テーブルを使用 | `inbox_messages` を使う | unified_messages は廃止、現在は空 |
 | contact_channels の UNIQUE 制約を知らず重複登録 | 登録前に `UNIQUE(contact_id, channel, address)` で重複チェック | 制約違反で INSERT が失敗する |
 | `knowledge_master_entries.field_id` が必須だと思う | `field_id` は NULL 可能（NOT NULL 制約は Phase 25 で解除） | Phase 42a の自動抽出では field が未分類 |
