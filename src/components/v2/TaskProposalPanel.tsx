@@ -75,10 +75,11 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [sugRes, msRes, memRes] = await Promise.all([
+      const [sugRes, msRes, memRes, selfRes] = await Promise.all([
         fetch(`/api/task-suggestions/pending?project_id=${projectId}`),
         fetch(`/api/milestones?project_id=${projectId}`),
         fetch(`/api/projects/${projectId}/members`),
+        fetch('/api/contacts/me'),
       ]);
 
       if (sugRes.ok) {
@@ -119,10 +120,23 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
         const data = await memRes.json();
         if (data.success && data.data) {
           // APIレスポンス: { contact_id, contact: { id, name, ... } }
-          setMembers(data.data.map((m: { contact_id: string; contact?: { name: string } }) => ({
+          const memberList: Member[] = data.data.map((m: { contact_id: string; contact?: { name: string } }) => ({
             contact_id: m.contact_id,
             name: m.contact?.name || '不明',
-          })));
+          }));
+
+          // ログインユーザー自身を先頭に追加（重複排除）
+          if (selfRes.ok) {
+            const selfData = await selfRes.json();
+            if (selfData.success && selfData.data) {
+              const selfContact = selfData.data;
+              if (!memberList.some(m => m.contact_id === selfContact.id)) {
+                memberList.unshift({ contact_id: selfContact.id, name: `${selfContact.name}（自分）` });
+              }
+            }
+          }
+
+          setMembers(memberList);
         }
       }
     } catch (error) {
