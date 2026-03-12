@@ -1,4 +1,4 @@
-// Gmail OAuth 2.0 コールバック（シンプル版）
+// Gmail OAuth 2.0 コールバック
 // Googleからのリダイレクトを受け取り、トークン交換→DB保存→設定画面にリダイレクト
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase';
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       // 非致命的
     }
 
-    // DB保存
+    // DB保存（upsertではなく明示的にupdate → 失敗ならinsert）
     const sb = createServerClient();
     if (!sb) {
       console.error('[OAuth Callback] Supabase未設定');
@@ -90,33 +90,72 @@ export async function GET(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const { error: dbError } = await sb
+    const newTokenData = {
+      access_token: tokenData.access_token,
+      refresh_token: tokenData.refresh_token,
+      token_type: tokenData.token_type,
+      expiry: tokenData.expires_in
+        ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+        : null,
+      email: userEmail,
+      scope: tokenData.scope || '',
+    };
+
+    // まずUPDATEを試行
+    const { data: updateResult, error: updateError } = await sb
       .from('user_service_tokens')
-      .upsert(
-        {
+      .update({
+        token_data: newTokenData,
+        is_active: true,
+        connected_at: now,
+        updated_at: now,
+      })
+      .eq('user_id', userId)
+      .eq('service_name', 'gmail')
+      .select('user_id, updated_at');
+
+    console.log('[OAuth Callback] UPDATE結果:', {
+      rowsAffected: updateResult?.length || 0,
+      error: updateError ? JSON.stringify(updateError) : null,
+    });
+
+    // UPDATEで0行の場合はINSERT
+    if (!updateResult || updateResult.length === 0) {
+      console.log('[OAuth Callback] 既存行なし → INSERT実行');
+      const { error: insertError } = await sb
+        .from('user_service_tokens')
+        .insert({
           user_id: userId,
           service_name: 'gmail',
-          token_data: {
-            access_token: tokenData.access_token,
-            refresh_token: tokenData.refresh_token,
-            token_type: tokenData.token_type,
-            expiry: tokenData.expires_in
-              ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-              : null,
-            email: userEmail,
-            scope: tokenData.scope || '',
-          },
+          token_data: newTokenData,
           is_active: true,
           connected_at: now,
           updated_at: now,
-        },
-        { onConflict: 'user_id,service_name' }
-      );
+        });
 
-    if (dbError) {
-      console.error('[OAuth Callback] DB保存エラー:', JSON.stringify(dbError));
-      return NextResponse.redirect(`${appUrl}/settings?error=db_save_failed`);
+      if (insertError) {
+        console.error('[OAuth Callback] INSERT失敗:', JSON.stringify(insertError));
+        return NextResponse.redirect(`${appUrl}/settings?error=db_insert_failed`);
+      }
+    } else if (updateError) {
+      console.error('[OAuth Callback] UPDATE失敗:', JSON.stringify(updateError));
+      return NextResponse.redirect(`${appUrl}/settings?error=db_update_failed`);
     }
+
+    // 読み戻し検証
+    const { data: verifyRow } = await sb
+      .from('user_service_tokens')
+      .select('updated_at, token_data')
+      .eq('user_id', userId)
+      .eq('service_name', 'gmail')
+      .single();
+
+    const savedScope = (verifyRow?.token_data as Record<string, unknown>)?.scope || '';
+    console.log('[OAuth Callback] 検証:', {
+      updated_at: verifyRow?.updated_at,
+      savedScope,
+      hasDriveReadonly: String(savedScope).includes('drive.readonly'),
+    });
 
     console.log('[OAuth Callback] 完了 userId:', userId, 'email:', userEmail);
     return NextResponse.redirect(`${appUrl}/settings?auth=success&service=Gmail`);
