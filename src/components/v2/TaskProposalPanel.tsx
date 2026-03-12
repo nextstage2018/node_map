@@ -10,9 +10,11 @@ interface ProposalItem {
   title: string;
   assignee: string;
   assigneeContactId?: string | null;
+  context?: string;
   due_date?: string | null;
   priority: string;
   related_topic?: string;
+  related_topics?: string[];
 }
 
 interface TaskSuggestion {
@@ -145,6 +147,7 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             title: state.editedTitles[originalIdx] || item.title,
+            description: item.context || '',
             priority: item.priority || 'medium',
             projectId: projectId,
             milestoneId: state.milestoneId || undefined,
@@ -306,7 +309,14 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
                       className="w-full text-sm font-medium text-slate-800 bg-transparent border-none p-0 focus:ring-0 focus:outline-none"
                     />
 
-                    {/* 担当者 + 優先度 + 期限 */}
+                    {/* コンテキスト（背景情報） */}
+                    {item.context && (
+                      <p className="text-xs text-slate-500 leading-relaxed bg-slate-50 rounded p-2">
+                        {item.context}
+                      </p>
+                    )}
+
+                    {/* 担当者 + 優先度 + 期限 + 関連トピック */}
                     <div className="flex items-center gap-3 flex-wrap">
                       {/* 担当者セレクト */}
                       <div className="flex items-center gap-1">
@@ -336,10 +346,12 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
                         </span>
                       )}
 
-                      {/* 関連トピック */}
-                      {item.related_topic && (
+                      {/* 関連トピック（配列対応） */}
+                      {(item.related_topics && item.related_topics.length > 0) ? (
+                        <span className="text-xs text-slate-400">← {item.related_topics.join(', ')}</span>
+                      ) : item.related_topic ? (
                         <span className="text-xs text-slate-400">← {item.related_topic}</span>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </div>

@@ -34,9 +34,10 @@ interface MilestoneFeedback {
 interface ActionItem {
   title: string;
   assignee: string;
+  context: string;
   due_date: string | null;
   priority: 'high' | 'medium' | 'low';
-  related_topic: string;
+  related_topics: string[];
 }
 
 // v4.0-Phase5: ゴール提案の型定義
@@ -202,11 +203,12 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
   ],
   "action_items": [
     {
-      "title": "具体的なアクション名（動詞で始める）",
+      "title": "担当者がやるべきことを1文で（動詞で始める）",
       "assignee": "担当者名（不明なら空文字）",
+      "context": "このタスクの背景・会議での議論の流れ・判断根拠を200-400文字で整理。後からAIに相談する時の文脈情報として使う",
       "due_date": "YYYY-MM-DD（不明ならnull）",
       "priority": "high または medium または low",
-      "related_topic": "関連する議題のタイトル"
+      "related_topics": ["関連する議題のタイトル1", "関連する議題のタイトル2"]
     }
   ],
   "new_open_issues": [
@@ -255,7 +257,12 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
 - topicsは会議で議論された全ての議題を抽出してください
 - 決定に至った議題のstatusは "completed"、まだ検討中なら "active"、取り消しなら "cancelled"
 - マイルストーンに関する言及がなければ milestone_feedback は null にしてください
-- action_itemsは決定事項・依頼事項・確認事項など、具体的で実行可能なアクションを抽出してください
+- action_itemsは**担当者ごとに1タスクにまとめる**のが原則です。同じ人が複数の関連するアクションを担当する場合は、1つのタスクに集約してください
+  - 例: 鈴木さんが「資料作成」「見積もり確認」「報告書送付」を担当 → 1タスクにまとめて、contextに詳細を記載
+  - ただし、明らかに独立したテーマのタスクは分けてOK
+- contextには会議での議論の流れ・背景・なぜこのタスクが必要になったかを丁寧に整理してください。これはAIに相談する時の文脈情報として後から使われます
+- 担当者が会議録の発言者から特定できる場合は必ず設定してください。会議で「○○さんお願い」「○○が対応します」等の発言を見逃さないでください
+- 無理に全参加者にタスクを割り当てる必要はありません。タスクが発生した人にだけ割り当ててください
 - 曖昧な内容（「検討する」「考えておく」等）はaction_itemsに含めないでください
 - action_itemsがなければ空配列にしてください
 - new_open_issues: 議論したが結論が出なかった事項を抽出。既存の未確定事項と同じ内容は含めない
@@ -445,9 +452,10 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
               title: item.title,
               assignee: item.assignee || '',
               assigneeContactId,
+              context: item.context || '',
               due_date: item.due_date || null,
               priority: item.priority || 'medium',
-              related_topic: item.related_topic || '',
+              related_topics: Array.isArray(item.related_topics) ? item.related_topics : (item as Record<string, unknown>).related_topic ? [String((item as Record<string, unknown>).related_topic)] : [],
             };
           })
         );
