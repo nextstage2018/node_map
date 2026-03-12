@@ -1,14 +1,10 @@
-// Phase 24: Gmail OAuth 2.0 コールバック
-// GET: Googleからのリダイレクト処理 → トークン取得 → DB保存 → 設定画面へリダイレクト
-import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
+// Phase 24: Gmail OAuth 2.0 コールバック（クライアントサイド中継方式）
+// Vercelエッジネットワークがrequest.urlのクエリパラメータを難読化する問題に対応。
+// HTMLページを返し、ブラウザ側のwindow.location.searchからcodeを取得して
+// /api/auth/gmail/exchange に送信する。
+import { NextRequest } from 'next/server';
 
 export const dynamic = 'force-dynamic';
-
-const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
-const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
-const REDIRECT_URI = process.env.GMAIL_REDIRECT_URI
-  || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/gmail/callback`;
 
 // リクエストURLからアプリのベースURLを取得
 function getAppUrl(request: NextRequest): string {
@@ -19,156 +15,92 @@ function getAppUrl(request: NextRequest): string {
 
 export async function GET(request: NextRequest) {
   const appUrl = getAppUrl(request);
-  try {
-    const { searchParams } = new URL(request.url);
-    const code = searchParams.get('code');
-    const state = searchParams.get('state'); // userId
-    const error = searchParams.get('error');
 
-    if (error) {
-      console.error('Gmail OAuth エラー:', error);
-      return NextResponse.redirect(`${appUrl}/settings?error=gmail_denied`);
-    }
+  // サーバー側でのURL解析を完全にスキップ。
+  // 代わりにHTMLページを返し、ブラウザのJavaScriptでURLパラメータを読み取る。
+  const html = `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google認証処理中...</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; background: #f8fafc; }
+    .card { background: white; border-radius: 12px; padding: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; max-width: 400px; }
+    .spinner { width: 40px; height: 40px; border: 3px solid #e2e8f0; border-top: 3px solid #2563eb; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error { color: #dc2626; margin-top: 1rem; }
+    .debug { font-size: 0.75rem; color: #94a3b8; margin-top: 1rem; text-align: left; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
+    <p id="status">Google認証を処理しています...</p>
+    <div id="error" class="error" style="display:none"></div>
+    <div id="debug" class="debug" style="display:none"></div>
+  </div>
+  <script>
+    (async function() {
+      const statusEl = document.getElementById('status');
+      const errorEl = document.getElementById('error');
+      const debugEl = document.getElementById('debug');
+      const spinnerEl = document.getElementById('spinner');
 
-    if (!code || !state) {
-      return NextResponse.redirect(`${appUrl}/settings?error=gmail_invalid`);
-    }
+      try {
+        // ブラウザ側でURLパラメータを読み取る（サーバー側の難読化問題を回避）
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get('code');
+        const state = params.get('state');
+        const error = params.get('error');
 
-    if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
-      return NextResponse.redirect(`${appUrl}/settings?error=gmail_not_configured`);
-    }
+        // デバッグ情報
+        debugEl.style.display = 'block';
+        debugEl.textContent = 'code prefix: ' + (code ? code.substring(0, 8) + '...' : '(null)')
+          + ' | state: ' + (state ? state.substring(0, 12) + '...' : '(null)')
+          + ' | error: ' + (error || 'none');
 
-    // 認証コードをトークンに交換
-    // codeの先頭・末尾をログ出力（Malformed auth code デバッグ用）
-    const codePrefix = code ? code.substring(0, 10) : '(null)';
-    const codeSuffix = code ? code.substring(code.length - 10) : '(null)';
-    console.log('[OAuth Callback] トークン交換開始', {
-      hasCode: !!code,
-      codeLength: code?.length,
-      codePrefix,
-      codeSuffix,
-      codeContainsSlash: code?.includes('/'),
-      codeContainsPercent: code?.includes('%'),
-      userId: state,
-      redirectUri: REDIRECT_URI,
-      rawUrl: request.url.substring(0, 200), // URLの先頭200文字
-    });
+        if (error) {
+          throw new Error('Google認証が拒否されました: ' + error);
+        }
+        if (!code) {
+          throw new Error('認証コードが見つかりません');
+        }
 
-    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        code,
-        client_id: GOOGLE_CLIENT_ID,
-        client_secret: GOOGLE_CLIENT_SECRET,
-        redirect_uri: REDIRECT_URI,
-        grant_type: 'authorization_code',
-      }),
-    });
+        statusEl.textContent = 'トークンを取得しています...';
 
-    if (!tokenResponse.ok) {
-      const errBody = await tokenResponse.text();
-      console.error('[OAuth Callback] トークン取得失敗:', errBody);
-      console.error('[OAuth Callback] 使用したredirect_uri:', REDIRECT_URI);
-      return NextResponse.redirect(`${appUrl}/settings?error=gmail_token_failed`);
-    }
+        // サーバーAPIにコードを送信してトークン交換
+        const res = await fetch('${appUrl}/api/auth/gmail/exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, state }),
+        });
 
-    console.log('[OAuth Callback] トークン交換成功');
+        const result = await res.json();
 
-    const tokenData = await tokenResponse.json();
-
-    // ユーザー情報を取得（メールアドレス確認用）
-    let userEmail = '';
-    try {
-      const userInfoRes = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      });
-      if (userInfoRes.ok) {
-        const userInfo = await userInfoRes.json();
-        userEmail = userInfo.emailAddress || '';
+        if (result.success) {
+          statusEl.textContent = '認証成功！リダイレクトしています...';
+          spinnerEl.style.display = 'none';
+          window.location.href = '${appUrl}/settings?auth=success&service=Gmail';
+        } else {
+          throw new Error(result.error || 'トークン取得に失敗しました');
+        }
+      } catch (err) {
+        spinnerEl.style.display = 'none';
+        statusEl.textContent = '認証に失敗しました';
+        errorEl.style.display = 'block';
+        errorEl.textContent = err.message;
+        // 5秒後に設定画面に戻る
+        setTimeout(() => {
+          window.location.href = '${appUrl}/settings?error=gmail_callback_failed';
+        }, 5000);
       }
-    } catch {
-      // ユーザー情報取得失敗は致命的ではない
-    }
+    })();
+  </script>
+</body>
+</html>`;
 
-    // トークンをDBに保存（Service Role Key でRLSをバイパス）
-    const sb = createServerClient();
-    // ENV_TOKEN_OWNER_ID が設定されている場合は常にそれを使う
-    // （stateにgetServerUserId()の不正な値が入る場合があるため）
-    const userId = process.env.ENV_TOKEN_OWNER_ID || state;
-    console.log('[OAuth Callback] 最終userId:', userId, '(state:', state, ')');
-    console.log('[OAuth Callback] トークンデータ概要:', {
-      has_access_token: !!tokenData.access_token,
-      access_token_prefix: tokenData.access_token?.substring(0, 15),
-      has_refresh_token: !!tokenData.refresh_token,
-      scope: tokenData.scope,
-      expires_in: tokenData.expires_in,
-    });
-    const now = new Date().toISOString();
-
-    if (sb) {
-      // まず既存行の存在確認
-      const { data: existingRow, error: checkErr } = await sb
-        .from('user_service_tokens')
-        .select('user_id, updated_at')
-        .eq('user_id', userId)
-        .eq('service_name', 'gmail')
-        .maybeSingle();
-      console.log('[OAuth Callback] 既存行チェック:', {
-        exists: !!existingRow,
-        existingUpdatedAt: existingRow?.updated_at,
-        checkErr: checkErr?.message || null,
-      });
-
-      const { error: dbError, data: upsertResult } = await sb
-        .from('user_service_tokens')
-        .upsert(
-          {
-            user_id: userId,
-            service_name: 'gmail',
-            token_data: {
-              access_token: tokenData.access_token,
-              refresh_token: tokenData.refresh_token,
-              token_type: tokenData.token_type,
-              expiry: tokenData.expires_in
-                ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
-                : null,
-              email: userEmail,
-              scope: tokenData.scope || '',
-            },
-            is_active: true,
-            connected_at: now,
-            updated_at: now,
-          },
-          { onConflict: 'user_id,service_name' }
-        )
-        .select('user_id, updated_at');
-
-      if (dbError) {
-        console.error('[OAuth Callback] トークンDB保存エラー:', JSON.stringify(dbError));
-        const errDetail = encodeURIComponent(dbError.message || JSON.stringify(dbError));
-        return NextResponse.redirect(`${appUrl}/settings?error=gmail_save_failed&detail=${errDetail}`);
-      }
-      console.log('[OAuth Callback] トークンDB保存成功 userId:', userId, 'email:', userEmail, 'upsertResult:', JSON.stringify(upsertResult));
-
-      // 保存後の検証
-      const { data: verifyRow } = await sb
-        .from('user_service_tokens')
-        .select('user_id, updated_at')
-        .eq('user_id', userId)
-        .eq('service_name', 'gmail')
-        .maybeSingle();
-      console.log('[OAuth Callback] 保存後検証:', {
-        updated_at: verifyRow?.updated_at,
-        matches_now: verifyRow?.updated_at === now,
-      });
-    } else {
-      console.error('[OAuth Callback] Supabase未設定のためトークン保存をスキップ');
-    }
-
-    return NextResponse.redirect(`${appUrl}/settings?auth=success&service=Gmail`);
-  } catch (error) {
-    console.error('Gmail OAuthコールバックエラー:', error);
-    return NextResponse.redirect(`${appUrl}/settings?error=gmail_callback_failed`);
-  }
+  return new Response(html, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
 }
