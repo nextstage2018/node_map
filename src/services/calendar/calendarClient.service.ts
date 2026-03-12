@@ -153,12 +153,77 @@ async function refreshTokenIfNeeded(userId: string, token: TokenData): Promise<s
 export async function getValidAccessToken(userId: string): Promise<string | null> {
   const token = await getGoogleToken(userId);
   if (!token) return null;
-  return refreshTokenIfNeeded(userId, token);
+  // まず通常のリフレッシュを試行。それでもダメなら強制リフレッシュ
+  const accessToken = await refreshTokenIfNeeded(userId, token);
+  // 簡易チェック: Google Calendar APIでトークン検証
+  try {
+    const testRes = await fetch(`${CALENDAR_API_BASE}/calendars/primary?fields=id`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (testRes.ok) return accessToken;
+    // 401なら強制リフレッシュ
+    if (testRes.status === 401) {
+      console.warn('[Calendar] getValidAccessToken: 401 → 強制リフレッシュ');
+      return forceRefreshToken(userId, token);
+    }
+  } catch {
+    // ネットワークエラー等は既存トークンを返す
+  }
+  return accessToken;
 }
 
 // ========================================
 // API呼び出しヘルパー
 // ========================================
+async function forceRefreshToken(userId: string, token: TokenData): Promise<string> {
+  if (!token.refresh_token || !GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    return token.access_token;
+  }
+
+  console.log('[Calendar] トークン強制リフレッシュ実行');
+  try {
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        client_secret: GOOGLE_CLIENT_SECRET,
+        refresh_token: token.refresh_token,
+        grant_type: 'refresh_token',
+      }),
+    });
+
+    if (!res.ok) {
+      console.error('[Calendar] 強制リフレッシュ失敗:', res.status, await res.text().catch(() => ''));
+      return token.access_token;
+    }
+
+    const newToken = await res.json();
+    const sb = createServerClient();
+    if (sb) {
+      await sb
+        .from('user_service_tokens')
+        .update({
+          token_data: {
+            ...token,
+            access_token: newToken.access_token,
+            expiry: newToken.expires_in
+              ? new Date(Date.now() + newToken.expires_in * 1000).toISOString()
+              : token.expiry,
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', userId)
+        .eq('service_name', 'gmail');
+    }
+    console.log('[Calendar] 強制リフレッシュ成功');
+    return newToken.access_token;
+  } catch (error) {
+    console.error('[Calendar] 強制リフレッシュエラー:', error);
+    return token.access_token;
+  }
+}
+
 async function calendarFetch(
   userId: string,
   path: string,
@@ -172,7 +237,7 @@ async function calendarFetch(
 
   const accessToken = await refreshTokenIfNeeded(userId, token);
 
-  return fetch(`${CALENDAR_API_BASE}${path}`, {
+  const res = await fetch(`${CALENDAR_API_BASE}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -180,6 +245,24 @@ async function calendarFetch(
       ...(options.headers || {}),
     },
   });
+
+  // v6.0: 401の場合、トークンを強制リフレッシュして1回だけリトライ
+  if (res.status === 401) {
+    console.warn('[Calendar] 401検知 → トークン強制リフレッシュでリトライ');
+    const freshToken = await forceRefreshToken(userId, token);
+    if (freshToken !== accessToken) {
+      return fetch(`${CALENDAR_API_BASE}${path}`, {
+        ...options,
+        headers: {
+          Authorization: `Bearer ${freshToken}`,
+          'Content-Type': 'application/json',
+          ...(options.headers || {}),
+        },
+      });
+    }
+  }
+
+  return res;
 }
 
 // ========================================
