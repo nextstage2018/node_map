@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, Calendar, ChevronDown, ChevronRight, Trash2, CheckCircle2, Clock } from 'lucide-react';
+import { FileText, Calendar, ChevronDown, ChevronRight, Trash2, CheckCircle2, Clock, RefreshCw, AlertCircle } from 'lucide-react';
 
 interface MeetingRecord {
   id: string;
@@ -25,6 +25,8 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
   const [records, setRecords] = useState<MeetingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
+  const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
 
   const fetchRecords = useCallback(async () => {
     try {
@@ -44,6 +46,47 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
   useEffect(() => {
     fetchRecords();
   }, [fetchRecords, refreshKey]);
+
+  const handleReanalyze = async (id: string) => {
+    setReanalyzingId(id);
+    setReanalyzeError(null);
+    try {
+      // ステップ1: AI解析
+      const analyzeRes = await fetch(`/api/meeting-records/${id}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const analyzeData = await analyzeRes.json();
+
+      if (!analyzeData.success) {
+        setReanalyzeError(analyzeData.error || '解析に失敗しました');
+        return;
+      }
+
+      // ステップ2: 検討ツリー生成（topicsがあれば）
+      const topics = analyzeData.data?.analysis?.topics;
+      if (topics && topics.length > 0) {
+        const record = records.find(r => r.id === id);
+        await fetch('/api/decision-trees/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_id: record?.project_id || projectId,
+            meeting_record_id: id,
+            topics,
+          }),
+        });
+      }
+
+      // リスト更新
+      await fetchRecords();
+    } catch (err) {
+      console.error('[MeetingRecordList] 再解析エラー:', err);
+      setReanalyzeError('再解析中にエラーが発生しました');
+    } finally {
+      setReanalyzingId(null);
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('この会議録を削除しますか？')) return;
@@ -115,8 +158,19 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
               {record.processed ? (
                 <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0" title="AI解析済み" />
               ) : (
-                <Clock className="w-3.5 h-3.5 text-slate-300 shrink-0" title="未解析" />
+                <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" title="未解析" />
               )}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleReanalyze(record.id);
+                }}
+                disabled={reanalyzingId === record.id}
+                className="p-1 text-slate-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
+                title={record.processed ? '再解析' : 'AI解析を実行'}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${reanalyzingId === record.id ? 'animate-spin text-blue-500' : ''}`} />
+              </button>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -132,6 +186,31 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
             {/* 展開コンテンツ */}
             {isExpanded && (
               <div className="px-4 pb-4 border-t border-slate-100">
+                {/* 解析ステータス */}
+                {!record.processed && !reanalyzingId && (
+                  <div className="mt-3 mb-3 flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                    <span className="text-xs text-amber-700">AI解析がまだ完了していません。</span>
+                    <button
+                      onClick={() => handleReanalyze(record.id)}
+                      className="ml-auto text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      解析を実行
+                    </button>
+                  </div>
+                )}
+                {reanalyzingId === record.id && (
+                  <div className="mt-3 mb-3 flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <RefreshCw className="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
+                    <span className="text-xs text-blue-700">AI解析中...（数十秒かかる場合があります）</span>
+                  </div>
+                )}
+                {reanalyzeError && expandedId === record.id && (
+                  <div className="mt-3 mb-3 flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg p-3">
+                    <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                    <span className="text-xs text-red-700">{reanalyzeError}</span>
+                  </div>
+                )}
                 {/* AI要約 */}
                 {record.ai_summary && (
                   <div className="mt-3 mb-3">
