@@ -4,84 +4,71 @@
 -- 注意: TRUNCATE CASCADE で全データが完全削除されます
 -- ============================================
 
--- 依存関係を気にせず一括削除（CASCADE）
 TRUNCATE TABLE
-  -- コンタクト関連
-  contact_patterns,
+  business_events,
+  checkpoints,
+  cluster_nodes,
+  consultations,
   contact_channels,
   contact_persons,
-
-  -- 組織・プロジェクト
-  organization_channels,
-  project_channels,
-  project_members,
-  project_recurring_rules,
-  projects,
-  organizations,
-
-  -- タスク関連
-  task_members,
-  task_conversations,
-  task_external_resources,
-  task_suggestions,
-  tasks,
-
-  -- テーマ・マイルストーン
-  milestone_evaluations,
-  evaluation_learnings,
-  milestones,
-  themes,
-
-  -- ジョブ・相談・メモ
-  jobs,
-  consultations,
-  memo_conversations,
-  idea_memos,
-
-  -- 種（廃止済みだが参照テーブルとして残存）
-  seed_conversations,
-  seeds,
-
-  -- インボックス
-  inbox_messages,
-  inbox_sync_state,
-  user_channel_subscriptions,
-
-  -- ナレッジ
-  knowledge_clustering_proposals,
-  thought_edges,
-  thought_task_nodes,
-  thought_snapshots,
-  knowledge_master_entries,
-  knowledge_fields,
-  knowledge_domains,
-
-  -- Drive
-  drive_file_staging,
-  drive_documents,
-  drive_folders,
-
-  -- 秘書AI
-  secretary_conversations,
-
-  -- ビジネスログ・会議録・検討ツリー
+  decision_log,
   decision_tree_node_history,
   decision_tree_nodes,
   decision_trees,
-  meeting_records,
-  business_events,
-
-  -- v3.4 新テーブル
-  open_issues,
-  decision_log,
+  drive_documents,
+  drive_file_staging,
+  drive_folders,
+  edge_tasks,
+  email_blocklist,
+  evaluation_learnings,
+  goals,
+  groups,
+  idea_memos,
+  inbox_messages,
+  inbox_sync_state,
+  jobs,
+  knowledge_clustering_proposals,
+  knowledge_domains,
+  knowledge_fields,
+  knowledge_master_entries,
   meeting_agenda,
-
-  -- ユーザー関連
-  user_thinking_tendencies,
+  meeting_records,
+  memo_conversations,
+  message_reactions,
+  milestone_evaluations,
+  milestones,
+  node_clusters,
+  node_edges,
+  node_master_links,
+  node_source_contexts,
+  open_issues,
+  organization_channels,
+  organizations,
+  project_channels,
+  project_members,
+  project_recurring_rules,
+  project_types,
+  projects,
+  secretary_conversations,
+  seed_conversations,
+  seeds,
+  task_conversations,
+  task_external_resources,
+  task_members,
+  task_negotiations,
+  task_suggestions,
+  task_templates,
+  tasks,
+  thinking_logs,
+  thought_edges,
+  thought_snapshots,
+  thought_task_nodes,
+  unified_messages,
+  user_channel_subscriptions,
+  user_nodes,
   user_service_tokens,
-  user_metadata
-
+  user_thinking_tendencies,
+  weekly_node_confirmations
 CASCADE;
 
--- 確認
 SELECT 'All tables truncated successfully.' AS result;

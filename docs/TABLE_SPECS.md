@@ -1692,20 +1692,36 @@ CREATE INDEX idx_user_thinking_user_date ON user_thinking_tendencies(user_id, an
 
 **目的**: Supabaseアカウント ↔ 外部サービス（Gmail/Slack/Chatwork）の認証トークン保存
 
-#### CREATE TABLE
+#### CREATE TABLE（実テーブル構造）
 
 ```sql
 CREATE TABLE user_service_tokens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
   service_name TEXT NOT NULL,
-  access_token TEXT NOT NULL,
-  refresh_token TEXT,
-  expires_at TIMESTAMPTZ,
-  scope TEXT,
+  token_data JSONB NOT NULL,             -- サービス別のトークン情報（下記参照）
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  connected_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  UNIQUE(user_id, service_name)
 );
+```
+
+#### token_data 構造（service_name = 'slack'）
+
+```json
+{
+  "access_token": "xoxb-...",
+  "token_type": "bot",
+  "team_id": "T...",
+  "team_name": "株式会社NextStage",
+  "bot_user_id": "U0AFUJV6HAA",
+  "scope": "channels:history,channels:read,chat:write,...",
+  "authed_user_id": "URGFMKFV3",
+  "authed_user_scope": "..."
+}
 ```
 
 #### インデックス
@@ -1718,9 +1734,9 @@ CREATE INDEX idx_user_service_tokens_service_name ON user_service_tokens(service
 #### 注意事項
 
 - service_name: 'gmail'/'slack'/'chatwork'
-- **RLS**: user_id でフィルタ
-- Gmail OAuth: `scope` に 'calendar' / 'drive.file' を含める場合、トークン再取得が必要
-- Slack: bot token + user token を別レコードで管理する可能性あり
+- **UNIQUE制約**: `(user_id, service_name)` — upsert で上書き更新
+- **Slack token_data**: `authed_user_id` = 認証ユーザー個人のSlack ID（メッセージ紐づけに必須）。`bot_user_id` = ボットID（全ユーザー共通）
+- Gmail OAuth: `token_data` 内に `access_token`, `refresh_token`, `scope` 等を格納
 
 ---
 

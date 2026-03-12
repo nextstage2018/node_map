@@ -519,6 +519,9 @@ ENV_TOKEN_OWNER_ID=              # パーソナライズ対象ユーザー
 NEXT_PUBLIC_EMAIL_ENABLED=       # false でメール休眠（デフォルト: true）
 EMAIL_USER=                      # メール取得用
 SLACK_BOT_TOKEN=                 # Slack連携（チームレベル）
+SLACK_CLIENT_ID=                 # Slack OAuth App ID
+SLACK_CLIENT_SECRET=             # Slack OAuth Secret
+SLACK_REDIRECT_URI=              # Slack OAuth コールバックURL
 CHATWORK_API_TOKEN=              # Chatwork連携（ユーザートークン）
 CHATWORK_BOT_API_TOKEN=          # Chatwork BOT連携（BOTトークン。優先使用）
 GMAIL_CLIENT_ID=                 # OAuth
@@ -539,7 +542,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 | Google Calendar | calendar.readonly, calendar.events | 予定同期 |
 | Google Drive | drive.file | ファイル保存 |
 | Gmail | gmail.readonly | メール同期・OAuth |
-| Slack | OAuth Bot | メッセージ同期 |
+| Slack | OAuth Bot（Bot Token + authed_user_id） | メッセージ同期・ボット応答 |
 | Chatwork | API Token | メッセージ同期 |
 | MeetGeek | API + Webhook | 会議録自動取り込み |
 
@@ -571,6 +574,8 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
 - **v3.4 決定ログ**: decision_log テーブル。不変ログ＋変更チェーン。decision_tree_nodes と連動
 - **v3.4 アジェンダ**: meeting_agenda テーブル。open_issues + decision_log + tasks から自動生成。JSONB items
+- **Slack OAuth token_data構造**: `access_token`, `token_type`, `team_id`, `team_name`, `bot_user_id`（ボットID共通: `U0AFUJV6HAA`）, `scope`, `authed_user_id`（認証ユーザー個人のSlack ID）, `authed_user_scope`。`authed_user_id` はメッセージのユーザー紐づけに必須
+- **チームメンバー（確定）**: suzuki（owner）, yokota, taniguchi, fukuda — 全員 `@next-stage.biz` ドメイン。Slack workspace: 株式会社NextStage
 - **インボックス ユーザー分離**: 全ユーザー向けAPIの `inbox_messages` クエリに `.eq('user_id', userId)` 適用済み（14箇所）。Cronジョブはプロジェクト横断処理のため user_id フィルタなし（意図的）
 - **インボックス メール除外**: `EMAIL_ENABLED=false` 時、バッジAPI・メッセージ一覧・秘書チャットで email チャネルを除外。`inboxStorage.service.ts` の `loadMessages` に `excludeEmail` オプションあり
 - **インボックス ポーリング**: メッセージ取得 `INBOX_POLL_INTERVAL=30秒`（`src/lib/constants.ts`）、バッジ更新 30秒（`AppSidebar.tsx`）
