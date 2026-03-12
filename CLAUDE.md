@@ -836,13 +836,26 @@ Slack・Chatworkのチャネル内で @NodeMap にメンションすると、プ
 ### メニューカード
 
 - `@NodeMap メニュー` でSlackではBlock Kitボタン付きカード表示。ボタン押下で各intent応答を取得
-- Chatworkではテキスト形式のメニュー表示（ボタン非対応のため）
+- Chatworkでは番号選択式テキストメニュー表示（`@NodeMap 1` で選択）
 - 社外チャネルではメニュー項目から「未確定事項」が自動除外される
+- 番号→intent変換: `resolveNumberIntent()` が internal/external で異なるマッピングを持つ
+
+### 番号選択（Chatwork + Slack共通）
+
+```
+internal: 1=issues, 2=decisions, 3=tasks, 4=agenda, 5=summary
+external: 1=decisions, 2=tasks, 3=agenda, 4=summary（issuesが除外）
+```
 
 ### トーン統一
 
 - 全応答で当たり障りない表現に統一（丁寧すぎず、カジュアルすぎず）
 - 社内/社外でトーンの差をつけない。公開範囲のみで制御
+
+### 応答フォーマット
+
+- **プロジェクト名表示**: 全応答の冒頭にプロジェクト名を表示（データが実際に読み込まれたことを確認可能）
+- **担当者別グルーピング**: bot_tasks応答ではタスクを担当者ごとにグループ化して表示（`contact_persons:assigned_contact_id(name)` でJOIN）
 
 ### 公開レベル（organizations.relationship_type で分岐）
 
@@ -892,7 +905,7 @@ Chatwork: Webhook — メンション検知
 2. Chatwork Webhook 設定 ✅
 3. POST /api/webhooks/slack/events — Slack Events Webhook（メンション+リアクション+メッセージ） ✅
 4. POST /api/webhooks/chatwork/events — Chatwork Webhook（メンション+タスク作成+完了） ✅
-5. botIntentClassifier.service.ts — ボット用intent分類（6種） ✅
+5. botIntentClassifier.service.ts — ボット用intent分類（7種 + 番号選択） ✅
 6. botAiClassifier.service.ts — Claude HaikuによるAI intent分類（フォールバック: キーワード） ✅
 7. botResponseGenerator.service.ts — 公開レベルフィルタ付きレスポンス生成 ✅
 8. taskFromMessage.service.ts — メッセージからタスク自動生成（プロジェクト自動紐付け+依頼者解決） ✅
@@ -909,11 +922,12 @@ Chatwork: Webhook — メンション検知
 
 ### 主要コンポーネント
 
-- `src/app/api/webhooks/slack/events/route.ts` — Slack Webhookエントリポイント
-- `src/app/api/webhooks/chatwork/events/route.ts` — Chatwork Webhookエントリポイント
-- `src/services/v43/botIntentClassifier.service.ts` — キーワードベースintent分類
+- `src/app/api/webhooks/slack/events/route.ts` — Slack Webhookエントリポイント（Block Kit返信+番号入力対応）
+- `src/app/api/webhooks/slack/interactions/route.ts` — Slackボタン押下受信（メニュー+完了+編集）
+- `src/app/api/webhooks/chatwork/events/route.ts` — Chatwork Webhookエントリポイント（番号入力対応）
+- `src/services/v43/botIntentClassifier.service.ts` — キーワードベースintent分類 + resolveNumberIntent()
 - `src/services/v43/botAiClassifier.service.ts` — AI intent分類（Claude Haiku）
-- `src/services/v43/botResponseGenerator.service.ts` — レスポンス生成（公開レベルフィルタ）
+- `src/services/v43/botResponseGenerator.service.ts` — レスポンス生成（公開レベルフィルタ・プロジェクト名・担当者グルーピング）
 - `src/services/v4/taskFromMessage.service.ts` — メッセージ→タスク自動生成
 
 ---

@@ -790,14 +790,17 @@ Slack/Chatworkチャネルで @NodeMap メンション → プロジェクト情
 ```
 処理フロー（全awaitで同期実行）:
   1. POST受信 → Slackリトライチェック（X-Slack-Retry-Num）
-  2. await processTaskCreation() or processBotMention()
+  2. 番号入力チェック（resolveNumberIntent）→ 該当すればAI分類スキップ
+  3. await processTaskCreation() or processBotMention()
      a. AI intent分類（Claude Haiku）→ フォールバック: キーワード分類
      b. チャネルID → project_channels → プロジェクト解決
      c. タスク作成: extractTask → resolveProject → resolveRequester → DB INSERT
         → v4.5: syncTaskToExternal()（Slack Block Kit / Chatworkネイティブタスク同時作成）
      d. ボット応答: generateBotResponse（公開レベルフィルタ付き）
-  3. await sendSlackReply/sendReply（結果返信）
-  4. return NextResponse.json({ ok: true })  ← 全処理完了後にreturn
+        → メニュー: Slack=Block Kitボタンカード / CW=番号選択テキスト
+        → 全応答にプロジェクト名表示、タスクは担当者別グルーピング
+  4. await sendSlackBlockReply/sendSlackReply/sendReply（結果返信）
+  5. return NextResponse.json({ ok: true })  ← 全処理完了後にreturn
 
 ⚠️ 重要: Vercelはreturn後にバックグラウンド処理を打ち切る
   → 全処理をawaitで完了してからreturnすること

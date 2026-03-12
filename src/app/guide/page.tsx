@@ -737,11 +737,21 @@ function OrganizationsTab() {
 
       <SectionCard title="チャネルボット（メンション応答）" icon={Hash}>
         <p className="mb-3">
-          Slack・Chatworkのチャネルで <span className="font-mono bg-slate-100 px-1 rounded text-sm">@NodeMap</span> にメンションすると、プロジェクト情報を返答します。読み取り専用で、変更操作はNodeMap画面に誘導します。
+          Slack・Chatworkのチャネルで <span className="font-mono bg-slate-100 px-1 rounded text-sm">@NodeMap</span> にメンションすると、プロジェクト情報を返答します。AIが自然な文章を解釈して適切な応答を返します。読み取り専用で、変更操作はNodeMap画面に誘導します。
         </p>
         <div className="space-y-3">
           <div>
-            <p className="font-medium text-slate-700 mb-1.5">使えるコマンド（6種）</p>
+            <p className="font-medium text-slate-700 mb-1.5">メニューカード</p>
+            <p className="text-xs text-slate-600 mb-2">
+              <span className="font-mono bg-slate-100 px-1 rounded">@NodeMap メニュー</span> でショートカットカードを表示。Slackではボタン付きカード、Chatworkでは番号選択式メニューが表示されます。
+            </p>
+            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
+              <p className="text-xs text-slate-500 mb-1">Chatworkでの操作例:</p>
+              <p className="text-xs font-mono text-slate-600">@NodeMap メニュー → 番号で選択 → @NodeMap 1</p>
+            </div>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 mb-1.5">情報照会（7種）</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-sm">
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">課題は？</span>
@@ -753,7 +763,7 @@ function OrganizationsTab() {
               </div>
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">タスク状況</span>
-                <span className="text-slate-500">→ 進行中タスク一覧</span>
+                <span className="text-slate-500">→ 担当者別タスク一覧</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">アジェンダ</span>
@@ -764,15 +774,37 @@ function OrganizationsTab() {
                 <span className="text-slate-500">→ 週次サマリー</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+                <span className="font-mono text-xs text-blue-600 shrink-0">メニュー</span>
+                <span className="text-slate-500">→ ショートカットカード</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">ヘルプ</span>
-                <span className="text-slate-500">→ コマンド一覧</span>
+                <span className="text-slate-500">→ 使い方ガイド</span>
               </div>
             </div>
+            <p className="text-xs text-slate-500 mt-1.5">すべての応答にプロジェクト名が表示され、実際のデータが読み込まれていることが確認できます。タスク状況は担当者ごとにグループ化されて表示されます。</p>
+          </div>
+          <div>
+            <p className="font-medium text-slate-700 mb-1.5">タスク作成</p>
+            <p className="text-xs text-slate-600 mb-2">
+              メンションで直接タスクを作成できます。AIが期限キーワードを自動検出し、依頼者も自動設定されます。
+            </p>
+            <div className="grid grid-cols-1 gap-1.5 text-sm">
+              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
+                <span className="font-mono text-xs text-blue-600 shrink-0">@NodeMap 明日までにシート作成</span>
+                <span className="text-slate-500">→ 期限: 明日</span>
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
+                <span className="font-mono text-xs text-blue-600 shrink-0">@NodeMap 3/15までに提案書作成</span>
+                <span className="text-slate-500">→ 期限: 3月15日</span>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-1.5">Slackではボタン付きリッチカード（完了・編集）、Chatworkではネイティブタスクが自動作成されます。</p>
           </div>
           <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
             <p className="font-medium text-slate-800 mb-1">公開レベルについて</p>
             <p className="text-xs text-slate-600">
-              社外チャネル（クライアント・パートナー）では、<strong>未確定事項は非表示</strong>になります。決定事項・タスク進捗は社外にも表示されます。社内の検討途中の情報が漏れないよう自動的にフィルタされます。
+              社外チャネル（クライアント・パートナー）では、<strong>未確定事項は非表示</strong>になります。メニューカードからも自動的に除外されます。決定事項・タスク進捗は社外にも表示されます。
             </p>
           </div>
         </div>
