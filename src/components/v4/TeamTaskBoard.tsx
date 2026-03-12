@@ -1,7 +1,7 @@
 // v4.0: チームタスクカンバンボード（4列: AI提案/着手前/進行中/完了）
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   DndContext,
   DragEndEvent,
@@ -12,7 +12,7 @@ import {
   useSensors,
   closestCorners,
 } from '@dnd-kit/core';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Filter } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import TaskStageColumn from './TaskStageColumn';
 import TeamTaskCard from './TeamTaskCard';
@@ -22,6 +22,11 @@ import type { MyTask } from './MyTaskCard';
 import TaskDetailPanel from './TaskDetailPanel';
 
 interface Project {
+  id: string;
+  name: string;
+}
+
+interface Assignee {
   id: string;
   name: string;
 }
@@ -36,6 +41,9 @@ export default function TeamTaskBoard() {
   const [fadingTasks, setFadingTasks] = useState<Set<string>>(new Set());
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+
+  // 担当者フィルタ
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all');
 
   // 担当者選択モーダル
   const [assigneeModal, setAssigneeModal] = useState<{
@@ -122,10 +130,34 @@ export default function TeamTaskBoard() {
     fetchData();
   }, [fetchData]);
 
+  // 担当者一覧を抽出（フィルタ用）
+  const assignees = useMemo(() => {
+    const map = new Map<string, string>();
+    tasks.forEach(t => {
+      if (t.assigned_contact_id && t.assignee_name) {
+        map.set(t.assigned_contact_id, t.assignee_name);
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  }, [tasks]);
+
+  // プロジェクト変更時にフィルタリセット
+  useEffect(() => {
+    setSelectedAssigneeId('all');
+  }, [selectedProjectId]);
+
+  // フィルタ適用
+  const filteredTasks = useMemo(() => {
+    if (selectedAssigneeId === 'all') return tasks;
+    if (selectedAssigneeId === 'unassigned') return tasks.filter(t => !t.assigned_contact_id);
+    return tasks.filter(t => t.assigned_contact_id === selectedAssigneeId);
+  }, [tasks, selectedAssigneeId]);
+
   // ステータスごとにグループ化
-  const todoTasks = tasks.filter(t => t.status === 'todo');
-  const inProgressTasks = tasks.filter(t => t.status === 'in_progress');
-  const doneTasks = tasks.filter(t => t.status === 'done' || fadingTasks.has(t.id));
+  const todoTasks = filteredTasks.filter(t => t.status === 'todo');
+  const inProgressTasks = filteredTasks.filter(t => t.status === 'in_progress');
+  const doneTasks = filteredTasks.filter(t => t.status === 'done' || fadingTasks.has(t.id));
 
   // D&Dイベント
   const handleDragStart = (event: DragStartEvent) => {
@@ -276,22 +308,57 @@ export default function TeamTaskBoard() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* プロジェクト選択 */}
+      {/* プロジェクト選択 + 担当者フィルタ */}
       <div className="shrink-0 px-6 py-3 border-b border-slate-100">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400">プロジェクト:</span>
-          <div className="relative">
-            <select
-              value={selectedProjectId}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
-              className="text-sm font-medium text-nm-text bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none"
-            >
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
-            <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">プロジェクト:</span>
+            <div className="relative">
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="text-sm font-medium text-nm-text bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none"
+              >
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
+
+          {/* 担当者フィルタ */}
+          {assignees.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Filter className="w-3.5 h-3.5 text-slate-400" />
+              <span className="text-xs text-slate-400">担当者:</span>
+              <div className="relative">
+                <select
+                  value={selectedAssigneeId}
+                  onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                  className={cn(
+                    'text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none',
+                    selectedAssigneeId !== 'all' ? 'text-blue-600 font-medium border-blue-200 bg-blue-50' : 'text-nm-text'
+                  )}
+                >
+                  <option value="all">全員</option>
+                  {assignees.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                  <option value="unassigned">未割り当て</option>
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+              {selectedAssigneeId !== 'all' && (
+                <button
+                  onClick={() => setSelectedAssigneeId('all')}
+                  className="text-xs text-slate-400 hover:text-slate-600 underline"
+                >
+                  解除
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
