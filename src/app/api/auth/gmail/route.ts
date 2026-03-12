@@ -1,7 +1,6 @@
 // Phase 24: Gmail OAuth 2.0 フロー開始
 // GET: Google OAuth認証URLにリダイレクト
 import { NextResponse } from 'next/server';
-import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,17 +21,10 @@ const SCOPES = [
 
 export async function GET() {
   try {
-    // 認証確認
-    let userId = await getServerUserId();
-
-    // demo-user-001 の場合、ENV_TOKEN_OWNER_ID にフォールバック
-    // （APIルートではCookieが読めない場合がある）
-    if (userId === 'demo-user-001' && process.env.ENV_TOKEN_OWNER_ID) {
-      console.log('[OAuth Start] getServerUserId()がdemo-user-001を返したため、ENV_TOKEN_OWNER_IDを使用:', process.env.ENV_TOKEN_OWNER_ID);
-      userId = process.env.ENV_TOKEN_OWNER_ID;
-    }
-
-    console.log('[OAuth Start] userId:', userId);
+    // ENV_TOKEN_OWNER_ID が設定されている場合は常にそれを使う
+    // （getServerUserId()はAPIルートでCookie読取りが不安定なため）
+    const userId = process.env.ENV_TOKEN_OWNER_ID || 'demo-user-001';
+    console.log('[OAuth Start] userId:', userId, '(ENV_TOKEN_OWNER_ID直接使用)');
 
     if (!GOOGLE_CLIENT_ID) {
       return NextResponse.json(
@@ -53,6 +45,7 @@ export async function GET() {
     });
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    console.log('[OAuth Start] redirect_uri:', REDIRECT_URI);
 
     return NextResponse.redirect(authUrl);
   } catch (error) {

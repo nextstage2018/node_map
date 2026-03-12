@@ -39,11 +39,19 @@ export async function GET(request: NextRequest) {
     }
 
     // 認証コードをトークンに交換
+    // codeの先頭・末尾をログ出力（Malformed auth code デバッグ用）
+    const codePrefix = code ? code.substring(0, 10) : '(null)';
+    const codeSuffix = code ? code.substring(code.length - 10) : '(null)';
     console.log('[OAuth Callback] トークン交換開始', {
       hasCode: !!code,
       codeLength: code?.length,
+      codePrefix,
+      codeSuffix,
+      codeContainsSlash: code?.includes('/'),
+      codeContainsPercent: code?.includes('%'),
       userId: state,
       redirectUri: REDIRECT_URI,
+      rawUrl: request.url.substring(0, 200), // URLの先頭200文字
     });
 
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
@@ -85,13 +93,9 @@ export async function GET(request: NextRequest) {
 
     // トークンをDBに保存（Service Role Key でRLSをバイパス）
     const sb = createServerClient();
-    // state が demo-user-001 の場合、ENV_TOKEN_OWNER_ID にフォールバック
-    // （OAuth開始時にCookieが読めず demo-user-001 がstateに入った場合の救済）
-    let userId = state;
-    if (userId === 'demo-user-001' && process.env.ENV_TOKEN_OWNER_ID) {
-      console.log('[OAuth Callback] stateがdemo-user-001のため、ENV_TOKEN_OWNER_IDを使用:', process.env.ENV_TOKEN_OWNER_ID);
-      userId = process.env.ENV_TOKEN_OWNER_ID;
-    }
+    // ENV_TOKEN_OWNER_ID が設定されている場合は常にそれを使う
+    // （stateにgetServerUserId()の不正な値が入る場合があるため）
+    const userId = process.env.ENV_TOKEN_OWNER_ID || state;
     console.log('[OAuth Callback] 最終userId:', userId, '(state:', state, ')');
     console.log('[OAuth Callback] トークンデータ概要:', {
       has_access_token: !!tokenData.access_token,
