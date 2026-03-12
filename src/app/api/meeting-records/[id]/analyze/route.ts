@@ -179,7 +179,7 @@ export async function POST(
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 6000,
+        max_tokens: 12000,
         system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
 ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文脈です。会議内容と照らし合わせて分析してください。${contextBlock}` : ''}
 
