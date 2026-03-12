@@ -160,7 +160,19 @@ export async function POST(
       console.error('[MeetingRecords Analyze] v3.4コンテキスト取得エラー:', contextError);
     }
 
-    // 3. AI解析の実行
+    // 3. AI解析の実行（日本語スペース除去の前処理付き）
+    // MeetGeekの文字起こしで "こ れ は テ ス ト" のようにスペースが入る問題を修正
+    const cleanJapaneseSpaces = (text: string): string => {
+      return text.replace(
+        /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+        '$1$2'
+      ).replace(
+        /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+        '$1$2'
+      );
+    };
+    const cleanedContent = cleanJapaneseSpaces(record.content || '');
+
     let analysisResult: AnalysisResult;
     try {
       const anthropic = new Anthropic();
@@ -260,7 +272,7 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         messages: [
           {
             role: 'user',
-            content: `会議タイトル: ${record.title}\n会議日: ${record.meeting_date}\n\n会議内容:\n${record.content}`,
+            content: `会議タイトル: ${record.title}\n会議日: ${record.meeting_date}\n\n会議内容:\n${cleanedContent}`,
           },
         ],
       });
@@ -313,20 +325,36 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    // 5. ビジネスイベント自動登録（カラム名は content。description ではない）
+    // 5. ビジネスイベント自動登録（重複チェック付き。カラム名は content）
     try {
-      const { error: eventInsertError } = await supabase.from('business_events').insert({
-        user_id: userId,
-        project_id: record.project_id,
-        event_type: 'meeting',
-        title: `会議: ${record.title}`,
-        content: analysisResult.summary || record.title,
-        event_date: record.meeting_date,
-        meeting_record_id: record.id,
-        ai_generated: true,
-      });
-      if (eventInsertError) {
-        console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventInsertError);
+      // 既存チェック（同一meeting_record_idで既にあれば更新、なければ挿入）
+      const { data: existingEvent } = await supabase
+        .from('business_events')
+        .select('id')
+        .eq('meeting_record_id', record.id)
+        .limit(1)
+        .single();
+
+      if (existingEvent) {
+        // 既存あり → 更新
+        await supabase.from('business_events')
+          .update({ content: analysisResult.summary || record.title, updated_at: new Date().toISOString() })
+          .eq('id', existingEvent.id);
+      } else {
+        // 新規挿入
+        const { error: eventInsertError } = await supabase.from('business_events').insert({
+          user_id: userId,
+          project_id: record.project_id,
+          event_type: 'meeting',
+          title: `会議: ${record.title}`,
+          content: analysisResult.summary || record.title,
+          event_date: record.meeting_date,
+          meeting_record_id: record.id,
+          ai_generated: true,
+        });
+        if (eventInsertError) {
+          console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventInsertError);
+        }
       }
     } catch (eventError) {
       // ビジネスイベント登録失敗してもメイン処理はブロックしない

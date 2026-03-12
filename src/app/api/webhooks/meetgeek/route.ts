@@ -153,9 +153,27 @@ async function fetchMeetGeekMeeting(meetingId: string, apiKey: string): Promise<
   return { meetingDetail, summary, sentences: allSentences, highlights, meetingMeta };
 }
 
+// 日本語テキストのスペース除去（MeetGeekの文字起こしアーティファクト対応）
+// 例: "こ れ は テ ス ト" → "これはテスト"
+function cleanJapaneseSpaces(text: string): string {
+  // 日本語文字（ひらがな・カタカナ・漢字・全角記号）の間のスペースを除去
+  // CJK統合漢字 + ひらがな + カタカナ + 全角句読点
+  return text.replace(
+    /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+    '$1$2'
+  ).replace(
+    // 2回目: 奇数位置のスペースが残る場合があるので再実行
+    /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+    '$1$2'
+  );
+}
+
 // トランスクリプトをテキストに変換
 function formatTranscript(sentences: MeetGeekSentence[]): string {
-  return sentences.map(s => `${s.speaker}: ${s.transcript}`).join('\n');
+  return sentences.map(s => {
+    const cleaned = cleanJapaneseSpaces(s.transcript);
+    return `${s.speaker}: ${cleaned}`;
+  }).join('\n');
 }
 
 // 参加者名からユニークなspeaker一覧を抽出
