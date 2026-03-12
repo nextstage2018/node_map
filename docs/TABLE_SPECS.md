@@ -344,6 +344,72 @@ CREATE INDEX idx_project_members_contact_id ON project_members(contact_id);
 - role: 'owner' / 'member' / 'viewer'
 - メンバーカード展開で contact_persons の編集 + contact_channels の管理が可能
 
+### themes（テーマ：任意中間レイヤー）
+
+**目的**: プロジェクト配下の任意グルーピング。マイルストーンをテーマ単位で整理可能
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE IF NOT EXISTS themes (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_themes_project ON themes(project_id);
+```
+
+#### 注意事項
+
+- **任意レイヤー**: テーマは省略可能。マイルストーンの theme_id は NULL 許容
+- **5階層**: Organization > Project > Theme（任意） > Milestone > Task
+
+### milestones（マイルストーン）
+
+**目的**: プロジェクトの中間目標。1週間サイクルで設計
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE IF NOT EXISTS milestones (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  start_context TEXT,
+  target_date DATE,
+  achieved_date DATE,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'achieved', 'missed')),
+  sort_order INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
+CREATE INDEX IF NOT EXISTS idx_milestones_theme ON milestones(theme_id);
+```
+
+#### 注意事項
+
+- **status CHECK制約**: `'pending'`, `'in_progress'`, `'achieved'`, `'missed'` の4つのみ
+- **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
+- **theme_id**: NULL許容。テーマ未設定のマイルストーンも可
+
 ---
 
 ## 3. タスク・ジョブ・メモ関連テーブル
@@ -1991,6 +2057,10 @@ users (Supabase auth)
   │     │  ├─ seed_conversations (seed_id)
   │     │  ├─ thought_task_nodes (seed_id)
   │     │  └─ thought_edges (seed_id)
+  │     ├─ themes (project_id) [任意中間レイヤー]
+  │     │  └─ milestones (theme_id) [テーマ配下]
+  │     ├─ milestones (project_id) [テーマなしも可]
+  │     │  └─ tasks (milestone_id)
   │     ├─ business_events (project_id)
   │     ├─ open_issues (project_id) [v3.4]
   │     ├─ decision_log (project_id) [v3.4]
