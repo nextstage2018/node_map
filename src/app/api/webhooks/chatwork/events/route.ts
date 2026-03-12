@@ -432,7 +432,7 @@ async function processBotMention(params: {
       return;
     }
 
-    // ★ AI intent分類（フォールバック: キーワードベース）
+    // テキストクリーニング
     let cleanText: string;
     try {
       const { extractChatworkMentionText } = await import('@/services/v43/botIntentClassifier.service');
@@ -442,6 +442,23 @@ async function processBotMention(params: {
       cleanText = text.replace(/\[To:\d+\][^\n]*/g, '').trim();
     }
 
+    // ★ 番号入力チェック（メニューの番号選択: 「1」「2」等）
+    const { resolveNumberIntent } = await import('@/services/v43/botIntentClassifier.service');
+    const { getRelationshipTypeForProject } = await import('@/services/v43/botResponseGenerator.service');
+    const relType = await getRelationshipTypeForProject(channel.data.project_id);
+    const isInternal = relType === 'internal';
+    const numberIntent = resolveNumberIntent(cleanText, isInternal);
+
+    if (numberIntent) {
+      // 番号入力 → 直接intent解決（AI分類スキップ）
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
+      const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
+      const response = await generateBotResponse(channel.data.project_id, numberIntent, baseUrl);
+      await sendReply(roomId, response.text);
+      return;
+    }
+
+    // ★ AI intent分類（フォールバック: キーワードベース）
     let classification;
     try {
       const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
@@ -459,7 +476,7 @@ async function processBotMention(params: {
           roomId,
           messageId: '',
           fromAccountId: fromAccountId || 0,
-          skipInstantReply: true, // 即レスは送信済み
+          skipInstantReply: true,
         });
       } catch (err) {
         console.error('[Chatwork Webhook] ボット→タスク作成リダイレクトエラー:', err);

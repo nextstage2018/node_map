@@ -60,6 +60,37 @@ const INTENT_RULES: IntentRule[] = [
   },
 ];
 
+// 番号→intent変換（メニューの番号選択用）
+// ※ relationship_typeで公開範囲が変わるため、全件のマッピングを持つ
+// internal: 1=issues, 2=decisions, 3=tasks, 4=agenda, 5=summary
+// client/partner: 1=decisions, 2=tasks, 3=agenda, 4=summary（issuesが除外される）
+const NUMBER_INTENT_MAP_INTERNAL: Record<string, BotIntent> = {
+  '1': 'bot_issues',
+  '2': 'bot_decisions',
+  '3': 'bot_tasks',
+  '4': 'bot_agenda',
+  '5': 'bot_summary',
+};
+
+const NUMBER_INTENT_MAP_EXTERNAL: Record<string, BotIntent> = {
+  '1': 'bot_decisions',
+  '2': 'bot_tasks',
+  '3': 'bot_agenda',
+  '4': 'bot_summary',
+};
+
+/**
+ * 番号入力からintentを解決
+ * @param text クリーン済みテキスト
+ * @param isInternal 社内チャネルかどうか
+ * @returns BotIntent or null（番号入力でない場合）
+ */
+export function resolveNumberIntent(text: string, isInternal: boolean): BotIntent | null {
+  const trimmed = text.trim();
+  const map = isInternal ? NUMBER_INTENT_MAP_INTERNAL : NUMBER_INTENT_MAP_EXTERNAL;
+  return map[trimmed] || null;
+}
+
 /**
  * メンションメッセージのintentを分類
  * @param text メッセージテキスト（メンション部分は除去済み）

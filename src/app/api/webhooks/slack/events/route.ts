@@ -464,7 +464,7 @@ async function processBotMention(params: {
       return;
     }
 
-    // ★ AI intent分類（フォールバック: キーワードベース）
+    // テキストクリーニング
     let cleanText: string;
     try {
       const { extractSlackMentionText } = await import('@/services/v43/botIntentClassifier.service');
@@ -474,13 +474,28 @@ async function processBotMention(params: {
       cleanText = text.replace(/<@[A-Z0-9]+>/g, '').trim();
     }
 
+    // ★ 番号入力チェック（メニューの番号選択: 「1」「2」等）
+    const { resolveNumberIntent } = await import('@/services/v43/botIntentClassifier.service');
+    const { getRelationshipTypeForProject } = await import('@/services/v43/botResponseGenerator.service');
+    const relType = await getRelationshipTypeForProject(channel.project_id);
+    const isInternal = relType === 'internal';
+    const numberIntent = resolveNumberIntent(cleanText, isInternal);
+
+    if (numberIntent) {
+      const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
+      const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
+      const response = await generateBotResponse(channel.project_id, numberIntent, baseUrl);
+      await sendSlackReply(channelId, threadTs, response.text, ownerUserId);
+      return;
+    }
+
+    // ★ AI intent分類（フォールバック: キーワードベース）
     let classification;
     try {
       const { classifyBotIntentWithAi } = await import('@/services/v43/botAiClassifier.service');
       classification = await classifyBotIntentWithAi(cleanText);
     } catch (aiErr) {
       console.error('[Slack Events] AI分類 import/実行エラー:', aiErr);
-      // フォールバック: ヘルプを返す
       classification = { intent: 'bot_help' as const, isTaskCreate: false, source: 'keyword' as const };
     }
 

@@ -59,6 +59,10 @@ function getMenuItems(relType: RelationshipType): { id: string; label: string; e
 // プロジェクト → 組織 → relationship_type 取得
 // ========================================
 
+export async function getRelationshipTypeForProject(projectId: string): Promise<RelationshipType> {
+  return getRelationshipType(projectId);
+}
+
 async function getRelationshipType(projectId: string): Promise<RelationshipType> {
   const supabase = getServerSupabase() || getSupabase();
   if (!supabase) return 'client'; // 安全側に倒す
@@ -189,14 +193,14 @@ function generateMenuResponse(projectId: string, relType: RelationshipType): Bot
     },
   ];
 
-  // Chatwork等のテキストフォールバック
+  // Chatwork等のテキスト（番号選択式）
   const textLines = [
     'プロジェクトの情報をお伝えできます。',
-    '確認したい項目をメンションで伝えてください。',
+    '番号をメンションで送ってください。',
     '',
-    ...items.map(item => `${item.emoji} ${item.label}`),
+    ...items.map((item, i) => `[${i + 1}] ${item.emoji} ${item.label}`),
     '',
-    '例: @NodeMap タスク状況',
+    '例: @NodeMap 1',
   ];
 
   return {
