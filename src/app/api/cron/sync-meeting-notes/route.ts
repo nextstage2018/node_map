@@ -12,8 +12,9 @@ export const maxDuration = 120;
 export async function GET(request: NextRequest) {
   try {
     const authHeader = request.headers.get('authorization');
+    const urlSecret = request.nextUrl.searchParams.get('secret');
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (cronSecret && authHeader !== `Bearer ${cronSecret}` && urlSecret !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
