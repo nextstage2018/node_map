@@ -70,10 +70,10 @@ async function extractTaskFromMessage(
     title = text.slice(0, 100);
   }
 
-  // 詳細: スレッドコンテキストがある場合は背景情報として付与
-  let description = text;
+  // 詳細: スレッドコンテキストがある場合はAI要約を生成
+  let description = '';
   if (threadContext && threadContext.trim()) {
-    description = `${text}\n\n--- スレッドの前後のやり取り ---\n${threadContext.trim()}`;
+    description = await summarizeThreadContext(text, threadContext);
   }
 
   return {
@@ -82,6 +82,52 @@ async function extractTaskFromMessage(
     priority,
     dueDate,
   };
+}
+
+/**
+ * スレッドの前後のやり取りをAIで要約して「タスクの背景・経緯」を生成
+ */
+async function summarizeThreadContext(
+  taskMessage: string,
+  threadContext: string
+): Promise<string> {
+  try {
+    const Anthropic = (await import('@anthropic-ai/sdk')).default;
+    const client = new Anthropic();
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      messages: [
+        {
+          role: 'user',
+          content: `以下のチャットのやり取りから、タスクの背景と経緯を簡潔にまとめてください。
+箇条書きではなく、2〜3文の自然な文章で。
+
+【タスク依頼メッセージ】
+${taskMessage}
+
+【前後のやり取り】
+${threadContext.slice(0, 1500)}
+
+【出力ルール】
+- 「〜という流れで」「〜を受けて」など経緯がわかる表現
+- 関係者名があれば含める
+- 200文字以内`,
+        },
+      ],
+    });
+
+    const text = response.content[0];
+    if (text.type === 'text' && text.text.trim()) {
+      return text.text.trim();
+    }
+  } catch (error) {
+    console.error('[taskFromMessage] AI要約エラー（フォールバック）:', error);
+  }
+
+  // フォールバック: 生テキストの先頭200文字
+  return threadContext.slice(0, 200).trim();
 }
 
 /**
