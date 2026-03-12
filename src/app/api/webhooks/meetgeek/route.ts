@@ -12,6 +12,13 @@ const MEETGEEK_API_BASE = 'https://api.meetgeek.ai/v1';
 
 // ---- 型定義 ----
 
+interface AnalysisTopic {
+  title: string;
+  options: string[];
+  decision: string | null;
+  status: 'active' | 'completed' | 'cancelled';
+}
+
 interface MeetGeekMeetingMeta {
   meeting_id: string;
   title?: string;
@@ -514,35 +521,63 @@ export async function POST(request: NextRequest) {
 
     console.log(`[MeetGeek Webhook] 議事録保存完了: ${record.id} (title: ${meetingTitle}, method: ${matchMethod})`);
 
-    // ---- AI解析を非同期トリガー ----
+    // ---- AI解析 + 検討ツリー生成（awaitで完了を待つ）----
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
       || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
+    let analyzeData: { data?: { analysis?: { topics?: AnalysisTopic[] } } } | null = null;
+
+    // ステップ1: AI解析を実行（awaitで完了を待つ）
     try {
       const analyzeUrl = `${baseUrl}/api/meeting-records/${record.id}/analyze`;
       console.log(`[MeetGeek Webhook] AI解析開始: ${analyzeUrl}`);
 
-      // MeetGeekサマリーがあれば事前にセット
-      if (summaryText) {
-        await supabase
-          .from('meeting_records')
-          .update({ ai_summary: summaryText })
-          .eq('id', record.id);
-      }
-
-      // analyze APIを非同期呼び出し
-      fetch(analyzeUrl, {
+      const analyzeRes = await fetch(analyzeUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-webhook-internal': 'true',
         },
-      }).catch(err => {
-        console.error('[MeetGeek Webhook] AI解析呼び出しエラー（非同期）:', err);
       });
-
+      if (analyzeRes.ok) {
+        analyzeData = await analyzeRes.json();
+        console.log(`[MeetGeek Webhook] AI解析完了: ${record.id}`);
+      } else {
+        console.error(`[MeetGeek Webhook] AI解析失敗: ${analyzeRes.status}`);
+      }
     } catch (analyzeError) {
       console.error('[MeetGeek Webhook] AI解析トリガーエラー:', analyzeError);
+    }
+
+    // ステップ2: 検討ツリー生成（AI解析のtopicsを使用）
+    try {
+      const topics = analyzeData?.data?.analysis?.topics;
+      if (topics && topics.length > 0) {
+        const generateUrl = `${baseUrl}/api/decision-trees/generate`;
+        console.log(`[MeetGeek Webhook] 検討ツリー生成開始: ${topics.length}件のtopics`);
+
+        const generateRes = await fetch(generateUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-webhook-internal': 'true',
+          },
+          body: JSON.stringify({
+            project_id: projectId,
+            meeting_record_id: record.id,
+            topics,
+          }),
+        });
+        if (generateRes.ok) {
+          console.log(`[MeetGeek Webhook] 検討ツリー生成完了`);
+        } else {
+          console.error(`[MeetGeek Webhook] 検討ツリー生成失敗: ${generateRes.status}`);
+        }
+      } else {
+        console.log('[MeetGeek Webhook] topicsが空のため検討ツリー生成をスキップ');
+      }
+    } catch (treeError) {
+      console.error('[MeetGeek Webhook] 検討ツリー生成エラー:', treeError);
     }
 
     // ---- v3.3: トランスクリプトをDriveの会議議事録フォルダに保存 ----

@@ -313,21 +313,24 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       return NextResponse.json({ success: false, error: updateError.message }, { status: 500 });
     }
 
-    // 5. ビジネスイベント自動登録
+    // 5. ビジネスイベント自動登録（カラム名は content。description ではない）
     try {
-      await supabase.from('business_events').insert({
+      const { error: eventInsertError } = await supabase.from('business_events').insert({
         user_id: userId,
         project_id: record.project_id,
         event_type: 'meeting',
         title: `会議: ${record.title}`,
-        description: analysisResult.summary || record.title,
+        content: analysisResult.summary || record.title,
         event_date: record.meeting_date,
         meeting_record_id: record.id,
         ai_generated: true,
       });
+      if (eventInsertError) {
+        console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventInsertError);
+      }
     } catch (eventError) {
       // ビジネスイベント登録失敗してもメイン処理はブロックしない
-      console.error('[MeetingRecords Analyze] ビジネスイベント登録エラー:', eventError);
+      console.error('[MeetingRecords Analyze] ビジネスイベント登録例外:', eventError);
     }
 
     // 6. v3.0: 会議録テキストからナレッジ（キーワード）を自動抽出
