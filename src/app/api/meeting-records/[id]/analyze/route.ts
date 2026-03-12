@@ -161,26 +161,60 @@ export async function POST(
       console.error('[MeetingRecords Analyze] v3.4コンテキスト取得エラー:', contextError);
     }
 
-    // 3. AI解析の実行（日本語スペース除去の前処理付き）
-    // MeetGeekの文字起こしで "こ れ は テ ス ト" のようにスペースが入る問題を修正
-    const cleanJapaneseSpaces = (text: string): string => {
-      return text.replace(
-        /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
-        '$1$2'
-      ).replace(
-        /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
-        '$1$2'
-      );
-    };
-    const cleanedContent = cleanJapaneseSpaces(record.content || '');
-
+    // 3. 解析の実行
+    // v6.0: source_type='gemini' の場合はGeminiパーサー（AI不要）を使用
+    // それ以外（text/file/transcription/meetgeek）はClaude AI解析を維持
     let analysisResult: AnalysisResult;
-    try {
-      const anthropic = new Anthropic();
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 12000,
-        system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
+
+    if (record.source_type === 'gemini') {
+      // ---- v6.0: Geminiパーサー（テキストパースのみ、AI不要） ----
+      console.log('[MeetingRecords Analyze] Geminiパーサーモードで解析');
+      try {
+        const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
+        const geminiResult = parseGeminiNotes(record.content || '');
+        analysisResult = {
+          summary: geminiResult.summary,
+          topics: geminiResult.topics,
+          milestone_feedback: geminiResult.milestone_feedback,
+          action_items: geminiResult.action_items,
+          new_open_issues: geminiResult.new_open_issues,
+          resolved_issues: geminiResult.resolved_issues,
+          new_decisions: geminiResult.new_decisions,
+          goal_suggestions: geminiResult.goal_suggestions as GoalSuggestion[],
+        };
+      } catch (parseError) {
+        console.error('[MeetingRecords Analyze] Geminiパーサーエラー:', parseError);
+        analysisResult = {
+          summary: '',
+          topics: [],
+          milestone_feedback: null,
+          action_items: [],
+          new_open_issues: [],
+          resolved_issues: [],
+          new_decisions: [],
+          goal_suggestions: [],
+        };
+      }
+    } else {
+      // ---- 従来: Claude AI解析（MeetGeek/手動テキスト等） ----
+      // MeetGeekの文字起こしで "こ れ は テ ス ト" のようにスペースが入る問題を修正
+      const cleanJapaneseSpaces = (text: string): string => {
+        return text.replace(
+          /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+          '$1$2'
+        ).replace(
+          /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
+          '$1$2'
+        );
+      };
+      const cleanedContent = cleanJapaneseSpaces(record.content || '');
+
+      try {
+        const anthropic = new Anthropic();
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 12000,
+          system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
 ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文脈です。会議内容と照らし合わせて分析してください。${contextBlock}` : ''}
 
 必ず以下のJSON形式で返してください（JSONのみ、他のテキストは不要）:
@@ -276,71 +310,67 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
   - 期限は会議内容から推定できる場合のみ設定（不明ならnull）
   - 会議内容から階層構造が読み取れない場合は空配列にしてください
 - 必ず有効なJSONを返してください`,
-        messages: [
-          {
-            role: 'user',
-            content: `会議タイトル: ${record.title}\n会議日: ${record.meeting_date}\n\n会議内容:\n${cleanedContent}`,
-          },
-        ],
-      });
+          messages: [
+            {
+              role: 'user',
+              content: `会議タイトル: ${record.title}\n会議日: ${record.meeting_date}\n\n会議内容:\n${cleanedContent}`,
+            },
+          ],
+        });
 
-      // レスポンスからJSONを解析
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
-      // JSONブロック抽出（```json ... ``` や 直接JSON）
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('AIレスポンスからJSONを解析できませんでした');
-      }
-      let jsonStr = jsonMatch[0];
+        // レスポンスからJSONを解析
+        const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+        // JSONブロック抽出（```json ... ``` や 直接JSON）
+        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error('AIレスポンスからJSONを解析できませんでした');
+        }
+        let jsonStr = jsonMatch[0];
 
-      // JSON修復: 途切れたJSONの閉じ括弧を補完
-      let parsed;
-      try {
-        parsed = JSON.parse(jsonStr);
-      } catch {
-        console.warn('[MeetingRecords Analyze] JSON修復を試行中...');
-        // 未閉じの文字列・配列・オブジェクトを補完
-        // 1. 未閉じの文字列を閉じる
-        const quoteCount = (jsonStr.match(/(?<!\\)"/g) || []).length;
-        if (quoteCount % 2 !== 0) jsonStr += '"';
-        // 2. 未閉じの配列/オブジェクトを閉じる
-        const openBrackets = (jsonStr.match(/\[/g) || []).length;
-        const closeBrackets = (jsonStr.match(/\]/g) || []).length;
-        const openBraces = (jsonStr.match(/\{/g) || []).length;
-        const closeBraces = (jsonStr.match(/\}/g) || []).length;
-        // 末尾のカンマを除去
-        jsonStr = jsonStr.replace(/,\s*$/, '');
-        for (let i = 0; i < openBrackets - closeBrackets; i++) jsonStr += ']';
-        for (let i = 0; i < openBraces - closeBraces; i++) jsonStr += '}';
+        // JSON修復: 途切れたJSONの閉じ括弧を補完
+        let parsed;
         try {
           parsed = JSON.parse(jsonStr);
-          console.log('[MeetingRecords Analyze] JSON修復成功');
-        } catch (repairError) {
-          console.error('[MeetingRecords Analyze] JSON修復も失敗:', repairError);
-          throw new Error('AIレスポンスのJSON解析に失敗しました（修復不可）');
+        } catch {
+          console.warn('[MeetingRecords Analyze] JSON修復を試行中...');
+          const quoteCount = (jsonStr.match(/(?<!\\)"/g) || []).length;
+          if (quoteCount % 2 !== 0) jsonStr += '"';
+          const openBrackets = (jsonStr.match(/\[/g) || []).length;
+          const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+          const openBraces = (jsonStr.match(/\{/g) || []).length;
+          const closeBraces = (jsonStr.match(/\}/g) || []).length;
+          jsonStr = jsonStr.replace(/,\s*$/, '');
+          for (let i = 0; i < openBrackets - closeBrackets; i++) jsonStr += ']';
+          for (let i = 0; i < openBraces - closeBraces; i++) jsonStr += '}';
+          try {
+            parsed = JSON.parse(jsonStr);
+            console.log('[MeetingRecords Analyze] JSON修復成功');
+          } catch (repairError) {
+            console.error('[MeetingRecords Analyze] JSON修復も失敗:', repairError);
+            throw new Error('AIレスポンスのJSON解析に失敗しました（修復不可）');
+          }
         }
+        analysisResult = {
+          ...parsed,
+          action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
+          new_open_issues: Array.isArray(parsed.new_open_issues) ? parsed.new_open_issues : [],
+          resolved_issues: Array.isArray(parsed.resolved_issues) ? parsed.resolved_issues : [],
+          new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
+          goal_suggestions: Array.isArray(parsed.goal_suggestions) ? parsed.goal_suggestions : [],
+        } as AnalysisResult;
+      } catch (aiError) {
+        console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
+        analysisResult = {
+          summary: '',
+          topics: [],
+          milestone_feedback: null,
+          action_items: [],
+          new_open_issues: [],
+          resolved_issues: [],
+          new_decisions: [],
+          goal_suggestions: [],
+        };
       }
-      analysisResult = {
-        ...parsed,
-        action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
-        new_open_issues: Array.isArray(parsed.new_open_issues) ? parsed.new_open_issues : [],
-        resolved_issues: Array.isArray(parsed.resolved_issues) ? parsed.resolved_issues : [],
-        new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
-        goal_suggestions: Array.isArray(parsed.goal_suggestions) ? parsed.goal_suggestions : [],
-      } as AnalysisResult;
-    } catch (aiError) {
-      console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
-      // フォールバック: 空のsummaryで保存し、メイン処理をブロックしない
-      analysisResult = {
-        summary: '',
-        topics: [],
-        milestone_feedback: null,
-        action_items: [],
-        new_open_issues: [],
-        resolved_issues: [],
-        new_decisions: [],
-        goal_suggestions: [],
-      };
     }
 
     // 4. 会議録を更新（ai_summary + processed フラグ）

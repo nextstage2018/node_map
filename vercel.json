@@ -89,6 +89,10 @@
     {
       "path": "/api/cron/bot-alerts",
       "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/sync-meeting-notes",
+      "schedule": "0 7 * * *"
     }
   ]
 }

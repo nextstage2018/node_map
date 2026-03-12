@@ -252,7 +252,7 @@ AI解析の改修イメージ:
 | `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
 | `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
 | `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
-| `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek**。source_file_id TEXT型。v3.0: participants/meeting_start_at/meeting_end_at/metadata/highlights 追加 |
+| `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek/gemini**。source_file_id TEXT型。v3.0: participants/meeting_start_at/meeting_end_at/metadata/highlights 追加。v6.0: 'gemini'追加（カレンダーイベントIDをsource_file_idに格納） |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造。v3.0: source_type/confidence_score/source_message_ids 追加 |
 | `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
@@ -503,6 +503,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | `/api/cron/update-open-issues` | 毎日 04:30 | 未確定事項の滞留日数・優先度・stale更新（v3.4） |
 | `/api/cron/generate-meeting-agendas` | 毎日 05:00 | 翌営業日アジェンダ自動生成（v3.4） |
 | `/api/cron/sync-calendar-events` | 毎日 06:00 | Googleカレンダー同期 |
+| `/api/cron/sync-meeting-notes` | 毎日 07:00 | Gemini会議メモ自動取り込み（v6.0） |
 
 ---
 
@@ -1018,6 +1019,7 @@ v4.3 チャネルボット（メンション応答）← 実装済み
 v4.4 チャネルボット（定期配信）     ← 実装済み
 v4.5 外部タスク双方向同期          ← 実装済み
 v5.0 タスク提案フロー刷新          ← 実装済み
+v6.0 Gemini会議メモ連携           ← 実装済み
 ```
 
 ---
@@ -1179,3 +1181,96 @@ Interactivity & Shortcuts:
 - **task_suggestionsのステータス**: pending → accepted（承認）/ dismissed（却下）。検討ツリータブではpendingのみ表示
 - **期限(dueDate)の引き継ぎ**: TaskProposalPanel → POST /api/tasks → `CreateTaskRequest.dueDate` → `tasks.due_date` に保存。`CreateTaskRequest` と `TaskService.createTask()` の両方にマッピングが必要
 - **作成元(source_type)**: TaskProposalPanelから `sourceType: 'meeting_record'` を送信。タスク詳細API（`/api/tasks/[id]/detail`）で `meeting_record` or `meeting` → 「会議議事録」、`slack`/`chatwork` → チャネル名表示、それ以外 → 「手動作成」
+
+---
+
+## v6.0 Gemini会議メモ連携（実装済み）
+
+### 概要
+
+Google Meet「メモを取る」機能（Gemini）が生成する構造化テキストを、会議録データの主要入力ソースとして利用。Claude AIによるテキスト理解をコードベースのテキストパースに置き換え、APIコスト・トークン制限・JSON切れリスクを排除。
+
+### 設計思想
+
+```
+【旧フロー（v5.0以前）】
+  MeetGeek Webhook → 生テキスト → Claude AI（¥コスト） → AnalysisResult JSON
+  課題: APIコスト、max_tokens制限、JSON切れ、レイテンシ
+
+【新フロー（v6.0）】
+  Google Calendar → Gemini会議メモ（Google Docs添付） → テキストパース（コードのみ） → AnalysisResult
+  利点: 無料、即座、確実、Geminiが既に構造化済み
+```
+
+### アーキテクチャ
+
+```
+データフロー:
+  1. Google Meet で会議 → Gemini「メモを取る」ON
+  2. 会議終了 → Gemini が Google Docs を自動生成しカレンダーイベントに添付
+  3. Cron（sync-meeting-notes）が過去24時間のイベントをスキャン
+  4. Google Docs 添付を検出 → Drive API export でテキスト取得
+  5. geminiParser がテキストパース → AnalysisResult 形式に変換（AI不要）
+  6. meeting_records に保存 + 既存パイプライン実行（ビジネスイベント・タスク提案・検討ツリー等）
+
+手動再解析:
+  検討ツリータブの再解析ボタン → analyze API
+  → source_type='gemini' なら Geminiパーサー（AI不要）
+  → それ以外なら Claude AI（従来通り）
+```
+
+### Geminiパーサーの仕様
+
+Gemini会議メモの構造化テキスト（3セクション）をパースする:
+
+```
+まとめ（Summary）    → result.summary
+詳細（Details）      → result.topics + decisions + open_issues
+推奨される次のステップ → result.action_items（担当者ごとに集約）
+```
+
+キーワードベースの検出:
+- 決定事項: 「決定」「合意」「方針」「確定」等 → decisions + topics.status='completed'
+- 未確定事項: 「検討」「未定」「課題」「要確認」等 → open_issues
+- 期限: M月D日、曜日まで、N日後、来週等 → due_date
+- 優先度: 「急」「至急」「最優先」等 → priority='high'
+- 担当者: `[名前]` or `名前:` 形式 → assignee
+
+### 新規ファイル
+
+| ファイル | 用途 |
+|---|---|
+| `src/services/gemini/geminiParser.service.ts` | Gemini会議メモのテキストパーサー（AI不要） |
+| `src/services/gemini/meetingNoteFetcher.service.ts` | カレンダーイベント添付からGoogle Docs取得 |
+| `src/app/api/cron/sync-meeting-notes/route.ts` | Cronジョブ: 会議メモ自動取り込み |
+| `sql/v6.0_gemini_migration.sql` | meeting_records.source_type に 'gemini' 追加 |
+
+### 修正ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `src/services/calendar/calendarClient.service.ts` | CalendarEvent に attachments/conferenceData 追加、supportsAttachments=true |
+| `src/app/api/meeting-records/[id]/analyze/route.ts` | source_type='gemini' 分岐追加（Geminiパーサー or Claude AI） |
+
+### meeting_records.source_type CHECK制約
+
+```
+旧: ('text', 'file', 'transcription', 'meetgeek')
+新: ('text', 'file', 'transcription', 'meetgeek', 'gemini')
+```
+
+### Cronスケジュール
+
+| エンドポイント | スケジュール | 用途 |
+|---|---|---|
+| `/api/cron/sync-meeting-notes` | 毎日 07:00 UTC（= JST 16:00） | Gemini会議メモ自動取り込み |
+
+### ⚠️ 注意事項
+
+- **SQLマイグレーション必須**: `sql/v6.0_gemini_migration.sql` を Supabase で実行してからデプロイ
+- **source_file_id にカレンダーイベントID**: 重複取り込み防止のキーとして使用
+- **metadata に Gemini Docs 情報**: gemini_doc_id, gemini_doc_url, gemini_doc_title を格納
+- **従来のClaude AI解析は維持**: source_type が text/file/transcription/meetgeek の場合は従来通りClaude AI
+- **MeetGeek連携も残る**: 既存のMeetGeek Webhookは削除しない（併用可能）
+- **Google OAuth スコープ**: 既存の calendar.readonly, calendar.events, drive.file で十分（追加不要）
+- **Geminiパーサーはフォールバック安全**: パース失敗時は空の AnalysisResult を返し、メイン処理をブロックしない

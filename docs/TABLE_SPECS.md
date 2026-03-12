@@ -1570,7 +1570,7 @@ CREATE TABLE meeting_records (
   title TEXT NOT NULL,
   meeting_date DATE NOT NULL,
   content TEXT NOT NULL,
-  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek')),
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek', 'gemini')),  -- v6.0: 'gemini' 追加
   source_file_id TEXT,
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,

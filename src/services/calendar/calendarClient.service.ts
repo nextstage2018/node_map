@@ -11,6 +11,14 @@ const CALENDAR_API_BASE = 'https://www.googleapis.com/calendar/v3';
 // ========================================
 // 型定義
 // ========================================
+export interface CalendarAttachment {
+  fileUrl: string;
+  title: string;
+  mimeType: string;
+  iconLink?: string;
+  fileId?: string;          // Google Drive file ID
+}
+
 export interface CalendarEvent {
   id: string;
   summary: string;          // タイトル
@@ -22,6 +30,15 @@ export interface CalendarEvent {
   htmlLink?: string;
   status?: string;          // confirmed / tentative / cancelled
   isAllDay?: boolean;
+  // v6.0: Gemini会議メモ連携用
+  attachments?: CalendarAttachment[];
+  conferenceData?: {
+    conferenceId?: string;
+    conferenceSolution?: { name?: string };
+    entryPoints?: { uri?: string; entryPointType?: string }[];
+    notes?: string;         // Gemini会議メモURL等
+  };
+  hangoutLink?: string;     // Google Meet リンク
 }
 
 export interface FreeSlot {
@@ -183,6 +200,8 @@ export async function getEvents(
       singleEvents: 'true',
       orderBy: 'startTime',
       timeZone: 'Asia/Tokyo',
+      // v6.0: Gemini会議メモ（Google Docs添付）を取得するため
+      supportsAttachments: 'true',
     });
 
     const res = await calendarFetch(userId, `/calendars/${encodeURIComponent(calendarId)}/events?${params}`);
@@ -197,6 +216,16 @@ export async function getEvents(
       const endObj = item.end as Record<string, string> | undefined;
       const isAllDay = !!startObj?.date;
 
+      // v6.0: attachments マッピング
+      const rawAttachments = item.attachments as { fileUrl?: string; title?: string; mimeType?: string; iconLink?: string; fileId?: string }[] | undefined;
+      const attachments: CalendarAttachment[] | undefined = rawAttachments?.map(a => ({
+        fileUrl: a.fileUrl || '',
+        title: a.title || '',
+        mimeType: a.mimeType || '',
+        iconLink: a.iconLink,
+        fileId: a.fileId,
+      }));
+
       return {
         id: item.id as string,
         summary: (item.summary as string) || '（タイトルなし）',
@@ -208,6 +237,10 @@ export async function getEvents(
         htmlLink: item.htmlLink as string | undefined,
         status: item.status as string | undefined,
         isAllDay,
+        // v6.0: Gemini会議メモ連携
+        attachments,
+        conferenceData: item.conferenceData as CalendarEvent['conferenceData'],
+        hangoutLink: item.hangoutLink as string | undefined,
       };
     });
 
