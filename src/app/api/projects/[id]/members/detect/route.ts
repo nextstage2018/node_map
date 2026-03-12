@@ -1,5 +1,7 @@
-// v3.3: プロジェクトチャネルからメンバー自動検出 API
-// project_channels → inbox_messages → 送信者を抽出 → contact_persons/project_members に追加
+// v3.3 + v4.6: プロジェクトチャネルからメンバー自動検出 API
+// 経路1: Slack API（conversations.members）で直接チャネル参加者を取得
+// 経路2: inbox_messages から送信者を抽出（フォールバック + Chatwork/Email）
+// → contact_persons/project_members に追加
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
@@ -48,11 +50,61 @@ export async function POST(
       });
     }
 
-    // チャネルごとにメッセージから送信者を収集
+    // 送信者マップ: address → { address, name, channel }
     const senderMap = new Map<string, { address: string; name: string; channel: string }>();
 
+    // ============================================================
+    // 経路1: Slack API で直接チャネルメンバーを取得
+    // ============================================================
+    const slackChannels = channels.filter(ch => ch.service_name === 'slack');
+
+    if (slackChannels.length > 0) {
+      try {
+        const { getChannelMembers } = await import('@/services/slack/slackClient.service');
+
+        // 自分のSlack IDを事前取得（ループ外で1回だけ）
+        const { data: myToken } = await supabase
+          .from('user_service_tokens')
+          .select('token_data')
+          .eq('user_id', userId)
+          .eq('service_name', 'slack')
+          .single();
+        const mySlackId = (myToken?.token_data as Record<string, string>)?.authed_user_id || '';
+
+        for (const ch of slackChannels) {
+          const members = await getChannelMembers(ch.channel_identifier, userId);
+
+          for (const member of members) {
+            // ボットは除外
+            if (member.isBot) continue;
+            // 自分自身のSlack IDを除外
+            if (mySlackId && member.slackUserId === mySlackId) continue;
+
+            if (!senderMap.has(member.slackUserId)) {
+              senderMap.set(member.slackUserId, {
+                address: member.slackUserId,
+                name: member.realName || member.name,
+                channel: 'slack',
+              });
+            }
+          }
+        }
+      } catch (slackErr) {
+        console.warn('[Project Members Detect] Slack API取得失敗、inbox_messagesにフォールバック:', slackErr);
+      }
+    }
+
+    // ============================================================
+    // 経路2: inbox_messages から送信者を抽出（Chatwork / Email + Slackフォールバック）
+    // ============================================================
     for (const ch of channels) {
       let messages: { from_address: string; from_name: string }[] = [];
+
+      if (ch.service_name === 'slack' && senderMap.size > 0) {
+        // Slack API で取得済みならスキップ（フォールバック不要）
+        const hasSlackMembers = Array.from(senderMap.values()).some(s => s.channel === 'slack');
+        if (hasSlackMembers) continue;
+      }
 
       if (ch.service_name === 'slack') {
         const { data } = await supabase
@@ -96,7 +148,7 @@ export async function POST(
       return NextResponse.json({
         success: true,
         data: { detected: 0, added: 0 },
-        message: 'チャネルにメッセージがまだありません。メッセージ同期後に再実行してください。',
+        message: 'チャネルにメンバーが見つかりませんでした。',
       });
     }
 
@@ -152,7 +204,7 @@ export async function POST(
             name: sender.name,
             owner_user_id: userId,
             organization_id: project.organization_id || null,
-            relationship_type: 'client',
+            relationship_type: 'internal',
             main_channel: mainChannel,
             confirmed: false,
           });

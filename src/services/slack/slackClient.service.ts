@@ -379,6 +379,68 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
 /**
  * Slackメッセージを送信（返信）
  */
+/**
+ * Slackチャネルのメンバー一覧を取得（conversations.members + users.info）
+ * メッセージがなくてもチャネル参加者を検出可能
+ */
+export async function getChannelMembers(
+  channelId: string,
+  userId?: string
+): Promise<{ slackUserId: string; name: string; realName: string; isBot: boolean }[]> {
+  const token = await getTokenFromDB(userId);
+  if (!token) return [];
+
+  try {
+    const { WebClient } = await import('@slack/web-api');
+    const client = new WebClient(token);
+
+    // チャネルメンバーのSlack user_id一覧を取得
+    const membersResult = await client.conversations.members({
+      channel: channelId,
+      limit: 200,
+    });
+
+    const memberIds = membersResult.members || [];
+    if (memberIds.length === 0) return [];
+
+    // 各メンバーのユーザー情報を取得
+    const members: { slackUserId: string; name: string; realName: string; isBot: boolean }[] = [];
+
+    for (const memberId of memberIds) {
+      try {
+        const userInfo = await getUserInfo(client, memberId);
+        // users.info の結果からbot判定するため再度API呼び出し（getUserInfoはname/realNameのみ返す）
+        // ただしキャッシュされるので2回目は高速
+        const fullResult = await client.users.info({ user: memberId });
+        const isBot = fullResult.user?.is_bot || false;
+
+        members.push({
+          slackUserId: memberId,
+          name: userInfo.name,
+          realName: userInfo.realName,
+          isBot,
+        });
+      } catch {
+        // 個別ユーザー情報取得失敗はスキップ
+        members.push({
+          slackUserId: memberId,
+          name: memberId,
+          realName: memberId,
+          isBot: false,
+        });
+      }
+    }
+
+    return members;
+  } catch (error) {
+    console.error('[Slack] チャネルメンバー取得エラー:', error);
+    return [];
+  }
+}
+
+/**
+ * Slackメッセージを送信（返信）
+ */
 export async function sendSlackMessage(
   channelId: string,
   text: string,
