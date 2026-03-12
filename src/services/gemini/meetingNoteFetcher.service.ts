@@ -80,6 +80,19 @@ export async function fetchDocContent(userId: string, fileId: string): Promise<s
   }
 
   try {
+    // まずDrive APIの基本アクセスをテスト（ファイル一覧）
+    const listRes = await fetch(`${DRIVE_API_BASE}/files?pageSize=1&fields=files(id,name)`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    console.log('[MeetingNoteFetcher] Drive API一覧テスト:', listRes.status, listRes.ok ? 'OK' : await listRes.text().catch(() => ''));
+
+    // ファイルメタデータ取得テスト
+    const metaRes = await fetch(`${DRIVE_API_BASE}/files/${fileId}?fields=id,name,mimeType,owners,permissions`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    console.log('[MeetingNoteFetcher] メタデータテスト:', metaRes.status, metaRes.ok ? JSON.stringify(await metaRes.json()) : await metaRes.text().catch(() => ''));
+
+    // エクスポート
     const exportUrl = `${DRIVE_API_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent(DOCS_EXPORT_MIME)}`;
     const res = await fetch(exportUrl, {
       headers: {
