@@ -111,6 +111,17 @@ export async function GET(request: NextRequest) {
         detail: { error: errBody.substring(0, 500) },
       });
 
+      // Step 5b: まず旧トークンをrevokeして新規発行を強制
+      try {
+        await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(accessToken)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        });
+        steps.push({ step: '5b. 旧トークンrevoke', result: 'OK' });
+      } catch {
+        steps.push({ step: '5b. 旧トークンrevoke', result: 'SKIP (エラー、続行)' });
+      }
+
       // Step 6: リフレッシュトークンで新しいアクセストークンを取得
       if (tokenData.refresh_token && GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET) {
         const refreshRes = await fetch('https://oauth2.googleapis.com/token', {

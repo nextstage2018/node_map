@@ -182,6 +182,19 @@ async function forceRefreshToken(userId: string, token: TokenData): Promise<stri
 
   console.log('[Calendar] トークン強制リフレッシュ実行');
   try {
+    // Step 1: 古いアクセストークンをrevokeして、Googleに新規発行を強制
+    try {
+      await fetch(`https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(token.access_token)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      console.log('[Calendar] 旧トークンrevoke完了');
+    } catch {
+      // revoke失敗は無視して続行
+      console.warn('[Calendar] 旧トークンrevoke失敗（続行）');
+    }
+
+    // Step 2: リフレッシュトークンで新しいアクセストークンを取得
     const res = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -194,11 +207,15 @@ async function forceRefreshToken(userId: string, token: TokenData): Promise<stri
     });
 
     if (!res.ok) {
-      console.error('[Calendar] 強制リフレッシュ失敗:', res.status, await res.text().catch(() => ''));
+      const errText = await res.text().catch(() => '');
+      console.error('[Calendar] 強制リフレッシュ失敗:', res.status, errText);
       return token.access_token;
     }
 
     const newToken = await res.json();
+    console.log('[Calendar] 強制リフレッシュ成功 新トークン先頭:', newToken.access_token?.substring(0, 15));
+
+    // Step 3: DB更新
     const sb = createServerClient();
     if (sb) {
       await sb
@@ -216,7 +233,6 @@ async function forceRefreshToken(userId: string, token: TokenData): Promise<stri
         .eq('user_id', userId)
         .eq('service_name', 'gmail');
     }
-    console.log('[Calendar] 強制リフレッシュ成功');
     return newToken.access_token;
   } catch (error) {
     console.error('[Calendar] 強制リフレッシュエラー:', error);
@@ -246,20 +262,42 @@ async function calendarFetch(
     },
   });
 
-  // v6.0: 401の場合、トークンを強制リフレッシュして1回だけリトライ
+  // v6.0: 401の場合、トークンをrevoke→強制リフレッシュしてリトライ
   if (res.status === 401) {
     console.warn('[Calendar] 401検知 → トークン強制リフレッシュでリトライ');
     const freshToken = await forceRefreshToken(userId, token);
-    if (freshToken !== accessToken) {
-      return fetch(`${CALENDAR_API_BASE}${path}`, {
-        ...options,
-        headers: {
-          Authorization: `Bearer ${freshToken}`,
-          'Content-Type': 'application/json',
-          ...(options.headers || {}),
-        },
-      });
+
+    // 常にリトライ（同じトークンが返っても試行）
+    const retryRes = await fetch(`${CALENDAR_API_BASE}${path}`, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${freshToken}`,
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+    });
+
+    if (retryRes.ok) return retryRes;
+
+    // 2回目も401の場合: DBから最新トークンを再取得（別プロセスが更新した可能性）
+    if (retryRes.status === 401) {
+      console.warn('[Calendar] リトライも401 → DBから最新トークンを再取得');
+      const freshTokenFromDb = await getGoogleToken(userId);
+      if (freshTokenFromDb && freshTokenFromDb.access_token !== freshToken) {
+        console.log('[Calendar] DB上に別のトークンあり → 3回目リトライ');
+        return fetch(`${CALENDAR_API_BASE}${path}`, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${freshTokenFromDb.access_token}`,
+            'Content-Type': 'application/json',
+            ...(options.headers || {}),
+          },
+        });
+      }
+      console.error('[Calendar] トークン復旧不可 — 設定画面でGoogle再連携が必要です');
     }
+
+    return retryRes;
   }
 
   return res;
