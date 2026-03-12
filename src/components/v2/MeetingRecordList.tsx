@@ -65,9 +65,10 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
 
       // ステップ2: 検討ツリー生成（topicsがあれば）
       const topics = analyzeData.data?.analysis?.topics;
+      console.log('[再解析] topics:', topics?.length || 0, '件', topics);
       if (topics && topics.length > 0) {
         const record = records.find(r => r.id === id);
-        await fetch('/api/decision-trees/generate', {
+        const treeRes = await fetch('/api/decision-trees/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -76,6 +77,10 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
             topics,
           }),
         });
+        const treeData = await treeRes.json();
+        console.log('[再解析] 検討ツリー生成結果:', treeData);
+      } else {
+        console.log('[再解析] topicsが空のため検討ツリー生成をスキップ');
       }
 
       // リスト更新
