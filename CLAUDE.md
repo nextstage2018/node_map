@@ -966,4 +966,77 @@ v4.1 カレンダー連携強化           ← 実装済み（テーブルカラ
 v4.2 繰り返しルール               ← 実装済み（テーブル作成のみ）
 v4.3 チャネルボット（メンション応答）← 実装済み
 v4.4 チャネルボット（定期配信）     ← 実装済み
+v4.5 外部タスク双方向同期          ← 実装済み
 ```
+
+---
+
+## v4.5 外部タスク双方向同期（実装済み）
+
+### 概要
+
+NodeMapのタスク作成時に、Slack Block Kitリッチカード / Chatworkネイティブタスクを同時作成。
+完了時の双方向同期（NodeMap↔Slack/Chatwork）も対応。
+
+### Slack側: Block Kit リッチカード
+
+```
+タスク作成時:
+  NodeMap DB → externalTaskSync → Slack chat.postMessage（blocks付き）
+  → チャネルにリッチカード表示（タスク名・期限・PJ・MS・依頼者）
+  → 「完了 ✨」ボタン + 「NodeMapで開く」ボタン
+  → slack_message_ts を tasks テーブルに保存
+
+「完了」ボタン押下（Slack画面内）:
+  → POST /api/webhooks/slack/interactions（block_actions）
+  → handleSlackTaskComplete() でNodeMap tasks.status='done'
+  → chat.update でカードを完了表示に差し替え（取り消し線 + 完了日時）
+
+NodeMapで完了（カンバン等）:
+  → notifyTaskCompletion() → syncTaskCompletionToExternal()
+  → chat.update でSlackカードを完了表示に更新
+```
+
+### Chatwork側: ネイティブタスクAPI
+
+```
+タスク作成時:
+  NodeMap DB → externalTaskSync → POST /rooms/{room_id}/tasks
+  → Chatwork画面のタスクパネルに表示（担当者・期限付き）
+  → external_task_id を tasks テーブルに保存
+
+Chatworkで「完了しました」メッセージ:
+  → 既存の processTaskCompletion() → NodeMap tasks.status='done'
+  → syncTaskCompletionToExternal() → PUT /rooms/{room_id}/tasks/{id}/status
+
+NodeMapで完了:
+  → notifyTaskCompletion() → syncTaskCompletionToExternal()
+  → Chatwork API でタスクステータスを done に変更
+```
+
+### 追加カラム（tasksテーブル）
+
+- `external_task_id` TEXT — Chatwork タスクID
+- `slack_message_ts` TEXT — Slack Block Kit カードのts（chat.update用）
+- `external_sync_status` TEXT — 外部同期状態: none/synced/failed
+
+### Slack App設定（要手動設定）
+
+```
+Interactivity & Shortcuts:
+  Request URL: https://node-map-eight.vercel.app/api/webhooks/slack/interactions
+```
+
+### 主要コンポーネント
+
+- `src/services/v45/externalTaskSync.service.ts` — 外部タスク同期メインロジック
+- `src/app/api/webhooks/slack/interactions/route.ts` — Slackボタン押下受信
+- `src/services/v4/taskFromMessage.service.ts` — タスク作成後にsyncTaskToExternal()を呼び出し
+- `src/services/v4/taskCompletionNotify.service.ts` — 完了時にsyncTaskCompletionToExternal()を呼び出し
+
+### ⚠️ 注意事項
+
+- **外部同期失敗はNodeMapタスク作成をブロックしない**: try-catchで囲み、失敗しても続行
+- **Slack Interactivity URLの設定が必須**: Slack App管理画面で手動設定が必要
+- **Chatwork BOTトークン**: `CHATWORK_BOT_API_TOKEN` を優先使用（v4.3と同じ）
+- **Slackカード更新にはslack_message_tsが必要**: 保存に失敗した場合はカード更新不可（テキスト通知にフォールバック）

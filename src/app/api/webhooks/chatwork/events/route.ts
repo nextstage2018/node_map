@@ -222,6 +222,12 @@ async function processTaskCompletion(params: {
     const result = await completeTaskBySourceMessage(task.source_message_id, ownerUserId);
 
     if (result.success) {
+      // v4.5: 外部タスク同期（Slackカード更新 + Chatworkタスク完了）
+      try {
+        const { syncTaskCompletionToExternal } = await import('@/services/v45/externalTaskSync.service');
+        await syncTaskCompletionToExternal(task.id, ownerUserId);
+      } catch { /* 同期失敗は無視 */ }
+
       await sendReply(roomId, `[To:${fromAccountId}]\n✅ タスク完了: ${result.taskTitle}`);
     } else {
       await sendReply(roomId, `[To:${fromAccountId}]\nタスクの完了処理に失敗しました。`);
@@ -268,7 +274,27 @@ async function processTaskCreation(params: {
       return;
     }
 
-    const parts = [`[To:${fromAccountId}]`, `タスクを作成しました: ${result.title}`];
+    // v4.5: Chatworkネイティブタスクは externalTaskSync が自動作成
+    // ここではメッセージで確認通知のみ
+    const { getServerSupabase: getSBcw, getSupabase: getScw } = await import('@/lib/supabase');
+    const sbcw = getSBcw() || getScw();
+    let chatworkTaskCreated = false;
+    if (sbcw) {
+      const { data: syncCheck } = await sbcw
+        .from('tasks')
+        .select('external_sync_status, external_task_id')
+        .eq('id', result.id)
+        .single();
+      chatworkTaskCreated = syncCheck?.external_sync_status === 'synced';
+    }
+
+    const parts = [`[To:${fromAccountId}]`];
+    if (chatworkTaskCreated) {
+      parts.push(`タスクを作成しました: ${result.title}`);
+      parts.push(`(Chatworkタスクにも追加済み)`);
+    } else {
+      parts.push(`タスクを作成しました: ${result.title}`);
+    }
     if (result.dueDate) parts.push(`期限: ${result.dueDate}`);
     if (result.projectName) parts.push(`PJ: ${result.projectName}`);
     if (result.milestoneName) parts.push(`MS: ${result.milestoneName}`);

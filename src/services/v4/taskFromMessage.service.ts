@@ -12,6 +12,7 @@ export interface CreatedTaskResult {
   projectName: string | null;
   milestoneId: string | null;
   milestoneName: string | null;
+  requesterName: string | null;
 }
 
 interface TaskExtractionResult {
@@ -120,7 +121,7 @@ async function resolveRequester(
   serviceName: 'slack' | 'chatwork',
   senderIdentifier: string | undefined,
   supabase: ReturnType<typeof getSupabase>
-): Promise<string | null> {
+): Promise<{ contactId: string; name: string } | null> {
   if (!supabase || !senderIdentifier) return null;
 
   try {
@@ -135,8 +136,15 @@ async function resolveRequester(
       .maybeSingle();
 
     if (data?.contact_id) {
-      console.log(`[taskFromMessage] 依頼者解決: contact_id=${data.contact_id}`);
-      return data.contact_id;
+      // コンタクト名も取得
+      const { data: contact } = await supabase
+        .from('contact_persons')
+        .select('name')
+        .eq('id', data.contact_id)
+        .single();
+
+      console.log(`[taskFromMessage] 依頼者解決: contact_id=${data.contact_id}, name=${contact?.name}`);
+      return { contactId: data.contact_id, name: contact?.name || '不明' };
     }
   } catch (error) {
     console.error('[taskFromMessage] 依頼者解決エラー:', error);
@@ -208,7 +216,7 @@ export async function createTaskFromMessage(params: {
     }
 
     // 4. 依頼者を解決
-    const requesterId = await resolveRequester(serviceName, senderIdentifier, supabase);
+    const requester = await resolveRequester(serviceName, senderIdentifier, supabase);
 
     // 5. タスクを作成
     const taskId = crypto.randomUUID();
@@ -225,7 +233,7 @@ export async function createTaskFromMessage(params: {
       source_type: serviceName,
       source_message_id: messageId,
       source_channel_id: channelId,
-      requester_contact_id: requesterId,
+      requester_contact_id: requester?.contactId || null,
       phase: 'ideation',
     });
 
@@ -250,6 +258,26 @@ export async function createTaskFromMessage(params: {
       }
     }
 
+    // 7. v4.5: 外部タスク同期（Slack Block Kit カード / Chatworkネイティブタスク）
+    try {
+      const { syncTaskToExternal } = await import('@/services/v45/externalTaskSync.service');
+      await syncTaskToExternal({
+        taskId,
+        title: extracted.title,
+        dueDate: extracted.dueDate,
+        projectName: project?.projectName || null,
+        milestoneName: milestone?.title || null,
+        requesterName: requester?.name || null,
+        serviceName,
+        channelId,
+        threadTs: undefined, // Webhook route 側でスレッドtsを渡す場合は拡張
+        assigneeIdentifier: senderIdentifier, // 依頼者=担当者（デフォルト）
+      });
+    } catch (syncError) {
+      // 外部同期失敗はNodeMapタスク作成をブロックしない
+      console.error('[taskFromMessage] 外部タスク同期エラー（無視して続行）:', syncError);
+    }
+
     return {
       id: taskId,
       title: extracted.title,
@@ -258,6 +286,7 @@ export async function createTaskFromMessage(params: {
       projectName: project?.projectName || null,
       milestoneId: milestone?.id || null,
       milestoneName: milestone?.title || null,
+      requesterName: requester?.name || null,
     };
   } catch (error) {
     console.error('[taskFromMessage] 全体エラー:', error);

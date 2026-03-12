@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-12（v4.3 チャネルボット実装 — tasks に source_channel_id 追加、Webhook処理フロー確定）
+最終更新: 2026-03-12（v4.5 外部タスク双方向同期 — tasks に external_task_id / slack_message_ts / external_sync_status 追加）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -377,6 +377,9 @@ CREATE TABLE tasks (
   source_type TEXT,
   source_message_id TEXT,
   source_channel_id TEXT,                                          -- v4.3: チャネルID（Slack channel_id / Chatwork room_id）
+  external_task_id TEXT,                                            -- v4.5: Chatwork タスクID（双方向同期用）
+  slack_message_ts TEXT,                                            -- v4.5: Slack Block Kit カードのts（chat.update用）
+  external_sync_status TEXT DEFAULT 'none' CHECK (external_sync_status IN ('none', 'synced', 'failed')), -- v4.5: 外部同期状態
   milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
   theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
   estimated_hours NUMERIC(6,2) DEFAULT NULL,              -- v4.1: 見積もり工数（時間）
@@ -410,6 +413,8 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - **v4.1**: estimated_hours / actual_hours で工数管理（見積もり vs 実績）
 - **v4.3**: source_channel_id でチャネルID保持。source_message_id 形式: `slack-{channelId}-{ts}` / `chatwork-{roomId}-{msgId}`
 - **v4.3**: requester_contact_id はチャネルメッセージ送信者から `contact_channels` 経由で自動解決
+- **v4.5**: external_task_id — Chatworkネイティブタスクとの紐づけ用。slack_message_ts — Slack Block Kitカードの更新用
+- **v4.5**: external_sync_status で外部同期状態を管理（none/synced/failed）
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）

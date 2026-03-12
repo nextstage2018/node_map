@@ -14,6 +14,19 @@ interface IntentRule {
   keywords: string[];
 }
 
+// タスク作成依頼を検知（isTaskRequestと同等のロジック）
+// これに該当する場合はbot_tasksではなく作成誘導メッセージを返す
+const TASK_CREATE_PATTERNS = [
+  /タスク.{0,3}(登録|作成|追加|入れ|いれ)/,
+  /(登録|作成|追加).{0,3}タスク/,
+  /タスク.{0,5}(して|する|お願い|頼む|頼み)/,
+  /タスクにして/, /タスク化して/, /タスクにする/, /タスク化する/,
+];
+
+export function isTaskCreateRequest(text: string): boolean {
+  return TASK_CREATE_PATTERNS.some(p => p.test(text));
+}
+
 // キーワード一致で先にマッチしたものが勝つ（classifyIntentと同じ方式）
 const INTENT_RULES: IntentRule[] = [
   {
@@ -26,7 +39,7 @@ const INTENT_RULES: IntentRule[] = [
   },
   {
     intent: 'bot_tasks',
-    keywords: ['タスク', '進捗', '進行', '状況', 'task', 'progress', '作業', '担当', 'todo'],
+    keywords: ['タスク状況', 'タスク一覧', '進捗', '進行状況', 'task status', 'progress', '担当タスク'],
   },
   {
     intent: 'bot_agenda',

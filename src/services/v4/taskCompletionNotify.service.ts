@@ -40,6 +40,14 @@ export async function notifyTaskCompletion(
 
     const typedTask = task as TaskForNotify;
 
+    // v4.5: 外部タスク同期（Slack Block Kit カード更新 / Chatworkタスク完了）
+    try {
+      const { syncTaskCompletionToExternal } = await import('@/services/v45/externalTaskSync.service');
+      await syncTaskCompletionToExternal(taskId, userId);
+    } catch (syncErr) {
+      console.error('[TaskCompletionNotify] 外部同期エラー（無視して続行）:', syncErr);
+    }
+
     // source_type がない、またはmanual/secretary/meeting_recordの場合はスキップ
     if (!typedTask.source_type || !['slack', 'chatwork'].includes(typedTask.source_type)) {
       return false;

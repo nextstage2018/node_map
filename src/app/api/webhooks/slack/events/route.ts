@@ -183,12 +183,27 @@ async function processTaskCreation(params: {
       return;
     }
 
-    const parts = [`タスクを作成しました: *${result.title}*`];
-    if (result.dueDate) parts.push(`期限: ${result.dueDate}`);
-    if (result.projectName) parts.push(`PJ: ${result.projectName}`);
-    if (result.milestoneName) parts.push(`MS: ${result.milestoneName}`);
+    // v4.5: Block Kit カードは externalTaskSync が自動投稿するため、
+    // ここではシンプルな確認メッセージのみ（カードと重複しないように）
+    // Block Kit カード投稿が失敗した場合のフォールバック
+    const { getServerSupabase: getSB, getSupabase: getS } = await import('@/lib/supabase');
+    const sb = getSB() || getS();
+    if (sb) {
+      const { data: syncCheck } = await sb
+        .from('tasks')
+        .select('external_sync_status')
+        .eq('id', result.id)
+        .single();
 
-    await sendSlackReply(channelId, threadTs, parts.join('\n'), ownerUserId);
+      if (syncCheck?.external_sync_status !== 'synced') {
+        // Block Kit カード投稿に失敗していた場合のみテキスト返信
+        const parts = [`タスクを作成しました: *${result.title}*`];
+        if (result.dueDate) parts.push(`期限: ${result.dueDate}`);
+        if (result.projectName) parts.push(`PJ: ${result.projectName}`);
+        if (result.milestoneName) parts.push(`MS: ${result.milestoneName}`);
+        await sendSlackReply(channelId, threadTs, parts.join('\n'), ownerUserId);
+      }
+    }
   } catch (error) {
     console.error('[Slack Events] タスク作成処理エラー:', error);
   }
@@ -249,12 +264,25 @@ async function processReactionTaskCreation(params: {
 
     if (!result) return;
 
-    const parts = [`タスクを作成しました: *${result.title}*`];
-    if (result.dueDate) parts.push(`期限: ${result.dueDate}`);
-    if (result.projectName) parts.push(`PJ: ${result.projectName}`);
-    if (result.milestoneName) parts.push(`MS: ${result.milestoneName}`);
+    // v4.5: Block Kit カードは externalTaskSync が自動投稿
+    // 投稿失敗時のフォールバック
+    const { getServerSupabase: getSB2, getSupabase: getS2 } = await import('@/lib/supabase');
+    const sb2 = getSB2() || getS2();
+    if (sb2) {
+      const { data: syncCheck2 } = await sb2
+        .from('tasks')
+        .select('external_sync_status')
+        .eq('id', result.id)
+        .single();
 
-    await sendSlackReply(channelId, messageTs, parts.join('\n'), ownerUserId);
+      if (syncCheck2?.external_sync_status !== 'synced') {
+        const parts = [`タスクを作成しました: *${result.title}*`];
+        if (result.dueDate) parts.push(`期限: ${result.dueDate}`);
+        if (result.projectName) parts.push(`PJ: ${result.projectName}`);
+        if (result.milestoneName) parts.push(`MS: ${result.milestoneName}`);
+        await sendSlackReply(channelId, messageTs, parts.join('\n'), ownerUserId);
+      }
+    }
   } catch (error) {
     console.error('[Slack Events] リアクションタスク処理エラー:', error);
   }
