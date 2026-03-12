@@ -41,8 +41,8 @@ export default function AppSidebar() {
       }
     };
     fetchUnread();
-    // 60秒ごとにポーリング
-    const interval = setInterval(fetchUnread, 60000);
+    // 30秒ごとにポーリング（受信即時性向上）
+    const interval = setInterval(fetchUnread, 30000);
     return () => clearInterval(interval);
   }, []);
 

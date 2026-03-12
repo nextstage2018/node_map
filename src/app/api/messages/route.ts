@@ -215,7 +215,8 @@ async function fetchDiffInBackground(
     const newMessages: UnifiedMessage[] = [];
     const fetchPromises: Promise<void>[] = [];
 
-    // Phase B: EMAIL_ENABLED チェック（canFetch.gmailは既にフラグ反映済みだが二重チェック）
+    // Gmail差分取得: EMAIL_ENABLED=false で完全スキップ
+    // canFetch.gmailは既にEMAIL_ENABLEDフラグ反映済みだが明示的にガード
     if (EMAIL_ENABLED && canFetch.gmail && syncStates.email.last_sync_at) {
       fetchPromises.push(
         fetchEmails(20, 1).then(emails => {
@@ -253,8 +254,8 @@ async function fetchDiffInBackground(
       runSpamCheck(newMessages).catch(() => {});
     }
 
-    // 同期タイムスタンプ更新
-    if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+    // 同期タイムスタンプ更新（Gmail除外: EMAIL_ENABLED=falseのとき不要）
+    if (EMAIL_ENABLED && canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
     if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
     if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
   } catch (e) {
@@ -362,6 +363,7 @@ export async function GET(request: NextRequest) {
           limit: 200,
           direction: directionFilter,
           userId,
+          excludeEmail: true, // Gmail排除: Slack/Chatworkのみ取得
         });
         allMessages = dbResult.messages;
 
@@ -394,8 +396,8 @@ export async function GET(request: NextRequest) {
           runSpamCheck(allMessages).catch(() => {});
         }
 
-        // 同期タイムスタンプ更新
-        if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+        // 同期タイムスタンプ更新（Gmail除外: EMAIL_ENABLED=falseのとき不要）
+        if (EMAIL_ENABLED && canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
         if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
         if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
       }
@@ -411,7 +413,7 @@ export async function GET(request: NextRequest) {
           console.error('[Messages API] Supabase保存エラー:', err);
         }
         runSpamCheck(allMessages).catch(() => {});
-        if (canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
+        if (EMAIL_ENABLED && canFetch.gmail) updateSyncTimestamp('email').catch(() => {});
         if (canFetch.slack) updateSyncTimestamp('slack').catch(() => {});
         if (canFetch.chatwork) updateSyncTimestamp('chatwork').catch(() => {});
       }
@@ -419,7 +421,7 @@ export async function GET(request: NextRequest) {
       // Phase 38: DBに保存済みの送信メッセージを統合（外部APIには含まれないため）
       if (isSupabaseConfigured() && !isDemo) {
         try {
-          const sentResult = await loadMessages({ direction: 'sent', limit: 100, userId });
+          const sentResult = await loadMessages({ direction: 'sent', limit: 100, userId, excludeEmail: true });
           if (sentResult.messages.length > 0) {
             const existingIds = new Set(allMessages.map((m) => m.id));
             const newSentMessages = sentResult.messages.filter((m) => !existingIds.has(m.id));

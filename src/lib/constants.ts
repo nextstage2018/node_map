@@ -64,7 +64,8 @@ export const ITEMS_PER_PAGE = 50;
 export const EMAIL_ENABLED = process.env.NEXT_PUBLIC_EMAIL_ENABLED !== 'false';
 
 // インボックスのポーリング間隔（ミリ秒）
-export const INBOX_POLL_INTERVAL = 3 * 60 * 1000; // 3分
+// 受信即時性向上のため30秒に短縮（SWRパターンでバックグラウンド更新のため負荷は軽微）
+export const INBOX_POLL_INTERVAL = 30 * 1000; // 30秒
 
 // ===== Phase A: 共通ルール =====
 

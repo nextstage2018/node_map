@@ -17,13 +17,16 @@ export async function GET() {
       return NextResponse.json({ unreadCount: 0 });
     }
 
-    // 未読メッセージ数をカウント（受信メッセージのみ）
-    // ルール#4: inbox_messages.user_id は存在しない → direction で送受信を区別
+    // 未読メッセージ数をカウント（受信メッセージのみ・Slack/Chatworkのみ）
+    // Gmail排除: EMAIL_ENABLEDに関わらず、バッジはSlack/Chatworkのみカウント
+    // ユーザー分離: user_idでログインユーザーのメッセージのみ
     const { count, error } = await supabase
       .from('inbox_messages')
       .select('*', { count: 'exact', head: true })
       .eq('is_read', false)
-      .eq('direction', 'received');
+      .eq('direction', 'received')
+      .eq('user_id', userId)
+      .in('channel', ['slack', 'chatwork']);
 
     if (error) {
       console.error('[/api/inbox] 未読数取得エラー:', error);

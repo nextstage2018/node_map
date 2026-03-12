@@ -100,6 +100,7 @@ export async function loadMessages(options?: {
   since?: string; // ISO日時
   direction?: 'received' | 'sent' | 'all'; // Phase 38: 方向フィルタ
   userId?: string; // Phase 60: ユーザーデータ分離
+  excludeEmail?: boolean; // Gmail排除: trueでemailチャネルをDB側で除外
 }): Promise<{ messages: UnifiedMessage[]; total: number }> {
   const supabase = getSupabase();
   if (!supabase || !isSupabaseConfigured()) {
@@ -119,7 +120,10 @@ export async function loadMessages(options?: {
     if (options?.userId) {
       query = query.eq('user_id', options.userId);
     }
-    if (options?.channel) {
+    // Gmail排除: emailチャネルをDB側で除外（Slack/Chatworkのみ取得）
+    if (options?.excludeEmail) {
+      query = query.in('channel', ['slack', 'chatwork']);
+    } else if (options?.channel) {
       query = query.eq('channel', options.channel);
     }
     // Phase 38: 方向フィルタ（デフォルトは全て取得）
