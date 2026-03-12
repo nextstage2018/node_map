@@ -1,5 +1,7 @@
-// v4.0 Phase 2: 個人タスク横断取得API
-// GET /api/tasks/my?filter=today|this_week|overdue|all
+// v4.0 Phase 2: タスク取得API（統合版）
+// GET /api/tasks/my?filter=today|this_week|overdue|all&project_id=xxx
+// project_id指定時: プロジェクト内の全メンバーのタスクを返す（担当者名付き）
+// project_id未指定: 自分のタスクのみ返す
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
@@ -15,6 +17,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const filter = searchParams.get('filter') || 'all';
+    const projectId = searchParams.get('project_id');
 
     const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
     const supabase = getServerSupabase() || getSupabase();
@@ -22,7 +25,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'DB接続エラー' }, { status: 500 });
     }
 
-    // 基本クエリ: 自分のタスク（doneは通常アーカイブ済みだが念のためフィルタ）
+    // 基本クエリ
     let query = supabase
       .from('tasks')
       .select(`
@@ -31,18 +34,23 @@ export async function GET(request: NextRequest) {
         source_type, source_message_id, assigned_contact_id,
         project_id, milestone_id, created_at, updated_at
       `)
-      .eq('user_id', userId)
       .order('updated_at', { ascending: false });
+
+    if (projectId) {
+      // プロジェクト指定: プロジェクト内全タスク（メンバー全員分）
+      query = query.eq('project_id', projectId);
+    } else {
+      // プロジェクト未指定: 自分のタスクのみ
+      query = query.eq('user_id', userId);
+    }
 
     // フィルター適用
     const now = new Date();
     const today = now.toISOString().split('T')[0];
 
     if (filter === 'today') {
-      // due_date が今日、またはスケジュール範囲内
       query = query.or(`due_date.eq.${today},and(scheduled_start.lte.${now.toISOString()},scheduled_end.gte.${now.toISOString()})`);
     } else if (filter === 'this_week') {
-      // 今週の月曜〜日曜
       const dayOfWeek = now.getDay();
       const monday = new Date(now);
       monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
@@ -54,7 +62,6 @@ export async function GET(request: NextRequest) {
     } else if (filter === 'overdue') {
       query = query.lt('due_date', today).neq('status', 'done');
     }
-    // filter === 'all' は追加フィルタなし
 
     const { data: tasks, error } = await query;
 
@@ -105,7 +112,22 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // パンくず付きデータに変換
+    // 担当者名を付与（プロジェクト指定時）
+    let contactMap: Record<string, string> = {};
+    if (projectId) {
+      const contactIds = [...new Set(tasks.filter(t => t.assigned_contact_id).map(t => t.assigned_contact_id))];
+      if (contactIds.length > 0) {
+        const { data: contacts } = await supabase
+          .from('contact_persons')
+          .select('id, name')
+          .in('id', contactIds);
+        if (contacts) {
+          contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
+        }
+      }
+    }
+
+    // パンくず + 担当者名付きデータに変換
     const enrichedTasks = tasks.map(task => ({
       ...task,
       project_name: task.project_id ? projectMap[task.project_id] || null : null,
@@ -113,6 +135,7 @@ export async function GET(request: NextRequest) {
       theme_title: task.milestone_id && milestoneMap[task.milestone_id]?.theme_id
         ? themeMap[milestoneMap[task.milestone_id].theme_id!] || null
         : null,
+      assignee_name: task.assigned_contact_id ? contactMap[task.assigned_contact_id] || null : null,
     }));
 
     return NextResponse.json({ success: true, data: enrichedTasks });

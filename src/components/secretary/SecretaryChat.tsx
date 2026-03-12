@@ -1147,6 +1147,7 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
         try {
           let createdCount = 0;
           for (const item of payload.items) {
+            const hasAssignee = !!(item.assigneeContactId);
             const res = await fetch('/api/tasks', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1157,6 +1158,7 @@ export default function SecretaryChat({ initialMessage, contextTaskId, contextPr
                 milestoneId: payload.milestoneId || undefined,
                 dueDate: item.dueDate || undefined,
                 assigneeContactId: item.assigneeContactId || undefined,
+                taskType: hasAssignee ? 'group' : 'personal',
               }),
             });
             const result = await res.json();
