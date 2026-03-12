@@ -76,6 +76,9 @@ export async function GET(request: NextRequest) {
               team_name: tokenData.team?.name || '',
               bot_user_id: tokenData.bot_user_id || '',
               scope: tokenData.scope || '',
+              // 認証ユーザー自身のSlack ID（メッセージのuser_id紐づけに必要）
+              authed_user_id: tokenData.authed_user?.id || '',
+              authed_user_scope: tokenData.authed_user?.scope || '',
             },
             is_active: true,
             connected_at: now,
