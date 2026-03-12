@@ -243,6 +243,8 @@ export interface CreateTaskRequest {
   recurrenceDay?: number;
   assigneeContactId?: string;
   status?: TaskStatus;  // Phase 56b: 提案ステータスでの作成用
+  dueDate?: string;     // v5.0: 期限日（YYYY-MM-DD）
+  sourceType?: string;  // v5.0: 作成元（meeting, slack, chatwork等）
 }
 
 // タスク更新リクエスト

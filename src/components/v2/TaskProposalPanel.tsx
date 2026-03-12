@@ -237,6 +237,7 @@ export default function TaskProposalPanel({ projectId, refreshKey }: TaskProposa
             dueDate: item.dueDate || undefined,
             assigneeContactId: item.assigneeContactId || undefined,
             taskType: item.assigneeContactId ? 'group' : 'personal',
+            sourceType: 'meeting_record',
           }),
         });
         const result = await res.json();

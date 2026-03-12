@@ -121,16 +121,20 @@ export async function GET(
 
     // 7. 元のソース情報（生成元を特定）
     let sourceInfo: { type: string; label: string; detail?: string } | null = null;
-    if (task.source_type === 'meeting_record' && task.source_message_id) {
-      const { data: mr } = await supabase
-        .from('meeting_records')
-        .select('id, title, meeting_date')
-        .eq('id', task.source_message_id)
-        .single();
+    if (task.source_type === 'meeting_record' || task.source_type === 'meeting') {
+      let mrDetail: string | undefined;
+      if (task.source_message_id) {
+        const { data: mr } = await supabase
+          .from('meeting_records')
+          .select('id, title, meeting_date')
+          .eq('id', task.source_message_id)
+          .single();
+        if (mr) mrDetail = `${mr.title}（${mr.meeting_date}）`;
+      }
       sourceInfo = {
         type: 'meeting_record',
-        label: '議事録から生成',
-        detail: mr ? `${mr.title}（${mr.meeting_date}）` : undefined,
+        label: '会議議事録',
+        detail: mrDetail,
       };
     } else if (task.source_type === 'slack' || task.source_type === 'chatwork') {
       const channelLabel = task.source_type === 'slack' ? 'Slack' : 'Chatwork';

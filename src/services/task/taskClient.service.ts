@@ -293,6 +293,9 @@ export class TaskService {
       if (req.recurrenceType) insertData.recurrence_type = req.recurrenceType;
       if (req.recurrenceDay !== undefined) insertData.recurrence_day = req.recurrenceDay;
       if (req.assigneeContactId) insertData.assignee_contact_id = req.assigneeContactId;
+      // v5.0: 期限・作成元
+      if (req.dueDate) insertData.due_date = req.dueDate;
+      if (req.sourceType) insertData.source_type = req.sourceType;
 
       const { data, error } = await sb
         .from('tasks')
