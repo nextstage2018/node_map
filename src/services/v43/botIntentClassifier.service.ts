@@ -7,7 +7,8 @@ export type BotIntent =
   | 'bot_tasks'
   | 'bot_agenda'
   | 'bot_summary'
-  | 'bot_help';
+  | 'bot_help'
+  | 'bot_menu';
 
 interface IntentRule {
   intent: BotIntent;
@@ -48,6 +49,10 @@ const INTENT_RULES: IntentRule[] = [
   {
     intent: 'bot_summary',
     keywords: ['まとめ', 'サマリー', '要約', '今週', '先週', 'summary', 'レポート', '成果', '振り返り'],
+  },
+  {
+    intent: 'bot_menu',
+    keywords: ['メニュー', 'menu', '一覧', 'リスト'],
   },
   {
     intent: 'bot_help',

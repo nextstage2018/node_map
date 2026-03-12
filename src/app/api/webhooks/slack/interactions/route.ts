@@ -6,6 +6,7 @@
  * 対応アクション:
  * - nm_task_complete_* : 「完了」ボタン → タスク完了 + カード打ち消し線
  * - nm_task_edit_*     : 「編集」ボタン → 編集モーダル表示
+ * - nm_menu_*          : メニューカードのボタン → 該当intentの応答を返信
  * - view_submission (nm_task_edit_submit) : モーダルOK → タスク更新 + カード更新
  *
  * Slack App設定:
@@ -51,6 +52,52 @@ export async function POST(request: NextRequest) {
           });
 
           console.log(`[Slack Interactions] タスク完了: ${result.ok ? '成功' : '失敗'} - ${result.message}`);
+        }
+
+        // メニューボタン押下 → 該当intentの応答を返信
+        if (action.action_id?.startsWith('nm_menu_')) {
+          const projectId = action.value;
+          const channelId = payload.channel?.id || payload.container?.channel_id || '';
+          const messageTs = payload.message?.ts || '';
+
+          if (projectId && channelId) {
+            // action_id: nm_menu_issues_<projectId> → intent: bot_issues
+            const intentMap: Record<string, string> = {
+              nm_menu_issues: 'bot_issues',
+              nm_menu_decisions: 'bot_decisions',
+              nm_menu_tasks: 'bot_tasks',
+              nm_menu_agenda: 'bot_agenda',
+              nm_menu_summary: 'bot_summary',
+            };
+            // action_idからprojectId部分を除去してintentキーを取得
+            const actionKey = action.action_id.replace(`_${projectId}`, '');
+            const intent = intentMap[actionKey] || 'bot_help';
+
+            const { generateBotResponse } = await import(
+              '@/services/v43/botResponseGenerator.service'
+            );
+            const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://node-map-eight.vercel.app';
+            const response = await generateBotResponse(projectId, intent as any, baseUrl);
+
+            // スレッド内にテキストで返信
+            const token = process.env.SLACK_BOT_TOKEN;
+            if (token) {
+              await fetch('https://slack.com/api/chat.postMessage', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  channel: channelId,
+                  thread_ts: messageTs,
+                  text: response.text,
+                }),
+              });
+            }
+
+            console.log(`[Slack Interactions] メニュー応答: ${intent}`);
+          }
         }
 
         // 「編集」ボタン → モーダルを開く

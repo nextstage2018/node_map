@@ -18,6 +18,7 @@ const SYSTEM_PROMPT = `あなたはビジネスチャットのメンションメ
 - decisions: 決定事項の確認（「何が決まった？」「決定事項は？」）
 - agenda: 会議アジェンダの確認（「次の会議の議題は？」「アジェンダ教えて」）
 - summary: 週次まとめ・サマリー（「今週のまとめ」「振り返り」）
+- menu: メニュー表示（「メニュー」「一覧」）
 - help: ヘルプ・使い方（「何ができる？」「ヘルプ」）
 
 回答は **カテゴリ名のみ** を1単語で返してください。説明は不要です。
@@ -34,6 +35,7 @@ const INTENT_MAP: Record<string, BotIntent | 'task_create'> = {
   decisions: 'bot_decisions',
   agenda: 'bot_agenda',
   summary: 'bot_summary',
+  menu: 'bot_menu',
   help: 'bot_help',
 };
 

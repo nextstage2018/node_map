@@ -324,6 +324,28 @@ async function getSlackClient(userId: string) {
   return new WebClient(token);
 }
 
+async function sendSlackBlockReply(channelId: string, threadTs: string, fallbackText: string, blocks: Record<string, unknown>[]) {
+  const token = process.env.SLACK_BOT_TOKEN;
+  if (!token) return;
+  try {
+    await fetch('https://slack.com/api/chat.postMessage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        channel: channelId,
+        text: fallbackText,
+        blocks,
+        thread_ts: threadTs,
+      }),
+    });
+  } catch (error) {
+    console.error('[Slack Events] Block Kit返信エラー:', error);
+  }
+}
+
 async function sendSlackReply(channelId: string, threadTs: string, text: string, userId: string) {
   try {
     const client = await getSlackClient(userId);
@@ -486,8 +508,12 @@ async function processBotMention(params: {
     const { generateBotResponse } = await import('@/services/v43/botResponseGenerator.service');
     const response = await generateBotResponse(channel.project_id, classification.intent, baseUrl);
 
-    // Slack返信
-    await sendSlackReply(channelId, threadTs, response.text, ownerUserId);
+    // Slack返信（メニューの場合はBlock Kitカードで返信）
+    if (response.slackBlocks && response.slackBlocks.length > 0) {
+      await sendSlackBlockReply(channelId, threadTs, response.text, response.slackBlocks);
+    } else {
+      await sendSlackReply(channelId, threadTs, response.text, ownerUserId);
+    }
   } catch (error) {
     console.error('[Slack Events] ボット応答処理エラー:', error);
     // ★ エラーでも必ず返信する

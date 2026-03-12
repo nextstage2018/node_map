@@ -821,7 +821,7 @@ MeetGeek Webhook受信時:
 
 Slack・Chatworkのチャネル内で @NodeMap にメンションすると、プロジェクト情報を返答するボット。タスク作成にも対応。
 
-### ボット Intent（6種）
+### ボット Intent（7種 + タスク作成）
 
 | Intent | トリガー例 | データソース |
 |---|---|---|
@@ -829,8 +829,20 @@ Slack・Chatworkのチャネル内で @NodeMap にメンションすると、プ
 | `bot_decisions` | 「決定事項は？」「先週何が決まった？」 | decision_log |
 | `bot_tasks` | 「タスク状況は？」「佐藤さんの進捗は？」 | tasks |
 | `bot_agenda` | 「次の会議のアジェンダは？」 | meeting_agenda |
-| `bot_summary` | 「今週のまとめは？」 | business_events + tasks |
+| `bot_summary` | 「今週のまとめは？」 | tasks + decision_log |
+| `bot_menu` | 「メニュー」「一覧」 | Slack: Block Kitボタンカード / CW: テキストメニュー |
 | `bot_help` | 「何ができる？」 | 静的テキスト |
+
+### メニューカード
+
+- `@NodeMap メニュー` でSlackではBlock Kitボタン付きカード表示。ボタン押下で各intent応答を取得
+- Chatworkではテキスト形式のメニュー表示（ボタン非対応のため）
+- 社外チャネルではメニュー項目から「未確定事項」が自動除外される
+
+### トーン統一
+
+- 全応答で当たり障りない表現に統一（丁寧すぎず、カジュアルすぎず）
+- 社内/社外でトーンの差をつけない。公開範囲のみで制御
 
 ### 公開レベル（organizations.relationship_type で分岐）
 
