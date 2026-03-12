@@ -1,7 +1,6 @@
 // Gmail OAuth 2.0 コールバック
 // Googleからのリダイレクトを受け取り、トークン交換→DB保存→設定画面にリダイレクト
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,10 +81,12 @@ export async function GET(request: NextRequest) {
       // 非致命的
     }
 
-    // DB保存（upsertではなく明示的にupdate → 失敗ならinsert）
-    const sb = createServerClient();
-    if (!sb) {
-      console.error('[OAuth Callback] Supabase未設定');
+    // DB保存: Supabase REST APIを直接使用（JSクライアント経由だと更新されないため）
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('[OAuth Callback] Supabase環境変数未設定');
       return NextResponse.redirect(`${appUrl}/settings?error=db_error`);
     }
 
@@ -101,59 +102,80 @@ export async function GET(request: NextRequest) {
       scope: tokenData.scope || '',
     };
 
-    // まずUPDATEを試行
-    const { data: updateResult, error: updateError } = await sb
-      .from('user_service_tokens')
-      .update({
-        token_data: newTokenData,
-        is_active: true,
-        connected_at: now,
-        updated_at: now,
-      })
-      .eq('user_id', userId)
-      .eq('service_name', 'gmail')
-      .select('user_id, updated_at');
-
-    console.log('[OAuth Callback] UPDATE結果:', {
-      rowsAffected: updateResult?.length || 0,
-      error: updateError ? JSON.stringify(updateError) : null,
+    // PATCH (UPDATE) via REST API
+    const updateUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail`;
+    const updateBody = JSON.stringify({
+      token_data: newTokenData,
+      is_active: true,
+      connected_at: now,
+      updated_at: now,
     });
 
+    console.log('[OAuth Callback] REST API UPDATE実行:', updateUrl);
+
+    const updateRes = await fetch(updateUrl, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'Prefer': 'return=representation',
+      },
+      body: updateBody,
+    });
+
+    const updateResText = await updateRes.text();
+    console.log('[OAuth Callback] REST API UPDATE結果:', {
+      status: updateRes.status,
+      body: updateResText.substring(0, 200),
+    });
+
+    let updateRows: unknown[] = [];
+    try {
+      updateRows = JSON.parse(updateResText);
+    } catch {
+      // パース失敗
+    }
+
     // UPDATEで0行の場合はINSERT
-    if (!updateResult || updateResult.length === 0) {
-      console.log('[OAuth Callback] 既存行なし → INSERT実行');
-      const { error: insertError } = await sb
-        .from('user_service_tokens')
-        .insert({
+    if (!Array.isArray(updateRows) || updateRows.length === 0) {
+      console.log('[OAuth Callback] UPDATE 0行 → INSERT実行');
+      const insertUrl = `${supabaseUrl}/rest/v1/user_service_tokens`;
+      const insertRes = await fetch(insertUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': serviceRoleKey,
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'Prefer': 'return=representation',
+        },
+        body: JSON.stringify({
           user_id: userId,
           service_name: 'gmail',
           token_data: newTokenData,
           is_active: true,
           connected_at: now,
           updated_at: now,
-        });
-
-      if (insertError) {
-        console.error('[OAuth Callback] INSERT失敗:', JSON.stringify(insertError));
-        return NextResponse.redirect(`${appUrl}/settings?error=db_insert_failed`);
-      }
-    } else if (updateError) {
-      console.error('[OAuth Callback] UPDATE失敗:', JSON.stringify(updateError));
-      return NextResponse.redirect(`${appUrl}/settings?error=db_update_failed`);
+        }),
+      });
+      console.log('[OAuth Callback] INSERT結果:', insertRes.status, await insertRes.text().catch(() => ''));
     }
 
     // 読み戻し検証
-    const { data: verifyRow } = await sb
-      .from('user_service_tokens')
-      .select('updated_at, token_data')
-      .eq('user_id', userId)
-      .eq('service_name', 'gmail')
-      .single();
+    const verifyUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail&select=updated_at,token_data`;
+    const verifyRes = await fetch(verifyUrl, {
+      headers: {
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+    });
+    const verifyRows = await verifyRes.json().catch(() => []);
+    const verifyRow = Array.isArray(verifyRows) ? verifyRows[0] : null;
+    const savedScope = verifyRow?.token_data?.scope || '';
 
-    const savedScope = (verifyRow?.token_data as Record<string, unknown>)?.scope || '';
     console.log('[OAuth Callback] 検証:', {
       updated_at: verifyRow?.updated_at,
-      savedScope,
+      savedScope: String(savedScope).substring(0, 100),
       hasDriveReadonly: String(savedScope).includes('drive.readonly'),
     });
 
