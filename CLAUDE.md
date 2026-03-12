@@ -571,6 +571,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。タスク詳細ページは存在しない（`/tasks`はリダイレクト）
 - **秘書チャットUI**: `formatAssistantMessage()`でリッチ表示。`suggestions`（動的選択肢）対応
 - **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
+- **メンバー検出2経路**: Slackチャネルは `conversations.members` APIで直接取得（メッセージ不要）。Chatwork/Emailは `inbox_messages` から送信者検出。`getChannelMembers()` in `slackClient.service.ts`
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
 - **v3.4 決定ログ**: decision_log テーブル。不変ログ＋変更チェーン。decision_tree_nodes と連動
 - **v3.4 アジェンダ**: meeting_agenda テーブル。open_issues + decision_log + tasks から自動生成。JSONB items
@@ -620,7 +621,12 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 1. チャネル登録（Slack/Chatwork/Email）
 2. 「チャネルからメンバーを自動取り込み」ボタン
    → POST /api/projects/[id]/members/detect
-   → inbox_messagesから送信者検出 → contact_persons自動作成 → project_members追加
+   → 2経路で検出:
+     経路1（Slack API直接）: conversations.members → users.info → ボット・自分除外
+       → メッセージ不要。チャネルに参加していれば即検出
+     経路2（inbox_messagesフォールバック）: Chatwork/Email、またはSlack API失敗時
+       → inbox_messagesから送信者検出
+   → contact_persons自動作成 → project_members追加
 3. メンバーカード展開 → 基本情報編集 + 連絡先チャネル管理
    → PUT /api/contacts（name/company/department/relationship_type/notes）
    → GET/POST/DELETE /api/contacts/[id]/channels（email/slack/chatwork）

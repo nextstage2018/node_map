@@ -340,7 +340,7 @@ CREATE INDEX idx_project_members_contact_id ON project_members(contact_id);
 
 - **UNIQUE(project_id, contact_id)**: 同一コンタクトの重複追加を防止
 - **フォールバック廃止**: project_membersが空でも組織メンバーを返さない
-- **自動取り込み**: `POST /api/projects/[id]/members/detect` でチャネルのメッセージ送信者を自動検出・追加
+- **自動取り込み**: `POST /api/projects/[id]/members/detect` — 2経路で検出。Slackチャネルは `conversations.members` APIで直接取得（メッセージ不要）、Chatwork/Emailは `inbox_messages` から送信者検出
 - role: 'owner' / 'member' / 'viewer'
 - メンバーカード展開で contact_persons の編集 + contact_channels の管理が可能
 
