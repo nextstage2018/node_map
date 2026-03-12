@@ -71,6 +71,7 @@ export async function POST(
         .from('inbox_messages')
         .select('subject, body, from_name, from_address, channel, timestamp, direction, metadata')
         .in('from_address', addresses)
+        .eq('user_id', userId)
         .order('timestamp', { ascending: false })
         .limit(50);
       receivedMessages = (recvMsgs || []).map((m) => ({ ...m, direction: m.direction || 'received' }));
@@ -94,6 +95,7 @@ export async function POST(
         .from('inbox_messages')
         .select('subject, body, from_name, from_address, channel, timestamp, direction, to_list, metadata')
         .eq('direction', 'sent')
+        .eq('user_id', userId)
         .order('timestamp', { ascending: false })
         .limit(200);
 

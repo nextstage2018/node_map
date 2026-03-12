@@ -62,6 +62,7 @@ export async function GET(
       let query = supabase
         .from('inbox_messages')
         .select('*')
+        .eq('user_id', userId)
         .order('timestamp', { ascending: false });
 
       if (ch.service_name === 'slack') {

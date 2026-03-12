@@ -35,6 +35,7 @@ export async function POST(request: NextRequest) {
       .from('inbox_messages')
       .select('*')
       .eq('id', messageId)
+      .eq('user_id', userId)
       .single();
 
     if (msgError || !msg) {

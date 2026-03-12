@@ -31,6 +31,7 @@ export async function getUserWritingStyle(userId: string, channel?: string): Pro
       .from('inbox_messages')
       .select('body, channel, subject')
       .eq('direction', 'sent')
+      .eq('user_id', userId)
       .not('body', 'is', null)
       .order('created_at', { ascending: false })
       .limit(10);

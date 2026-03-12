@@ -74,52 +74,54 @@ async function getContactContext(fromAddress: string, fromName: string): Promise
 /**
  * 送信者との過去のやり取り（直近5件）を取得
  */
-async function getRecentMessages(fromAddress: string, fromName: string, currentMessageId: string): Promise<string[]> {
+async function getRecentMessages(fromAddress: string, fromName: string, currentMessageId: string, userId?: string): Promise<string[]> {
   try {
     const sb = getServerSupabase() || getSupabase();
 
-    // from_address または from_name で検索（送受信両方）
-    let query = sb
-      .from('inbox_messages')
-      .select('from_name, body, direction, timestamp, subject')
-      .neq('id', currentMessageId)
-      .order('timestamp', { ascending: false })
-      .limit(5);
-
+    // from_address または from_name で検索（送受信両方・user_idでスコープ）
     if (fromAddress) {
       // この相手からの受信 + この相手への送信を取得
-      query = sb
+      let query = sb
         .from('inbox_messages')
         .select('from_name, body, direction, timestamp, subject')
         .neq('id', currentMessageId)
         .or(`from_address.eq.${fromAddress},to_address.eq.${fromAddress}`)
         .order('timestamp', { ascending: false })
         .limit(5);
-    } else if (fromName) {
-      query = sb
+      if (userId) query = query.eq('user_id', userId);
+      const { data } = await query;
+      if (data && data.length > 0) return formatMessages(data);
+    }
+
+    if (fromName) {
+      let query = sb
         .from('inbox_messages')
         .select('from_name, body, direction, timestamp, subject')
         .neq('id', currentMessageId)
         .eq('from_name', fromName)
         .order('timestamp', { ascending: false })
         .limit(5);
+      if (userId) query = query.eq('user_id', userId);
+      const { data } = await query;
+      if (data && data.length > 0) return formatMessages(data);
     }
 
-    const { data } = await query;
+    return [];
 
-    if (!data || data.length === 0) return [];
-
-    return data.map((msg: Record<string, unknown>) => {
-      const dir = msg.direction === 'sent' ? 'あなた→相手' : '相手→あなた';
-      const ts = msg.timestamp ? new Date(msg.timestamp as string).toLocaleDateString('ja-JP') : '';
-      const subj = msg.subject ? `[${msg.subject}] ` : '';
-      const body = (msg.body as string || '').slice(0, 150).replace(/\n/g, ' ');
-      return `${ts} ${dir}: ${subj}${body}`;
-    });
   } catch (error) {
     console.error('過去メッセージ取得エラー:', error);
     return [];
   }
+}
+
+function formatMessages(data: Record<string, unknown>[]): string[] {
+  return data.map((msg) => {
+    const dir = msg.direction === 'sent' ? 'あなた→相手' : '相手→あなた';
+    const ts = msg.timestamp ? new Date(msg.timestamp as string).toLocaleDateString('ja-JP') : '';
+    const subj = msg.subject ? `[${msg.subject}] ` : '';
+    const body = (msg.body as string || '').slice(0, 150).replace(/\n/g, ' ');
+    return `${ts} ${dir}: ${subj}${body}`;
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -138,7 +140,8 @@ export async function POST(request: NextRequest) {
       getRecentMessages(
         originalMessage.from?.address || '',
         originalMessage.from?.name || '',
-        originalMessage.id
+        originalMessage.id,
+        userId
       ),
       getServerUserEmailSignature(),
     ]);

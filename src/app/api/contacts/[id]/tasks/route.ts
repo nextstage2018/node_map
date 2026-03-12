@@ -38,6 +38,7 @@ export async function GET(
       .from('inbox_messages')
       .select('id')
       .in('from_address', addresses)
+      .eq('user_id', userId)
       .limit(100);
 
     if (!messages || messages.length === 0) {

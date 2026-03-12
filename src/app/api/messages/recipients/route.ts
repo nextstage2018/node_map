@@ -83,12 +83,13 @@ export async function GET(request: NextRequest) {
             }
             // emailチャネルがなくても、inbox_messagesからメールアドレスがある可能性
             if (emailChannels.length === 0) {
-              // from_addressからメールアドレスを探す
+              // from_addressからメールアドレスを探す（user_idでスコープ）
               const { data: msgs } = await supabase
                 .from('inbox_messages')
                 .select('from_address')
                 .eq('from_name', contact.name)
                 .eq('channel', 'email')
+                .eq('user_id', userId)
                 .limit(1);
               if (msgs && msgs.length > 0 && msgs[0].from_address?.includes('@')) {
                 results.push({
@@ -167,6 +168,7 @@ export async function GET(request: NextRequest) {
           .from('inbox_messages')
           .select('metadata')
           .eq('channel', 'slack')
+          .eq('user_id', userId)
           .order('timestamp', { ascending: false })
           .limit(200);
 
@@ -203,6 +205,7 @@ export async function GET(request: NextRequest) {
         .from('inbox_messages')
         .select('metadata')
         .eq('channel', 'chatwork')
+        .eq('user_id', userId)
         .order('timestamp', { ascending: false })
         .limit(200);
 

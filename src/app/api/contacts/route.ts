@@ -13,16 +13,24 @@ export const dynamic = 'force-dynamic';
 async function getActiveChannels(
   supabase: ReturnType<typeof createServerClient>,
   senderAddress: string,
-  senderName: string
+  senderName: string,
+  userId?: string
 ): Promise<{ channel: string; name: string }[]> {
   if (!supabase) return [];
 
-  const { data: msgs } = await supabase
+  let query = supabase
     .from('inbox_messages')
     .select('channel, metadata')
     .or(`from_address.eq.${senderAddress},from_name.eq.${senderName}`)
     .order('timestamp', { ascending: false })
     .limit(100);
+
+  // ユーザー分離
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data: msgs } = await query;
 
   if (!msgs) return [];
 
@@ -98,6 +106,7 @@ export async function GET(request: NextRequest) {
         .select('from_name, from_address, channel, timestamp, metadata')
         .in('channel', ['slack', 'chatwork'])
         .eq('direction', 'received')
+        .eq('user_id', userId)
         .neq('from_name', 'あなた')
         .neq('from_name', '')
         .order('timestamp', { ascending: false });
@@ -108,6 +117,7 @@ export async function GET(request: NextRequest) {
         .select('to_list, channel, timestamp, metadata, direction')
         .eq('channel', 'email')
         .eq('direction', 'sent')
+        .eq('user_id', userId)
         .order('timestamp', { ascending: false });
 
       const senderMap = new Map<string, {
