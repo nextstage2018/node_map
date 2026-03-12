@@ -178,7 +178,7 @@ export async function POST(
       const anthropic = new Anthropic();
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 3500,
+        max_tokens: 6000,
         system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
 ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文脈です。会議内容と照らし合わせて分析してください。${contextBlock}` : ''}
 
@@ -284,7 +284,35 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       if (!jsonMatch) {
         throw new Error('AIレスポンスからJSONを解析できませんでした');
       }
-      const parsed = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
+
+      // JSON修復: 途切れたJSONの閉じ括弧を補完
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        console.warn('[MeetingRecords Analyze] JSON修復を試行中...');
+        // 未閉じの文字列・配列・オブジェクトを補完
+        // 1. 未閉じの文字列を閉じる
+        const quoteCount = (jsonStr.match(/(?<!\\)"/g) || []).length;
+        if (quoteCount % 2 !== 0) jsonStr += '"';
+        // 2. 未閉じの配列/オブジェクトを閉じる
+        const openBrackets = (jsonStr.match(/\[/g) || []).length;
+        const closeBrackets = (jsonStr.match(/\]/g) || []).length;
+        const openBraces = (jsonStr.match(/\{/g) || []).length;
+        const closeBraces = (jsonStr.match(/\}/g) || []).length;
+        // 末尾のカンマを除去
+        jsonStr = jsonStr.replace(/,\s*$/, '');
+        for (let i = 0; i < openBrackets - closeBrackets; i++) jsonStr += ']';
+        for (let i = 0; i < openBraces - closeBraces; i++) jsonStr += '}';
+        try {
+          parsed = JSON.parse(jsonStr);
+          console.log('[MeetingRecords Analyze] JSON修復成功');
+        } catch (repairError) {
+          console.error('[MeetingRecords Analyze] JSON修復も失敗:', repairError);
+          throw new Error('AIレスポンスのJSON解析に失敗しました（修復不可）');
+        }
+      }
       analysisResult = {
         ...parsed,
         action_items: Array.isArray(parsed.action_items) ? parsed.action_items : [],
