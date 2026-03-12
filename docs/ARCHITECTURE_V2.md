@@ -2,7 +2,7 @@
 
 最終更新: 2026-03-12
 
-> **ステータス**: V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.4 実装完了
+> **ステータス**: V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 実装完了
 > **前提**: CLAUDE.md が SSOT。本ファイルはアーキテクチャ詳細の補足
 
 ---
@@ -728,6 +728,7 @@ V1（現行）              V2
 | v4.2 | 繰り返しルール（project_recurring_rules テーブル準備済み） | ⏳ テーブル準備済み |
 | v4.3 | チャネルボット — メンション応答（Slack/Chatwork対応） | ✅ 完了 |
 | v4.4 | チャネルボット — 定期配信（月曜/金曜/アラート） | ✅ 完了 |
+| v4.5 | 外部タスク双方向同期（Slack Block Kit + Chatworkネイティブタスク） | ✅ 完了 |
 
 ---
 
@@ -769,7 +770,7 @@ V1（現行）              V2
 
 ---
 
-## 11. v4.0〜v4.4: タスク管理 + チャネルボット
+## 11. v4.0〜v4.5: タスク管理 + チャネルボット + 外部タスク同期
 
 ### 11.1 v4.0 タスク管理カンバン
 
@@ -789,14 +790,14 @@ Slack/Chatworkチャネルで @NodeMap メンション → プロジェクト情
 ```
 処理フロー（全awaitで同期実行）:
   1. POST受信 → Slackリトライチェック（X-Slack-Retry-Num）
-  2. await sendQuickReply("確認中です...")  ← HTTPレスポンス前に即座送信
-  3. await processTaskCreation() or processBotMention()
+  2. await processTaskCreation() or processBotMention()
      a. AI intent分類（Claude Haiku）→ フォールバック: キーワード分類
      b. チャネルID → project_channels → プロジェクト解決
      c. タスク作成: extractTask → resolveProject → resolveRequester → DB INSERT
+        → v4.5: syncTaskToExternal()（Slack Block Kit / Chatworkネイティブタスク同時作成）
      d. ボット応答: generateBotResponse（公開レベルフィルタ付き）
-  4. await sendSlackReply/sendReply（結果返信）
-  5. return NextResponse.json({ ok: true })  ← 全処理完了後にreturn
+  3. await sendSlackReply/sendReply（結果返信）
+  4. return NextResponse.json({ ok: true })  ← 全処理完了後にreturn
 
 ⚠️ 重要: Vercelはreturn後にバックグラウンド処理を打ち切る
   → 全処理をawaitで完了してからreturnすること
@@ -811,6 +812,28 @@ Cron駆動で全PJチャネルに定期レポート配信。relationship_typeで
 月曜 09:00: 今週のブリーフィング（open_issues + タスク + 会議予定）
 金曜 17:00: 今週のレポート（完了タスク + 決定事項 + 新規未確定事項）
 毎日 09:30: アラート（stale + 期限超過 + MS期限接近）
+```
+
+### 11.4 v4.5 外部タスク双方向同期
+
+NodeMapのタスク作成時にSlack Block Kitリッチカード / Chatworkネイティブタスクを同時作成。完了時の双方向同期にも対応。
+
+```
+Slack側（Block Kit リッチカード）:
+  タスク作成 → chat.postMessage（blocks付き）→ スレッド内にカード表示
+    カード内容: タスク名・期限・PJ・MS・依頼者
+    ボタン: 「編集 ✏️」（モーダルフォーム起動）/ 「完了 ✨」
+  完了ボタン押下 → /api/webhooks/slack/interactions → tasks.status='done' + カード打ち消し線
+  NodeMapで完了 → chat.update でSlackカードも打ち消し線
+
+Chatwork側（ネイティブタスク）:
+  タスク作成 → POST /rooms/{room_id}/tasks → Chatworkタスクパネルに表示
+  Chatworkで完了 → processTaskCompletion → NodeMap tasks.status='done'
+  NodeMapで完了 → PUT /rooms/{room_id}/tasks/{id}/status → Chatworkタスクも完了
+
+AI機能:
+  タスク説明: スレッド文脈をClaude HaikuでAI要約 → descriptionに格納
+  期限検出: 今日/明日/明後日/N日後/具体日付（3/15, 3月15日）対応
 ```
 
 ---

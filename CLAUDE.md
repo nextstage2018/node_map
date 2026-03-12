@@ -3,7 +3,7 @@
 最終更新: 2026-03-12
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.4 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -890,7 +890,7 @@ Chatwork: Webhook — メンション検知
 
 - **全処理をawaitで完了してからHTTPレスポンスを返す**: Vercelはreturn後にバックグラウンド処理を打ち切る。fire-and-forget（`.catch()`のみ）は禁止
 - **Slackリトライ対策**: `X-Slack-Retry-Num` ヘッダーを検知して重複処理を回避
-- **即レス→詳細レス**: 即レスは`sendQuickReply`/`sendReply`でHTTPレスポンス前に同期送信。その後AI分類→タスク作成→結果返信を`await`で実行
+- **即レスなし**: 「確認中です...」の初回応答は廃止（高速レスポンスのため不要）。AI分類→タスク作成→結果返信を直接`await`で実行
 - **Chatwork BOTトークン優先**: `CHATWORK_BOT_API_TOKEN || CHATWORK_API_TOKEN` の順で使用。BOTアカウントから送信
 - **プロジェクト自動紐付け**: `resolveProjectFromChannel()` がチャネルID → `project_channels` → プロジェクトを解決
 - **依頼者自動解決**: Slack user_id / Chatwork account_id → `contact_channels` → `contact_persons` で依頼者を特定
@@ -1034,9 +1034,20 @@ Interactivity & Shortcuts:
 - `src/services/v4/taskFromMessage.service.ts` — タスク作成後にsyncTaskToExternal()を呼び出し
 - `src/services/v4/taskCompletionNotify.service.ts` — 完了時にsyncTaskCompletionToExternal()を呼び出し
 
+### AI機能
+
+- **タスク説明のAI要約**: スレッド文脈をClaude Haiku（`summarizeThreadContext()`）で要約し、descriptionに格納。スレッドなしの場合は空文字
+- **期限日キーワード検出**: `extractTaskFromMessage()` で以下のパターンを検出:
+  - 今日/本日、明後日/あさって、明日、今週/週末、来週
+  - N日後/N日以内（例: 3日後）
+  - 具体日付: 3/15, 3月15日, 2026/3/15（過去日は翌年扱い）
+- **編集モーダル**: Slack「編集 ✏️」ボタンでモーダルフォーム起動（タイトル・期限・詳細を編集可能）
+- **完了時の重複防止**: Block Kitカード or Chatworkタスクが存在する場合、テキスト通知をスキップ
+
 ### ⚠️ 注意事項
 
 - **外部同期失敗はNodeMapタスク作成をブロックしない**: try-catchで囲み、失敗しても続行
 - **Slack Interactivity URLの設定が必須**: Slack App管理画面で手動設定が必要
 - **Chatwork BOTトークン**: `CHATWORK_BOT_API_TOKEN` を優先使用（v4.3と同じ）
 - **Slackカード更新にはslack_message_tsが必要**: 保存に失敗した場合はカード更新不可（テキスト通知にフォールバック）
+- **即レスは廃止**: 「確認中です...」の初回応答は削除済み。高速レスポンスのため不要
