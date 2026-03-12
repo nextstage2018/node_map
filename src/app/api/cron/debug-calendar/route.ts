@@ -34,6 +34,11 @@ export async function GET(request: NextRequest) {
     // Step 2: 環境変数チェック
     const GOOGLE_CLIENT_ID = process.env.GMAIL_CLIENT_ID || '';
     const GOOGLE_CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET || '';
+    // REDIRECT_URI（OAuth開始とコールバックで使う値。一致しないとトークン交換失敗）
+    const GMAIL_REDIRECT_URI_RAW = process.env.GMAIL_REDIRECT_URI || '';
+    const NEXT_PUBLIC_APP_URL_RAW = process.env.NEXT_PUBLIC_APP_URL || '';
+    const computedRedirectUri = GMAIL_REDIRECT_URI_RAW
+      || `${NEXT_PUBLIC_APP_URL_RAW || 'http://localhost:3000'}/api/auth/gmail/callback`;
     steps.push({
       step: '2. Google OAuth環境変数',
       result: GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET ? 'OK' : 'FAIL',
@@ -42,6 +47,9 @@ export async function GET(request: NextRequest) {
         GMAIL_CLIENT_SECRET: GOOGLE_CLIENT_SECRET ? `${GOOGLE_CLIENT_SECRET.substring(0, 8)}...` : '(空)',
         SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? '設定済み' : '(空)',
         NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL ? '設定済み' : '(空)',
+        GMAIL_REDIRECT_URI: GMAIL_REDIRECT_URI_RAW || '(未設定 → フォールバック使用)',
+        NEXT_PUBLIC_APP_URL: NEXT_PUBLIC_APP_URL_RAW || '(未設定)',
+        computedRedirectUri,
       },
     });
 
@@ -61,13 +69,14 @@ export async function GET(request: NextRequest) {
       .select('user_id, is_active, connected_at, updated_at')
       .eq('service_name', 'gmail')
       .order('updated_at', { ascending: false })
-      .limit(5);
+      .limit(10);
     steps.push({
-      step: '3b. DB内の全gmailトークン行',
+      step: '3b. DB内の全gmailトークン行（demo-user-001含む全行）',
       result: `${allRows?.length || 0}行`,
       detail: allRows?.map(r => ({
         user_id: r.user_id,
         is_active: r.is_active,
+        connected_at: r.connected_at,
         updated_at: r.updated_at,
         matches_owner: r.user_id === ownerId,
       })),

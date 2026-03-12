@@ -93,10 +93,30 @@ export async function GET(request: NextRequest) {
       userId = process.env.ENV_TOKEN_OWNER_ID;
     }
     console.log('[OAuth Callback] 最終userId:', userId, '(state:', state, ')');
+    console.log('[OAuth Callback] トークンデータ概要:', {
+      has_access_token: !!tokenData.access_token,
+      access_token_prefix: tokenData.access_token?.substring(0, 15),
+      has_refresh_token: !!tokenData.refresh_token,
+      scope: tokenData.scope,
+      expires_in: tokenData.expires_in,
+    });
     const now = new Date().toISOString();
 
     if (sb) {
-      const { error: dbError } = await sb
+      // まず既存行の存在確認
+      const { data: existingRow, error: checkErr } = await sb
+        .from('user_service_tokens')
+        .select('user_id, updated_at')
+        .eq('user_id', userId)
+        .eq('service_name', 'gmail')
+        .maybeSingle();
+      console.log('[OAuth Callback] 既存行チェック:', {
+        exists: !!existingRow,
+        existingUpdatedAt: existingRow?.updated_at,
+        checkErr: checkErr?.message || null,
+      });
+
+      const { error: dbError, data: upsertResult } = await sb
         .from('user_service_tokens')
         .upsert(
           {
@@ -117,16 +137,29 @@ export async function GET(request: NextRequest) {
             updated_at: now,
           },
           { onConflict: 'user_id,service_name' }
-        );
+        )
+        .select('user_id, updated_at');
 
       if (dbError) {
-        console.error('[OAuth Callback] トークンDB保存エラー:', dbError);
+        console.error('[OAuth Callback] トークンDB保存エラー:', JSON.stringify(dbError));
         const errDetail = encodeURIComponent(dbError.message || JSON.stringify(dbError));
         return NextResponse.redirect(`${appUrl}/settings?error=gmail_save_failed&detail=${errDetail}`);
       }
-      console.log('[OAuth Callback] トークンDB保存成功 userId:', userId, 'email:', userEmail);
+      console.log('[OAuth Callback] トークンDB保存成功 userId:', userId, 'email:', userEmail, 'upsertResult:', JSON.stringify(upsertResult));
+
+      // 保存後の検証
+      const { data: verifyRow } = await sb
+        .from('user_service_tokens')
+        .select('user_id, updated_at')
+        .eq('user_id', userId)
+        .eq('service_name', 'gmail')
+        .maybeSingle();
+      console.log('[OAuth Callback] 保存後検証:', {
+        updated_at: verifyRow?.updated_at,
+        matches_now: verifyRow?.updated_at === now,
+      });
     } else {
-      console.error('Supabase未設定のためトークン保存をスキップ');
+      console.error('[OAuth Callback] Supabase未設定のためトークン保存をスキップ');
     }
 
     return NextResponse.redirect(`${appUrl}/settings?auth=success&service=Gmail`);
