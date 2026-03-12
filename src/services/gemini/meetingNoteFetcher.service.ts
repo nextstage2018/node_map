@@ -1,12 +1,13 @@
 // v6.0: Gemini会議メモ取得サービス
 // Google Calendar イベントの添付ファイル（Google Docs）から会議メモを取得
-// Drive API export でプレーンテキストを取得し、geminiParser でパースする
+// Google Docs API でドキュメント構造を取得し、プレーンテキストに変換する
+// （Drive API export は他ユーザー所有ファイルで403/404になるため、Docs APIを使用）
 
 import { getValidAccessToken } from '@/services/calendar/calendarClient.service';
 import type { CalendarEvent, CalendarAttachment } from '@/services/calendar/calendarClient.service';
 
+const DOCS_API_BASE = 'https://docs.googleapis.com/v1';
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
-const DOCS_EXPORT_MIME = 'text/plain'; // Google Docs → プレーンテキスト
 
 // ========================================
 // 型定義
@@ -70,7 +71,8 @@ export function findMeetingNoteAttachment(event: CalendarEvent): CalendarAttachm
 
 /**
  * Google Docs のファイルIDからプレーンテキストを取得
- * Drive API の export エンドポイントを使用
+ * 方法1: Google Docs API（共有ドキュメントも読み取り可能）
+ * 方法2: Drive API export（フォールバック）
  */
 export async function fetchDocContent(userId: string, fileId: string): Promise<string | null> {
   const accessToken = await getValidAccessToken(userId);
@@ -79,52 +81,148 @@ export async function fetchDocContent(userId: string, fileId: string): Promise<s
     return null;
   }
 
+  // 方法1: Google Docs API でドキュメント構造を取得 → プレーンテキスト変換
   try {
-    // まずDrive APIの基本アクセスをテスト（ファイル一覧）
-    const listRes = await fetch(`${DRIVE_API_BASE}/files?pageSize=1&fields=files(id,name)`, {
+    const docsUrl = `${DOCS_API_BASE}/documents/${fileId}`;
+    console.log('[MeetingNoteFetcher] Docs API呼び出し:', docsUrl);
+
+    const docsRes = await fetch(docsUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    console.log('[MeetingNoteFetcher] Drive API一覧テスト:', listRes.status, listRes.ok ? 'OK' : await listRes.text().catch(() => ''));
 
-    // ファイルメタデータ取得テスト
-    const metaRes = await fetch(`${DRIVE_API_BASE}/files/${fileId}?fields=id,name,mimeType,owners,permissions`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    console.log('[MeetingNoteFetcher] メタデータテスト:', metaRes.status, metaRes.ok ? JSON.stringify(await metaRes.json()) : await metaRes.text().catch(() => ''));
-
-    // エクスポート
-    const exportUrl = `${DRIVE_API_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent(DOCS_EXPORT_MIME)}`;
-    const res = await fetch(exportUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    if (!res.ok) {
-      console.error('[MeetingNoteFetcher] Docs取得失敗:', res.status, await res.text().catch(() => ''));
-      return null;
+    if (docsRes.ok) {
+      const doc = await docsRes.json();
+      console.log('[MeetingNoteFetcher] Docs API成功: title=', doc.title);
+      const text = extractTextFromDocsBody(doc.body);
+      if (text && text.trim().length > 0) {
+        return text;
+      }
+      console.warn('[MeetingNoteFetcher] Docs APIからテキスト抽出結果が空');
+    } else {
+      const errText = await docsRes.text().catch(() => '');
+      console.warn('[MeetingNoteFetcher] Docs API失敗:', docsRes.status, errText.substring(0, 300));
     }
-
-    const text = await res.text();
-    return text;
-  } catch (error) {
-    console.error('[MeetingNoteFetcher] Docsエクスポートエラー:', error);
-    return null;
+  } catch (docsError) {
+    console.warn('[MeetingNoteFetcher] Docs APIエラー:', docsError);
   }
+
+  // 方法2: Drive API export（フォールバック）
+  try {
+    console.log('[MeetingNoteFetcher] Drive API exportにフォールバック');
+    const exportUrl = `${DRIVE_API_BASE}/files/${fileId}/export?mimeType=${encodeURIComponent('text/plain')}`;
+    const res = await fetch(exportUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (res.ok) {
+      const text = await res.text();
+      console.log('[MeetingNoteFetcher] Drive API export成功:', text.length, '文字');
+      return text;
+    } else {
+      console.error('[MeetingNoteFetcher] Drive API export失敗:', res.status, await res.text().catch(() => ''));
+    }
+  } catch (driveError) {
+    console.error('[MeetingNoteFetcher] Drive API exportエラー:', driveError);
+  }
+
+  return null;
+}
+
+/**
+ * Google Docs API のレスポンスボディからプレーンテキストを抽出
+ * ドキュメント構造: body.content[] → paragraph.elements[] → textRun.content
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextFromDocsBody(body: any): string {
+  if (!body || !body.content) return '';
+
+  const parts: string[] = [];
+
+  for (const element of body.content) {
+    if (element.paragraph) {
+      const paragraphText = extractTextFromParagraph(element.paragraph);
+      parts.push(paragraphText);
+    } else if (element.table) {
+      // テーブル内のセルも処理
+      const tableText = extractTextFromTable(element.table);
+      if (tableText) parts.push(tableText);
+    }
+  }
+
+  return parts.join('\n');
+}
+
+/**
+ * パラグラフ要素からテキストを抽出
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextFromParagraph(paragraph: any): string {
+  if (!paragraph.elements) return '';
+
+  const texts: string[] = [];
+  for (const elem of paragraph.elements) {
+    if (elem.textRun && elem.textRun.content) {
+      texts.push(elem.textRun.content);
+    }
+  }
+  return texts.join('');
+}
+
+/**
+ * テーブル要素からテキストを抽出
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTextFromTable(table: any): string {
+  if (!table.tableRows) return '';
+
+  const rows: string[] = [];
+  for (const row of table.tableRows) {
+    if (!row.tableCells) continue;
+    const cells: string[] = [];
+    for (const cell of row.tableCells) {
+      if (cell.content) {
+        const cellText = cell.content
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .map((c: any) => c.paragraph ? extractTextFromParagraph(c.paragraph) : '')
+          .join('')
+          .trim();
+        if (cellText) cells.push(cellText);
+      }
+    }
+    if (cells.length > 0) rows.push(cells.join(' | '));
+  }
+  return rows.join('\n');
 }
 
 /**
  * Google Docs のメタデータを取得（タイトル等）
+ * Docs API → Drive API のフォールバック
  */
 export async function fetchDocMetadata(userId: string, fileId: string): Promise<{ title: string; webViewLink: string } | null> {
   const accessToken = await getValidAccessToken(userId);
   if (!accessToken) return null;
 
+  // 方法1: Google Docs API（タイトルを取得）
+  try {
+    const docsRes = await fetch(`${DOCS_API_BASE}/documents/${fileId}?fields=title,documentId`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (docsRes.ok) {
+      const doc = await docsRes.json();
+      return {
+        title: doc.title || '',
+        webViewLink: `https://docs.google.com/document/d/${fileId}/edit`,
+      };
+    }
+  } catch {
+    // Docs API失敗 → Drive APIにフォールバック
+  }
+
+  // 方法2: Drive API（フォールバック）
   try {
     const res = await fetch(`${DRIVE_API_BASE}/files/${fileId}?fields=name,webViewLink`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) {
@@ -150,7 +248,7 @@ export async function fetchDocMetadata(userId: string, fileId: string): Promise<
 /**
  * カレンダーイベントからGemini会議メモを取得
  * 1. イベントの添付ファイルからGoogle Docsを検出
- * 2. Drive API exportでテキスト取得
+ * 2. Google Docs API でテキスト取得（Drive API exportはフォールバック）
  */
 export async function fetchMeetingNoteFromEvent(
   userId: string,
