@@ -481,6 +481,7 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - **v4.3**: requester_contact_id はチャネルメッセージ送信者から `contact_channels` 経由で自動解決
 - **v4.5**: external_task_id — Chatworkネイティブタスクとの紐づけ用。slack_message_ts — Slack Block Kitカードの更新用
 - **v4.5**: external_sync_status で外部同期状態を管理（none/synced/failed）
+- **v5.0**: source_type に `'meeting_record'` を設定するとタスク詳細で「会議議事録」と表示。due_date は TaskProposalPanel 承認時に引き継ぎ
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）

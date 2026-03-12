@@ -364,16 +364,18 @@ Week N+1:
 **検討ツリーのソース統合**: 両入口からのノードは `source_type` で区別（meeting/channel/hybrid）。
 同一トピックのマージ時は confidence を再計算し、source_type を 'hybrid' に更新。
 
-### v3.0 追加: タスク提案パイプライン
+### v3.0 → v5.0 改訂: タスク提案パイプライン
 
-会議録AI解析で action_items を自動抽出 → task_suggestions テーブルに保存 → 秘書ブリーフィングでカード表示。
+会議録AI解析で action_items を自動抽出（担当者ごとに集約+文脈付き） → task_suggestions テーブルに保存 → 検討ツリータブで直接承認。
 
 ```
-会議録AI解析 → action_items[] 抽出
+会議録AI解析 → action_items[] 抽出（担当者ごとに1タスクに集約、context付き）
   → assignee名で contact_persons をマッチング
   → task_suggestions に JSONB 保存（status: pending）
-  → 秘書ブリーフィング時に task_proposal カード表示
-  → ユーザーが承認 → POST /api/tasks で個別タスク作成
+  → 検討ツリータブの TaskProposalPanel でインライン編集・承認
+  → ユーザーが承認 → POST /api/tasks（dueDate + sourceType: 'meeting_record' 付き）
+  → tasks.due_date に期限保存、tasks.source_type に 'meeting_record' 保存
+  → タスク詳細画面で作成元「会議議事録」と表示
   → ユーザーが却下 → status: dismissed に更新
 ```
 
@@ -716,7 +718,7 @@ V1（現行）              V2
 | V2-H | 思考ログ拡張: マイルストーン間スコープ | ✅ 完了 |
 | V2-I | 統合: 秘書AIへの新intent追加 + ダッシュボード更新 | ✅ 完了 |
 | v3.0-1 | 対称データパイプライン（会議録⇔チャネル） | ✅ 完了 |
-| v3.0-2 | タスク提案パイプライン（action_items → 秘書承認UI） | ✅ 完了 |
+| v3.0-2 → v5.0 | タスク提案パイプライン（検討ツリータブ直接承認・dueDate/sourceType引き継ぎ） | ✅ 完了 |
 | v3.0-3 | MeetGeek連携強化（全データ取得・録画リンクAPI） | ✅ 完了 |
 | v3.3 | プロジェクト中心リストラクチャリング（7タブ・メンバー統合） | ✅ 完了 |
 | v3.4-1 | テーブル設計（open_issues / decision_log / meeting_agenda） | ✅ 完了 |
