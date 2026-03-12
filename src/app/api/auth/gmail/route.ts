@@ -15,8 +15,10 @@ const SCOPES = [
   // Phase B拡張: Google Calendar 連携
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
-  // Google Drive 連携（アプリが作成・開いたファイルのみ管理）
+  // Google Drive 連携
   'https://www.googleapis.com/auth/drive.file',
+  // v6.0: Gemini会議メモ（Google Meetが作成したDocs）を読み取るために必要
+  'https://www.googleapis.com/auth/drive.readonly',
 ].join(' ');
 
 export async function GET() {

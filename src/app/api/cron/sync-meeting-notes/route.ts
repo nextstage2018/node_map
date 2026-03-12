@@ -62,9 +62,12 @@ export async function GET(request: NextRequest) {
     let skipped = 0;
     let created = 0;
     let errors = 0;
+    const skipReasons: { event: string; reason: string }[] = [];
 
     for (const event of meetEvents) {
       try {
+        console.log(`[SyncMeetingNotes] 処理中: "${event.summary}" (id=${event.id}, attachments=${event.attachments?.length || 0})`);
+
         // 既にこのカレンダーイベントIDで取り込み済みかチェック
         const { data: existing } = await supabase
           .from('meeting_records')
@@ -74,6 +77,7 @@ export async function GET(request: NextRequest) {
           .limit(1);
 
         if (existing && existing.length > 0) {
+          skipReasons.push({ event: event.summary, reason: `既にDB登録済み (record_id=${existing[0].id})` });
           skipped++;
           continue;
         }
@@ -81,6 +85,8 @@ export async function GET(request: NextRequest) {
         // 会議メモを取得
         const noteResult = await fetchMeetingNoteFromEvent(ownerId, event);
         if (!noteResult.found || !noteResult.textContent) {
+          const attachmentInfo = event.attachments?.map(a => `${a.title}(${a.mimeType})`).join(', ') || 'なし';
+          skipReasons.push({ event: event.summary, reason: `会議メモ未検出 (found=${noteResult.found}, hasText=${!!noteResult.textContent}, attachments=[${attachmentInfo}])` });
           skipped++;
           continue;
         }
@@ -172,9 +178,17 @@ export async function GET(request: NextRequest) {
       data: {
         total_events: events.length,
         meet_events: meetEvents.length,
+        meet_event_details: meetEvents.map(e => ({
+          summary: e.summary,
+          id: e.id,
+          start: e.start,
+          end: e.end,
+          attachments: e.attachments?.map(a => ({ title: a.title, mimeType: a.mimeType, fileId: a.fileId })) || [],
+        })),
         processed,
         created,
         skipped,
+        skip_reasons: skipReasons,
         errors,
       },
     });
