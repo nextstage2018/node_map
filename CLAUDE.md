@@ -443,6 +443,8 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | `/api/webhooks/slack/events` | Slack メンション応答 + タスク作成 + リアクション | Slack Events API（app_mention, message, reaction_added） |
 | `/api/webhooks/chatwork/events` | Chatwork メンション応答 + タスク作成 + タスク完了 | Chatwork Webhook（mention_to_me, message_created） |
 
+**MeetGeek Webhook処理**: 全処理を`await`で完了してからHTTPレスポンスを返す。AI解析 → 検討ツリー生成まで一気通貫。日本語トランスクリプトのスペース除去前処理付き。
+
 **MeetGeek Webhook取得データ**: 会議完了通知受信時、以下の全データをAPIから取得:
 - 会議詳細（タイトル・参加者メール・ホスト・開始/終了時刻・タイムゾーン）
 - サマリー + AIインサイト
@@ -580,6 +582,10 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **インボックス ユーザー分離**: 全ユーザー向けAPIの `inbox_messages` クエリに `.eq('user_id', userId)` 適用済み（14箇所）。Cronジョブはプロジェクト横断処理のため user_id フィルタなし（意図的）
 - **インボックス メール除外**: `EMAIL_ENABLED=false` 時、バッジAPI・メッセージ一覧・秘書チャットで email チャネルを除外。`inboxStorage.service.ts` の `loadMessages` に `excludeEmail` オプションあり
 - **インボックス ポーリング**: メッセージ取得 `INBOX_POLL_INTERVAL=30秒`（`src/lib/constants.ts`）、バッジ更新 30秒（`AppSidebar.tsx`）
+- **MeetGeek日本語スペース除去**: `cleanJapaneseSpaces()` でCJK文字間のスペースを自動除去。Webhook受信時（`formatTranscript`）とAI解析入力時（`analyze/route.ts`）の2箇所で適用
+- **AI解析 JSON修復**: `max_tokens: 6000`。AIレスポンスのJSONが途切れた場合、未閉じの括弧を自動補完して修復を試行
+- **business_events重複防止**: `meeting_record_id` で既存チェック。既にあれば更新（upsert）、なければ新規挿入
+- **会議録 再解析ボタン**: `MeetingRecordList.tsx` にRefreshCwアイコンで実装。AI解析＋検討ツリー生成を手動トリガー可能。未解析時は黄色バナーで通知
 
 ### 検討ツリー データフロー
 

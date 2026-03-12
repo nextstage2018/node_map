@@ -19,9 +19,10 @@ interface MeetingRecord {
 interface MeetingRecordListProps {
   projectId: string;
   refreshKey?: number; // 親から更新トリガーを受け取る
+  onAnalyzed?: () => void; // 再解析完了時のコールバック
 }
 
-export default function MeetingRecordList({ projectId, refreshKey }: MeetingRecordListProps) {
+export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }: MeetingRecordListProps) {
   const [records, setRecords] = useState<MeetingRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -85,6 +86,8 @@ export default function MeetingRecordList({ projectId, refreshKey }: MeetingReco
 
       // リスト更新
       await fetchRecords();
+      // 親に通知（タスク提案パネル等のリフレッシュ用）
+      onAnalyzed?.();
     } catch (err) {
       console.error('[MeetingRecordList] 再解析エラー:', err);
       setReanalyzeError('再解析中にエラーが発生しました');

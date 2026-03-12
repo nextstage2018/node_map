@@ -19,6 +19,7 @@ import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
+import TaskProposalPanel from '@/components/v2/TaskProposalPanel';
 import DecisionTreeView from '@/components/v2/DecisionTreeView';
 import ThoughtMapTab from '@/components/v2/ThoughtMapTab';
 import MilestoneSection from '@/components/v2/MilestoneSection';
@@ -149,6 +150,8 @@ export default function OrganizationDetailPage() {
   const [meetingRecordRefreshKey, setMeetingRecordRefreshKey] = useState(0);
   // V2-E: 検討ツリーリフレッシュ用
   const [treeRefreshKey, setTreeRefreshKey] = useState(0);
+  // タスク提案パネルリフレッシュ用
+  const [taskProposalRefreshKey, setTaskProposalRefreshKey] = useState(0);
 
   // メッセージ
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -607,6 +610,7 @@ export default function OrganizationDetailPage() {
                     }}
                     onTreeUpdated={() => {
                       setTreeRefreshKey(prev => prev + 1);
+                      setTaskProposalRefreshKey(prev => prev + 1);
                     }}
                   />
 
@@ -614,6 +618,16 @@ export default function OrganizationDetailPage() {
                   <MeetingRecordList
                     projectId={currentProject.id}
                     refreshKey={meetingRecordRefreshKey}
+                    onAnalyzed={() => {
+                      setTaskProposalRefreshKey(prev => prev + 1);
+                      setTreeRefreshKey(prev => prev + 1);
+                    }}
+                  />
+
+                  {/* タスク提案パネル（会議録AI解析で生成されたタスク提案） */}
+                  <TaskProposalPanel
+                    projectId={currentProject.id}
+                    refreshKey={taskProposalRefreshKey}
                   />
                 </div>
               )}
