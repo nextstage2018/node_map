@@ -37,10 +37,22 @@ const CONFIDENCE_MAP = {
 export async function POST(request: NextRequest) {
   try {
     // 通常認証 or 内部呼び出し（Cron/Webhook）の認証バイパス
-    const isInternalCall = request.headers.get('x-webhook-internal') === 'true';
-    let userId = await getServerUserId();
-    if (!userId && isInternalCall) {
+    const cronSecret = request.headers.get('x-cron-secret');
+    const isCronCall = cronSecret && cronSecret === process.env.CRON_SECRET;
+
+    let userId: string | null = null;
+    if (isCronCall) {
+      // Cron/Webhook経由 → ENV_TOKEN_OWNER_ID を使用（cookieなし）
       userId = process.env.ENV_TOKEN_OWNER_ID || '';
+      console.log('[DecisionTree Generate] Cron内部呼び出し認証: userId=', userId?.slice(0, 8));
+    } else {
+      try {
+        userId = await getServerUserId();
+      } catch {
+        // cookie取得失敗
+      }
+      // demo-user-001はデモユーザーなので実質未認証
+      if (userId === 'demo-user-001') userId = null;
     }
     if (!userId) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });

@@ -401,6 +401,7 @@ async function triggerAnalysisPipeline(
         headers: {
           'Content-Type': 'application/json',
           'x-webhook-internal': 'true',
+          'x-cron-secret': process.env.CRON_SECRET || '',
         },
         body: JSON.stringify({
           project_id: projectId,

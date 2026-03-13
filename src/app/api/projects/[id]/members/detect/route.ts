@@ -77,8 +77,7 @@ export async function POST(
           for (const member of members) {
             // ボットは除外
             if (member.isBot) continue;
-            // 自分自身のSlack IDを除外
-            if (mySlackId && member.slackUserId === mySlackId) continue;
+            // v7.0: 自分自身も含める（担当者リストに表示するため）
 
             if (!senderMap.has(member.slackUserId)) {
               senderMap.set(member.slackUserId, {
