@@ -48,7 +48,7 @@ export interface GeminiAnalysisResult {
 
 // ---- メインパーサー ----
 
-export function parseGeminiNotes(text: string): GeminiAnalysisResult {
+export function parseGeminiNotes(rawText: string): GeminiAnalysisResult {
   const result: GeminiAnalysisResult = {
     summary: '',
     topics: [],
@@ -59,6 +59,14 @@ export function parseGeminiNotes(text: string): GeminiAnalysisResult {
     new_decisions: [],
     goal_suggestions: [],
   };
+
+  // v7.0: Gemini Docsの垂直タブ(\u000b)や特殊空白を通常の改行に正規化
+  const text = rawText
+    .replace(/\u000b/g, '\n')        // 垂直タブ → 改行
+    .replace(/\u000c/g, '\n')        // フォームフィード → 改行
+    .replace(/\r\n/g, '\n')          // Windows改行 → Unix改行
+    .replace(/\r/g, '\n')            // CR → LF
+    .replace(/\n{3,}/g, '\n\n');     // 3つ以上の連続改行を2つに圧縮
 
   // セクション分割
   const sections = splitSections(text);
