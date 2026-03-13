@@ -19,7 +19,8 @@ import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog';
 import BusinessTimeline from '@/components/organizations/BusinessTimeline';
 import MeetingRecordUpload from '@/components/v2/MeetingRecordUpload';
 import MeetingRecordList from '@/components/v2/MeetingRecordList';
-import TaskProposalPanel from '@/components/v2/TaskProposalPanel';
+// v7.0: TaskProposalPanel廃止（Slackチャネル通知に移行）
+// import TaskProposalPanel from '@/components/v2/TaskProposalPanel';
 import DecisionTreeView from '@/components/v2/DecisionTreeView';
 import ThoughtMapTab from '@/components/v2/ThoughtMapTab';
 import MilestoneSection from '@/components/v2/MilestoneSection';
@@ -624,11 +625,7 @@ export default function OrganizationDetailPage() {
                     }}
                   />
 
-                  {/* タスク提案パネル（会議録AI解析で生成されたタスク提案） */}
-                  <TaskProposalPanel
-                    projectId={currentProject.id}
-                    refreshKey={taskProposalRefreshKey}
-                  />
+                  {/* v7.0: タスク提案はSlackチャネル通知に移行。パネル廃止 */}
                 </div>
               )}
 

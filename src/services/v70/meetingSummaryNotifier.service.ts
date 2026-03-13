@@ -301,14 +301,8 @@ function buildSlackTaskProposalCard(
     elements: [
       {
         type: 'button',
-        text: { type: 'plain_text', text: '✅ 承認', emoji: true },
-        style: 'primary',
-        action_id: `nm_proposal_approve_${meetingRecordId}_${index}`,
-        value: proposalValue,
-      },
-      {
-        type: 'button',
         text: { type: 'plain_text', text: '✏️ 編集して承認', emoji: true },
+        style: 'primary',
         action_id: `nm_proposal_edit_${meetingRecordId}_${index}`,
         value: proposalValue,
       },

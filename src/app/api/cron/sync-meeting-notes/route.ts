@@ -393,9 +393,7 @@ async function triggerAnalysisPipeline(
   // 検討ツリー生成（topicsがある場合）
   if (analysisResult.topics.length > 0) {
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : 'https://node-map-eight.vercel.app';
+      const baseUrl = 'https://node-map-eight.vercel.app';
       const generateUrl = `${baseUrl}/api/decision-trees/generate`;
 
       const treeRes = await fetch(generateUrl, {
