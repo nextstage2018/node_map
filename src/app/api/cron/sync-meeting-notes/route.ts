@@ -40,9 +40,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'ENV_TOKEN_OWNER_ID未設定のためスキップ' });
     }
 
-    // 過去24時間 + 未来1時間のイベントを取得（会議が終わった直後のメモ検出のため少し幅を持たせる）
+    // 過去48時間 + 未来1時間のイベントを取得
+    // Gemini会議メモが添付されるまでタイムラグがあるため、余裕を持たせる
     const now = new Date();
-    const timeMin = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const timeMin = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString();
 
     const events = await getEvents(ownerId, timeMin, timeMax, 'primary', 50);

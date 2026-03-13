@@ -248,7 +248,8 @@ export async function fetchDocMetadata(userId: string, fileId: string): Promise<
 /**
  * カレンダーイベントからGemini会議メモを取得
  * 1. イベントの添付ファイルからGoogle Docsを検出
- * 2. Google Docs API でテキスト取得（Drive API exportはフォールバック）
+ * 2. 添付がない場合、Drive APIでGemini Docsをタイトル+日付で検索（フォールバック）
+ * 3. Google Docs API でテキスト取得
  */
 export async function fetchMeetingNoteFromEvent(
   userId: string,
@@ -268,32 +269,48 @@ export async function fetchMeetingNoteFromEvent(
   };
 
   // 1. 添付ファイルから会議メモを検出
+  let fileId: string | null = null;
+  let attachmentTitle = '';
+
   const noteAttachment = findMeetingNoteAttachment(event);
-  if (!noteAttachment) {
-    return baseResult;
+  if (noteAttachment) {
+    fileId = noteAttachment.fileId || extractFileIdFromUrl(noteAttachment.fileUrl);
+    attachmentTitle = noteAttachment.title;
+    if (!fileId) {
+      console.warn('[MeetingNoteFetcher] fileId取得失敗:', noteAttachment.fileUrl);
+    }
   }
 
-  // fileId を取得（attachmentから直接、またはURLから抽出）
-  const fileId = noteAttachment.fileId || extractFileIdFromUrl(noteAttachment.fileUrl);
+  // 2. 添付がない場合、Drive APIでGemini Docsを検索（フォールバック）
   if (!fileId) {
-    console.warn('[MeetingNoteFetcher] fileId取得失敗:', noteAttachment.fileUrl);
-    return baseResult;
+    console.log(`[MeetingNoteFetcher] 添付なし → Drive検索フォールバック: "${event.summary}"`);
+    const searchResult = await searchGeminiDocByEvent(userId, event);
+    if (searchResult) {
+      fileId = searchResult.fileId;
+      attachmentTitle = searchResult.title;
+      console.log(`[MeetingNoteFetcher] Drive検索で発見: "${searchResult.title}" (${searchResult.fileId})`);
+    } else {
+      console.log(`[MeetingNoteFetcher] Drive検索でも未検出: "${event.summary}"`);
+      return baseResult;
+    }
   }
 
-  // 2. テキストコンテンツを取得
+  if (!fileId) return baseResult;
+
+  // 3. テキストコンテンツを取得
   const textContent = await fetchDocContent(userId, fileId);
   if (!textContent) {
     return { ...baseResult, docId: fileId };
   }
 
-  // 3. メタデータ取得（タイトル・URL）
+  // 4. メタデータ取得（タイトル・URL）
   const metadata = await fetchDocMetadata(userId, fileId);
 
   return {
     found: true,
     docId: fileId,
-    docTitle: metadata?.title || noteAttachment.title,
-    docUrl: metadata?.webViewLink || noteAttachment.fileUrl,
+    docTitle: metadata?.title || attachmentTitle,
+    docUrl: metadata?.webViewLink || `https://docs.google.com/document/d/${fileId}/edit`,
     textContent,
     calendarEventId: event.id,
     calendarEventTitle: event.summary,
@@ -301,6 +318,54 @@ export async function fetchMeetingNoteFromEvent(
     meetingEndTime: event.end,
     attendees: event.attendees?.map(a => a.email || a.displayName || '') || [],
   };
+}
+
+/**
+ * Drive APIでGemini会議メモを検索（添付ファイルがない場合のフォールバック）
+ * 「イベントタイトル - 日付 - Gemini によるメモ」の命名パターンで検索
+ */
+async function searchGeminiDocByEvent(
+  userId: string,
+  event: CalendarEvent
+): Promise<{ fileId: string; title: string } | null> {
+  const accessToken = await getValidAccessToken(userId);
+  if (!accessToken) return null;
+
+  try {
+    // イベントタイトルでDrive内のGoogle Docsを検索
+    const eventTitle = event.summary || '';
+    // Gemini会議メモの命名パターン: 「タイトル - 日付 - Gemini によるメモ」
+    const query = `name contains '${eventTitle.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.document'`;
+    const searchUrl = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&pageSize=10&supportsAllDrives=true&includeItemsFromAllDrives=true&orderBy=createdTime desc`;
+
+    const res = await fetch(searchUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) {
+      console.warn('[MeetingNoteFetcher] Drive検索失敗:', res.status);
+      return null;
+    }
+
+    const data = await res.json();
+    const files = data.files || [];
+
+    if (files.length === 0) return null;
+
+    // 「Gemini によるメモ」を含むものを優先
+    const geminiDoc = files.find((f: { name: string }) =>
+      f.name.includes('Gemini') || f.name.includes('メモ')
+    );
+
+    if (geminiDoc) {
+      return { fileId: geminiDoc.id, title: geminiDoc.name };
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('[MeetingNoteFetcher] Drive検索エラー:', error);
+    return null;
+  }
 }
 
 // ========================================
