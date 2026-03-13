@@ -601,17 +601,47 @@ export async function handleProposalEdit(payload: {
         };
       });
 
-    // 「自分」を追加
+    // 「自分」を追加（linked_user_id → owner_user_id の順で検索）
     const ownerUserId = process.env.ENV_TOKEN_OWNER_ID || '';
     if (ownerUserId) {
-      const { data: myContact } = await supabase
+      // まず linked_user_id で検索
+      let myContact: { id: string; name: string } | null = null;
+      const { data: linked } = await supabase
         .from('contact_persons')
         .select('id, name')
         .eq('linked_user_id', ownerUserId)
         .limit(1)
         .single();
+      myContact = linked;
 
-      if (myContact && !memberOptions.find((o: { value: string }) => o.value === myContact.id)) {
+      // linked_user_id で見つからない場合、user_service_tokens のSlack authed_user_id から検索
+      if (!myContact) {
+        try {
+          const { data: tokenRow } = await supabase
+            .from('user_service_tokens')
+            .select('token_data')
+            .eq('user_id', ownerUserId)
+            .eq('service_name', 'slack')
+            .eq('is_active', true)
+            .single();
+          const slackUserId = tokenRow?.token_data?.authed_user_id;
+          if (slackUserId) {
+            const { data: slackContact } = await supabase
+              .from('contact_channels')
+              .select('contact_id, contact_persons!inner(id, name)')
+              .eq('channel', 'slack')
+              .eq('address', slackUserId)
+              .limit(1)
+              .single();
+            if (slackContact?.contact_persons) {
+              const cp = slackContact.contact_persons as unknown as { id: string; name: string };
+              myContact = { id: cp.id, name: cp.name };
+            }
+          }
+        } catch { /* フォールバック失敗は無視 */ }
+      }
+
+      if (myContact && !memberOptions.find((o: { value: string }) => o.value === myContact!.id)) {
         memberOptions.unshift({
           text: { type: 'plain_text' as const, text: `${myContact.name}（自分）` },
           value: myContact.id,
