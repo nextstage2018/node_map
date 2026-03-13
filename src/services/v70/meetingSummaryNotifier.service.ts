@@ -72,7 +72,7 @@ export async function notifyMeetingSummaryToChannels(
     // 1. プロジェクトのチャネル一覧を取得
     const { data: channels } = await supabase
       .from('project_channels')
-      .select('service_name, identifier')
+      .select('service_name, channel_identifier')
       .eq('project_id', params.projectId);
 
     if (!channels || channels.length === 0) {
@@ -85,13 +85,13 @@ export async function notifyMeetingSummaryToChannels(
     const isInternal = relationshipType === 'internal';
 
     // 3. 各チャネルへ投稿
-    for (const channel of channels as ProjectChannel[]) {
+    for (const channel of channels as { service_name: string; channel_identifier: string }[]) {
       try {
         if (channel.service_name === 'slack') {
-          await sendSlackMeetingSummary(params, channel.identifier, isInternal);
+          await sendSlackMeetingSummary(params, channel.channel_identifier, isInternal);
           result.slackSent = true;
         } else if (channel.service_name === 'chatwork') {
-          await sendChatworkMeetingSummary(params, channel.identifier, isInternal);
+          await sendChatworkMeetingSummary(params, channel.channel_identifier, isInternal);
           result.chatworkSent = true;
         }
       } catch (channelError) {
