@@ -70,6 +70,31 @@ interface TokenData {
 }
 
 async function getGoogleToken(userId: string): Promise<TokenData | null> {
+  // REST API直接読み取り（Supabase JSクライアントのキャッシュ問題を回避）
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (supabaseUrl && serviceRoleKey) {
+    try {
+      const url = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail&is_active=eq.true&select=token_data`;
+      const res = await fetch(url, {
+        headers: {
+          'apikey': serviceRoleKey,
+          'Authorization': `Bearer ${serviceRoleKey}`,
+        },
+        cache: 'no-store',
+      });
+      const rows = await res.json().catch(() => []);
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (row?.token_data) {
+        return row.token_data as TokenData;
+      }
+    } catch (err) {
+      console.warn('[Calendar] REST APIトークン読み取りエラー、フォールバック:', err);
+    }
+  }
+
+  // フォールバック: Supabase JSクライアント
   const sb = createServerClient();
   if (!sb) return null;
 
