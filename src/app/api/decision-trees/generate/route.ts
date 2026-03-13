@@ -36,7 +36,12 @@ const CONFIDENCE_MAP = {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getServerUserId();
+    // 通常認証 or 内部呼び出し（Cron/Webhook）の認証バイパス
+    const isInternalCall = request.headers.get('x-webhook-internal') === 'true';
+    let userId = await getServerUserId();
+    if (!userId && isInternalCall) {
+      userId = process.env.ENV_TOKEN_OWNER_ID || '';
+    }
     if (!userId) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }

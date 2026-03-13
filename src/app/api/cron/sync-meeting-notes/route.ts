@@ -390,5 +390,81 @@ async function triggerAnalysisPipeline(
     // 失敗してもブロックしない
   }
 
+  // 検討ツリー生成（topicsがある場合）
+  if (analysisResult.topics.length > 0) {
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : 'https://node-map-eight.vercel.app';
+      const generateUrl = `${baseUrl}/api/decision-trees/generate`;
+
+      const treeRes = await fetch(generateUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-webhook-internal': 'true',
+        },
+        body: JSON.stringify({
+          project_id: projectId,
+          meeting_record_id: recordId,
+          topics: analysisResult.topics,
+          source_type: 'meeting',
+        }),
+      });
+
+      if (treeRes.ok) {
+        console.log(`[SyncMeetingNotes] 検討ツリー生成完了`);
+      } else {
+        console.error(`[SyncMeetingNotes] 検討ツリー生成エラー: ${treeRes.status}`);
+      }
+    } catch (treeError) {
+      console.error(`[SyncMeetingNotes] 検討ツリー生成例外:`, treeError);
+    }
+  }
+
+  // v7.0: チャネル自動投稿
+  try {
+    const { notifyMeetingSummaryToChannels } = await import(
+      '@/services/v70/meetingSummaryNotifier.service'
+    );
+
+    const actionItemsForNotify = analysisResult.action_items.map((item) => ({
+      title: item.title,
+      assignee: item.assignee || '',
+      assigneeContactId: null as string | null,
+      context: item.context || '',
+      due_date: item.due_date || null,
+      priority: item.priority || 'medium' as const,
+    }));
+
+    // 担当者名→contact_idのマッチング
+    for (const item of actionItemsForNotify) {
+      if (item.assignee) {
+        try {
+          const contactId = await matchContactByName(supabase, userId, item.assignee);
+          item.assigneeContactId = contactId;
+        } catch { /* 無視 */ }
+      }
+    }
+
+    const channelResult = await notifyMeetingSummaryToChannels({
+      projectId,
+      meetingTitle: title,
+      meetingDate,
+      meetingRecordId: recordId,
+      summary: analysisResult.summary || '',
+      decisions: analysisResult.new_decisions || [],
+      openIssues: analysisResult.new_open_issues || [],
+      actionItems: actionItemsForNotify,
+      userId,
+    });
+
+    if (channelResult.slackSent || channelResult.chatworkSent) {
+      console.log(`[SyncMeetingNotes] チャネル通知完了: slack=${channelResult.slackSent}, chatwork=${channelResult.chatworkSent}`);
+    }
+  } catch (notifyError) {
+    console.error(`[SyncMeetingNotes] チャネル通知エラー:`, notifyError);
+  }
+
   console.log(`[SyncMeetingNotes] パイプライン完了: record=${recordId}, topics=${analysisResult.topics.length}, actions=${analysisResult.action_items.length}, issues=${analysisResult.new_open_issues.length}, decisions=${analysisResult.new_decisions.length}`);
 }
