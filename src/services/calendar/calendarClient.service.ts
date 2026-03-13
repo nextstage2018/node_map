@@ -120,24 +120,8 @@ async function refreshTokenIfNeeded(userId: string, token: TokenData): Promise<s
 
     const newToken = await res.json();
 
-    // DB更新
-    const sb = createServerClient();
-    if (sb) {
-      await sb
-        .from('user_service_tokens')
-        .update({
-          token_data: {
-            ...token,
-            access_token: newToken.access_token,
-            expiry: newToken.expires_in
-              ? new Date(Date.now() + newToken.expires_in * 1000).toISOString()
-              : token.expiry,
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId)
-        .eq('service_name', 'gmail');
-    }
+    // DB更新（REST API直接 + 最新のスコープを保持）
+    await saveRefreshedToken(userId, newToken.access_token, newToken.expires_in);
 
     return newToken.access_token;
   } catch (error) {
@@ -170,6 +154,58 @@ export async function getValidAccessToken(userId: string): Promise<string | null
     // ネットワークエラー等は既存トークンを返す
   }
   return accessToken;
+}
+
+// ========================================
+// トークンリフレッシュ時のDB保存（スコープ上書き防止）
+// ========================================
+/**
+ * リフレッシュ後のトークンをDBに保存する。
+ * DBから最新のtoken_dataを読み取り、access_tokenとexpiryだけを更新する。
+ * これにより、OAuthコールバックで保存されたスコープ（drive.readonly等）が
+ * リフレッシュ処理で上書きされるのを防ぐ。
+ */
+async function saveRefreshedToken(userId: string, newAccessToken: string, expiresIn?: number): Promise<void> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) return;
+
+  try {
+    // 1. DBから最新のtoken_dataを読み取り
+    const readUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail&select=token_data`;
+    const readRes = await fetch(readUrl, {
+      headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` },
+    });
+    const rows = await readRes.json().catch(() => []);
+    const currentTokenData = Array.isArray(rows) && rows[0] ? rows[0].token_data : null;
+    if (!currentTokenData) return;
+
+    // 2. access_tokenとexpiryだけを更新（scope, refresh_token等は保持）
+    const updatedTokenData = {
+      ...currentTokenData,
+      access_token: newAccessToken,
+      expiry: expiresIn
+        ? new Date(Date.now() + expiresIn * 1000).toISOString()
+        : currentTokenData.expiry,
+    };
+
+    // 3. REST APIで保存
+    const updateUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail`;
+    await fetch(updateUrl, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': serviceRoleKey,
+        'Authorization': `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        token_data: updatedTokenData,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.warn('[Calendar] トークンDB保存エラー（処理続行）:', err);
+  }
 }
 
 // ========================================
@@ -215,24 +251,9 @@ async function forceRefreshToken(userId: string, token: TokenData): Promise<stri
     const newToken = await res.json();
     console.log('[Calendar] 強制リフレッシュ成功 新トークン先頭:', newToken.access_token?.substring(0, 15));
 
-    // Step 3: DB更新
-    const sb = createServerClient();
-    if (sb) {
-      await sb
-        .from('user_service_tokens')
-        .update({
-          token_data: {
-            ...token,
-            access_token: newToken.access_token,
-            expiry: newToken.expires_in
-              ? new Date(Date.now() + newToken.expires_in * 1000).toISOString()
-              : token.expiry,
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId)
-        .eq('service_name', 'gmail');
-    }
+    // Step 3: DB更新（REST API直接 + 最新のスコープを保持）
+    await saveRefreshedToken(userId, newToken.access_token, newToken.expires_in);
+
     return newToken.access_token;
   } catch (error) {
     console.error('[Calendar] 強制リフレッシュエラー:', error);
@@ -673,21 +694,36 @@ export async function isCalendarConnected(userId: string): Promise<boolean> {
       console.log('[Calendar] API呼び出し成功 → カレンダー接続確認済み');
 
       // v3.2改善: 成功時にscopeをDBに保存（次回からAPI呼び出し不要）
+      // 注意: DBから最新のtoken_dataを読み取ってからスコープを追加（他の処理で保存されたスコープを上書きしない）
       try {
-        const sb = createServerClient();
-        if (sb && token.scope !== undefined) {
-          const updatedScope = token.scope
-            ? `${token.scope} https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events`
-            : 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
-          await sb
-            .from('user_service_tokens')
-            .update({
-              token_data: { ...token, scope: updatedScope },
-              updated_at: new Date().toISOString(),
-            })
-            .eq('user_id', userId)
-            .eq('service_name', 'gmail');
-          console.log('[Calendar] scopeをDBに保存しました');
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (supabaseUrl && serviceRoleKey) {
+          const readUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail&select=token_data`;
+          const readRes = await fetch(readUrl, {
+            headers: { 'apikey': serviceRoleKey, 'Authorization': `Bearer ${serviceRoleKey}` },
+          });
+          const rows = await readRes.json().catch(() => []);
+          const currentData = Array.isArray(rows) && rows[0] ? rows[0].token_data : null;
+          if (currentData) {
+            const currentScope = currentData.scope || '';
+            const calScopes = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+            const updatedScope = currentScope.includes('calendar') ? currentScope : `${currentScope} ${calScopes}`.trim();
+            const updateUrl = `${supabaseUrl}/rest/v1/user_service_tokens?user_id=eq.${userId}&service_name=eq.gmail`;
+            await fetch(updateUrl, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': serviceRoleKey,
+                'Authorization': `Bearer ${serviceRoleKey}`,
+              },
+              body: JSON.stringify({
+                token_data: { ...currentData, scope: updatedScope },
+                updated_at: new Date().toISOString(),
+              }),
+            });
+            console.log('[Calendar] scopeをDBに保存しました');
+          }
         }
       } catch (saveErr) {
         console.warn('[Calendar] scope保存エラー（処理続行）:', saveErr);
