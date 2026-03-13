@@ -110,28 +110,35 @@ function splitSections(text: string): GeminiSections {
   };
 
   // セクション見出しパターン（Gemini出力のバリエーション対応）
-  const summaryPattern = /(?:^|\n)(?:まとめ|要約|サマリー|Summary)\s*\n/i;
-  const detailsPattern = /(?:^|\n)(?:詳細|Details|詳細メモ)\s*\n/i;
-  const nextStepsPattern = /(?:^|\n)(?:推奨される次のステップ|次のステップ|アクションアイテム|Next Steps|Action Items)\s*\n/i;
+  // \s*\n で見出し行末を検出（空行が複数ある場合も対応）
+  const summaryPattern = /(?:^|\n)\s*(?:まとめ|要約|サマリー|Summary)\s*\n/i;
+  const detailsPattern = /(?:^|\n)\s*(?:詳細|Details|詳細メモ)\s*\n/i;
+  const nextStepsPattern = /(?:^|\n)\s*(?:推奨される次のステップ|次のステップ|アクションアイテム|Next Steps|Action Items)\s*\n/i;
 
   const summaryMatch = text.match(summaryPattern);
   const detailsMatch = text.match(detailsPattern);
   const nextStepsMatch = text.match(nextStepsPattern);
 
-  // 各セクションの開始位置を特定
-  const positions: { name: keyof GeminiSections; index: number }[] = [];
-  if (summaryMatch?.index !== undefined) positions.push({ name: 'summary', index: summaryMatch.index + summaryMatch[0].length });
-  if (detailsMatch?.index !== undefined) positions.push({ name: 'details', index: detailsMatch.index + detailsMatch[0].length });
-  if (nextStepsMatch?.index !== undefined) positions.push({ name: 'nextSteps', index: nextStepsMatch.index + nextStepsMatch[0].length });
+  // 各セクションの開始位置（見出し行の直後）と見出しの開始位置を特定
+  const positions: { name: keyof GeminiSections; contentStart: number; headingStart: number }[] = [];
+  if (summaryMatch?.index !== undefined) {
+    positions.push({ name: 'summary', contentStart: summaryMatch.index + summaryMatch[0].length, headingStart: summaryMatch.index });
+  }
+  if (detailsMatch?.index !== undefined) {
+    positions.push({ name: 'details', contentStart: detailsMatch.index + detailsMatch[0].length, headingStart: detailsMatch.index });
+  }
+  if (nextStepsMatch?.index !== undefined) {
+    positions.push({ name: 'nextSteps', contentStart: nextStepsMatch.index + nextStepsMatch[0].length, headingStart: nextStepsMatch.index });
+  }
 
   // 位置順にソート
-  positions.sort((a, b) => a.index - b.index);
+  positions.sort((a, b) => a.contentStart - b.contentStart);
 
-  // 各セクションのテキストを抽出
+  // 各セクションのテキストを抽出（次のセクション見出しの開始位置まで）
   for (let i = 0; i < positions.length; i++) {
-    const start = positions[i].index;
+    const start = positions[i].contentStart;
     const end = i + 1 < positions.length
-      ? text.lastIndexOf('\n', positions[i + 1].index - 1)
+      ? positions[i + 1].headingStart
       : text.length;
     sections[positions[i].name] = text.slice(start, end).trim();
   }
@@ -161,7 +168,11 @@ function parseDetails(text: string): {
 
   for (const item of items) {
     // タイムスタンプを除去して本文を取得
-    const cleanText = item.replace(/\(__\d{2}:\d{2}:\d{2}__\)/g, '').trim();
+    // Gemini形式: (00:00:00) or (__00:00:00__) の両方に対応
+    const cleanText = item
+      .replace(/\(\d{2}:\d{2}:\d{2}\)/g, '')
+      .replace(/\(__\d{2}:\d{2}:\d{2}__\)/g, '')
+      .trim();
     if (!cleanText) continue;
 
     // トピックタイトルを抽出（最初の文 or コロン前）
@@ -244,6 +255,15 @@ function parseNextSteps(text: string): ActionItem[] {
       ? assignee.split(',').map(a => a.trim())
       : [assignee];
 
+    // タイトルと詳細を分離（「タスク名: 詳細説明」形式）
+    const titleColonMatch = taskText.match(/^(.+?)[：:]\s*(.+)/s);
+    const taskTitle = titleColonMatch
+      ? titleColonMatch[1].trim().slice(0, 100)
+      : taskText.slice(0, 100);
+    const taskDetail = titleColonMatch
+      ? titleColonMatch[2].trim()
+      : taskText;
+
     // 期限の検出
     const dueDate = extractDueDate(taskText);
 
@@ -253,9 +273,9 @@ function parseNextSteps(text: string): ActionItem[] {
     // 担当者ごとにアクションアイテムを作成
     for (const a of assignees) {
       actionItems.push({
-        title: taskText.replace(/[:：].*$/, '').trim().slice(0, 100) || taskText.slice(0, 100),
+        title: taskTitle,
         assignee: a,
-        context: taskText,
+        context: taskDetail,
         due_date: dueDate,
         priority,
         related_topics: [],
@@ -270,7 +290,18 @@ function parseNextSteps(text: string): ActionItem[] {
 // ---- ユーティリティ ----
 
 function splitBulletItems(text: string): string[] {
-  // * または - で始まる箇条書きを分割
+  // まず箇条書き（* - •）で分割を試みる
+  const bulletItems = splitByBullets(text);
+  if (bulletItems.length > 0) {
+    return bulletItems;
+  }
+
+  // 箇条書きがない場合 → 段落（空行区切り）で分割
+  // Gemini会議メモの「詳細」「推奨される次のステップ」は段落形式が多い
+  return splitByParagraphs(text);
+}
+
+function splitByBullets(text: string): string[] {
   const lines = text.split('\n');
   const items: string[] = [];
   let current = '';
@@ -285,6 +316,22 @@ function splitBulletItems(text: string): string[] {
     }
   }
   if (current) items.push(current);
+
+  return items;
+}
+
+function splitByParagraphs(text: string): string[] {
+  // 空行（\n\n）で段落を分割
+  const paragraphs = text.split(/\n\n+/);
+  const items: string[] = [];
+
+  for (const p of paragraphs) {
+    // 複数行の段落は1行に結合
+    const merged = p.split('\n').map(l => l.trim()).filter(Boolean).join(' ');
+    if (merged.length > 5) {  // 短すぎる断片は除外
+      items.push(merged);
+    }
+  }
 
   return items;
 }
