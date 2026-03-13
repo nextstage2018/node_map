@@ -39,6 +39,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  // Cron内部呼び出し（x-cron-secret ヘッダー付き）はミドルウェア認証をスキップ
+  const cronSecret = request.headers.get('x-cron-secret');
+  if (cronSecret && pathname.startsWith('/api/') && cronSecret === process.env.CRON_SECRET) {
+    return NextResponse.next();
+  }
+
   // Supabase Authのセッショントークンを確認
   let hasToken = false;
   const allCookies = request.cookies.getAll();

@@ -563,9 +563,14 @@ export async function handleProposalApprove(payload: {
 export async function handleProposalEdit(payload: {
   trigger_id: string;
   value: string;  // JSON文字列
+  channel_id: string;
+  message_ts: string;
 }): Promise<{ ok: boolean }> {
   try {
     const proposal = JSON.parse(payload.value);
+    // channel_id/message_tsをprivate_metadataに含める（view_submissionでカード更新に必要）
+    proposal._channel_id = payload.channel_id;
+    proposal._message_ts = payload.message_ts;
     const token = await getSlackBotToken(process.env.ENV_TOKEN_OWNER_ID || '');
     if (!token) return { ok: false };
 
@@ -652,7 +657,7 @@ export async function handleProposalEdit(payload: {
     const view: Record<string, unknown> = {
       type: 'modal',
       callback_id: 'nm_proposal_edit_submit',
-      private_metadata: payload.value,  // 提案情報をそのまま渡す
+      private_metadata: JSON.stringify(proposal),  // channel_id/message_ts含む
       title: { type: 'plain_text', text: 'タスクを編集して承認' },
       submit: { type: 'plain_text', text: '承認する' },
       close: { type: 'plain_text', text: 'キャンセル' },
@@ -782,6 +787,16 @@ export async function handleProposalEditSubmit(payload: {
     if (error) {
       console.error('[MeetingSummaryNotifier] タスク作成エラー:', error);
       return { ok: false };
+    }
+
+    // Slackカードを承認済みに更新
+    const channelId = proposal._channel_id || payload.channel_id;
+    const messageTs = proposal._message_ts || payload.message_ts;
+    if (channelId && messageTs) {
+      const token = await getSlackBotToken(process.env.ENV_TOKEN_OWNER_ID || '');
+      if (token) {
+        await updateSlackProposalCard(token, channelId, messageTs, payload.title, 'approved');
+      }
     }
 
     console.log(`[MeetingSummaryNotifier] 編集タスク承認: ${payload.title}`);

@@ -129,6 +129,8 @@ export async function POST(request: NextRequest) {
           await handleProposalEdit({
             trigger_id: payload.trigger_id,
             value: action.value,
+            channel_id: payload.channel?.id || payload.container?.channel_id || '',
+            message_ts: payload.message?.ts || payload.container?.message_ts || '',
           });
 
           console.log(`[Slack Interactions] タスク提案編集モーダル表示`);
