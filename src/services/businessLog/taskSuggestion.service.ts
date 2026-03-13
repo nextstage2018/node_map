@@ -124,11 +124,12 @@ export async function matchContactByName(
   const cleanName = name.replace(/さん$|様$|氏$/, '').trim();
   if (!cleanName) return null;
 
+  // ⚠️ contact_persons のカラム名は owner_user_id（user_id ではない）
   // 完全一致
   const { data: exact } = await supabase
     .from('contact_persons')
     .select('id')
-    .eq('user_id', userId)
+    .eq('owner_user_id', userId)
     .ilike('name', cleanName)
     .limit(1);
 
@@ -138,11 +139,26 @@ export async function matchContactByName(
   const { data: partial } = await supabase
     .from('contact_persons')
     .select('id, name')
-    .eq('user_id', userId)
+    .eq('owner_user_id', userId)
     .ilike('name', `%${cleanName}%`)
     .limit(1);
 
   if (partial && partial.length > 0) return partial[0].id;
+
+  // linked_user_id での自分自身マッチ（ログインユーザー自身のcontact）
+  const { data: selfContact } = await supabase
+    .from('contact_persons')
+    .select('id, name')
+    .eq('linked_user_id', userId)
+    .limit(1);
+
+  if (selfContact && selfContact.length > 0) {
+    const selfName = selfContact[0].name || '';
+    // 自分の名前と部分一致するか確認
+    if (selfName.includes(cleanName) || cleanName.includes(selfName)) {
+      return selfContact[0].id;
+    }
+  }
 
   return null;
 }
