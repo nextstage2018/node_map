@@ -3,6 +3,7 @@
 // V2-G: milestone_feedbackから自動学習抽出を追加
 // v3.4: open_issues / decision_log コンテキスト注入 + 自動検出・自動クローズ
 // v4.0-Phase5: goal_suggestions（ゴール/MS/タスク階層一括提案）を追加
+// v7.0: パイプライン完了後にチャネル自動投稿（サマリー + 決定事項 + 未確定事項 + タスク提案）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
@@ -551,6 +552,56 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       console.error('[MeetingRecords Analyze] v3.4処理エラー:', v34Error);
     }
 
+    // 10. v7.0: パイプライン完了後にチャネル自動投稿
+    let channelNotified = { slackSent: false, chatworkSent: false };
+    try {
+      const { notifyMeetingSummaryToChannels } = await import(
+        '@/services/v70/meetingSummaryNotifier.service'
+      );
+
+      // action_items に assigneeContactId を含むデータを構築
+      const actionItemsForNotify = analysisResult.action_items.map((item) => {
+        // task_suggestions に保存済みの itemsWithContacts と同等のデータを構築
+        return {
+          title: item.title,
+          assignee: item.assignee || '',
+          assigneeContactId: null as string | null, // 下で解決
+          context: item.context || '',
+          due_date: item.due_date || null,
+          priority: item.priority || 'medium' as const,
+        };
+      });
+
+      // 担当者名→contact_idのマッチング（task_suggestions保存時と同様）
+      for (const item of actionItemsForNotify) {
+        if (item.assignee) {
+          try {
+            const contactId = await matchContactByName(supabase, userId, item.assignee);
+            item.assigneeContactId = contactId;
+          } catch { /* 無視 */ }
+        }
+      }
+
+      channelNotified = await notifyMeetingSummaryToChannels({
+        projectId: record.project_id,
+        meetingTitle: record.title,
+        meetingDate: record.meeting_date,
+        meetingRecordId: id,
+        summary: analysisResult.summary || '',
+        decisions: analysisResult.new_decisions || [],
+        openIssues: analysisResult.new_open_issues || [],
+        actionItems: actionItemsForNotify,
+        userId,
+      });
+
+      if (channelNotified.slackSent || channelNotified.chatworkSent) {
+        console.log(`[MeetingRecords Analyze] v7.0 チャネル通知完了: slack=${channelNotified.slackSent}, chatwork=${channelNotified.chatworkSent}`);
+      }
+    } catch (notifyError) {
+      // チャネル通知失敗してもメインパイプラインはブロックしない
+      console.error('[MeetingRecords Analyze] v7.0 チャネル通知エラー:', notifyError);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -565,6 +616,8 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         decisions_created: decisionsCreated,
         // v4.0-Phase5
         goal_suggestions_count: analysisResult.goal_suggestions?.length || 0,
+        // v7.0
+        channel_notified: channelNotified,
       },
     });
   } catch (error) {

@@ -1,12 +1,20 @@
 // MeetGeek Webhook受信エンドポイント
-// 会議終了 → 全データ取得（メタ・サマリー・トランスクリプト・ハイライト）
-// → 参加者からプロジェクト自動判定 → 議事録登録 → AI解析 → 検討ツリー・ビジネスイベント自動生成
+// ⚠️ v7.0: MeetGeek廃止。Gemini会議メモに一本化。
+// Webhookは即時200を返す（将来復帰の可能性のためコードは残す）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import crypto from 'crypto';
 import * as DriveService from '@/services/drive/driveClient.service';
 
 export const dynamic = 'force-dynamic';
+
+// v7.0: MeetGeek廃止 — 即時200返却
+export async function POST(request: NextRequest) {
+  console.log('[MeetGeek Webhook] v7.0: MeetGeek廃止済み。Webhookを無視して200返却');
+  return NextResponse.json({ ok: true, message: 'MeetGeek integration disabled (v7.0)' });
+}
+
+/* === 以下は将来復帰用にコードを保持（実行されない） === */
 
 const MEETGEEK_API_BASE = 'https://api.meetgeek.ai/v1';
 
@@ -369,9 +377,9 @@ async function resolveProjectId(
   return { projectId: null, matchMethod: 'none' };
 }
 
-// ---- メインハンドラ ----
+// ---- 旧メインハンドラ（v7.0で無効化。復帰時にexport async function POSTに戻す） ----
 
-export async function POST(request: NextRequest) {
+async function _POST_disabled(request: NextRequest) {
   try {
     // 環境変数チェック
     const meetgeekApiKey = process.env.MEETGEEK_API_KEY;
