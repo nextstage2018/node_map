@@ -280,6 +280,7 @@ AI解析の改修イメージ:
 | `decision_log` | 意思決定ログ | UUID | project_id必須。previous_decision_idで変更チェーン。**status CHECK: active/superseded/reverted/on_hold**。implementation_status別管理 |
 | `meeting_agenda` | 会議アジェンダ | UUID | project_id必須。items JSONB配列。**status CHECK: draft/confirmed/completed**。UNIQUE(project_id, meeting_date)。自動生成→確認→完了のライフサイクル |
 | `boss_feedback_learnings` | 上長フィードバック学習 | UUID | project_id必須。会議録AI解析で上長の指摘事項を自動抽出。タスクAI会話に注入して判断基準の差を縮める |
+| `milestone_suggestions` | MS提案 | UUID | v8.0: 会議録AI解析から自動抽出。検討ツリータブで承認/却下。pending/accepted/dismissed |
 
 ---
 
@@ -579,7 +580,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - AI文体学習: `getUserWritingStyle()` で過去送信10件を参照
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
-- **5階層**: Organization > Project > Theme（任意） > Milestone > Task
+- **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task（テーマは廃止）
 - **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務 or やることメモ（PJ配下。SEOレポート・定例MTG等の定期実行に便利）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
@@ -1048,6 +1049,7 @@ v5.0 タスク提案フロー刷新          ← 実装済み
 v6.0 Gemini会議メモ連携           ← 実装済み
 v7.0 会議録チャネル自動共有 + MeetGeek廃止 ← 実装済み
 v7.1 タスクAI強化（画像認識・フィードバック学習・ディープリサーチ提案）← 実装済み
+v8.0 構造再設計（テーマ廃止・MS週次サイクル・定期作業・アジェンダ強化）← Phase 1-2 実装済み
 ```
 
 ---
@@ -1492,3 +1494,167 @@ feedback_type:
 | `src/app/api/tasks/chat/route.ts` | imageData受付 + フィードバック学習コンテキスト注入 |
 | `src/services/ai/aiClient.service.ts` | generateTaskChat()にimageData引数追加 + マルチモーダルメッセージ構築 + ディープリサーチ提案指示 |
 | `src/app/api/meeting-records/[id]/analyze/route.ts` | boss_feedbacksプロンプト追加 + 抽出結果のDB保存ステップ |
+
+---
+
+## v8.0 構造再設計 — テーマ廃止・MS週次サイクル・定期作業・アジェンダ強化（Phase 1-2 実装済み）
+
+### 設計思想
+
+```
+【旧構造（v7.1以前）】
+  Organization > Project > Theme > Milestone > Task  ← 5階層
+  Theme: UIなし（死んでいる）
+  Milestone: 手動作成のみ。タスクと弱い紐づけ
+  Job: タスクとの違いが曖昧。繰り返しCron未実装
+  タスク完了: 即アーカイブ。MS進捗チェックなし
+
+【新構造（v8.0）】
+  Organization > Project > Milestone(任意) > Task  ← 4階層（Themeを廃止）
+  Milestone: 1週間サイクル。会議録から自動提案。internal PJは原則必須
+  定期作業（旧Job）: カレンダー連動。会議・レポート・定例作業を管理
+  タスク完了: MS進捗自動更新。週末に達成度判定
+  会議前アジェンダ: MS進捗・タスク達成度・差異を自動記載
+```
+
+### 3つの変更
+
+#### 変更1: テーマ（Phase）廃止
+
+- `themes` テーブルは残すが新規作成を停止（UIは既に非表示）
+- `milestones.theme_id` は NULL 運用（FK制約は残す）
+- 階層は **Organization > Project > Milestone > Task** の4階層に簡素化
+- CLAUDE.md の「5階層」記述を「4階層」に更新
+
+#### 変更2: マイルストーンの週次サイクル運用
+
+```
+会議フロー（曜日はプロジェクト設定で変更可能）:
+  ① 前週MSの振り返り（達成/未達）← 会議イベントのdescriptionに自動記載
+  ② 今週やることの議論 ← 人間が会議で話す
+  ③ 「今週末にどうなっていたいか」← 人間が言語化
+  ④ 会議録AI解析 → ③の発言からMS提案を自動抽出
+  ⑤ 検討ツリータブでMS提案を確認・承認
+  ⑥ 承認されたMSにタスク提案が紐づく
+  ⑦ タスク完了時 → MS進捗を自動更新
+  ⑧ 週末 → MS達成度判定（評価エージェント）
+  ⑨ 未達タスクは次週MSに自動持ち越し
+
+会議サイクル設定:
+  - projects.meeting_cycle_day: 週次会議の曜日（0=日〜6=土、デフォルト1=月曜）
+  - projects.meeting_cycle_enabled: 週次サイクルの有効/無効（デフォルトtrue）
+  - 曜日はプロジェクト設定タブで変更可能
+  - 特定の曜日にハードコードしない
+
+organization.relationship_type による分岐:
+  internal（自社）: MS原則必須。会議録からMS自動提案
+  client / partner: MS任意。作成しなくてもタスクは動く
+```
+
+**AI解析プロンプトへの追加**:
+- 会議録AI解析で `milestone_suggestions` を新規抽出
+- 「1週間後の理想像」「今週のゴール」「到達点」等の発言を検出
+- 提案形式: `{ title, target_date(1週間後), success_criteria, tasks[] }`
+
+**タスク完了時のMS進捗更新**:
+- タスクを `done` にした時点で、所属MSの進捗率を再計算
+- 全タスク完了 → MSステータスを `achieved` に自動更新
+- 期限超過＋未完了タスクあり → MSステータスを `missed` に自動更新
+
+#### 変更3: ジョブ → 定期作業（ラベル変更 + カレンダー連携強化）
+
+```
+名称変更:
+  旧: ジョブ（Job）
+  新: 定期作業
+
+用途:
+  ① 定期会議: カレンダー登録 + 会議メモ取得対象フラグ
+  ② 定期レポート: カレンダー登録 + 納品資料アップロード
+  ③ 定例作業: カレンダー登録 + リマインド
+
+カレンダー連携:
+  [NM-Meeting] 定期会議名   ← 会議として扱う（空き判定に含む）
+  [NM-Job] 定期作業名       ← 作業として扱う（空き判定に含まない）
+
+定期会議の特別扱い:
+  - Gemini会議メモ取得対象として登録（sync-meeting-notes Cronのフィルタに使用）
+  - 未登録の会議イベントはスキャン対象外にできる
+  - 回数自動カウント（「第N回 〇〇」）
+
+繰り返しルール:
+  - project_recurring_rules テーブルを活用（既存）
+  - Cron: /api/cron/process-recurring-rules を実装
+  - rrule形式（iCal準拠）で柔軟な繰り返し設定
+```
+
+#### 会議前アジェンダの自動生成強化（カレンダーイベントdescription注入）
+
+```
+アジェンダの記載場所:
+  - Google カレンダーの会議イベントの「詳細」（description）フィールドに直接テキストで記載
+  - 会議前日の夜（Cron）までにAIが自動生成・注入
+  - 会議参加者はカレンダーアプリから事前確認可能
+
+現在のアジェンダ内容（v3.4）:
+  - 未確定事項（open_issues）
+  - 決定事項の確認（decision_log）
+  - タスク進捗
+
+v8.0 追加内容:
+  - 【MS進捗セクション】
+    ・現在のMS: タイトル、期限、進捗率（完了タスク/全タスク）
+    ・各タスクの状態: 完了/進行中/未着手 + 担当者
+    ・未達タスクの理由（AI会話から推定）
+    ・前週MSの達成/未達結果
+  - 【定期作業セクション】
+    ・今週の定期作業一覧（完了/未完了）
+    ・納品資料のリンク（アップロード済みの場合）
+
+生成タイミング:
+  - 会議前日の21:00（JST） → Cron実行
+  - Google Calendar API でイベントのdescription を更新
+  - 繰り返し会議イベントの場合、次回インスタンスのみ更新
+```
+
+### 実装フェーズ（優先順）
+
+```
+Phase 1: テーマ廃止 + MS自動提案
+  - UI上のテーマ参照を完全除去
+  - 会議録AI解析に milestone_suggestions 抽出を追加
+  - 検討ツリータブにMS提案パネルを配置
+  - internal PJでは MS提案を強調表示
+
+Phase 2: タスク完了 → MS進捗自動更新
+  - タスクステータス変更時にMS進捗率を再計算
+  - 全タスク完了 → MS自動 achieved
+  - 期限超過 + 未完了 → MS自動 missed
+  - 未達タスクの次週MS持ち越し機能
+
+Phase 3: 定期作業（旧ジョブ）カレンダー連携
+  - UIラベルを「ジョブ」→「定期作業」に変更
+  - カレンダー自動登録（[NM-Meeting] / [NM-Job]）
+  - 繰り返しルールCron実装（/api/cron/process-recurring-rules）
+  - 定期会議 → Gemini会議メモ取得フィルタ連携
+  - 定期レポート → 資料アップロード機能
+
+Phase 4: アジェンダ強化
+  - generate-meeting-agendas CronにMS進捗セクション追加
+  - 定期作業の完了/未完了セクション追加
+  - カレンダー備考への自動注入
+  - 前週MS振り返りの自動記載
+```
+
+### ⚠️ 注意事項
+
+- **テーマテーブルは削除しない**: 既存データの参照整合性のため残す。新規作成のみ停止
+- **internal判定**: `organizations.relationship_type = 'internal'` で判定。プロジェクト単位ではなく組織単位
+- **MS提案の承認フロー**: 会議録のタスク提案と同様、検討ツリータブで確認・承認
+- **繰り返しルールのrrule**: iCal RRULE形式。`FREQ=WEEKLY;BYDAY=MO`（毎週月曜）等
+- **カレンダー備考の文字数制限**: Google Calendar descriptionは最大8192文字。アジェンダが超えないよう制御
+- **会議サイクルはハードコードしない**: 月曜固定ではなく `projects.meeting_cycle_day` で曜日を設定可能（デフォルト1=月曜）
+- **アジェンダはカレンダーイベントのdescription**: 別ドキュメントではなくGoogle Calendar APIで会議イベントの詳細欄に直接記載
+- **⚠️ projects テーブル追加カラム**: `meeting_cycle_day` (INTEGER DEFAULT 1) + `meeting_cycle_enabled` (BOOLEAN DEFAULT true)
+- **⚠️ milestones テーブル追加カラム**: `source_meeting_record_id` (UUID REFERENCES meeting_records) + `auto_generated` (BOOLEAN DEFAULT false)
+- **⚠️ milestone_suggestions テーブル新設**: task_suggestionsと同様の構造。pending/accepted/dismissed のステータス管理

@@ -28,6 +28,7 @@ import ProjectMembers from '@/components/project/ProjectMembers';
 // ProjectChannels は ProjectMembers に統合済み（v3.3）
 import ProjectResources from '@/components/project/ProjectResources';
 import RecurringRulesManager from '@/components/v42/RecurringRulesManager';
+import MilestoneProposalPanel from '@/components/v8/MilestoneProposalPanel';
 import { PROJECT_STATUS_LABELS } from '@/components/business-log/types';
 
 // ========================================
@@ -625,7 +626,15 @@ export default function OrganizationDetailPage() {
                     }}
                   />
 
-                  {/* v7.0: タスク提案はSlackチャネル通知に移行。パネル廃止 */}
+                  {/* v8.0: マイルストーン提案パネル */}
+                  <MilestoneProposalPanel
+                    projectId={currentProject.id}
+                    refreshKey={taskProposalRefreshKey}
+                    onAccepted={() => {
+                      // MS承認後にタスクタブも更新
+                      setTreeRefreshKey(prev => prev + 1);
+                    }}
+                  />
                 </div>
               )}
 

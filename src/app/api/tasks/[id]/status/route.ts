@@ -37,7 +37,7 @@ export async function PATCH(
         // タスク情報を取得
         const { data: task } = await supabase
           .from('tasks')
-          .select('id, title, project_id, calendar_event_id, source_type, source_message_id')
+          .select('id, title, project_id, milestone_id, calendar_event_id, source_type, source_message_id')
           .eq('id', taskId)
           .single();
 
@@ -58,6 +58,16 @@ export async function PATCH(
             await deleteCalendarEvent(task.calendar_event_id, userId);
           } catch (e) {
             console.error('[Status API] カレンダー削除エラー:', e);
+          }
+        }
+
+        // v8.0: マイルストーン進捗自動更新
+        if (task.milestone_id) {
+          try {
+            const { updateMilestoneProgress } = await import('@/services/v8/milestoneProgress.service');
+            await updateMilestoneProgress(taskId, task.milestone_id);
+          } catch (e) {
+            console.error('[Status API] v8.0 MS進捗更新エラー:', e);
           }
         }
 

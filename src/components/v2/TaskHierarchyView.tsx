@@ -1,11 +1,9 @@
-// V2-C: テーマ→マイルストーン→タスクの3階層表示（親コンポーネント）
+// v8.0: マイルストーン→タスクの2階層表示（テーマ廃止）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, FolderOpen, Flag } from 'lucide-react';
-import ThemeSection from './ThemeSection';
 import MilestoneSection from './MilestoneSection';
-import ThemeForm from './ThemeForm';
 import MilestoneForm from './MilestoneForm';
 
 // ========================================
@@ -33,13 +31,8 @@ interface Milestone {
   theme_id: string | null;
   task_count: number;
   completed_task_count: number;
-}
-
-interface Theme {
-  id: string;
-  title: string;
-  description: string | null;
-  status: string;
+  auto_generated?: boolean;
+  source_meeting_record_id?: string | null;
 }
 
 interface TaskHierarchyViewProps {
@@ -120,17 +113,13 @@ function InlineTaskForm({
 // メインコンポーネント
 // ========================================
 export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps) {
-  const [themes, setThemes] = useState<Theme[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // モーダル状態
-  const [showThemeForm, setShowThemeForm] = useState(false);
-  const [editingTheme, setEditingTheme] = useState<Theme | null>(null);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
-  const [milestoneThemeId, setMilestoneThemeId] = useState<string | null>(null);
 
   // インラインタスク作成
   const [addingTaskForMilestone, setAddingTaskForMilestone] = useState<string | null>(null);
@@ -143,17 +132,14 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   const fetchAll = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [themesRes, milestonesRes, tasksRes] = await Promise.all([
-        fetch(`/api/themes?project_id=${projectId}`),
+      const [milestonesRes, tasksRes] = await Promise.all([
         fetch(`/api/milestones?project_id=${projectId}`),
         fetch(`/api/tasks?project_id=${projectId}`),
       ]);
-      const [themesData, milestonesData, tasksData] = await Promise.all([
-        themesRes.json(),
+      const [milestonesData, tasksData] = await Promise.all([
         milestonesRes.json(),
         tasksRes.json(),
       ]);
-      if (themesData.success) setThemes(themesData.data || []);
       if (milestonesData.success) setMilestones(milestonesData.data || []);
       if (tasksData.success) setTasks(tasksData.data || []);
     } catch { /* ignore */ }
@@ -163,52 +149,6 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
-
-  // ========================================
-  // テーマ操作
-  // ========================================
-  const handleCreateTheme = async (data: { title: string; description: string }) => {
-    setIsSubmitting(true);
-    try {
-      const res = await fetch('/api/themes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project_id: projectId, title: data.title, description: data.description }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        setShowThemeForm(false);
-        fetchAll();
-      }
-    } catch { /* ignore */ }
-    finally { setIsSubmitting(false); }
-  };
-
-  const handleUpdateTheme = async (data: { title: string; description: string; status?: string }) => {
-    if (!editingTheme) return;
-    setIsSubmitting(true);
-    try {
-      const res = await fetch(`/api/themes/${editingTheme.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const result = await res.json();
-      if (result.success) {
-        setEditingTheme(null);
-        fetchAll();
-      }
-    } catch { /* ignore */ }
-    finally { setIsSubmitting(false); }
-  };
-
-  const handleDeleteTheme = async (themeId: string) => {
-    try {
-      const res = await fetch(`/api/themes/${themeId}`, { method: 'DELETE' });
-      const result = await res.json();
-      if (result.success) fetchAll();
-    } catch { /* ignore */ }
-  };
 
   // ========================================
   // マイルストーン操作
@@ -226,7 +166,6 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: projectId,
-          theme_id: milestoneThemeId,
           title: data.title,
           description: data.description,
           start_context: data.start_context,
@@ -236,7 +175,6 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
       const result = await res.json();
       if (result.success) {
         setShowMilestoneForm(false);
-        setMilestoneThemeId(null);
         fetchAll();
       }
     } catch { /* ignore */ }
@@ -285,13 +223,6 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   // データ分類
   // ========================================
-  // テーマ付きマイルストーン
-  const themedMilestones = (themeId: string) =>
-    milestones.filter((ms) => ms.theme_id === themeId);
-
-  // テーマなしマイルストーン
-  const unthemedMilestones = milestones.filter((ms) => !ms.theme_id);
-
   // マイルストーンなしタスク（orphan）
   const orphanTasks = tasks.filter((t) => !t.milestone_id);
 
@@ -312,28 +243,28 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   // 空状態
   // ========================================
-  if (themes.length === 0 && milestones.length === 0 && tasks.length === 0) {
+  if (milestones.length === 0 && tasks.length === 0) {
     return (
       <div className="py-6">
         <div className="flex items-center justify-center h-32 text-slate-400">
           <div className="text-center">
             <FolderOpen className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-            <p className="text-xs mb-3">テーマ・マイルストーンがありません</p>
+            <p className="text-xs mb-3">マイルストーン・タスクがありません</p>
             <button
-              onClick={() => setShowThemeForm(true)}
+              onClick={() => setShowMilestoneForm(true)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
-              テーマを追加
+              マイルストーンを追加
             </button>
           </div>
         </div>
 
-        {/* テーマ作成モーダル */}
-        <ThemeForm
-          isOpen={showThemeForm}
-          onClose={() => setShowThemeForm(false)}
-          onSubmit={handleCreateTheme}
+        {/* マイルストーン作成モーダル */}
+        <MilestoneForm
+          isOpen={showMilestoneForm}
+          onClose={() => setShowMilestoneForm(false)}
+          onSubmit={handleCreateMilestone}
           isLoading={isSubmitting}
         />
       </div>
@@ -345,96 +276,60 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
   // ========================================
   return (
     <div className="py-2 space-y-3">
-      {/* テーマ追加ボタン */}
+      {/* マイルストーン追加ボタン */}
       <div className="flex justify-end">
         <button
-          onClick={() => setShowThemeForm(true)}
+          onClick={() => setShowMilestoneForm(true)}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
         >
           <Plus className="w-3.5 h-3.5" />
-          テーマ追加
+          マイルストーン追加
         </button>
       </div>
 
-      {/* テーマ付きセクション */}
-      {themes.map((theme) => (
-        <ThemeSection
-          key={theme.id}
-          theme={theme}
-          milestones={themedMilestones(theme.id)}
-          tasks={tasks.filter((t) => {
-            const themeMsIds = themedMilestones(theme.id).map((ms) => ms.id);
-            return t.milestone_id && themeMsIds.includes(t.milestone_id);
-          })}
-          onEditTheme={() => setEditingTheme(theme)}
-          onDeleteTheme={() => handleDeleteTheme(theme.id)}
-          onAddMilestone={() => {
-            setMilestoneThemeId(theme.id);
-            setShowMilestoneForm(true);
-          }}
-          onEditMilestone={(ms) => setEditingMilestone(ms)}
-          onDeleteMilestone={handleDeleteMilestone}
-          onAddTask={(msId) => setAddingTaskForMilestone(msId)}
-          onTaskClick={handleTaskClick}
-        />
-      ))}
-
-      {/* テーマなしセクション */}
-      {(unthemedMilestones.length > 0 || orphanTasks.length > 0) && (
-        <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
-          <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50">
-            <Flag className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-medium text-slate-500">テーマなし</span>
-          </div>
-          <div className="px-3 py-2 space-y-1">
-            {unthemedMilestones.map((ms) => {
-              const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
-              return (
-                <MilestoneSection
-                  key={ms.id}
-                  milestone={ms}
-                  tasks={msTasks}
-                  onEdit={() => setEditingMilestone(ms)}
-                  onDelete={() => handleDeleteMilestone(ms.id)}
-                  onAddTask={() => setAddingTaskForMilestone(ms.id)}
-                  onTaskClick={handleTaskClick}
-                />
-              );
-            })}
-
-            {/* マイルストーン未紐づけタスク */}
-            {orphanTasks.length > 0 && (
-              <div className="ml-4 pl-3 border-l-2 border-dashed border-slate-200">
-                <p className="text-[10px] text-slate-400 py-1">マイルストーン未設定のタスク</p>
-                {orphanTasks.map((task) => (
-                  <button
-                    key={task.id}
-                    onClick={() => handleTaskClick(task.id)}
-                    className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-white border border-slate-100 rounded-md hover:bg-slate-50 transition-colors text-left mb-1"
-                  >
-                    <div className={`w-3.5 h-3.5 rounded border ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-slate-300'}`} />
-                    <span className={`flex-1 text-xs truncate ${task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                      {task.title}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* テーマなしマイルストーン追加 */}
-            <button
-              onClick={() => {
-                setMilestoneThemeId(null);
-                setShowMilestoneForm(true);
-              }}
-              className="flex items-center gap-1.5 ml-4 px-2.5 py-1.5 text-[10px] text-slate-400 hover:text-blue-600 transition-colors"
-            >
-              <Plus className="w-3 h-3" />
-              マイルストーン追加
-            </button>
-          </div>
+      {/* マイルストーン一覧 */}
+      <div className="border border-slate-200 rounded-lg bg-white overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-slate-50">
+          <Flag className="w-4 h-4 text-blue-500" />
+          <span className="text-xs font-medium text-slate-600">マイルストーン</span>
+          <span className="text-[10px] text-slate-400 ml-auto">{milestones.length}件</span>
         </div>
-      )}
+        <div className="px-3 py-2 space-y-1">
+          {milestones.map((ms) => {
+            const msTasks = tasks.filter((t) => t.milestone_id === ms.id);
+            return (
+              <MilestoneSection
+                key={ms.id}
+                milestone={ms}
+                tasks={msTasks}
+                onEdit={() => setEditingMilestone(ms)}
+                onDelete={() => handleDeleteMilestone(ms.id)}
+                onAddTask={() => setAddingTaskForMilestone(ms.id)}
+                onTaskClick={handleTaskClick}
+              />
+            );
+          })}
+
+          {/* マイルストーン未紐づけタスク */}
+          {orphanTasks.length > 0 && (
+            <div className="ml-4 pl-3 border-l-2 border-dashed border-slate-200">
+              <p className="text-[10px] text-slate-400 py-1">マイルストーン未設定のタスク</p>
+              {orphanTasks.map((task) => (
+                <button
+                  key={task.id}
+                  onClick={() => handleTaskClick(task.id)}
+                  className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-white border border-slate-100 rounded-md hover:bg-slate-50 transition-colors text-left mb-1"
+                >
+                  <div className={`w-3.5 h-3.5 rounded border ${task.status === 'done' ? 'bg-green-500 border-green-500' : 'border-slate-300'}`} />
+                  <span className={`flex-1 text-xs truncate ${task.status === 'done' ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
+                    {task.title}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* インラインタスク作成 */}
       {addingTaskForMilestone && (
@@ -449,23 +344,10 @@ export default function TaskHierarchyView({ projectId }: TaskHierarchyViewProps)
         />
       )}
 
-      {/* テーマ作成/編集モーダル */}
-      <ThemeForm
-        isOpen={showThemeForm || !!editingTheme}
-        onClose={() => { setShowThemeForm(false); setEditingTheme(null); }}
-        onSubmit={editingTheme ? handleUpdateTheme : handleCreateTheme}
-        initialData={editingTheme ? {
-          title: editingTheme.title,
-          description: editingTheme.description || '',
-          status: editingTheme.status,
-        } : undefined}
-        isLoading={isSubmitting}
-      />
-
       {/* マイルストーン作成/編集モーダル */}
       <MilestoneForm
         isOpen={showMilestoneForm || !!editingMilestone}
-        onClose={() => { setShowMilestoneForm(false); setEditingMilestone(null); setMilestoneThemeId(null); }}
+        onClose={() => { setShowMilestoneForm(false); setEditingMilestone(null); }}
         onSubmit={editingMilestone ? handleUpdateMilestone : handleCreateMilestone}
         initialData={editingMilestone ? {
           title: editingMilestone.title,

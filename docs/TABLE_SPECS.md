@@ -251,6 +251,8 @@ CREATE TABLE projects (
   end_date DATE,
   drive_folder_id TEXT,
   color TEXT,
+  meeting_cycle_day INTEGER DEFAULT 1,       -- v8.0: 週次会議曜日（0=日〜6=土、デフォルト1=月曜）
+  meeting_cycle_enabled BOOLEAN DEFAULT true, -- v8.0: 週次サイクル有効/無効
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -372,11 +374,11 @@ CREATE INDEX IF NOT EXISTS idx_themes_project ON themes(project_id);
 #### 注意事項
 
 - **任意レイヤー**: テーマは省略可能。マイルストーンの theme_id は NULL 許容
-- **5階層**: Organization > Project > Theme（任意） > Milestone > Task
+- **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task
 
 ### milestones（マイルストーン）
 
-**目的**: プロジェクトの中間目標。1週間サイクルで設計
+**目的**: プロジェクトの中間目標。1週間サイクルで設計。会議録AI解析から自動提案
 
 #### CREATE TABLE
 
@@ -384,7 +386,7 @@ CREATE INDEX IF NOT EXISTS idx_themes_project ON themes(project_id);
 CREATE TABLE IF NOT EXISTS milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
+  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,  -- v8.0: NULL運用（テーマ廃止）
   title TEXT NOT NULL,
   description TEXT,
   start_context TEXT,
@@ -392,6 +394,8 @@ CREATE TABLE IF NOT EXISTS milestones (
   achieved_date DATE,
   status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'achieved', 'missed')),
   sort_order INT DEFAULT 0,
+  source_meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,  -- v8.0: 自動提案元の会議録ID
+  auto_generated BOOLEAN DEFAULT false,  -- v8.0: AI自動提案から作成されたか
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );
@@ -402,13 +406,55 @@ CREATE TABLE IF NOT EXISTS milestones (
 ```sql
 CREATE INDEX IF NOT EXISTS idx_milestones_project ON milestones(project_id);
 CREATE INDEX IF NOT EXISTS idx_milestones_theme ON milestones(theme_id);
+CREATE INDEX IF NOT EXISTS idx_milestones_source_meeting ON milestones(source_meeting_record_id);
 ```
 
 #### 注意事項
 
 - **status CHECK制約**: `'pending'`, `'in_progress'`, `'achieved'`, `'missed'` の4つのみ
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
-- **theme_id**: NULL許容。テーマ未設定のマイルストーンも可
+- **theme_id**: v8.0でテーマ廃止。NULL運用（FK制約は残す、既存データ保護）
+- **source_meeting_record_id**: 会議録AI解析からの自動提案時に元の会議録IDを記録
+- **auto_generated**: trueの場合はAI自動提案から承認されたMS
+
+### milestone_suggestions（MS提案）
+
+**目的**: 会議録AI解析から自動抽出されたマイルストーン提案。検討ツリータブで承認/却下
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE IF NOT EXISTS milestone_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  success_criteria TEXT,
+  target_date DATE,
+  priority TEXT DEFAULT 'medium' CHECK (priority IN ('high', 'medium', 'low')),
+  related_task_titles JSONB DEFAULT '[]'::jsonb,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'dismissed')),
+  accepted_milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_ms_suggestions_project ON milestone_suggestions(project_id);
+CREATE INDEX IF NOT EXISTS idx_ms_suggestions_status ON milestone_suggestions(status);
+CREATE INDEX IF NOT EXISTS idx_ms_suggestions_meeting ON milestone_suggestions(meeting_record_id);
+```
+
+#### 注意事項
+
+- **task_suggestionsと同様の承認フロー**: pending → accepted（承認）/ dismissed（却下）
+- **accepted_milestone_id**: 承認後に作成されたマイルストーンのIDを記録
+- **related_task_titles**: 会議録AI解析で抽出された関連タスク名のJSONB配列
+- **success_criteria**: 「どうなっていれば達成か」のテキスト
 
 ---
 

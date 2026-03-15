@@ -266,6 +266,19 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // v8.0: タスク完了時にマイルストーン進捗を自動更新
+    if (body.status === 'done' && task.milestoneId) {
+      try {
+        const { updateMilestoneProgress } = await import('@/services/v8/milestoneProgress.service');
+        const msResult = await updateMilestoneProgress(body.id, task.milestoneId);
+        if (msResult.updated) {
+          console.log(`[Tasks API] v8.0 MS進捗更新: ${task.milestoneId} → ${msResult.status} (${Math.round((msResult.progress || 0) * 100)}%)`);
+        }
+      } catch (msErr) {
+        console.error('[Tasks API] v8.0 MS進捗更新エラー（タスク完了は成功）:', msErr);
+      }
+    }
+
     // v4.0 Phase 6: タスク完了時にSlack/Chatworkへ通知
     if (body.status === 'done') {
       try {

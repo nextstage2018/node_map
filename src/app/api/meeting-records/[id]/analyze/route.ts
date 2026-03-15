@@ -61,6 +61,16 @@ interface GoalSuggestion {
   milestones: GoalSuggestionMilestone[];
 }
 
+// v8.0: マイルストーン提案の型定義
+interface MilestoneSuggestion {
+  title: string;
+  description: string;
+  success_criteria: string;
+  target_date: string | null;
+  priority: 'high' | 'medium' | 'low';
+  related_tasks: string[];
+}
+
 interface AnalysisResult {
   summary: string;
   topics: AnalysisTopic[];
@@ -74,6 +84,8 @@ interface AnalysisResult {
   goal_suggestions: GoalSuggestion[];
   // v7.1: ボスフィードバック学習
   boss_feedbacks?: BossFeedback[];
+  // v8.0: マイルストーン提案
+  milestone_suggestions?: MilestoneSuggestion[];
 }
 
 interface BossFeedback {
@@ -268,6 +280,16 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
       ]
     }
   ],
+  "milestone_suggestions": [
+    {
+      "title": "1週間後に達成したい状態（短く明確に）",
+      "description": "このマイルストーンの目的・概要",
+      "success_criteria": "何をもって達成とするか（具体的な条件）",
+      "target_date": "YYYY-MM-DD（会議日の約1週間後）",
+      "priority": "high または medium または low",
+      "related_tasks": ["関連するタスク名（action_itemsのtitleと対応）"]
+    }
+  ],
   "boss_feedbacks": [
     {
       "feedback_type": "correction | direction | priority | perspective",
@@ -306,6 +328,16 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
 - 担当者が特定できる場合は必ず設定。「○○さんお願い」「○○が対応」等の発言を見逃さない
 - 曖昧な内容（「検討する」「考えておく」）はaction_itemsに含めない
 - 明らかに独立したテーマのタスクは分けてOK
+
+## milestone_suggestionsのルール（v8.0: 週次マイルストーン提案）
+milestone_suggestionsは「今週末にどうなっていたいか」を定めるマイルストーンの提案です:
+- 「今週のゴール」「今週末までに」「来週の会議までに」「ここまで終わらせたい」「到達点」等の発言を検出
+- titleは「1週間後に達成していたい状態」を短く表現（例: 「企画書のドラフト完成」「クライアントへの初回提案完了」）
+- success_criteriaは「何をもって達成か」を具体的に記載
+- target_dateは会議日の約1週間後（日付が読み取れない場合は会議日+7日を設定）
+- related_tasksはaction_itemsのtitleと対応させる（そのMSに紐づくタスク）
+- 会議でゴールや到達点の話が出なければ空配列を返す
+- 1回の会議で1-3個程度が適切（多すぎる場合は統合する）
 
 ## その他の注意
 - new_open_issues: 議論したが結論が出なかった事項。既存の未確定事項と同じ内容は含めない
@@ -363,6 +395,7 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
           new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
           goal_suggestions: Array.isArray(parsed.goal_suggestions) ? parsed.goal_suggestions : [],
           boss_feedbacks: Array.isArray(parsed.boss_feedbacks) ? parsed.boss_feedbacks : [],
+          milestone_suggestions: Array.isArray(parsed.milestone_suggestions) ? parsed.milestone_suggestions : [],
         } as AnalysisResult;
       } catch (aiError) {
         console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
@@ -573,13 +606,40 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
     try {
       if (analysisResult.boss_feedbacks && analysisResult.boss_feedbacks.length > 0) {
         const { saveBossFeedbacks } = await import('@/services/v71/bossFeedbackLearning.service');
-        const fbCount = await saveBossFeedbacks(projectId, id, analysisResult.boss_feedbacks);
+        const fbCount = await saveBossFeedbacks(record.project_id, id, analysisResult.boss_feedbacks);
         if (fbCount > 0) {
           console.log(`[MeetingRecords Analyze] v7.1 boss_feedback_learnings: ${fbCount}件保存`);
         }
       }
     } catch (fbError) {
       console.error('[MeetingRecords Analyze] v7.1 フィードバック保存エラー:', fbError);
+    }
+
+    // 9.6 v8.0: milestone_suggestions 保存
+    let milestoneSuggestionsSaved = 0;
+    try {
+      if (analysisResult.milestone_suggestions && analysisResult.milestone_suggestions.length > 0) {
+        for (const ms of analysisResult.milestone_suggestions) {
+          if (!ms.title) continue;
+          const { error: msError } = await supabase.from('milestone_suggestions').insert({
+            project_id: record.project_id,
+            meeting_record_id: id,
+            title: ms.title,
+            description: ms.description || '',
+            success_criteria: ms.success_criteria || '',
+            target_date: ms.target_date || null,
+            priority: ms.priority || 'medium',
+            related_task_titles: Array.isArray(ms.related_tasks) ? ms.related_tasks : [],
+            status: 'pending',
+          });
+          if (!msError) milestoneSuggestionsSaved++;
+        }
+        if (milestoneSuggestionsSaved > 0) {
+          console.log(`[MeetingRecords Analyze] v8.0 milestone_suggestions: ${milestoneSuggestionsSaved}件保存`);
+        }
+      }
+    } catch (msError) {
+      console.error('[MeetingRecords Analyze] v8.0 マイルストーン提案保存エラー:', msError);
     }
 
     // 10. v7.0: パイプライン完了後にチャネル自動投稿
@@ -725,6 +785,8 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
         // v7.0
         channel_notified: channelNotified,
         tree_generated: treeResult,
+        // v8.0
+        milestone_suggestions_saved: milestoneSuggestionsSaved,
       },
     });
   } catch (error) {
