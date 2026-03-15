@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-12（v4.5 外部タスク双方向同期 — tasks に external_task_id / slack_message_ts / external_sync_status 追加）
+最終更新: 2026-03-16（task_conversations に user_id カラム追加確認、タスク詳細API修正）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -554,6 +554,9 @@ CREATE INDEX idx_task_conversations_turn_id ON task_conversations(turn_id);
 - phase: 'ideation'/'progress'/'result'
 - turn_id: Phase 42f で会話ターン追跡用
 - タスク完了時に business_events にアーカイブ→ task_conversations 削除
+- **user_id は NOT NULL**: `addConversation()` で必ず渡す。省略不可。DBに存在しなかった場合は `ALTER TABLE task_conversations ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT 'system';` を実行
+- **id は省略**: UUID自動生成。TEXT型の手動IDを入れるとエラー
+- **conversation_tag カラムは存在しない**: SELECT/INSERT で使用しないこと
 
 ---
 

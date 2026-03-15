@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-15
+最終更新: 2026-03-16
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
 > V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 実装済み。作業開始前に必ず読んでください。
@@ -71,6 +71,11 @@
 - **⚠️ Google OAuthトークンリフレッシュ時のスコープ保持**: リフレッシュ後のDB保存では `{...token, access_token: newToken}` のスプレッドは禁止。OAuthコールバックで保存したスコープ（`drive.readonly`等）が消える。必ず `saveRefreshedToken()` を使い、DBから最新データを読み取ってから `access_token` と `expiry` だけを更新すること
 - **⚠️ Google Docs API**: Cloud Consoleで有効化が必要（OAuth スコープだけでは不十分）。プロジェクト番号: 849962099484。URL: `https://console.developers.google.com/apis/api/docs.googleapis.com/overview?project=849962099484`
 - **⚠️ OAuth コールバック（`/api/auth/gmail/callback`）**: 現在HTML結果ページを表示する実装。デバッグ完了後もこのまま維持（保存成功/失敗が一目でわかるため有用）
+- **⚠️ task_conversations.user_id**: DBに `user_id TEXT NOT NULL DEFAULT 'system'` カラムが必要。TABLE_SPECS.mdには記載済みだがマイグレーション未実行だった。`addConversation()` は必ず `userId` を第3引数で渡すこと
+- **⚠️ task_conversations のINSERT**: `id` は省略（UUID自動生成）。`conversation_tag` カラムは存在しない。`user_id` は NOT NULL
+- **⚠️ TaskChatView.tsx の入力**: Enter送信は無効（IME誤送信防止）。送信はボタンクリックのみ。テキストエリアは `scrollHeight` ベースで自動伸長（最大120px）
+- **⚠️ TaskDetailPanel.tsx の関連資料**: URL入力に加えファイルアップロード対応（Base64変換 → `/api/drive/documents`）。組織情報（organization_id/organization_name）をdetail APIから取得して送信
+- **⚠️ tasks/chat AI会話にdecision_log注入**: プロジェクトの直近10件のactive/on_hold決定事項をAIプロンプトに自動注入
 
 ---
 
