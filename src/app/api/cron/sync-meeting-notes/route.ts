@@ -40,10 +40,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'ENV_TOKEN_OWNER_ID未設定のためスキップ' });
     }
 
-    // 過去48時間 + 未来1時間のイベントを取得
-    // Gemini会議メモが添付されるまでタイムラグがあるため、余裕を持たせる
+    // 過去の取得範囲: URLパラメータ hours で上書き可能（デフォルト48時間）
+    // テスト用: ?hours=96 で過去4日分を取得
+    const hoursParam = request.nextUrl.searchParams.get('hours');
+    const lookbackHours = hoursParam ? parseInt(hoursParam, 10) : 48;
     const now = new Date();
-    const timeMin = new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString();
+    const timeMin = new Date(now.getTime() - lookbackHours * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString();
 
     const events = await getEvents(ownerId, timeMin, timeMax, 'primary', 50);
