@@ -437,7 +437,8 @@ export async function generateTaskChat(
   userMessage: string,
   phase: TaskPhase,
   conversationHistory: AiConversationMessage[],
-  projectContext?: TaskChatContext
+  projectContext?: TaskChatContext,
+  imageData?: { base64: string; mimeType: string }
 ): Promise<TaskAiChatResponse> {
   const apiKey = getApiKey();
 
@@ -567,18 +568,44 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
       // 取得失敗時は無視
     }
 
+    // v7.1: ディープリサーチ提案指示
+    const deepResearchInstruction = `
+
+## 外部AIディープリサーチの提案（重要）
+以下のような場合、ユーザーにClaude（ディープリサーチ）やGeminiなどの外部AIツールの利用を提案してください:
+- 市場調査・競合分析・業界動向の把握が必要な場合
+- 技術選定・ツール比較で多数の選択肢を評価する場合
+- 法規制・コンプライアンス・専門領域の深い調査が必要な場合
+- 大量のデータや文献を横断的に分析する必要がある場合
+- あなた（タスクAI）の知識だけでは不十分と判断した場合
+
+提案する際は:
+1. 「この調査はディープリサーチが効果的です」と明示
+2. 外部AIに投げるプロンプト案を【リサーチプロンプト案】として提示
+3. 結果をこのチャットに貼り付けてもらうよう案内（「結果をここに貼ってもらえれば、一緒に分析します」）
+4. プロンプト案は具体的に: 背景・目的・期待する出力形式を含める`;
+
+
     // Phase E: 外部資料コンテキスト注入
     const externalResourcesStr = projectContext?.externalResourcesContext || '';
 
-    const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}\n\n${contextParts.join('\n')}${projectContextStr}${externalResourcesStr}${personalizedStr}`;
+    const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}${deepResearchInstruction}\n\n${contextParts.join('\n')}${projectContextStr}${externalResourcesStr}${personalizedStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
+    // 最後のユーザーメッセージは画像付きの場合マルチモーダルコンテンツにする
+    const lastUserContent: any = imageData
+      ? [
+          { type: 'image', source: { type: 'base64', media_type: imageData.mimeType, data: imageData.base64 } },
+          { type: 'text', text: userMessage },
+        ]
+      : userMessage;
+
     const messages = [
       ...conversationHistory.slice(-20).map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
-      { role: 'user' as const, content: userMessage },
+      { role: 'user' as const, content: lastUserContent },
     ];
 
     const response = await client.messages.create({

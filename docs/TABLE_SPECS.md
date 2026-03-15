@@ -2037,6 +2037,45 @@ CREATE INDEX idx_recurring_rules_enabled ON project_recurring_rules(enabled) WHE
 
 ---
 
+### boss_feedback_learnings（上長フィードバック学習）[v7.1]
+
+**目的**: 会議での上長指摘事項を蓄積し、タスクAI会話の精度を向上させる
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE boss_feedback_learnings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  meeting_record_id UUID REFERENCES meeting_records(id) ON DELETE SET NULL,
+  task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+  feedback_type TEXT NOT NULL CHECK (feedback_type IN ('correction', 'direction', 'priority', 'perspective')),
+  original_approach TEXT,
+  boss_feedback TEXT NOT NULL,
+  learning_point TEXT NOT NULL,
+  context TEXT,
+  applied_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_boss_feedback_project ON boss_feedback_learnings(project_id);
+CREATE INDEX idx_boss_feedback_created ON boss_feedback_learnings(created_at DESC);
+```
+
+#### 注意事項
+
+- **feedback_type**: correction=方向修正、direction=指示方針、priority=優先順位、perspective=視点補正
+- **learning_point**: AIがアドバイスする際に同じ判断をするための指針（1文）
+- **applied_count**: タスクAI会話でこの学習が参照された回数（自動インクリメント）
+- **自動抽出**: 会議録AI解析（analyze API）のステップ9.5で boss_feedbacks を抽出・保存
+- **自動注入**: タスクAI会話（tasks/chat）でプロジェクト直近15件の learning_point をプロンプトに注入
+
+---
+
 ## 🔑 テーブル間の主要な関係性（ER図）
 
 ```

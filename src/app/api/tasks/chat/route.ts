@@ -17,7 +17,8 @@ export async function POST(request: NextRequest) {
   try {
     // Phase 22: 認証ユーザーIDを使用
     const userId = await getServerUserId();
-    const body: TaskAiChatRequest = await request.json();
+    const body = await request.json();
+    const imageData = body.image as { base64: string; mimeType: string } | undefined;
 
     if (!body.taskId || !body.message || !body.phase) {
       return NextResponse.json(
@@ -139,6 +140,20 @@ export async function POST(request: NextRequest) {
       console.error('[Tasks Chat] 相談コンテキスト取得エラー（続行）:', e);
     }
 
+    // v7.1: ボスフィードバック学習コンテキストを取得
+    try {
+      const sbFb = getServerSupabase() || getSupabase();
+      if (sbFb && task.projectId) {
+        const { getBossFeedbackContext } = await import('@/services/v71/bossFeedbackLearning.service');
+        const fbContext = await getBossFeedbackContext(task.projectId);
+        if (fbContext) {
+          chatContext.personalizedContext = (chatContext.personalizedContext || '') + fbContext;
+        }
+      }
+    } catch (e) {
+      console.error('[Tasks Chat] ボスフィードバック学習取得エラー（続行）:', e);
+    }
+
     // v7.1: 意思決定ログ（decision_log）コンテキストを取得
     try {
       const sbDl = getServerSupabase() || getSupabase();
@@ -171,7 +186,8 @@ export async function POST(request: NextRequest) {
       body.message,
       body.phase,
       task.conversations,
-      chatContext
+      chatContext,
+      imageData
     );
 
     // Phase 42f残り: 会話ターンIDを生成（会話ジャンプ用）

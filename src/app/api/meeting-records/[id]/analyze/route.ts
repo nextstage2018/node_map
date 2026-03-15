@@ -72,6 +72,17 @@ interface AnalysisResult {
   new_decisions: AIDetectedDecision[];
   // v4.0-Phase5: ゴール/MS/タスク階層一括提案
   goal_suggestions: GoalSuggestion[];
+  // v7.1: ボスフィードバック学習
+  boss_feedbacks?: BossFeedback[];
+}
+
+interface BossFeedback {
+  feedback_type: 'correction' | 'direction' | 'priority' | 'perspective';
+  original_approach: string;
+  boss_feedback: string;
+  learning_point: string;
+  context: string;
+  task_title?: string;
 }
 
 export async function POST(
@@ -256,8 +267,28 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         }
       ]
     }
+  ],
+  "boss_feedbacks": [
+    {
+      "feedback_type": "correction | direction | priority | perspective",
+      "original_approach": "部下やチームが提案していた元の方向性（なければ空文字）",
+      "boss_feedback": "上長・意思決定者の指摘・修正内容",
+      "learning_point": "次回同様の場面でAIが活かすべき判断基準（1文で簡潔に）",
+      "context": "どの議題・状況でのフィードバックか",
+      "task_title": "関連するタスク名（あれば空文字）"
+    }
   ]
 }
+
+## boss_feedbacksのルール（上長フィードバック学習）
+上長・責任者・意思決定者の発言から、以下のパターンを検出して抽出してください:
+- correction: 方向性の修正（「そうじゃなくて」「違う、こうだ」「それは違う」）
+- direction: 新たな指示・方針（「こうしてほしい」「次はこうやって」「方針を変える」）
+- priority: 優先順位の指摘（「まずこっちを」「これは後回し」「今はそれより」）
+- perspective: 視点の補正（「お客さん目線で」「経営視点で考えて」「ユーザーの立場で」）
+- learning_pointは「AIがアドバイスする際に同じ判断をするための指針」として簡潔に書く
+- 単なる報告・質問・同意は含めない。指摘・修正・方針転換のみ対象
+- フィードバックが見つからない会議は空配列で返す
 
 ## topicsの構造化ルール（最重要）
 topicsは「検討ツリー」の親ノード・子ノードとして表示されます。会議の流れをそのまま並べるのではなく、**検討過程を整理した最適な構造**に再構成してください:
@@ -331,6 +362,7 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
           resolved_issues: Array.isArray(parsed.resolved_issues) ? parsed.resolved_issues : [],
           new_decisions: Array.isArray(parsed.new_decisions) ? parsed.new_decisions : [],
           goal_suggestions: Array.isArray(parsed.goal_suggestions) ? parsed.goal_suggestions : [],
+          boss_feedbacks: Array.isArray(parsed.boss_feedbacks) ? parsed.boss_feedbacks : [],
         } as AnalysisResult;
       } catch (aiError) {
         console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
@@ -535,6 +567,19 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
     } catch (v34Error) {
       // v3.4処理失敗してもメイン処理はブロックしない
       console.error('[MeetingRecords Analyze] v3.4処理エラー:', v34Error);
+    }
+
+    // 9.5 v7.1: ボスフィードバック学習の抽出・保存
+    try {
+      if (analysisResult.boss_feedbacks && analysisResult.boss_feedbacks.length > 0) {
+        const { saveBossFeedbacks } = await import('@/services/v71/bossFeedbackLearning.service');
+        const fbCount = await saveBossFeedbacks(projectId, id, analysisResult.boss_feedbacks);
+        if (fbCount > 0) {
+          console.log(`[MeetingRecords Analyze] v7.1 boss_feedback_learnings: ${fbCount}件保存`);
+        }
+      }
+    } catch (fbError) {
+      console.error('[MeetingRecords Analyze] v7.1 フィードバック保存エラー:', fbError);
     }
 
     // 10. v7.0: パイプライン完了後にチャネル自動投稿
