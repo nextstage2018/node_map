@@ -98,10 +98,13 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [editTitle, setEditTitle] = useState('');
   const [isSavingTitle, setIsSavingTitle] = useState(false);
   const [showAddDoc, setShowAddDoc] = useState(false);
+  const [addDocMode, setAddDocMode] = useState<'url' | 'file'>('url');
   const [newDocTitle, setNewDocTitle] = useState('');
   const [newDocUrl, setNewDocUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -218,16 +221,56 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
         }),
       });
       if (res.ok) {
-        setNewDocTitle('');
-        setNewDocUrl('');
-        setShowAddDoc(false);
-        fetchDetail(); // リロード
+        resetDocForm();
+        fetchDetail();
       }
     } catch (error) {
       console.error('資料追加エラー:', error);
     } finally {
       setIsSavingDoc(false);
     }
+  };
+
+  // 関連資料追加（ファイルアップロードモード）
+  const handleUploadFile = async () => {
+    if (!selectedFile || !newDocTitle.trim() || !task) return;
+    setIsSavingDoc(true);
+    try {
+      const buffer = await selectedFile.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(buffer).reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+      const res = await fetch('/api/drive/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectId: task.project_id || undefined,
+          fileName: selectedFile.name,
+          mimeType: selectedFile.type || 'application/octet-stream',
+          fileData: base64,
+          taskId: taskId,
+          milestoneId: task.milestone_id || undefined,
+          documentType: 'other',
+        }),
+      });
+      if (res.ok) {
+        resetDocForm();
+        fetchDetail();
+      }
+    } catch (error) {
+      console.error('ファイルアップロードエラー:', error);
+    } finally {
+      setIsSavingDoc(false);
+    }
+  };
+
+  // フォームリセット
+  const resetDocForm = () => {
+    setNewDocTitle('');
+    setNewDocUrl('');
+    setSelectedFile(null);
+    setShowAddDoc(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   return (
@@ -251,9 +294,9 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
         ) : showChat ? (
           <TaskChatView
             taskId={taskId}
-            conversations={task.conversations}
+            conversations={task.conversations || []}
             taskStatus={task.status}
-            onBack={() => setShowChat(false)}
+            onBack={() => { setShowChat(false); fetchDetail(); }}
             onConversationUpdate={fetchDetail}
           />
         ) : (
@@ -499,34 +542,99 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                   {/* 追加フォーム */}
                   {showAddDoc && (
                     <div className="bg-slate-50 rounded-lg p-3 mb-2 space-y-2">
-                      <input
-                        type="text"
-                        placeholder="資料名"
-                        value={newDocTitle}
-                        onChange={(e) => setNewDocTitle(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
-                      />
-                      <input
-                        type="url"
-                        placeholder="https://..."
-                        value={newDocUrl}
-                        onChange={(e) => setNewDocUrl(e.target.value)}
-                        className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
-                      />
+                      {/* URL / ファイル切替タブ */}
+                      <div className="flex gap-1 bg-slate-200 rounded p-0.5">
+                        <button
+                          onClick={() => setAddDocMode('url')}
+                          className={cn(
+                            'flex-1 text-[11px] py-1 rounded transition-colors',
+                            addDocMode === 'url' ? 'bg-white text-nm-text font-medium shadow-sm' : 'text-slate-500'
+                          )}
+                        >
+                          URL登録
+                        </button>
+                        <button
+                          onClick={() => setAddDocMode('file')}
+                          className={cn(
+                            'flex-1 text-[11px] py-1 rounded transition-colors',
+                            addDocMode === 'file' ? 'bg-white text-nm-text font-medium shadow-sm' : 'text-slate-500'
+                          )}
+                        >
+                          ファイル
+                        </button>
+                      </div>
+
+                      {addDocMode === 'url' ? (
+                        <>
+                          <input
+                            type="text"
+                            placeholder="資料名"
+                            value={newDocTitle}
+                            onChange={(e) => setNewDocTitle(e.target.value)}
+                            className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
+                          />
+                          <input
+                            type="url"
+                            placeholder="https://..."
+                            value={newDocUrl}
+                            onChange={(e) => setNewDocUrl(e.target.value)}
+                            className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            type="text"
+                            placeholder="資料名"
+                            value={newDocTitle}
+                            onChange={(e) => setNewDocTitle(e.target.value)}
+                            className="w-full text-xs border border-slate-200 rounded px-2.5 py-1.5 focus:outline-none focus:border-blue-400"
+                          />
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setSelectedFile(file);
+                              if (file && !newDocTitle.trim()) {
+                                setNewDocTitle(file.name.replace(/\.[^.]+$/, ''));
+                              }
+                            }}
+                            className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-600 file:cursor-pointer"
+                          />
+                          {selectedFile && (
+                            <p className="text-[10px] text-slate-400 truncate">
+                              {selectedFile.name}（{(selectedFile.size / 1024).toFixed(0)} KB）
+                            </p>
+                          )}
+                        </>
+                      )}
+
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => { setShowAddDoc(false); setNewDocTitle(''); setNewDocUrl(''); }}
+                          onClick={resetDocForm}
                           className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
                         >
                           キャンセル
                         </button>
-                        <button
-                          onClick={handleAddDocument}
-                          disabled={!newDocTitle.trim() || !newDocUrl.trim() || isSavingDoc}
-                          className="text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded px-3 py-1 transition-colors"
-                        >
-                          {isSavingDoc ? '保存中...' : '追加'}
-                        </button>
+                        {addDocMode === 'url' ? (
+                          <button
+                            onClick={handleAddDocument}
+                            disabled={!newDocTitle.trim() || !newDocUrl.trim() || isSavingDoc}
+                            className="text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded px-3 py-1 transition-colors"
+                          >
+                            {isSavingDoc ? '保存中...' : '追加'}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={handleUploadFile}
+                            disabled={!selectedFile || !newDocTitle.trim() || isSavingDoc}
+                            className="text-xs text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded px-3 py-1 transition-colors flex items-center gap-1"
+                          >
+                            <Upload className="w-3 h-3" />
+                            {isSavingDoc ? 'アップロード中...' : 'アップロード'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}

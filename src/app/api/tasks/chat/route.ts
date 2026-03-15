@@ -139,6 +139,32 @@ export async function POST(request: NextRequest) {
       console.error('[Tasks Chat] 相談コンテキスト取得エラー（続行）:', e);
     }
 
+    // v7.1: 意思決定ログ（decision_log）コンテキストを取得
+    try {
+      const sbDl = getServerSupabase() || getSupabase();
+      if (sbDl && task.projectId) {
+        const { data: decisionLogs } = await sbDl
+          .from('decision_log')
+          .select('title, content, status, decided_at, created_at')
+          .eq('project_id', task.projectId)
+          .in('status', ['active', 'on_hold'])
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (decisionLogs && decisionLogs.length > 0) {
+          const dlTexts = decisionLogs.map((d: any, i: number) => {
+            const statusLabel = d.status === 'active' ? '有効' : '保留中';
+            const date = d.decided_at || d.created_at;
+            const dateStr = date ? new Date(date).toLocaleDateString('ja-JP') : '';
+            return `${i + 1}. 【${statusLabel}】${d.title}${dateStr ? `（${dateStr}）` : ''}\n   ${d.content || ''}`;
+          }).join('\n');
+          chatContext.personalizedContext = (chatContext.personalizedContext || '') +
+            `\n\n## このプロジェクトの意思決定ログ（最新10件）\n以下はプロジェクトで決まったことの記録です。壁打ちの際に前提として活用してください。\n${dlTexts}`;
+        }
+      }
+    } catch (e) {
+      console.error('[Tasks Chat] 意思決定ログ取得エラー（続行）:', e);
+    }
+
     // AI応答を生成（Phase 17: タグ分類も同時実行）
     const response = await generateTaskChat(
       task,

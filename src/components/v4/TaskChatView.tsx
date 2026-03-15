@@ -55,9 +55,10 @@ export default function TaskChatView({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // propsのconversationsまたはtaskIdが変わったら同期
   useEffect(() => {
     setLocalConversations(conversations);
-  }, [conversations]);
+  }, [conversations, taskId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -80,6 +81,10 @@ export default function TaskChatView({
     setLocalConversations(prev => [...prev, userMsg]);
     setMessage('');
     setIsSending(true);
+    // テキストエリアの高さをリセット
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
 
     try {
       const res = await fetch('/api/tasks/chat', {
@@ -110,10 +115,12 @@ export default function TaskChatView({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleSend();
+  // テキストエリアの自動高さ調整
+  const adjustTextareaHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
     }
   };
 
@@ -196,11 +203,15 @@ export default function TaskChatView({
           <textarea
             ref={textareaRef}
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={(e) => {
+              setMessage(e.target.value);
+              adjustTextareaHeight();
+            }}
+            onInput={adjustTextareaHeight}
             placeholder="メッセージを入力..."
             rows={1}
-            className="flex-1 resize-none border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 max-h-24"
+            style={{ maxHeight: '120px' }}
+            className="flex-1 resize-none border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
           />
           <button
             onClick={handleSend}
