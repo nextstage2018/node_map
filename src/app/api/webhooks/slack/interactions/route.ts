@@ -182,6 +182,7 @@ export async function POST(request: NextRequest) {
         const assigneeContactId = values.proposal_assignee_block?.proposal_assignee?.selected_option?.value || null;
         const dueDate = values.proposal_due_date_block?.proposal_due_date?.selected_date || null;
         const priority = values.proposal_priority_block?.proposal_priority?.selected_option?.value || 'medium';
+        const description = values.proposal_description_block?.proposal_description?.value || null;
 
         const { handleProposalEditSubmit } = await import(
           '@/services/v70/meetingSummaryNotifier.service'
@@ -193,6 +194,7 @@ export async function POST(request: NextRequest) {
           assigneeContactId,
           dueDate,
           priority,
+          description,
           channel_id: '',
           message_ts: '',
         });

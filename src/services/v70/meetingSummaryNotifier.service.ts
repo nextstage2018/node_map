@@ -717,6 +717,18 @@ export async function handleProposalEdit(payload: {
             },
           },
         },
+        {
+          type: 'input',
+          block_id: 'proposal_description_block',
+          label: { type: 'plain_text', text: '詳細' },
+          optional: true,
+          element: {
+            type: 'plain_text_input',
+            action_id: 'proposal_description',
+            multiline: true,
+            ...(proposal.context ? { initial_value: proposal.context } : {}),
+          },
+        },
       ],
     };
 
@@ -751,6 +763,7 @@ export async function handleProposalEditSubmit(payload: {
   assigneeContactId: string | null;
   dueDate: string | null;
   priority: string;
+  description: string | null;
   channel_id: string;
   message_ts: string;
 }): Promise<{ ok: boolean }> {
@@ -767,7 +780,7 @@ export async function handleProposalEditSubmit(payload: {
 
     if (!record) return { ok: false };
 
-    // タスクを作成（編集済みの値で）
+    // タスクを作成（編集済みの値で。descriptionはモーダル入力値 → 元のcontext の順でフォールバック）
     const taskId = crypto.randomUUID();
     const { error } = await supabase.from('tasks').insert({
       id: taskId,
@@ -777,7 +790,7 @@ export async function handleProposalEditSubmit(payload: {
       priority: payload.priority || 'medium',
       due_date: payload.dueDate || null,
       assigned_contact_id: payload.assigneeContactId || null,
-      description: proposal.context || null,
+      description: payload.description || proposal.context || null,
       source_type: 'meeting_record',
       user_id: process.env.ENV_TOKEN_OWNER_ID || '',
       created_at: new Date().toISOString(),
