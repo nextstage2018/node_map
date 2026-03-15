@@ -163,42 +163,13 @@ export async function POST(
     }
 
     // 3. 解析の実行
-    // v6.0: source_type='gemini' の場合はGeminiパーサー（AI不要）を使用
-    // それ以外（text/file/transcription/meetgeek）はClaude AI解析を維持
+    // v7.0改善: 全source_type（gemini含む）でClaude AI解析を使用
+    // Geminiパーサーはフォールバック（AI失敗時のみ）
     let analysisResult: AnalysisResult;
 
-    if (record.source_type === 'gemini') {
-      // ---- v6.0: Geminiパーサー（テキストパースのみ、AI不要） ----
-      console.log('[MeetingRecords Analyze] Geminiパーサーモードで解析');
-      try {
-        const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
-        const geminiResult = parseGeminiNotes(record.content || '');
-        analysisResult = {
-          summary: geminiResult.summary,
-          topics: geminiResult.topics,
-          milestone_feedback: geminiResult.milestone_feedback,
-          action_items: geminiResult.action_items,
-          new_open_issues: geminiResult.new_open_issues,
-          resolved_issues: geminiResult.resolved_issues,
-          new_decisions: geminiResult.new_decisions,
-          goal_suggestions: geminiResult.goal_suggestions as GoalSuggestion[],
-        };
-      } catch (parseError) {
-        console.error('[MeetingRecords Analyze] Geminiパーサーエラー:', parseError);
-        analysisResult = {
-          summary: '',
-          topics: [],
-          milestone_feedback: null,
-          action_items: [],
-          new_open_issues: [],
-          resolved_issues: [],
-          new_decisions: [],
-          goal_suggestions: [],
-        };
-      }
-    } else {
-      // ---- 従来: Claude AI解析（MeetGeek/手動テキスト等） ----
-      // MeetGeekの文字起こしで "こ れ は テ ス ト" のようにスペースが入る問題を修正
+    {
+      // ---- Claude AI解析（全source_type共通） ----
+      // 日本語間のスペース除去（MeetGeek/Geminiの文字起こし対応）
       const cleanJapaneseSpaces = (text: string): string => {
         return text.replace(
           /([\u3000-\u9FFF\uF900-\uFAFF])\s+([\u3000-\u9FFF\uF900-\uFAFF])/g,
@@ -215,17 +186,17 @@ export async function POST(
         const response = await anthropic.messages.create({
           model: 'claude-sonnet-4-5-20250929',
           max_tokens: 12000,
-          system: `あなたは会議録を構造化するアシスタントです。以下の会議録から情報を抽出してください。
+          system: `あなたは会議録を分析し、「検討ツリー」（意思決定の過程を整理するツール）に最適な構造に変換するアシスタントです。
 ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文脈です。会議内容と照らし合わせて分析してください。${contextBlock}` : ''}
 
 必ず以下のJSON形式で返してください（JSONのみ、他のテキストは不要）:
 {
-  "summary": "会議の要点を200-400文字で要約したテキスト",
+  "summary": "会議の要点を200-400文字で要約",
   "topics": [
     {
-      "title": "議題のタイトル",
-      "options": ["選択肢1", "選択肢2"],
-      "decision": "決定事項（未決定ならnull）",
+      "title": "大テーマ名（3-7個が理想）",
+      "options": ["このテーマ配下の小トピック1", "小トピック2", "小トピック3"],
+      "decision": "このテーマで決定した事項（未決定ならnull）",
       "status": "active または completed または cancelled"
     }
   ],
@@ -238,12 +209,12 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
   ],
   "action_items": [
     {
-      "title": "担当者がやるべきことを1文で（動詞で始める）",
+      "title": "具体的なタスク名（動詞で始める。Slackに投稿されるので簡潔かつ明確に）",
       "assignee": "担当者名（不明なら空文字）",
-      "context": "このタスクの背景・会議での議論の流れ・判断根拠を200-400文字で整理。後からAIに相談する時の文脈情報として使う",
+      "context": "このタスクの背景・会議での議論の流れ・判断根拠を200-400文字で整理。チームメンバーが読んで文脈を理解できるように書く",
       "due_date": "YYYY-MM-DD（不明ならnull）",
       "priority": "high または medium または low",
-      "related_topics": ["関連する議題のタイトル1", "関連する議題のタイトル2"]
+      "related_topics": ["関連する議題のタイトル"]
     }
   ],
   "new_open_issues": [
@@ -288,28 +259,30 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
   ]
 }
 
-注意:
-- topicsは会議で議論された全ての議題を抽出してください
-- 決定に至った議題のstatusは "completed"、まだ検討中なら "active"、取り消しなら "cancelled"
-- マイルストーンに関する言及がなければ milestone_feedback は null にしてください
-- action_itemsは**担当者ごとに1タスクにまとめる**のが原則です。同じ人が複数の関連するアクションを担当する場合は、1つのタスクに集約してください
-  - 例: 鈴木さんが「資料作成」「見積もり確認」「報告書送付」を担当 → 1タスクにまとめて、contextに詳細を記載
-  - ただし、明らかに独立したテーマのタスクは分けてOK
-- contextには会議での議論の流れ・背景・なぜこのタスクが必要になったかを丁寧に整理してください。これはAIに相談する時の文脈情報として後から使われます
-- 担当者が会議録の発言者から特定できる場合は必ず設定してください。会議で「○○さんお願い」「○○が対応します」等の発言を見逃さないでください
-- 無理に全参加者にタスクを割り当てる必要はありません。タスクが発生した人にだけ割り当ててください
-- 曖昧な内容（「検討する」「考えておく」等）はaction_itemsに含めないでください
-- action_itemsがなければ空配列にしてください
-- new_open_issues: 議論したが結論が出なかった事項を抽出。既存の未確定事項と同じ内容は含めない
-- resolved_issues: 上記「未確定事項」リストの中で、今回の会議で結論が出た・解決したものを判定。タイトルは正確に一致させる
-- new_decisions: 明確に「こうする」と決まった事項。topicsのdecisionフィールドと対応させる
-- 該当なしの項目は空配列にしてください
-- goal_suggestions: 会議内容からプロジェクトの段階・フェーズが読み取れる場合にゴール/マイルストーン/タスクの階層構造を提案してください
-  - ゴールは時系列のフェーズ（例: Phase1: 現状分析 → Phase2: 戦略策定）で構成
-  - 各ゴール配下に1つ以上のマイルストーン（到達点）
-  - 各マイルストーン配下に具体的なタスクを配置
-  - 期限は会議内容から推定できる場合のみ設定（不明ならnull）
-  - 会議内容から階層構造が読み取れない場合は空配列にしてください
+## topicsの構造化ルール（最重要）
+topicsは「検討ツリー」の親ノード・子ノードとして表示されます。会議の流れをそのまま並べるのではなく、**検討過程を整理した最適な構造**に再構成してください:
+- titleは大テーマ（3-7個が理想）。会議で議論された内容を意味のある塊にグルーピングする
+- optionsはそのテーマ配下の小トピック（各テーマ2-7個が理想）。議論のポイントや検討された選択肢を整理
+- 「会議の目的」「背景説明」のような汎用的すぎるテーマは作らない。議論の実質的な内容でグルーピングする
+- 各テーマの子ノード数がなるべく均等になるようにする（1つのテーマに10個以上の子ノードは避ける）
+- decisionフィールドには、そのテーマで決まった具体的な結論を記載
+
+## action_itemsのルール
+action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクとして登録されます:
+- **担当者ごとに1タスクにまとめる**のが原則。同じ人が複数の関連アクションを持つ場合は集約
+- titleはSlackに表示されるので「○○の資料を作成し、△△に共有する」のように具体的かつ簡潔に
+- contextはtitleの補足情報。タスクに取り組む際の文脈・背景・判断材料を整理する。titleと同じ内容は書かない
+- 担当者が特定できる場合は必ず設定。「○○さんお願い」「○○が対応」等の発言を見逃さない
+- 曖昧な内容（「検討する」「考えておく」）はaction_itemsに含めない
+- 明らかに独立したテーマのタスクは分けてOK
+
+## その他の注意
+- new_open_issues: 議論したが結論が出なかった事項。既存の未確定事項と同じ内容は含めない
+- resolved_issues: 過去の未確定事項で今回解決したもの。タイトルは正確に一致させる
+- new_decisions: 明確に「こうする」と決まった事項。topicsのdecisionと対応させる
+- goal_suggestions: フェーズ・マイルストーン・タスクの階層が読み取れる場合のみ提案
+- マイルストーン言及がなければ milestone_feedback は null
+- 該当なし項目は空配列
 - 必ず有効なJSONを返してください`,
           messages: [
             {
@@ -361,16 +334,28 @@ ${contextBlock ? `\n【重要】以下はこのプロジェクトの過去の文
         } as AnalysisResult;
       } catch (aiError) {
         console.error('[MeetingRecords Analyze] AI解析エラー:', aiError);
-        analysisResult = {
-          summary: '',
-          topics: [],
-          milestone_feedback: null,
-          action_items: [],
-          new_open_issues: [],
-          resolved_issues: [],
-          new_decisions: [],
-          goal_suggestions: [],
-        };
+        // v7.0: Geminiソースの場合はGeminiパーサーにフォールバック
+        if (record.source_type === 'gemini') {
+          console.log('[MeetingRecords Analyze] Geminiパーサーにフォールバック');
+          try {
+            const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
+            const geminiResult = parseGeminiNotes(record.content || '');
+            analysisResult = {
+              summary: geminiResult.summary,
+              topics: geminiResult.topics,
+              milestone_feedback: geminiResult.milestone_feedback,
+              action_items: geminiResult.action_items,
+              new_open_issues: geminiResult.new_open_issues,
+              resolved_issues: geminiResult.resolved_issues,
+              new_decisions: geminiResult.new_decisions,
+              goal_suggestions: geminiResult.goal_suggestions as GoalSuggestion[],
+            };
+          } catch {
+            analysisResult = { summary: '', topics: [], milestone_feedback: null, action_items: [], new_open_issues: [], resolved_issues: [], new_decisions: [], goal_suggestions: [] };
+          }
+        } else {
+          analysisResult = { summary: '', topics: [], milestone_feedback: null, action_items: [], new_open_issues: [], resolved_issues: [], new_decisions: [], goal_suggestions: [] };
+        }
       }
     }
 
