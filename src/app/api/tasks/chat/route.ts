@@ -177,14 +177,13 @@ export async function POST(request: NextRequest) {
     // Phase 42f残り: 会話ターンIDを生成（会話ジャンプ用）
     const turnId = crypto.randomUUID();
 
-    // ユーザーメッセージを保存（Phase 17: conversationTag付与, Phase 42f残り: turnId付与）
+    // ユーザーメッセージを保存
     await TaskService.addConversation(body.taskId, {
       role: 'user',
       content: body.message,
       phase: body.phase,
-      conversationTag: response.conversationTag,
       turnId,
-    });
+    }, userId);
 
     // AI応答を保存
     await TaskService.addConversation(body.taskId, {
@@ -192,7 +191,7 @@ export async function POST(request: NextRequest) {
       content: response.reply,
       phase: body.phase,
       turnId,
-    });
+    }, userId);
 
     // Phase 42a: AI会話からキーワード自動抽出 → ナレッジマスタ登録 → thought_task_nodes紐づけ
     // ※ Vercelではレスポンス後の非同期処理が打ち切られるためawaitで実行

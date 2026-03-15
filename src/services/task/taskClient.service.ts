@@ -468,29 +468,29 @@ export class TaskService {
   // 会話メッセージ追加
   static async addConversation(
     taskId: string,
-    message: Omit<AiConversationMessage, 'id' | 'timestamp'>
+    message: Omit<AiConversationMessage, 'id' | 'timestamp'>,
+    userId?: string
   ): Promise<AiConversationMessage | null> {
     const sb = getServerSupabase() || getSupabase();
     const now = new Date().toISOString();
-    const newId = `conv-${Date.now()}`;
 
     if (!sb) {
       return null;
     }
 
     try {
-      // Insert conversation (Phase 17: conversationTag 追加, Phase 42f残り: turnId追加)
+      // Insert conversation
+      // id: UUID型 → DBのDEFAULT gen_random_uuid() に任せる
+      // user_id: NOT NULL → 必ず設定
+      // conversation_tag: DBにカラムが存在しないため除外
       const insertData: any = {
-        id: newId,
         task_id: taskId,
+        user_id: userId || 'system',
         role: message.role,
         content: message.content,
         phase: message.phase,
         created_at: now,
       };
-      if (message.conversationTag) {
-        insertData.conversation_tag = message.conversationTag;
-      }
       if (message.turnId) {
         insertData.turn_id = message.turnId;
       }
