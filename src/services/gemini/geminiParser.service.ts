@@ -289,32 +289,46 @@ function parseDetails(text: string, summaryThemes: SummaryTheme[]): {
 
 /**
  * サブテーマを親ノードとして、詳細段落をキーワードマッチングで子ノードに振り分け
+ * v7.0改善: キーワード特異度（IDF）+ 子ノード過多時の自動サブグルーピング
  */
 function buildHierarchicalTopics(
   parsed: ParsedDetailItem[],
   themes: SummaryTheme[]
 ): AnalysisTopic[] {
-  // 各テーマに属する子ノードを格納
+  // ステップ1: 全テーマのキーワード出現頻度を計算（IDF的な特異度）
+  const keywordThemeCount: Map<string, number> = new Map();
+  for (const theme of themes) {
+    const uniqueKw = new Set(theme.keywords);
+    for (const kw of uniqueKw) {
+      keywordThemeCount.set(kw, (keywordThemeCount.get(kw) || 0) + 1);
+    }
+  }
+
+  // ステップ2: 各詳細段落を最適テーマに振り分け（特異度加重スコアリング）
   const themeChildren: Map<number, ParsedDetailItem[]> = new Map();
   const unmatched: ParsedDetailItem[] = [];
 
   for (const item of parsed) {
     const itemKeywords = extractKeywordsJP(item.title + ' ' + item.body);
 
-    // 各テーマとのキーワード重複度を計算
     let bestThemeIdx = -1;
     let bestScore = 0;
+    let secondBestScore = 0;
 
     for (let i = 0; i < themes.length; i++) {
-      const score = calculateKeywordOverlap(themes[i].keywords, itemKeywords);
+      const score = calculateKeywordOverlapWeighted(themes[i].keywords, itemKeywords, keywordThemeCount, themes.length);
       if (score > bestScore) {
+        secondBestScore = bestScore;
         bestScore = score;
         bestThemeIdx = i;
+      } else if (score > secondBestScore) {
+        secondBestScore = score;
       }
     }
 
-    // 閾値以上のスコアならテーマに振り分け、そうでなければ未分類
-    if (bestThemeIdx >= 0 && bestScore >= 2) {
+    // 振り分け条件: スコア≥1.5 かつ 2位との差が明確（曖昧な振り分けを防止）
+    const scoreDiff = bestScore - secondBestScore;
+    if (bestThemeIdx >= 0 && bestScore >= 1.5 && (scoreDiff >= 0.5 || secondBestScore < 1.0)) {
       const children = themeChildren.get(bestThemeIdx) || [];
       children.push(item);
       themeChildren.set(bestThemeIdx, children);
@@ -323,52 +337,167 @@ function buildHierarchicalTopics(
     }
   }
 
-  // テーマを親ノードとしてトピックを構築
+  // ステップ3: テーマを親ノードとしてトピックを構築
   const topics: AnalysisTopic[] = [];
+  const MAX_CHILDREN = 7; // これ以上は自動サブグルーピング
 
   for (let i = 0; i < themes.length; i++) {
     const children = themeChildren.get(i) || [];
-    const hasDecision = children.some(c => c.isDecision);
 
-    topics.push({
-      title: themes[i].title,
-      options: children.map(c => c.title),
-      decision: hasDecision ? children.find(c => c.isDecision)?.body || null : null,
-      status: hasDecision ? 'completed' : 'active',
-    });
+    if (children.length <= MAX_CHILDREN) {
+      // 子ノード数が適切 → そのまま
+      const hasDecision = children.some(c => c.isDecision);
+      topics.push({
+        title: themes[i].title,
+        options: children.map(c => c.title),
+        decision: hasDecision ? children.find(c => c.isDecision)?.body || null : null,
+        status: hasDecision ? 'completed' : 'active',
+      });
+    } else {
+      // 子ノードが多すぎる → サブグルーピングで分割
+      const subGroups = autoSubGroup(children);
+      for (const sg of subGroups) {
+        const hasDecision = sg.items.some(c => c.isDecision);
+        topics.push({
+          title: sg.label,
+          options: sg.items.map(c => c.title),
+          decision: hasDecision ? sg.items.find(c => c.isDecision)?.body || null : null,
+          status: hasDecision ? 'completed' : 'active',
+        });
+      }
+    }
   }
 
-  // 未分類の段落は独立したルートノードとして追加
-  for (const item of unmatched) {
-    topics.push({
-      title: item.title,
-      options: [],
-      decision: item.isDecision ? item.body || item.cleanText : null,
-      status: item.isDecision ? 'completed' : 'active',
-    });
+  // ステップ4: 未分類が多すぎる場合もサブグルーピング
+  if (unmatched.length > MAX_CHILDREN) {
+    const subGroups = autoSubGroup(unmatched);
+    for (const sg of subGroups) {
+      const hasDecision = sg.items.some(c => c.isDecision);
+      topics.push({
+        title: sg.label,
+        options: sg.items.map(c => c.title),
+        decision: hasDecision ? sg.items.find(c => c.isDecision)?.body || null : null,
+        status: hasDecision ? 'completed' : 'active',
+      });
+    }
+  } else {
+    for (const item of unmatched) {
+      topics.push({
+        title: item.title,
+        options: [],
+        decision: item.isDecision ? item.body || item.cleanText : null,
+        status: item.isDecision ? 'completed' : 'active',
+      });
+    }
   }
 
   return topics;
 }
 
 /**
- * キーワード重複度を計算（部分一致含む）
- * スコア = マッチしたキーワード数
+ * 子ノード群をキーワード類似度でサブグループに自動分割
+ * 簡易クラスタリング: 最初の未割当アイテムを種にして類似アイテムを集める
  */
-function calculateKeywordOverlap(themeKw: string[], itemKw: string[]): number {
+function autoSubGroup(items: ParsedDetailItem[]): { label: string; items: ParsedDetailItem[] }[] {
+  const groups: { label: string; items: ParsedDetailItem[]; keywords: string[] }[] = [];
+  const assigned = new Set<number>();
+
+  // 各アイテムのキーワードを事前計算
+  const itemKws = items.map(item => extractKeywordsJP(item.title + ' ' + item.body));
+
+  for (let i = 0; i < items.length; i++) {
+    if (assigned.has(i)) continue;
+
+    // 新グループの種
+    const group: { label: string; items: ParsedDetailItem[]; keywords: string[] } = {
+      label: items[i].title,
+      items: [items[i]],
+      keywords: [...itemKws[i]],
+    };
+    assigned.add(i);
+
+    // 類似アイテムを吸収（キーワード重複≥2）
+    for (let j = i + 1; j < items.length; j++) {
+      if (assigned.has(j)) continue;
+
+      let overlap = 0;
+      for (const kw of itemKws[j]) {
+        if (group.keywords.includes(kw)) {
+          overlap++;
+          if (overlap >= 2) break;
+        }
+      }
+
+      if (overlap >= 2) {
+        group.items.push(items[j]);
+        // グループキーワードを拡張
+        for (const kw of itemKws[j]) {
+          if (!group.keywords.includes(kw)) group.keywords.push(kw);
+        }
+        assigned.add(j);
+      }
+    }
+
+    groups.push(group);
+  }
+
+  // 小さすぎるグループ（1件）は「その他」にまとめる
+  const meaningful: typeof groups = [];
+  const tiny: ParsedDetailItem[] = [];
+  for (const g of groups) {
+    if (g.items.length >= 2) {
+      meaningful.push(g);
+    } else {
+      tiny.push(...g.items);
+    }
+  }
+
+  // 「その他」グループ
+  if (tiny.length > 0) {
+    if (tiny.length === 1) {
+      // 1件だけなら独立ルートノードとして追加
+      meaningful.push({ label: tiny[0].title, items: tiny, keywords: [] });
+    } else {
+      meaningful.push({ label: 'その他の議論', items: tiny, keywords: [] });
+    }
+  }
+
+  return meaningful;
+}
+
+/**
+ * キーワード重複度を計算（特異度加重版）
+ * 全テーマに出現する汎用キーワード → 低スコア（0.3）
+ * 特定テーマ固有のキーワード → 高スコア（1.0）
+ */
+function calculateKeywordOverlapWeighted(
+  themeKw: string[],
+  itemKw: string[],
+  keywordThemeCount: Map<string, number>,
+  totalThemes: number
+): number {
   let score = 0;
   for (const tk of themeKw) {
     for (const ik of itemKw) {
+      let matched = false;
+
       // 部分一致（3文字以上の共通部分）
       if (tk.length >= 3 && ik.length >= 3) {
         if (tk.includes(ik) || ik.includes(tk)) {
-          score++;
-          break;
+          matched = true;
         }
       }
       // 完全一致（2文字以上）
-      if (tk.length >= 2 && tk === ik) {
-        score++;
+      if (!matched && tk.length >= 2 && tk === ik) {
+        matched = true;
+      }
+
+      if (matched) {
+        // 特異度: このキーワードがいくつのテーマに出現するか
+        const themeFreq = keywordThemeCount.get(tk) || 1;
+        // 全テーマに出現 → 0.3、1テーマのみ → 1.0
+        const specificity = themeFreq >= totalThemes ? 0.3 : (1.0 / themeFreq);
+        score += specificity;
         break;
       }
     }
