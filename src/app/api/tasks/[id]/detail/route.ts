@@ -122,11 +122,18 @@ export async function GET(
       .order('created_at', { ascending: true });
 
     // 6. 関連資料取得
-    const { data: documents } = await supabase
+    const { data: rawDocuments } = await supabase
       .from('drive_documents')
-      .select('id, title, document_url, document_type, created_at')
+      .select('id, title, web_view_link, link_url, document_type, created_at')
       .eq('task_id', id)
       .order('created_at', { ascending: false });
+    const documents = (rawDocuments || []).map((d: any) => ({
+      id: d.id,
+      title: d.title,
+      document_url: d.web_view_link || d.link_url || null,
+      document_type: d.document_type,
+      created_at: d.created_at,
+    }));
 
     // 7. 元のソース情報（生成元を特定）
     let sourceInfo: { type: string; label: string; detail?: string } | null = null;

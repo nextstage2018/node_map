@@ -94,6 +94,7 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
+  const [isOpeningChat, setIsOpeningChat] = useState(false);
   const [editDescription, setEditDescription] = useState('');
   const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -107,6 +108,24 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // チャットを開く（最新データを取得してから表示）
+  const openChat = async () => {
+    setIsOpeningChat(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/detail`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setTask(data.data);
+        }
+      }
+    } catch (error) {
+      console.error('最新データ取得エラー:', error);
+    }
+    setIsOpeningChat(false);
+    setShowChat(true);
+  };
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -301,7 +320,7 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             taskId={taskId}
             conversations={task.conversations || []}
             taskStatus={task.status}
-            onBack={() => { setShowChat(false); fetchDetail(); }}
+            onBack={() => setShowChat(false)}
             onConversationUpdate={fetchDetail}
           />
         ) : (
@@ -506,10 +525,11 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                           </p>
                         ))}
                       <button
-                        onClick={() => setShowChat(true)}
+                        onClick={openChat}
+                        disabled={isOpeningChat}
                         className="text-xs text-blue-600 hover:text-blue-700 font-medium"
                       >
-                        会話履歴を見る →
+                        {isOpeningChat ? '読み込み中...' : '会話履歴を見る →'}
                       </button>
                     </div>
                   ) : (
@@ -673,11 +693,16 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             {/* フッター: AIに相談ボタン */}
             <div className="shrink-0 border-t border-slate-100 px-5 py-4">
               <button
-                onClick={() => setShowChat(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
+                onClick={openChat}
+                disabled={isOpeningChat}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-blue-400 transition-colors text-sm font-medium"
               >
-                <MessageCircle className="w-4 h-4" />
-                AIに相談
+                {isOpeningChat ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <MessageCircle className="w-4 h-4" />
+                )}
+                {isOpeningChat ? '読み込み中...' : 'AIに相談'}
                 <ChevronRight className="w-4 h-4 ml-auto" />
               </button>
             </div>
