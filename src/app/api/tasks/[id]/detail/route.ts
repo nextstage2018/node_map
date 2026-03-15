@@ -38,16 +38,25 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'タスクが見つかりません' }, { status: 404 });
     }
 
-    // 2. プロジェクト情報
+    // 2. プロジェクト情報（+ 組織情報）
     let projectName: string | null = null;
+    let organizationId: string | null = null;
+    let organizationName: string | null = null;
     let projectChannels: Array<{ service_name: string; identifier: string; channel_name?: string }> = [];
     if (task.project_id) {
       const { data: project } = await supabase
         .from('projects')
-        .select('id, name')
+        .select('id, name, organization_id, organizations(id, name)')
         .eq('id', task.project_id)
         .single();
-      if (project) projectName = project.name;
+      if (project) {
+        projectName = project.name;
+        const org = project.organizations as any;
+        if (org) {
+          organizationId = org.id;
+          organizationName = org.name;
+        }
+      }
 
       // プロジェクトチャネル情報（作成元特定用）
       const { data: channels } = await supabase
@@ -178,6 +187,8 @@ export async function GET(
         user_id: task.user_id,
         project_id: task.project_id,
         project_name: projectName,
+        organization_id: organizationId,
+        organization_name: organizationName,
         milestone_id: task.milestone_id,
         milestone_title: milestoneTitle,
         theme_id: task.theme_id,

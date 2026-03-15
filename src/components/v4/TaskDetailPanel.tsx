@@ -53,6 +53,8 @@ interface TaskDetail {
   user_id?: string;
   project_id?: string;
   project_name?: string;
+  organization_id?: string;
+  organization_name?: string;
   milestone_id?: string;
   milestone_title?: string;
   theme_id?: string;
@@ -245,6 +247,9 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectId: task.project_id || undefined,
+          projectName: task.project_name || undefined,
+          organizationId: task.organization_id || undefined,
+          organizationName: task.organization_name || undefined,
           fileName: selectedFile.name,
           mimeType: selectedFile.type || 'application/octet-stream',
           fileData: base64,

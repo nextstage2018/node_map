@@ -105,7 +105,6 @@ export default function TaskChatView({
             created_at: new Date().toISOString(),
           };
           setLocalConversations(prev => [...prev, aiMsg]);
-          onConversationUpdate();
         }
       }
     } catch (error) {
