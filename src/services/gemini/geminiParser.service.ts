@@ -256,13 +256,24 @@ function parseNextSteps(text: string): ActionItem[] {
       : [assignee];
 
     // タイトルと詳細を分離（「タスク名: 詳細説明」形式）
+    // 最初の文（。で終わる部分）をタイトル、残りを詳細にする
     const titleColonMatch = taskText.match(/^(.+?)[：:]\s*(.+)/s);
-    const taskTitle = titleColonMatch
-      ? titleColonMatch[1].trim().slice(0, 100)
-      : taskText.slice(0, 100);
-    const taskDetail = titleColonMatch
-      ? titleColonMatch[2].trim()
-      : taskText;
+    let taskTitle: string;
+    let taskDetail: string;
+    if (titleColonMatch) {
+      taskTitle = titleColonMatch[1].trim().slice(0, 100);
+      taskDetail = titleColonMatch[2].trim();
+    } else {
+      // コロンがない場合、最初の文をタイトル、残りを詳細に
+      const sentenceMatch = taskText.match(/^(.+?[。.！!？?])\s*([\s\S]*)/);
+      if (sentenceMatch && sentenceMatch[2].trim()) {
+        taskTitle = sentenceMatch[1].trim().slice(0, 100);
+        taskDetail = sentenceMatch[2].trim();
+      } else {
+        taskTitle = taskText.slice(0, 100);
+        taskDetail = '';  // タイトルと同じ内容は詳細に入れない
+      }
+    }
 
     // 期限の検出
     const dueDate = extractDueDate(taskText);
@@ -419,7 +430,7 @@ function mergeByAssignee(items: ActionItem[]): ActionItem[] {
     } else {
       // 同じ担当者の複数タスクを集約
       const titles = group.map(g => g.title);
-      const contexts = group.map(g => g.context);
+      const contexts = group.map(g => g.context).filter(c => c && c.length > 0);
       const topics = group.flatMap(g => g.related_topics);
       const dates = group.map(g => g.due_date).filter(Boolean) as string[];
       const priorities = group.map(g => g.priority);
@@ -427,7 +438,7 @@ function mergeByAssignee(items: ActionItem[]): ActionItem[] {
       merged.push({
         title: titles.join('、').slice(0, 100),
         assignee: group[0].assignee,
-        context: contexts.join('\n'),
+        context: contexts.length > 0 ? contexts.join('\n') : '',
         due_date: dates.length > 0 ? dates.sort()[0] : null,
         priority: priorities.includes('high') ? 'high' : priorities.includes('medium') ? 'medium' : 'low',
         related_topics: [...new Set(topics)],
