@@ -76,9 +76,12 @@ export function parseGeminiNotes(rawText: string): GeminiAnalysisResult {
     result.summary = sections.summary.trim();
   }
 
-  // 2. 詳細 → topics + decisions + open_issues
+  // 1.5. まとめセクションからサブテーマを抽出（検討ツリーの親ノード用）
+  const summaryThemes = extractSummaryThemes(sections.summary || '');
+
+  // 2. 詳細 → topics + decisions + open_issues（サブテーマで階層化）
   if (sections.details) {
-    const { topics, decisions, openIssues } = parseDetails(sections.details);
+    const { topics, decisions, openIssues } = parseDetails(sections.details, summaryThemes);
     result.topics = topics;
     result.new_decisions = decisions;
     result.new_open_issues = openIssues;
@@ -152,51 +155,105 @@ function splitSections(text: string): GeminiSections {
   return sections;
 }
 
-// ---- 詳細セクションのパース ----
+// ---- まとめセクションからサブテーマを抽出 ----
 
-function parseDetails(text: string): {
+interface SummaryTheme {
+  title: string;
+  keywords: string[];
+}
+
+function extractSummaryThemes(summaryText: string): SummaryTheme[] {
+  if (!summaryText) return [];
+
+  // まとめセクションは段落区切り（\n\n）でサブテーマが分かれている
+  // 各サブテーマ: 短いタイトル行 + 説明文
+  const paragraphs = summaryText.split(/\n\n+/).filter(p => p.trim().length > 10);
+
+  const themes: SummaryTheme[] = [];
+
+  for (const p of paragraphs) {
+    const lines = p.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) continue;
+
+    // 最初の行が短い（80文字以下）かつ段落が複数行 → サブテーマのタイトル
+    const firstLine = lines[0];
+    if (firstLine.length <= 80 && lines.length >= 2) {
+      themes.push({
+        title: firstLine,
+        keywords: extractKeywordsJP(lines.join(' ')),
+      });
+    } else if (firstLine.length > 80 && themes.length === 0) {
+      // 最初の長い段落 → メインサマリー（テーマとしては使わないがキーワード抽出）
+      // スキップ（親テーマにはしない）
+    }
+  }
+
+  return themes;
+}
+
+/**
+ * 日本語テキストからキーワードを抽出（簡易版）
+ * 名詞的なフレーズを取り出す
+ */
+function extractKeywordsJP(text: string): string[] {
+  // タイムスタンプ除去
+  const cleaned = text
+    .replace(/\(\d{2}:\d{2}:\d{2}\)/g, '')
+    .replace(/[（）()「」『』【】、。・,.:：\n]/g, ' ')
+    .replace(/\s+/g, ' ');
+
+  // 2文字以上のカタカナ語、漢字語を抽出
+  const katakana = cleaned.match(/[ァ-ヶー]{2,}/g) || [];
+  const kanji = cleaned.match(/[一-龥]{2,}/g) || [];
+  // 英単語（3文字以上）
+  const english = cleaned.match(/[A-Za-z]{3,}/g) || [];
+
+  const keywords = [...katakana, ...kanji, ...english.map(e => e.toLowerCase())];
+  return [...new Set(keywords)];
+}
+
+// ---- 詳細セクションのパース（階層構造版） ----
+
+interface ParsedDetailItem {
+  title: string;
+  body: string;
+  cleanText: string;
+  isDecision: boolean;
+  isOpenIssue: boolean;
+}
+
+function parseDetails(text: string, summaryThemes: SummaryTheme[]): {
   topics: AnalysisTopic[];
   decisions: AIDetectedDecision[];
   openIssues: AIDetectedOpenIssue[];
 } {
-  const topics: AnalysisTopic[] = [];
   const decisions: AIDetectedDecision[] = [];
   const openIssues: AIDetectedOpenIssue[] = [];
 
-  // 箇条書き項目を分割（* または - で始まる行をグルーピング）
+  // 箇条書き項目を分割
   const items = splitBulletItems(text);
 
+  // 各段落をパース
+  const parsed: ParsedDetailItem[] = [];
   for (const item of items) {
-    // タイムスタンプを除去して本文を取得
-    // Gemini形式: (00:00:00) or (__00:00:00__) の両方に対応
     const cleanText = item
       .replace(/\(\d{2}:\d{2}:\d{2}\)/g, '')
       .replace(/\(__\d{2}:\d{2}:\d{2}__\)/g, '')
       .trim();
     if (!cleanText) continue;
 
-    // トピックタイトルを抽出（最初の文 or コロン前）
     const titleMatch = cleanText.match(/^(.+?)[:：。]/);
     const title = titleMatch ? titleMatch[1].trim() : cleanText.slice(0, 80);
     const body = titleMatch ? cleanText.slice(titleMatch[0].length).trim() : '';
 
-    // 決定事項の検出キーワード
     const decisionKeywords = ['決定', '合意', '方針', '決まった', '採用', '進める', '確定'];
     const isDecision = decisionKeywords.some(kw => cleanText.includes(kw));
-
-    // 未確定事項の検出キーワード
     const openIssueKeywords = ['検討', '未定', '課題', '要確認', '今後', '懸念', '懐疑'];
     const isOpenIssue = openIssueKeywords.some(kw => cleanText.includes(kw)) && !isDecision;
 
-    // トピックとして登録
-    topics.push({
-      title,
-      options: [],
-      decision: isDecision ? body || cleanText : null,
-      status: isDecision ? 'completed' : 'active',
-    });
+    parsed.push({ title, body, cleanText, isDecision, isOpenIssue });
 
-    // 決定事項としても登録
+    // 決定事項・未確定事項は従来通り
     if (isDecision) {
       decisions.push({
         title,
@@ -204,8 +261,6 @@ function parseDetails(text: string): {
         rationale: extractRationale(cleanText),
       });
     }
-
-    // 未確定事項としても登録
     if (isOpenIssue) {
       openIssues.push({
         title,
@@ -215,7 +270,110 @@ function parseDetails(text: string): {
     }
   }
 
+  // サブテーマがある場合 → 階層構造を構築
+  let topics: AnalysisTopic[];
+  if (summaryThemes.length >= 2) {
+    topics = buildHierarchicalTopics(parsed, summaryThemes);
+  } else {
+    // サブテーマがない場合 → フラット構造（従来互換）
+    topics = parsed.map(p => ({
+      title: p.title,
+      options: [],
+      decision: p.isDecision ? p.body || p.cleanText : null,
+      status: p.isDecision ? 'completed' as const : 'active' as const,
+    }));
+  }
+
   return { topics, decisions, openIssues };
+}
+
+/**
+ * サブテーマを親ノードとして、詳細段落をキーワードマッチングで子ノードに振り分け
+ */
+function buildHierarchicalTopics(
+  parsed: ParsedDetailItem[],
+  themes: SummaryTheme[]
+): AnalysisTopic[] {
+  // 各テーマに属する子ノードを格納
+  const themeChildren: Map<number, ParsedDetailItem[]> = new Map();
+  const unmatched: ParsedDetailItem[] = [];
+
+  for (const item of parsed) {
+    const itemKeywords = extractKeywordsJP(item.title + ' ' + item.body);
+
+    // 各テーマとのキーワード重複度を計算
+    let bestThemeIdx = -1;
+    let bestScore = 0;
+
+    for (let i = 0; i < themes.length; i++) {
+      const score = calculateKeywordOverlap(themes[i].keywords, itemKeywords);
+      if (score > bestScore) {
+        bestScore = score;
+        bestThemeIdx = i;
+      }
+    }
+
+    // 閾値以上のスコアならテーマに振り分け、そうでなければ未分類
+    if (bestThemeIdx >= 0 && bestScore >= 2) {
+      const children = themeChildren.get(bestThemeIdx) || [];
+      children.push(item);
+      themeChildren.set(bestThemeIdx, children);
+    } else {
+      unmatched.push(item);
+    }
+  }
+
+  // テーマを親ノードとしてトピックを構築
+  const topics: AnalysisTopic[] = [];
+
+  for (let i = 0; i < themes.length; i++) {
+    const children = themeChildren.get(i) || [];
+    const hasDecision = children.some(c => c.isDecision);
+
+    topics.push({
+      title: themes[i].title,
+      options: children.map(c => c.title),
+      decision: hasDecision ? children.find(c => c.isDecision)?.body || null : null,
+      status: hasDecision ? 'completed' : 'active',
+    });
+  }
+
+  // 未分類の段落は独立したルートノードとして追加
+  for (const item of unmatched) {
+    topics.push({
+      title: item.title,
+      options: [],
+      decision: item.isDecision ? item.body || item.cleanText : null,
+      status: item.isDecision ? 'completed' : 'active',
+    });
+  }
+
+  return topics;
+}
+
+/**
+ * キーワード重複度を計算（部分一致含む）
+ * スコア = マッチしたキーワード数
+ */
+function calculateKeywordOverlap(themeKw: string[], itemKw: string[]): number {
+  let score = 0;
+  for (const tk of themeKw) {
+    for (const ik of itemKw) {
+      // 部分一致（3文字以上の共通部分）
+      if (tk.length >= 3 && ik.length >= 3) {
+        if (tk.includes(ik) || ik.includes(tk)) {
+          score++;
+          break;
+        }
+      }
+      // 完全一致（2文字以上）
+      if (tk.length >= 2 && tk === ik) {
+        score++;
+        break;
+      }
+    }
+  }
+  return score;
 }
 
 // ---- 次のステップのパース ----
