@@ -438,7 +438,7 @@ export async function generateTaskChat(
   phase: TaskPhase,
   conversationHistory: AiConversationMessage[],
   projectContext?: TaskChatContext,
-  imageData?: { base64: string; mimeType: string }
+  fileData?: { base64: string; mimeType: string; name?: string }
 ): Promise<TaskAiChatResponse> {
   const apiKey = getApiKey();
 
@@ -592,13 +592,30 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
     const systemPrompt = `${phaseInstructions[phase]}${shinjiMethodStr}${deepResearchInstruction}\n\n${contextParts.join('\n')}${projectContextStr}${externalResourcesStr}${personalizedStr}`;
 
     // Claude APIのメッセージ形式に変換（system は別パラメータ）
-    // 最後のユーザーメッセージは画像付きの場合マルチモーダルコンテンツにする
-    const lastUserContent: any = imageData
-      ? [
-          { type: 'image', source: { type: 'base64', media_type: imageData.mimeType, data: imageData.base64 } },
+    // v7.1: ファイル添付時はマルチモーダルコンテンツを構築
+    let lastUserContent: any = userMessage;
+    if (fileData) {
+      const isImage = fileData.mimeType.startsWith('image/');
+      const isPdf = fileData.mimeType === 'application/pdf';
+      if (isImage) {
+        // 画像: そのままimage typeで送信
+        lastUserContent = [
+          { type: 'image', source: { type: 'base64', media_type: fileData.mimeType, data: fileData.base64 } },
           { type: 'text', text: userMessage },
-        ]
-      : userMessage;
+        ];
+      } else if (isPdf) {
+        // PDF: document typeで送信（Claude APIネイティブ対応）
+        lastUserContent = [
+          { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileData.base64 } },
+          { type: 'text', text: userMessage },
+        ];
+      } else {
+        // PPTX/DOCX/XLSX: テキスト抽出はサーバー側で行い、テキストとして送信
+        // Base64のサイズを超えないよう、ファイル名と種類を明記
+        const fileName = fileData.name || 'document';
+        lastUserContent = `[添付ファイル: ${fileName}（${fileData.mimeType}）]\n※ このファイルの内容はテキストとして抽出できませんでした。ファイル名や拡張子から推測し、ユーザーの質問に応答してください。\n\n${userMessage}`;
+      }
+    }
 
     const messages = [
       ...conversationHistory.slice(-20).map((msg) => ({

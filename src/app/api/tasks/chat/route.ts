@@ -18,7 +18,9 @@ export async function POST(request: NextRequest) {
     // Phase 22: 認証ユーザーIDを使用
     const userId = await getServerUserId();
     const body = await request.json();
-    const imageData = body.image as { base64: string; mimeType: string } | undefined;
+    // v7.1: ファイル添付（画像・PDF・PPTX・DOCX・XLSX）
+    const fileData = body.file as { base64: string; mimeType: string; name?: string } | undefined
+      || body.image as { base64: string; mimeType: string } | undefined; // 後方互換
 
     if (!body.taskId || !body.message || !body.phase) {
       return NextResponse.json(
@@ -187,7 +189,7 @@ export async function POST(request: NextRequest) {
       body.phase,
       task.conversations,
       chatContext,
-      imageData
+      fileData
     );
 
     // Phase 42f残り: 会話ターンIDを生成（会話ジャンプ用）

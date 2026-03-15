@@ -1,8 +1,9 @@
 // v4.0: タスクAI会話ビュー（TaskDetailPanel内で表示）
+// v7.1: 画像・PDF・PPTX・DOCX・XLSX添付対応
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageCircle, ArrowLeft, ImagePlus, X } from 'lucide-react';
+import { Send, Loader2, MessageCircle, ArrowLeft, Paperclip, X, FileText, Image as ImageIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Conversation {
@@ -21,6 +22,12 @@ interface TaskChatViewProps {
   taskStatus: string;
   onBack: () => void;
   onConversationUpdate: () => void;
+}
+
+interface AttachedFile {
+  base64: string;
+  mimeType: string;
+  name: string;
 }
 
 function determinePhase(conversations: Conversation[], taskStatus: string): string {
@@ -42,6 +49,25 @@ function formatMessage(text: string): string {
     .replace(/\n/g, '<br/>');
 }
 
+// ファイルタイプ判定
+function isImageFile(mimeType: string): boolean {
+  return mimeType.startsWith('image/');
+}
+function isPdfFile(mimeType: string): boolean {
+  return mimeType === 'application/pdf';
+}
+function getFileLabel(name: string, mimeType: string): string {
+  if (isImageFile(mimeType)) return `画像: ${name}`;
+  if (isPdfFile(mimeType)) return `PDF: ${name}`;
+  if (mimeType.includes('presentation')) return `PPTX: ${name}`;
+  if (mimeType.includes('wordprocessing')) return `DOCX: ${name}`;
+  if (mimeType.includes('spreadsheet')) return `XLSX: ${name}`;
+  return `ファイル: ${name}`;
+}
+
+const ALLOWED_ACCEPT = 'image/*,.pdf,.pptx,.docx,.xlsx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+
 export default function TaskChatView({
   taskId,
   conversations,
@@ -52,10 +78,10 @@ export default function TaskChatView({
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [localConversations, setLocalConversations] = useState<Conversation[]>(conversations);
-  const [attachedImage, setAttachedImage] = useState<{ base64: string; mimeType: string; name: string } | null>(null);
+  const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const imageInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // propsのconversationsまたはtaskIdが変わったら同期
   useEffect(() => {
@@ -66,34 +92,33 @@ export default function TaskChatView({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [localConversations]);
 
-  // 画像添付ハンドラ
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ファイル添付ハンドラ
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('画像は10MB以下にしてください');
+    if (file.size > MAX_FILE_SIZE) {
+      alert('ファイルは20MB以下にしてください');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
       const base64 = result.split(',')[1];
-      setAttachedImage({ base64, mimeType: file.type, name: file.name });
+      setAttachedFile({ base64, mimeType: file.type, name: file.name });
     };
     reader.readAsDataURL(file);
-    if (imageInputRef.current) imageInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleSend = async () => {
     const trimmed = message.trim();
-    if ((!trimmed && !attachedImage) || isSending) return;
+    if ((!trimmed && !attachedFile) || isSending) return;
 
     const phase = determinePhase(localConversations, taskStatus);
 
     // 楽観的にユーザーメッセージを追加
-    const displayContent = attachedImage
-      ? `${trimmed ? trimmed + '\n' : ''}[画像: ${attachedImage.name}]`
+    const displayContent = attachedFile
+      ? `${trimmed ? trimmed + '\n' : ''}[${getFileLabel(attachedFile.name, attachedFile.mimeType)}]`
       : trimmed;
     const userMsg: Conversation = {
       id: `temp-${Date.now()}`,
@@ -104,16 +129,18 @@ export default function TaskChatView({
     };
     setLocalConversations(prev => [...prev, userMsg]);
 
-    const sendPayload: any = { taskId, message: trimmed || '画像を確認してください', phase };
-    if (attachedImage) {
-      sendPayload.image = {
-        base64: attachedImage.base64,
-        mimeType: attachedImage.mimeType,
+    const defaultMsg = attachedFile ? 'このファイルの内容を確認してください' : '';
+    const sendPayload: any = { taskId, message: trimmed || defaultMsg, phase };
+    if (attachedFile) {
+      sendPayload.file = {
+        base64: attachedFile.base64,
+        mimeType: attachedFile.mimeType,
+        name: attachedFile.name,
       };
     }
 
     setMessage('');
-    setAttachedImage(null);
+    setAttachedFile(null);
     setIsSending(true);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -231,17 +258,25 @@ export default function TaskChatView({
 
       {/* 入力エリア */}
       <div className="shrink-0 border-t border-slate-100 px-4 py-3">
-        {/* 画像プレビュー */}
-        {attachedImage && (
+        {/* ファイルプレビュー */}
+        {attachedFile && (
           <div className="mb-2 flex items-center gap-2 p-2 bg-slate-50 rounded-lg">
-            <img
-              src={`data:${attachedImage.mimeType};base64,${attachedImage.base64}`}
-              alt="添付画像"
-              className="w-12 h-12 object-cover rounded"
-            />
-            <span className="text-xs text-slate-500 flex-1 truncate">{attachedImage.name}</span>
+            {isImageFile(attachedFile.mimeType) ? (
+              <img
+                src={`data:${attachedFile.mimeType};base64,${attachedFile.base64}`}
+                alt="添付画像"
+                className="w-12 h-12 object-cover rounded"
+              />
+            ) : (
+              <div className="w-12 h-12 flex items-center justify-center bg-slate-200 rounded">
+                <FileText className="w-5 h-5 text-slate-500" />
+              </div>
+            )}
+            <span className="text-xs text-slate-500 flex-1 truncate">
+              {getFileLabel(attachedFile.name, attachedFile.mimeType)}
+            </span>
             <button
-              onClick={() => setAttachedImage(null)}
+              onClick={() => setAttachedFile(null)}
               className="p-1 rounded hover:bg-slate-200 transition-colors"
             >
               <X className="w-3 h-3 text-slate-400" />
@@ -250,19 +285,19 @@ export default function TaskChatView({
         )}
         <div className="flex items-end gap-2">
           <input
-            ref={imageInputRef}
+            ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept={ALLOWED_ACCEPT}
             className="hidden"
-            onChange={handleImageSelect}
+            onChange={handleFileSelect}
           />
           <button
-            onClick={() => imageInputRef.current?.click()}
+            onClick={() => fileInputRef.current?.click()}
             disabled={isSending}
             className="p-2 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-slate-50 transition-colors"
-            title="画像を添付"
+            title="ファイルを添付（画像・PDF・PPTX・DOCX・XLSX）"
           >
-            <ImagePlus className="w-4 h-4" />
+            <Paperclip className="w-4 h-4" />
           </button>
           <textarea
             ref={textareaRef}
@@ -279,10 +314,10 @@ export default function TaskChatView({
           />
           <button
             onClick={handleSend}
-            disabled={(!message.trim() && !attachedImage) || isSending}
+            disabled={(!message.trim() && !attachedFile) || isSending}
             className={cn(
               'p-2 rounded-lg transition-colors',
-              (message.trim() || attachedImage) && !isSending
+              (message.trim() || attachedFile) && !isSending
                 ? 'bg-blue-600 text-white hover:bg-blue-700'
                 : 'bg-slate-100 text-slate-300'
             )}
