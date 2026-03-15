@@ -114,22 +114,25 @@ export async function GET(
       if (requester) requesterName = requester.display_name || requester.full_name || requester.name;
     }
 
-    // 5. 会話履歴取得
-    const { data: conversations } = await supabase
+    // 5. 会話履歴取得（conversation_tagカラムはDB上に存在しない場合があるため除外）
+    const { data: conversations, error: convError } = await supabase
       .from('task_conversations')
-      .select('id, role, content, phase, conversation_tag, turn_id, created_at')
+      .select('id, role, content, phase, turn_id, created_at')
       .eq('task_id', id)
       .order('created_at', { ascending: true });
+    if (convError) {
+      console.error('[TaskDetail] 会話履歴取得エラー:', convError);
+    }
 
-    // 6. 関連資料取得
+    // 6. 関連資料取得（drive_documentsにはtitleカラムなし→file_nameを使用）
     const { data: rawDocuments } = await supabase
       .from('drive_documents')
-      .select('id, title, web_view_link, link_url, document_type, created_at')
+      .select('id, file_name, web_view_link, link_url, document_type, created_at')
       .eq('task_id', id)
       .order('created_at', { ascending: false });
     const documents = (rawDocuments || []).map((d: any) => ({
       id: d.id,
-      title: d.title,
+      title: d.file_name || '無題',
       document_url: d.web_view_link || d.link_url || null,
       document_type: d.document_type,
       created_at: d.created_at,
