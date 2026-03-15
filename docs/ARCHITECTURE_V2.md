@@ -1,8 +1,8 @@
 # NodeMap V2 アーキテクチャ設計書
 
-最終更新: 2026-03-12
+最終更新: 2026-03-15
 
-> **ステータス**: V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 実装完了
+> **ステータス**: V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 実装完了
 > **前提**: CLAUDE.md が SSOT。本ファイルはアーキテクチャ詳細の補足
 
 ---
@@ -305,10 +305,12 @@ Week N+1:
         会議イベントとして自動記録
 ```
 
-### 会議録の形式
+### 会議録の入口（v7.0: 2つのみ）
 
-- テキスト入力（検討ツリータブから）
-- MeetGeek Webhook（会議終了時に自動取り込み・プロジェクト自動判定）
+- **Gemini会議メモ（自動）**: Google Meetの「メモを取る」→ Cron（sync-meeting-notes）が48時間以内のイベントをスキャン → Docs API取得 → Claude AI解析 → 統一パイプライン実行
+- **手動テキスト入力**: 検討ツリータブからテキスト入力 → 統一パイプライン実行
+
+**MeetGeekは廃止（v7.0）**: Webhookは即時200返却。Gemini会議メモに完全移行。
 
 ### v3.0 追加: 議事録ファースト原則
 
@@ -316,41 +318,35 @@ Week N+1:
 
 - タイムラインは**読み取り専用**（手動イベント追加は廃止）
 - `create_business_event` intent は `upload_meeting_record` にリダイレクト
-- MeetGeek連携: 会議終了 → Webhook → 参加者からPJ自動判定 → 議事録保存 → AI解析 → 検討ツリー・ビジネスイベント自動生成
 
-### v3.0 追加: MeetGeek連携
+### v6.0→v7.0: Gemini会議メモ連携
 
-**Webhook受信**: `POST /api/webhooks/meetgeek`
+**自動取り込み**: Cron `sync-meeting-notes`（毎日 07:00 UTC）
 
-**取得データ**（5つのAPIを順次呼び出し）:
-- `GET /meetings/{id}` — タイトル・参加者メール・ホスト・開始/終了時刻・タイムゾーン
-- `GET /meetings/{id}/summary` — 要約テキスト + AI分析
-- `GET /meetings/{id}/transcript` — 全文書き起こし（発言者・タイムスタンプ付き）
-- `GET /meetings/{id}/highlights` — ハイライト（アクションアイテム等）
-- **録画リンク**: 4時間期限付き → `GET /api/meeting-records/[id]/recording` でオンデマンド取得（保存しない）
+**検出方法**（2段階フォールバック）:
+1. カレンダーイベントの添付ファイル（Google Docs）から検出
+2. 添付がない場合 → Drive APIでイベントタイトルからGemini Docsを検索
+
+**テキスト取得**: Google Docs API優先、Drive API exportフォールバック
+
+**AI解析（v7.0で統一）**: 全source_typeでClaude AIが解析。検討ツリーに最適な3-7テーマ×2-7子ノードを構造化。Geminiパーサーはフォールバック専用
 
 **保存カラム**: participants(JSONB), meeting_start_at, meeting_end_at, metadata(JSONB), highlights(JSONB)
-
-プロジェクト自動判定の優先順位:
-0. 参加者メール → `contact_channels` → `contact_persons` → 所属`organization` → `projects`
-1. 参加者名（トランスクリプトのspeaker）→ `contact_persons` → 所属`organization` → `projects`
-2. 同日の`business_events`（会議）とサマリーテキスト照合
-3. フォールバック: 最新プロジェクト
-
-環境変数: `MEETGEEK_API_KEY`, `MEETGEEK_WEBHOOK_SECRET`
 
 ### v3.0 追加: 対称データパイプライン
 
 2つの入口から5つの出力が対称的に自動生成される。
 
 ```
-入口A-1: 会議録（手動 or MeetGeek Webhook）
-  → AI解析（/meeting-records/[id]/analyze）
+入口A-1: 会議録（手動テキスト or Gemini会議メモ自動取り込み）
+  → 統一パイプライン（/meeting-records/[id]/analyze 内で一括実行）
+    ├── Claude AI解析（全source_type共通、v7.0統一）
     ├── business_events（会議イベント自動追加）
-    ├── decision_tree_nodes（topics → ツリー生成、confidence=0.85）
+    ├── decision_tree_nodes（topics → ツリー生成、再解析時は自動削除→再生成、confidence=0.85）
     ├── knowledge_master_entries（キーワード抽出、source_meeting_record_id付き）
-    ├── task_suggestions（action_items → 秘書画面で承認UI）
-    └── evaluation_learnings（milestone_feedback → 自己学習）
+    ├── task_suggestions（action_items → 検討ツリータブで直接承認）
+    ├── evaluation_learnings（milestone_feedback → 自己学習）
+    └── チャネル自動通知（Slack Block Kit / Chatworkタスク、v7.0）
 
 入口A-2: チャネルメッセージ（Slack/Chatwork Cron同期）
   → sync-business-events（毎日01:00 UTC）
@@ -541,12 +537,12 @@ CREATE TABLE meeting_records (
   title TEXT NOT NULL,
   meeting_date DATE NOT NULL,
   content TEXT NOT NULL,
-  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek')),
+  source_type TEXT DEFAULT 'text' CHECK (source_type IN ('text', 'file', 'transcription', 'meetgeek', 'gemini')),
   source_file_id TEXT,
   ai_summary TEXT,
   processed BOOLEAN DEFAULT false,
   user_id TEXT,
-  -- v3.0: MeetGeek連携強化
+  -- v3.0: MeetGeek連携強化 → v6.0: 'gemini' 追加 → v7.0: MeetGeek廃止
   participants JSONB DEFAULT '[]'::jsonb,
   meeting_start_at TIMESTAMPTZ,
   meeting_end_at TIMESTAMPTZ,
@@ -719,7 +715,7 @@ V1（現行）              V2
 | V2-I | 統合: 秘書AIへの新intent追加 + ダッシュボード更新 | ✅ 完了 |
 | v3.0-1 | 対称データパイプライン（会議録⇔チャネル） | ✅ 完了 |
 | v3.0-2 → v5.0 | タスク提案パイプライン（検討ツリータブ直接承認・dueDate/sourceType引き継ぎ） | ✅ 完了 |
-| v3.0-3 | MeetGeek連携強化（全データ取得・録画リンクAPI） | ✅ 完了 |
+| v3.0-3 | ~~MeetGeek連携強化~~ → v7.0でGemini一本化に移行 | ✅ 完了→廃止 |
 | v3.3 | プロジェクト中心リストラクチャリング（7タブ・メンバー統合） | ✅ 完了 |
 | v3.4-1 | テーブル設計（open_issues / decision_log / meeting_agenda） | ✅ 完了 |
 | v3.4-2 | AI解析コンテキスト注入 + サービス層 + Cron | ✅ 完了 |
@@ -731,6 +727,9 @@ V1（現行）              V2
 | v4.3 | チャネルボット — メンション応答（Slack/Chatwork対応） | ✅ 完了 |
 | v4.4 | チャネルボット — 定期配信（月曜/金曜/アラート） | ✅ 完了 |
 | v4.5 | 外部タスク双方向同期（Slack Block Kit + Chatworkネイティブタスク） | ✅ 完了 |
+| v5.0 | タスク提案フロー刷新（統合カンバン + 検討ツリータブ直接承認） | ✅ 完了 |
+| v6.0 | Gemini会議メモ連携（Cron自動取り込み + Docs API） | ✅ 完了 |
+| v7.0 | 統一AIパイプライン + チャネル自動共有 + MeetGeek廃止 | ✅ 完了 |
 
 ---
 
