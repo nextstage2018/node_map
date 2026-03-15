@@ -587,6 +587,82 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
       console.error('[MeetingRecords Analyze] v7.0 チャネル通知エラー:', notifyError);
     }
 
+    // 11. v7.0: 検討ツリー生成（analyze API内で一体化）
+    let treeResult = { created: 0, updated: 0, merged: 0 };
+    if (analysisResult.topics && analysisResult.topics.length > 0) {
+      try {
+        // 再解析時: この会議録由来の既存ノードを削除してから再生成
+        // まずプロジェクトの既存ツリーを取得
+        const { data: existingTrees } = await supabase
+          .from('decision_trees')
+          .select('id')
+          .eq('project_id', record.project_id)
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (existingTrees && existingTrees.length > 0) {
+          const treeId = existingTrees[0].id;
+          // この会議録由来のノードを削除（子ノードもCASCADEで削除される場合は親のみ）
+          const { data: meetingNodes } = await supabase
+            .from('decision_tree_nodes')
+            .select('id')
+            .eq('tree_id', treeId)
+            .eq('source_meeting_id', id);
+
+          if (meetingNodes && meetingNodes.length > 0) {
+            const nodeIds = meetingNodes.map(n => n.id);
+            // まず子ノード（parent_node_idがこれらのノード）を削除
+            await supabase
+              .from('decision_tree_nodes')
+              .delete()
+              .eq('tree_id', treeId)
+              .in('parent_node_id', nodeIds);
+            // 次に親ノード自体を削除
+            await supabase
+              .from('decision_tree_nodes')
+              .delete()
+              .in('id', nodeIds);
+            console.log(`[MeetingRecords Analyze] 再解析: 既存ノード${meetingNodes.length}件を削除`);
+          }
+        }
+
+        // 検討ツリー生成API呼び出し（内部fetch）
+        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || process.env.VERCEL_URL
+          ? `https://${process.env.VERCEL_URL}`
+          : 'https://node-map-eight.vercel.app';
+        const generateUrl = `${baseUrl}/api/decision-trees/generate`;
+
+        const treeRes = await fetch(generateUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-cron-secret': process.env.CRON_SECRET || '',
+          },
+          body: JSON.stringify({
+            project_id: record.project_id,
+            meeting_record_id: id,
+            topics: analysisResult.topics,
+            source_type: 'meeting',
+          }),
+        });
+
+        if (treeRes.ok) {
+          const treeData = await treeRes.json();
+          treeResult = {
+            created: treeData.data?.created_count || 0,
+            updated: treeData.data?.updated_count || 0,
+            merged: treeData.data?.merged_count || 0,
+          };
+          console.log(`[MeetingRecords Analyze] 検討ツリー生成完了: created=${treeResult.created}, updated=${treeResult.updated}`);
+        } else {
+          console.error(`[MeetingRecords Analyze] 検討ツリー生成エラー: ${treeRes.status}`);
+        }
+      } catch (treeError) {
+        // 検討ツリー生成失敗してもメインパイプラインはブロックしない
+        console.error('[MeetingRecords Analyze] 検討ツリー生成エラー:', treeError);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -603,6 +679,7 @@ action_itemsはSlack/Chatworkのチャネルに自動投稿され、タスクと
         goal_suggestions_count: analysisResult.goal_suggestions?.length || 0,
         // v7.0
         channel_notified: channelNotified,
+        tree_generated: treeResult,
       },
     });
   } catch (error) {

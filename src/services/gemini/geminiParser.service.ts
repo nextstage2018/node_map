@@ -178,10 +178,15 @@ function extractSummaryThemes(summaryText: string): SummaryTheme[] {
     // 最初の行が短い（80文字以下）かつ段落が複数行 → サブテーマのタイトル
     const firstLine = lines[0];
     if (firstLine.length <= 80 && lines.length >= 2) {
-      themes.push({
-        title: firstLine,
-        keywords: extractKeywordsJP(lines.join(' ')),
-      });
+      // 汎用的すぎるテーマ名（「会議の目的」「背景」「概要」等）はスキップ
+      const genericPatterns = ['会議の目的', '背景', '概要', '経緯', '前提', 'はじめに', '目的と背景', '議題'];
+      const isGeneric = genericPatterns.some(gp => firstLine.includes(gp));
+      if (!isGeneric) {
+        themes.push({
+          title: firstLine,
+          keywords: extractKeywordsJP(lines.join(' ')),
+        });
+      }
     } else if (firstLine.length > 80 && themes.length === 0) {
       // 最初の長い段落 → メインサマリー（テーマとしては使わないがキーワード抽出）
       // スキップ（親テーマにはしない）
@@ -396,44 +401,77 @@ function buildHierarchicalTopics(
 
 /**
  * 子ノード群をキーワード類似度でサブグループに自動分割
- * 簡易クラスタリング: 最初の未割当アイテムを種にして類似アイテムを集める
+ * 2段階クラスタリング:
+ *   1. キーワード類似度で初期グループ形成（種ベース）
+ *   2. 大きすぎるグループはキーワード出現頻度の低い語を種に再分割
  */
 function autoSubGroup(items: ParsedDetailItem[]): { label: string; items: ParsedDetailItem[] }[] {
-  const groups: { label: string; items: ParsedDetailItem[]; keywords: string[] }[] = [];
-  const assigned = new Set<number>();
+  const TARGET_GROUP_SIZE = 5; // 理想的なグループサイズ
 
   // 各アイテムのキーワードを事前計算
   const itemKws = items.map(item => extractKeywordsJP(item.title + ' ' + item.body));
 
-  for (let i = 0; i < items.length; i++) {
+  // ステップ1: アイテム間の類似度マトリックスを構築
+  // キーワード出現頻度（IDF的）を計算
+  const kwItemCount: Map<string, number> = new Map();
+  for (const kws of itemKws) {
+    const unique = new Set(kws);
+    for (const kw of unique) {
+      kwItemCount.set(kw, (kwItemCount.get(kw) || 0) + 1);
+    }
+  }
+
+  // ステップ2: 特異度加重の類似度でクラスタリング
+  const groups: { label: string; items: ParsedDetailItem[]; seedKws: string[] }[] = [];
+  const assigned = new Set<number>();
+
+  // 特異度の高いキーワードを持つアイテムから優先的に種にする
+  const itemSpecificity = itemKws.map(kws => {
+    let maxSpec = 0;
+    for (const kw of kws) {
+      const freq = kwItemCount.get(kw) || 1;
+      const spec = 1.0 / freq;
+      if (spec > maxSpec) maxSpec = spec;
+    }
+    return maxSpec;
+  });
+
+  // 特異度の高い順にソート（インデックスを保持）
+  const sortedIndices = items.map((_, i) => i).sort((a, b) => itemSpecificity[b] - itemSpecificity[a]);
+
+  for (const i of sortedIndices) {
     if (assigned.has(i)) continue;
 
-    // 新グループの種
-    const group: { label: string; items: ParsedDetailItem[]; keywords: string[] } = {
+    // 新グループの種（特異度の高いキーワードのみを種に使う）
+    const seedKws = itemKws[i].filter(kw => {
+      const freq = kwItemCount.get(kw) || 1;
+      return freq <= Math.ceil(items.length * 0.5); // 半数以下のアイテムにしか出ないキーワード
+    });
+
+    const group = {
       label: items[i].title,
       items: [items[i]],
-      keywords: [...itemKws[i]],
+      seedKws: seedKws.length > 0 ? seedKws : itemKws[i].slice(0, 3), // フォールバック: 最初の3キーワード
     };
     assigned.add(i);
 
-    // 類似アイテムを吸収（キーワード重複≥2）
-    for (let j = i + 1; j < items.length; j++) {
+    // 類似アイテムを吸収（特異度加重スコア≥1.5）
+    for (const j of sortedIndices) {
       if (assigned.has(j)) continue;
+      if (group.items.length >= TARGET_GROUP_SIZE + 2) break; // グループサイズ上限
 
-      let overlap = 0;
+      let weightedOverlap = 0;
       for (const kw of itemKws[j]) {
-        if (group.keywords.includes(kw)) {
-          overlap++;
-          if (overlap >= 2) break;
+        if (group.seedKws.includes(kw)) {
+          const freq = kwItemCount.get(kw) || 1;
+          // 汎用キーワードは低スコア、固有キーワードは高スコア
+          const weight = freq >= items.length * 0.7 ? 0.3 : (1.0 / Math.max(freq, 1));
+          weightedOverlap += weight;
         }
       }
 
-      if (overlap >= 2) {
+      if (weightedOverlap >= 1.5) {
         group.items.push(items[j]);
-        // グループキーワードを拡張
-        for (const kw of itemKws[j]) {
-          if (!group.keywords.includes(kw)) group.keywords.push(kw);
-        }
         assigned.add(j);
       }
     }
@@ -441,7 +479,7 @@ function autoSubGroup(items: ParsedDetailItem[]): { label: string; items: Parsed
     groups.push(group);
   }
 
-  // 小さすぎるグループ（1件）は「その他」にまとめる
+  // ステップ3: 小さすぎるグループ（1件）は「その他」にまとめる
   const meaningful: typeof groups = [];
   const tiny: ParsedDetailItem[] = [];
   for (const g of groups) {
@@ -452,13 +490,22 @@ function autoSubGroup(items: ParsedDetailItem[]): { label: string; items: Parsed
     }
   }
 
-  // 「その他」グループ
   if (tiny.length > 0) {
     if (tiny.length === 1) {
-      // 1件だけなら独立ルートノードとして追加
-      meaningful.push({ label: tiny[0].title, items: tiny, keywords: [] });
+      meaningful.push({ label: tiny[0].title, items: tiny, seedKws: [] });
+    } else if (tiny.length <= TARGET_GROUP_SIZE) {
+      meaningful.push({ label: 'その他の議論', items: tiny, seedKws: [] });
     } else {
-      meaningful.push({ label: 'その他の議論', items: tiny, keywords: [] });
+      // 「その他」も多い場合は複数グループに分割（単純な均等分割）
+      const chunkSize = TARGET_GROUP_SIZE;
+      for (let k = 0; k < tiny.length; k += chunkSize) {
+        const chunk = tiny.slice(k, k + chunkSize);
+        meaningful.push({
+          label: chunk[0].title,
+          items: chunk,
+          seedKws: [],
+        });
+      }
     }
   }
 

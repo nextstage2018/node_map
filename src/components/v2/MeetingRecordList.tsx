@@ -52,7 +52,7 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
     setReanalyzingId(id);
     setReanalyzeError(null);
     try {
-      // ステップ1: AI解析
+      // AI解析 + 検討ツリー生成 + チャネル通知を一括実行
       const analyzeRes = await fetch(`/api/meeting-records/${id}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -64,29 +64,15 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
         return;
       }
 
-      // ステップ2: 検討ツリー生成（topicsがあれば）
-      const topics = analyzeData.data?.analysis?.topics;
-      console.log('[再解析] topics:', topics?.length || 0, '件', topics);
-      if (topics && topics.length > 0) {
-        const record = records.find(r => r.id === id);
-        const treeRes = await fetch('/api/decision-trees/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: record?.project_id || projectId,
-            meeting_record_id: id,
-            topics,
-          }),
-        });
-        const treeData = await treeRes.json();
-        console.log('[再解析] 検討ツリー生成結果:', treeData);
-      } else {
-        console.log('[再解析] topicsが空のため検討ツリー生成をスキップ');
-      }
+      const treeResult = analyzeData.data?.tree_generated;
+      console.log('[再解析] 完了:', {
+        topics: analyzeData.data?.analysis?.topics?.length || 0,
+        tree: treeResult,
+      });
 
       // リスト更新
       await fetchRecords();
-      // 親に通知（タスク提案パネル等のリフレッシュ用）
+      // 親に通知（タスク提案パネル・検討ツリー表示のリフレッシュ用）
       onAnalyzed?.();
     } catch (err) {
       console.error('[MeetingRecordList] 再解析エラー:', err);
