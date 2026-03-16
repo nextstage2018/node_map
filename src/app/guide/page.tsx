@@ -19,7 +19,7 @@ import {
 const TABS = [
   { id: 'overview', label: 'はじめに', icon: BookOpen },
   { id: 'dataflow', label: 'データフロー', icon: Workflow },
-  { id: 'secretary', label: '秘書', icon: Bot },
+  { id: 'home', label: 'ホーム', icon: Bot },
   { id: 'tasks', label: 'タスク', icon: KanbanSquare },
   { id: 'inbox', label: 'インボックス', icon: Inbox },
   { id: 'organizations', label: '組織・プロジェクト', icon: Building2 },
@@ -91,7 +91,7 @@ function OverviewTab() {
       <SectionCard title="NodeMapとは" icon={Lightbulb}>
         <p className="mb-3">
           NodeMapは「情報を受け取り → 整理し → 活用する」ためのコミュニケーション＆ビジネスログツールです。
-          AI秘書に話しかけるだけで、プロジェクト管理・メッセージ対応・タスク整理をサポートします。
+          ホーム画面のダッシュボードから、インボックス返信・カレンダー確認・タスク管理をすぐに始められます。
         </p>
       </SectionCard>
 
@@ -102,7 +102,7 @@ function OverviewTab() {
             <FileText className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
             <div>
               <p className="font-medium text-slate-800">会議録</p>
-              <p className="text-slate-600">検討ツリータブから登録、またはMeetGeek連携で自動取り込み。AIが解析し、検討ツリー・ナレッジ・タスク候補を自動生成します。</p>
+              <p className="text-slate-600">検討ツリータブから手動登録、またはGemini会議メモの自動取り込み。AIが解析し、検討ツリー・ナレッジ・タスク候補・マイルストーンを自動生成します。</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
@@ -115,27 +115,27 @@ function OverviewTab() {
         </div>
       </SectionCard>
 
-      <SectionCard title="5階層のデータ構造" icon={Layers}>
-        <FlowStep steps={['組織', 'プロジェクト', 'ゴール（フェーズ）', 'マイルストーン', 'タスク']} />
+      <SectionCard title="4階層のデータ構造" icon={Layers}>
+        <FlowStep steps={['組織', 'プロジェクト', 'マイルストーン（任意）', 'タスク']} />
         <p className="mt-2">
-          組織の中にプロジェクトがあり、ゴール（フェーズ）でプロジェクトの段階を管理します。
-          マイルストーン（1週間単位の目標）の下にタスクがぶら下がります。
+          組織の中にプロジェクトがあり、マイルストーン（1週間単位の目標）の下にタスクがぶら下がります。
+          マイルストーンは会議録AI解析から自動登録されます（自社PJでは原則必須、社外PJでは任意）。
         </p>
       </SectionCard>
 
-      <SectionCard title="タスクとジョブの違い" icon={ListTodo}>
+      <SectionCard title="タスクと定期イベントの違い" icon={ListTodo}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
             <p className="font-medium text-slate-800 mb-1 flex items-center gap-1">
               <CheckCircle className="w-4 h-4 text-blue-600" /> タスク
             </p>
-            <p>思考を伴う作業。マイルストーン配下に配置。カンバンボードで管理し、AIと壁打ちしながら進められます。Slack・Chatworkからの自動提案にも対応。</p>
+            <p>思考を伴う作業。マイルストーン配下に配置（任意）。カンバンボードで管理し、AIと壁打ちしながら進められます。Slack・Chatwork・会議録からの自動提案にも対応。</p>
           </div>
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <p className="font-medium text-slate-800 mb-1 flex items-center gap-1">
-              <Briefcase className="w-4 h-4 text-slate-600" /> ジョブ
+              <Briefcase className="w-4 h-4 text-slate-600" /> 定期イベント
             </p>
-            <p>定型業務ややることメモ。プロジェクトへの紐づけは任意。AIに構造化や対応を任せられます。</p>
+            <p>定期MTGや定期作業。プロジェクト配下で管理。カレンダー連携・Gemini議事録自動取得に対応しています。</p>
           </div>
         </div>
         <p className="text-xs text-slate-400 mt-2">※ 詳しくは「タスク」タブのガイドをご覧ください。</p>
@@ -144,11 +144,11 @@ function OverviewTab() {
       <SectionCard title="画面構成" icon={BookOpen}>
         <div className="space-y-2">
           {[
-            { icon: Bot, label: '秘書', desc: 'ホーム画面。AIに話しかけてすべての操作の起点に' },
-            { icon: KanbanSquare, label: 'タスク', desc: 'カンバンボードでタスク管理。AI提案の承認・詳細編集・AIに相談' },
-            { icon: Inbox, label: 'インボックス', desc: 'メール・Slack・Chatworkの受信メッセージ一覧' },
+            { icon: Bot, label: 'ホーム', desc: 'ダッシュボード。インボックス返信・カレンダー・タスクリマインダーの3カード' },
+            { icon: KanbanSquare, label: 'タスク', desc: '統合カンバンボード。PJ選択・担当者フィルタ・日付フィルタで管理' },
+            { icon: Inbox, label: 'インボックス', desc: 'Slack・Chatworkの受信メッセージ一覧' },
             { icon: Building2, label: '組織・プロジェクト', desc: '組織とプロジェクトの管理。タイムライン・検討ツリー等' },
-            { icon: Settings, label: '設定', desc: 'チャネル接続・プロフィール・ナレッジ確認' },
+            { icon: Settings, label: '設定', desc: 'チャネル接続・プロフィール設定' },
           ].map((item) => (
             <div key={item.label} className="flex items-start gap-3 p-2">
               <item.icon className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
@@ -164,75 +164,54 @@ function OverviewTab() {
   );
 }
 
-function SecretaryTab() {
+function HomeTab() {
   return (
     <div>
-      <SectionCard title="AI秘書の使い方" icon={Bot}>
+      <SectionCard title="ホーム画面（ダッシュボード）" icon={Bot}>
         <p className="mb-3">
-          ホーム画面のチャットでAI秘書に話しかけると、意図を自動判定して適切な操作を実行します。
-          テキスト入力のほか、画面に表示されるカード型UIや選択チップからも操作できます。
+          ホーム画面は3つのカードで構成されたダッシュボードです。日々の業務で必要な「返信」「予定」「タスク」にすぐアクセスできます。
         </p>
       </SectionCard>
 
-      <SectionCard title="話しかけ方の例" icon={MessageSquare}>
-        <div className="space-y-2">
-          <p className="font-medium text-slate-700 mb-1">日常の確認</p>
-          <ExampleBox>
-            「今日の状況を教えて」<br />
-            「未読メッセージある？」<br />
-            「今日の予定を確認して」
-          </ExampleBox>
-
-          <p className="font-medium text-slate-700 mb-1 mt-4">タスク・プロジェクト操作</p>
-          <ExampleBox>
-            「タスクを作成して」<br />
-            「マイルストーンの進捗を教えて」<br />
-            「〇〇プロジェクトのタスク一覧」
-          </ExampleBox>
-
-          <p className="font-medium text-slate-700 mb-1 mt-4">作成・登録</p>
-          <ExampleBox>
-            「組織を作成して」<br />
-            「プロジェクトを作って」<br />
-            「会議録をアップロードしたい」
-          </ExampleBox>
-
-          <p className="font-medium text-slate-700 mb-1 mt-4">分析・相談</p>
-          <ExampleBox>
-            「週間の活動サマリーを見せて」<br />
-            「このタスクの進め方を相談したい」<br />
-            「ナレッジを整理して」
-          </ExampleBox>
+      <SectionCard title="インボックス返信カード" icon={Inbox}>
+        <p className="mb-3">未読メッセージの確認からAI返信生成・送信まで、3段階のフローで完結します。</p>
+        <FlowStep steps={['未読一覧', '詳細表示', 'AI返信生成 → 編集 → 送信']} />
+        <div className="space-y-2 mt-3 text-sm text-slate-600">
+          <p>未読メッセージを最大10件表示。チャネルアイコン（Slack=紫S、Chatwork=オレンジC）で送信元がわかります。</p>
+          <p>メッセージを選ぶと詳細が表示され、自動で既読マークされます。「AI返信を生成」ボタンで文脈に合った返信下書きが作成されるので、編集して送信できます。</p>
         </div>
       </SectionCard>
 
-      <SectionCard title="カード型選択UI" icon={ChevronRight}>
-        <p className="mb-2">秘書は状況に応じてカード型のUIを表示します。テキスト入力なしでタップ操作できます。</p>
-        <div className="space-y-1.5 text-sm">
-          <div className="flex items-center gap-2">
-            <Badge color="blue" label="アクション選択" />
-            <span>プロジェクト文脈での次のアクション候補</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge color="slate" label="プロジェクト選択" />
-            <span>プロジェクト未指定時にPJを選ぶ</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge color="green" label="マイルストーン選択" />
-            <span>タスク作成時にMSを選ぶ</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge color="indigo" label="マイルストーン一覧" />
-            <span>開閉式で進捗・期日・タスク件数を確認</span>
-          </div>
+      <SectionCard title="カレンダーカード" icon={Calendar}>
+        <p className="mb-3">月カレンダーで予定を俯瞰し、日付をクリックするとその日の予定一覧が表示されます。</p>
+        <div className="space-y-2 text-sm text-slate-600">
+          <p>各日付にはイベントドットが表示され、予定の有無が一目でわかります。</p>
+          <p>新しい予定の作成もこのカードから直接行えます（タイトル・日付・時間を入力）。</p>
+        </div>
+        <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200 text-xs text-slate-600">
+          Google Calendar未連携の場合はフォールバック表示になります。「設定」→「チャネル接続」から連携してください。
         </div>
       </SectionCard>
 
-      <SectionCard title="動的選択肢（チップボタン）" icon={Lightbulb}>
-        <p>
-          AIの回答の下に、青いチップボタンが表示されることがあります。
-          これは今の文脈に合った次のアクション候補です。タップするとそのまま秘書に指示が送られます。
-        </p>
+      <SectionCard title="タスクリマインダーカード" icon={ListTodo}>
+        <p className="mb-3">期限が近いタスクや超過タスクを担当者別にグルーピングして表示します。</p>
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="p-2 bg-red-50 rounded border border-red-200 text-center">
+            <p className="text-xs font-medium text-red-600">超過</p>
+            <p className="text-[10px] text-red-500 mt-0.5">期限切れタスク</p>
+          </div>
+          <div className="p-2 bg-amber-50 rounded border border-amber-200 text-center">
+            <p className="text-xs font-medium text-amber-600">今日</p>
+            <p className="text-[10px] text-amber-500 mt-0.5">今日が期限</p>
+          </div>
+          <div className="p-2 bg-blue-50 rounded border border-blue-200 text-center">
+            <p className="text-xs font-medium text-blue-600">今週</p>
+            <p className="text-[10px] text-blue-500 mt-0.5">今週中のタスク</p>
+          </div>
+        </div>
+        <div className="text-sm text-slate-600">
+          <p>優先度ドット（高=赤、中=黄、低=灰）と期限残り日数（「3日超過」「今日」「2日後」等）が表示されます。タスクをクリックするとタスク詳細画面に移動します。</p>
+        </div>
       </SectionCard>
     </div>
   );
@@ -276,16 +255,8 @@ function TasksTab() {
         </div>
 
         <div className="space-y-2 mt-3">
-          <p className="font-medium text-slate-700 text-sm">個人タスクとチームタスク</p>
-          <div className="flex gap-2 items-start">
-            <Badge color="blue" label="個人" />
-            <span className="text-sm text-slate-600">自分だけのタスク。他の人には見えません。</span>
-          </div>
-          <div className="flex gap-2 items-start">
-            <Badge color="indigo" label="チーム" />
-            <span className="text-sm text-slate-600">チームメンバーと共有するタスク。依頼者や担当者が自動でセットされます。</span>
-          </div>
-          <p className="text-xs text-slate-400 mt-1">画面上部の切り替えボタンで個人/チームを切り替えられます。</p>
+          <p className="font-medium text-slate-700 text-sm">統合カンバン</p>
+          <p className="text-sm text-slate-600">プロジェクト選択で絞り込み、担当者フィルタと日付フィルタ（全件/今日/今週/期限超過）でさらに絞り込めます。全タスクに担当者バッジが表示されます。</p>
         </div>
       </SectionCard>
 
@@ -443,14 +414,14 @@ function TasksTab() {
             <Sparkles className="w-5 h-5 text-green-600 mt-0.5 shrink-0" />
             <div>
               <p className="font-medium text-slate-800">AI自動提案から承認（おすすめ）</p>
-              <p className="text-sm text-slate-600">Slack・Chatwork・会議録からAIが検知。承認するだけでタスク化されます。依頼者・担当者も自動セット。</p>
+              <p className="text-sm text-slate-600">Slack・Chatwork・会議録からAIが検知。検討ツリータブの提案パネルで承認するだけでタスク化されます。担当者・期限・優先度をインライン編集可能。</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
-            <Bot className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+            <Send className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
             <div>
-              <p className="font-medium text-slate-800">秘書に頼む</p>
-              <p className="text-sm text-slate-600">ホーム画面で「タスクを作成して」と話しかけると、秘書がプロジェクト・マイルストーンを聞いて作成します。</p>
+              <p className="font-medium text-slate-800">チャネルボットから作成</p>
+              <p className="text-sm text-slate-600">Slack・Chatworkで <span className="font-mono text-xs bg-slate-100 px-1 rounded">@NodeMap 明日までに〇〇作成</span> とメンションするとタスクが自動作成されます。</p>
             </div>
           </div>
           <div className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
@@ -483,7 +454,7 @@ function TasksTab() {
               </div>
               <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-100 text-center">
                 <p className="text-xs font-semibold text-amber-700">[NM-Job]</p>
-                <p className="text-[10px] text-amber-600 mt-0.5">ジョブの予定</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">定期作業の予定</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">空き判定: 除外（空きとみなす）</p>
               </div>
             </div>
@@ -501,23 +472,19 @@ function TasksTab() {
 
       <SectionCard title="繰り返しルール" icon={RefreshCw}>
         <p className="mb-3">
-          定期的な会議・タスク・ジョブを自動生成するルールを設定できます。プロジェクトの「ジョブ」タブ下部で管理します。
+          定期的な会議・タスク・定期作業を自動生成するルールを設定できます。プロジェクトの「定期イベント」タブで管理します。
         </p>
         <div className="space-y-3">
           <div>
-            <p className="font-medium text-slate-700 mb-1">3つの種別</p>
+            <p className="font-medium text-slate-700 mb-1">2つの種別</p>
             <div className="space-y-1.5">
               <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
-                <Badge color="blue">会議</Badge>
-                <p className="text-sm text-slate-600">定例MTGを自動生成。カレンダー同期ONで[NM-Meeting]予定も登録。MeetGeekと自動照合して「第N回」をカウント。</p>
-              </div>
-              <div className="flex items-center gap-2 p-2 bg-green-50 rounded border border-green-100">
-                <Badge color="green">タスク</Badge>
-                <p className="text-sm text-slate-600">月次レポートなど定期タスクを事前生成日数前に自動作成。最新マイルストーンに自動配置。</p>
+                <Badge color="blue" label="MTG" />
+                <p className="text-sm text-slate-600">定例MTGを自動生成。カレンダー同期ONで[NM-Meeting]予定も登録。Gemini議事録自動取得対応。参加者をカレンダー招待。</p>
               </div>
               <div className="flex items-center gap-2 p-2 bg-amber-50 rounded border border-amber-100">
-                <Badge color="amber">ジョブ</Badge>
-                <p className="text-sm text-slate-600">週次清掃チェックなど定型業務を自動生成。</p>
+                <Badge color="amber" label="定期作業" />
+                <p className="text-sm text-slate-600">週次レポートや定期チェックなど定型業務を自動生成。カレンダー登録はオプション。</p>
               </div>
             </div>
           </div>
@@ -563,8 +530,8 @@ function InboxTab() {
         </div>
       </SectionCard>
 
-      <SectionCard title="秘書からのアクセス" icon={Bot}>
-        <p>ホーム画面で「未読メッセージある？」と聞くと、秘書がインボックスの概要を教えてくれます。</p>
+      <SectionCard title="ホームからのアクセス" icon={Bot}>
+        <p>ホーム画面の「インボックス返信カード」でも未読メッセージの確認・AI返信生成・送信ができます。急ぎの返信はホームから、一覧確認はインボックス画面からが便利です。</p>
       </SectionCard>
     </div>
   );
@@ -586,7 +553,7 @@ function OrganizationsTab() {
       </SectionCard>
 
       <SectionCard title="プロジェクト配下の7タブ" icon={FolderOpen}>
-        <p className="mb-3 text-slate-500">プロジェクトがすべての情報のハブです。メンバー・チャネル・資料もプロジェクト単位で管理します。</p>
+        <p className="mb-3 text-slate-500">プロジェクトがすべての情報のハブです。メンバー・チャネル・資料もプロジェクト単位で管理します。タブ構成: タイムライン / 検討ツリー / 思考マップ / タスク / 定期イベント / メンバー / 関連資料</p>
         <div className="space-y-3 mt-2">
           <div className="p-3 bg-white rounded border border-slate-200">
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
@@ -619,17 +586,17 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <ListTodo className="w-4 h-4 text-blue-500" /> タスク
             </p>
-            <p>ゴール → マイルストーン → タスクの階層で管理。マイルストーンは1週間単位の目標で、週末に到達判定されます。</p>
+            <p>マイルストーン（任意） → タスクの階層で管理。マイルストーンは1週間単位の目標で、会議録AI解析から自動登録されます。2タブ構成: タスク一覧カンバン / マイルストーン一覧。</p>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
-              <Briefcase className="w-4 h-4 text-blue-500" /> ジョブ
+              <Briefcase className="w-4 h-4 text-blue-500" /> 定期イベント
             </p>
-            <p>定型業務ややることメモを管理します。SEOレポートや定例MTGなど定期的な業務はジョブとして登録すると便利です。</p>
+            <p>定期MTGや定期作業を管理します。カレンダー連携でGoogleカレンダーに繰り返し予定を自動登録。MTGはGemini議事録の自動取得にも対応しています。</p>
             <div className="flex gap-2 mt-2">
-              <Badge color="blue" label="定型業務" />
-              <Badge color="slate" label="やることメモ" />
+              <Badge color="blue" label="定期MTG" />
+              <Badge color="amber" label="定期作業" />
             </div>
           </div>
 
@@ -682,8 +649,8 @@ function OrganizationsTab() {
         <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm text-slate-700 space-y-1">
           <p>[NodeMap] 組織名/</p>
           <p className="pl-4">└── プロジェクト名/</p>
-          <p className="pl-12">├── ジョブ/　　　　　← 定型業務の資料</p>
-          <p className="pl-12">├── 会議議事録/　　　← MeetGeek等の格納先</p>
+          <p className="pl-12">├── 定期イベント/　　← 定期MTG・定期作業の資料</p>
+          <p className="pl-12">├── 会議議事録/　　　← Gemini会議メモ等の格納先</p>
           <p className="pl-12">└── マイルストーン/</p>
           <p className="pl-20">└── MS名/</p>
           <p className="pl-28">└── タスク名/　← ドキュメント蓄積先</p>
@@ -691,20 +658,18 @@ function OrganizationsTab() {
         <div className="mt-3 space-y-1 text-xs text-slate-500">
           <p>ファイル名ルール: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_原名.ext</span></p>
           <p>メタデータタグ: 書類種別・MS名・タスク名・ジョブ名・登録者名で自動タグ付け＋手動追加可能</p>
-          <p>フォルダ自動生成: 組織・プロジェクトは作成時、ジョブ/会議議事録/MS/タスクはファイル保存時に動的生成</p>
+          <p>フォルダ自動生成: 組織・プロジェクトは作成時、定期イベント/会議議事録/MS/タスクはファイル保存時に動的生成</p>
         </div>
       </SectionCard>
 
-      <SectionCard title="MeetGeek連携" icon={Calendar}>
+      <SectionCard title="Gemini会議メモ連携" icon={Calendar}>
         <p className="mb-2">
-          MeetGeek（オンライン会議録サービス）と連携すると、会議終了後に自動でNodeMapに取り込まれます。
+          Google Meet の「メモを取る」機能（Gemini）が生成した会議メモを自動で取り込み、AI解析・検討ツリー生成・チャネル通知まで一括実行します。
         </p>
-        <FlowStep steps={['会議終了', 'Webhook受信', '参加者からPJ自動判定', '議事録DB保存', 'AI解析', 'Drive保存']} />
+        <FlowStep steps={['Google Meet会議', 'Gemini会議メモ生成', 'Cron自動取り込み', 'Claude AI解析', '検討ツリー＋タスク＋MS生成', 'チャネル通知']} />
         <div className="space-y-2 mt-3 text-xs text-slate-600">
-          <p>• 取り込みデータ: 会議詳細・サマリー・全文トランスクリプト・ハイライト（アクションアイテム等）</p>
-          <p>• プロジェクト自動判定: 参加者メール → コンタクト → 組織 → プロジェクトの順で照合</p>
-          <p>• AI解析の結果: 検討ツリー自動更新、ビジネスイベント追加、ナレッジ抽出、タスク候補生成</p>
-          <p>• Drive保存: PJ配下の「会議議事録」フォルダに年月別で自動保存</p>
+          <p>Cronが48時間以内のGoogle Meetイベントをスキャンし、添付またはDrive検索でGemini Docsを検出。自動でAI解析パイプラインが走ります。</p>
+          <p>手動で会議録を登録する場合は、検討ツリータブからテキスト入力で登録できます。</p>
         </div>
       </SectionCard>
 
@@ -903,12 +868,12 @@ function SettingsTab() {
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
             <p className="font-medium text-slate-800 mb-1">性格タイプ（16タイプ診断）</p>
             <p>MBTI型を設定すると、AIの思考アプローチが変わります。例えばINTJなら戦略的・効率重視、ENFJなら共感的・チーム志向の応答になります。</p>
-            <p className="text-xs text-slate-500 mt-1">反映先: 秘書チャット、タスクAI会話、相談回答、ジョブ構造化</p>
+            <p className="text-xs text-slate-500 mt-1">反映先: タスクAI会話、AI返信生成、会議録AI解析</p>
           </div>
           <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
             <p className="font-medium text-slate-800 mb-1">応答スタイル（3段階）</p>
             <p>「端的重視」は結論ファーストで短く、「通常」はバランス型、「補足説明重視」は背景や理由も丁寧に返します。</p>
-            <p className="text-xs text-slate-500 mt-1">反映先: 秘書チャット、タスクAI会話、相談回答、ジョブ構造化</p>
+            <p className="text-xs text-slate-500 mt-1">反映先: タスクAI会話、AI返信生成、会議録AI解析</p>
           </div>
         </div>
       </SectionCard>
@@ -928,7 +893,7 @@ export default function GuidePage() {
   const tabContent: Record<string, React.ReactNode> = {
     overview: <OverviewTab />,
     dataflow: <DataFlowTab />,
-    secretary: <SecretaryTab />,
+    home: <HomeTab />,
     tasks: <TasksTab />,
     inbox: <InboxTab />,
     organizations: <OrganizationsTab />,
