@@ -2079,9 +2079,16 @@ CREATE INDEX idx_recurring_rules_enabled ON project_recurring_rules(enabled) WHE
 - **rrule**: iCal RRULE形式。例: `FREQ=WEEKLY;BYDAY=MO`（毎週月曜）、`FREQ=MONTHLY;BYMONTHDAY=28`（毎月28日）
 - **lead_days**: この日数前にタスク/ジョブを自動生成（Cronが毎日チェック）
 - **occurrence_count**: MeetGeek照合時にも自動インクリメント（「第N回 〇〇」のカウント）
-- **calendar_sync**: type=meeting の場合のみ有効。[NM-Meeting] プレフィックスでカレンダー登録
-- **metadata**: type=meeting の場合 `{ start_hour: 10, duration_minutes: 60 }` 等
-- **meeting_records.recurring_rule_id**: MeetGeek照合でマッチしたルールを紐づけ
+- **calendar_sync**: type=meeting は必須（true固定）、type=job はオプション。[NM-Meeting] / [NM-Job] プレフィックスでカレンダー登録
+- **metadata**: 以下のフィールドを格納:
+  - `start_hour` (number): 開始時（7-20）
+  - `start_minute` (number): 開始分（0/15/30/45）
+  - `duration_minutes` (number): 所要時間（15-180）
+  - `participants` (string[]): 参加者のcontact_id配列
+  - `meeting_notes_enabled` (boolean): 議事録自動読み取り（MTGのみ）
+  - `calendar_event_id` (string): Google CalendarイベントID（作成後に自動保存。削除時に使用）
+- **カレンダー連携**: ルール作成時にGoogleカレンダーへ即時登録。ネイティブRRULEで繰り返し予定。descriptionにrule_id/project_id/NodeMapリンクを記載。参加者はcontact_channelsからメール解決→attendeesに渡す
+- **meeting_records.recurring_rule_id**: Gemini会議メモ照合でマッチしたルールを紐づけ
 
 ---
 

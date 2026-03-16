@@ -3,12 +3,12 @@
 最終更新: 2026-03-16
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
 | **CLAUDE.md（本ファイル）** | 設計・ルール・テーブル・API・配色の全情報 | ★ |
-| **docs/ARCHITECTURE_V2.md** | V2設計書 — 5階層・3ログ・チェックポイント・自己学習・MeetGeek連携 | ★ |
+| **docs/ARCHITECTURE_V2.md** | V2設計書 — 4階層・3ログ・チェックポイント・自己学習・Gemini連携 | ★ |
 | **docs/TABLE_SPECS.md** | DB現状マスタ — 全テーブルのCREATE文・制約・インデックス | ★ |
 
 ---
@@ -185,8 +185,8 @@ AI解析の改修イメージ:
 | タイムライン | ビジネスログ（**読み取り専用**） | business_events |
 | 検討ツリー | 会議録からAI生成 + タスク提案パネル（v5.0） | decision_trees, decision_tree_nodes, meeting_records, task_suggestions |
 | 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
-| タスク | テーマ→MS→タスク階層 | themes, milestones, tasks |
-| ジョブ | 定型業務 / やることメモ | jobs |
+| タスク | MS→タスク階層（2タブ: タスク一覧カンバン / マイルストーン一覧） | milestones, tasks |
+| 定期イベント | MTG / 定期作業。カレンダー連携・議事録自動取得 | project_recurring_rules, jobs |
 | メンバー | チャネル登録＋メンバー管理を統合。チャネルからメンバー自動取り込み対応 | project_channels, project_members, contact_persons, contact_channels |
 | 関連資料 | ドキュメント・スプレッドシートURL一覧。タグ検索対応 | drive_documents |
 
@@ -581,7 +581,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
 - **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task（テーマは廃止）
-- **タスク vs ジョブ**: タスク＝思考を伴う作業（MS配下必須）、ジョブ＝定型業務 or やることメモ（PJ配下。SEOレポート・定例MTG等の定期実行に便利）
+- **タスク vs 定期イベント（旧ジョブ）**: タスク＝思考を伴う作業（MS配下任意）、定期イベント＝定期MTG or 定期作業（PJ配下。カレンダー連携・議事録自動取得対応）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
 - **1週間サイクル**: マイルストーンは1週間単位で設計、週末に到達判定
 - **評価エージェントの自己学習**: AI判定 vs 人間判定の差分を記録、次回プロンプトに注入
@@ -677,7 +677,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 ```
 [NodeMap] 組織名/
 └── プロジェクト名/
-    ├── ジョブ/            ← 定型業務の資料
+    ├── 定期イベント/       ← 定期MTG・定期作業の資料
     ├── 会議議事録/         ← MeetGeek等の格納先
     └── マイルストーン/
         └── MS名/
@@ -1049,7 +1049,7 @@ v5.0 タスク提案フロー刷新          ← 実装済み
 v6.0 Gemini会議メモ連携           ← 実装済み
 v7.0 会議録チャネル自動共有 + MeetGeek廃止 ← 実装済み
 v7.1 タスクAI強化（画像認識・フィードバック学習・ディープリサーチ提案）← 実装済み
-v8.0 構造再設計（テーマ廃止・MS週次サイクル・定期作業・アジェンダ強化）← Phase 1-2 実装済み
+v8.0 構造再設計（テーマ廃止・MS週次サイクル・定期イベント・プロジェクトログDoc）← Phase 1-3 実装済み
 ```
 
 ---
@@ -1632,12 +1632,17 @@ Phase 2: タスク完了 → MS進捗自動更新
   - 期限超過 + 未完了 → MS自動 missed
   - 未達タスクの次週MS持ち越し機能
 
-Phase 3: 定期作業（旧ジョブ）カレンダー連携
-  - UIラベルを「ジョブ」→「定期作業」に変更
-  - カレンダー自動登録（[NM-Meeting] / [NM-Job]）
-  - 繰り返しルールCron実装（/api/cron/process-recurring-rules）
-  - 定期会議 → Gemini会議メモ取得フィルタ連携
-  - 定期レポート → 資料アップロード機能
+Phase 3: 定期イベント（旧ジョブ）カレンダー連携 ✅
+  - UIラベルを「ジョブ」→「定期イベント」に変更
+  - RecurringRulesManager.tsx を直感的UIに刷新:
+    種別（MTG/定期作業）、頻度（毎日/毎週/毎月）、時間帯、参加者選択、議事録読み取りトグル
+  - 参加者はメール登録済みメンバーのみ表示（カレンダー招待に必要）
+  - ルール作成時にGoogleカレンダーへ即時登録（ネイティブRRULEで繰り返し予定）
+  - descriptionにrule_id/project_id/type/プロジェクト名/NodeMapリンクを記載（名寄せ用）
+  - 参加者のメールアドレスをcontact_channelsから解決→カレンダー招待（attendees）
+  - ルール削除→Googleカレンダーからも自動削除（calendar_event_idをmetadataに保存）
+  - MTGはカレンダー登録必須、定期作業はオプション
+  - プロジェクトログDoc: 1PJ=1 Google Docs（正史）。会議後AI解析結果を自動追記
 
 Phase 4: アジェンダ強化
   - generate-meeting-agendas CronにMS進捗セクション追加
@@ -1664,3 +1669,8 @@ Phase 4: アジェンダ強化
 - **事前アジェンダの自動生成**: Cron（generate-meeting-agendas）で翌営業日分を生成。decision_log + open_issues + MS進捗（タスク会話要約付き）+ 前回会議サマリ
 - **会議後の自動追記**: analyze API（ステップ9.7）でAI解析結果をDocに追記。決定事項 + タスク提案 + MS提案 + 未確定事項
 - **チャネル通知にDocリンク**: Slack Block Kit / Chatworkメッセージにプロジェクトログへのリンクを含める
+- **⚠️ 定期イベント カレンダー連携**: ルール作成POST時にGoogle CalendarネイティブRRULEで繰り返し予定を即時作成。calendar_event_idは `metadata.calendar_event_id` に保存（テーブル変更不要）。削除時にこのIDでカレンダーからも削除
+- **⚠️ カレンダー登録のタイムゾーン**: Vercel(UTC)環境では `setHours()` は使わない。ISO文字列に `+09:00` を明示して構築すること
+- **⚠️ 参加者の表示条件**: RecurringRulesManagerの参加者選択は `contact_channels` にemail登録済みのメンバーのみ表示。未登録メンバーはメンバータブでメール追加が必要
+- **⚠️ members API にemail追加済み**: `GET /api/projects/[id]/members` が `contact_channels`(email) から各メンバーのメールアドレスを取得して `email` フィールドで返す
+- **⚠️ タスクページ2タブ構成**: 「タスク一覧」（カンバン）+ 「マイルストーン」（展開式カード+ネストタスク）。`include_tasks=true` パラメータでMS配下タスクを一括取得
