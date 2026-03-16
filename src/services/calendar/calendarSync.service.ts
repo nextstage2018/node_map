@@ -130,7 +130,7 @@ export async function syncJobToCalendar(
 // ========================================
 // カレンダー予定の新規作成（共通）
 // ========================================
-async function createCalendarEventForSource(
+export async function createCalendarEventForSource(
   params: SyncToCalendarParams
 ): Promise<CalendarSyncResult> {
   const connected = await isCalendarConnected(params.userId);
