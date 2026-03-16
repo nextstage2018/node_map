@@ -449,7 +449,7 @@ function TasksTab() {
           <p className="font-medium text-slate-700 mb-2 text-sm">チェックポイント評価（品質チェック）</p>
           <p className="text-sm text-slate-600 mb-2">
             AIとの会話が2往復以上になると、ヘッダーの「チェック」ボタンが有効になります。
-            タスクの進行品質を100点満点で客観評価し、85点以上で「完了」ステータスに変更できるようになります。
+            タスクの進行品質を100点満点で客観評価します。85点以上が推奨ですが、スキップして完了にすることも可能です。
           </p>
           <div className="space-y-1.5 text-xs text-slate-600 mb-2">
             <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">

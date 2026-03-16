@@ -212,10 +212,12 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   // ステータス変更
   const handleStatusChange = async (newStatus: string) => {
     if (!task || task.status === newStatus) return;
-    // 完了にするにはチェックポイント85点以上が必要
+    // チェックポイント未達の場合は確認（スキップ可能）
     if (newStatus === 'done' && !canComplete) {
-      alert('タスクを完了にするにはチェックポイント評価で85点以上が必要です。AIに相談画面で「チェック」ボタンを押してください。');
-      return;
+      const msg = checkpointScore !== null
+        ? `チェックポイント評価が${checkpointScore}点です（85点以上推奨）。このまま完了にしますか？`
+        : 'チェックポイント評価がまだ実施されていません。AIに相談画面の「チェック」ボタンで品質チェックできます。このまま完了にしますか？';
+      if (!confirm(msg)) return;
     }
     try {
       await fetch(`/api/tasks/${taskId}/status`, {

@@ -76,7 +76,7 @@
 - **⚠️ task_conversations のINSERT**: `id` は省略（UUID自動生成）。`conversation_tag` カラムは存在しない。`user_id` は NOT NULL
 - **⚠️ TaskChatView.tsx の入力**: Enter送信は無効（IME誤送信防止）。送信はボタンクリックのみ。テキストエリアは `scrollHeight` ベースで自動伸長（最大120px）
 - **⚠️ タスクチェックポイント評価**: AIとの会話が2ターン以上ある場合にヘッダーの「チェック」ボタンが有効化。5観点×20点=100点で評価。85点以上でタスク完了可能。評価観点: ゴール明確度/思考の深度（伸二メソッド）/先回り・視座（BOSS）/リスク認識/練度・精度。API: `POST /api/tasks/[id]/checkpoint`
-- **⚠️ タスク完了制限**: チェックポイント未実施 or 85点未満の場合、ステータスを「完了」に変更しようとするとアラートで阻止。TaskDetailPanel.tsx の `handleStatusChange` で制御
+- **⚠️ タスク完了制限**: チェックポイント未実施 or 85点未満の場合、ステータスを「完了」に変更しようとすると確認ダイアログ表示（スキップ可能）。TaskDetailPanel.tsx の `handleStatusChange` で制御
 - **⚠️ TaskDetailPanel.tsx の関連資料**: URL入力に加えファイルアップロード対応（Base64変換 → `/api/drive/documents`）。組織情報（organization_id/organization_name）をdetail APIから取得して送信
 - **⚠️ tasks/chat AI会話にdecision_log注入**: プロジェクトの直近10件のactive/on_hold決定事項をAIプロンプトに自動注入
 
