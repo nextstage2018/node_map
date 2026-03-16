@@ -1,9 +1,10 @@
-// v3.3 + v4.6: プロジェクトチャネルからメンバー自動検出 API
+// v3.3 + v4.6 + v9.0fix: プロジェクトチャネルからメンバー自動検出 API
 // 経路1: Slack API（conversations.members）で直接チャネル参加者を取得
 // 経路2: inbox_messages から送信者を抽出（フォールバック + Chatwork/Email）
 // → contact_persons/project_members に追加
+// v9.0fix: 既存メンバーのcontact_channelsを逆引きして重複防止を強化
 import { NextResponse, NextRequest } from 'next/server';
-import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +19,8 @@ export async function POST(
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
 
-    const supabase = createServerClient();
+    // ★ ルール#1: getServerSupabase() を使う
+    const supabase = getServerSupabase() || getSupabase();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
     }
@@ -62,22 +64,12 @@ export async function POST(
       try {
         const { getChannelMembers } = await import('@/services/slack/slackClient.service');
 
-        // 自分のSlack IDを事前取得（ループ外で1回だけ）
-        const { data: myToken } = await supabase
-          .from('user_service_tokens')
-          .select('token_data')
-          .eq('user_id', userId)
-          .eq('service_name', 'slack')
-          .single();
-        const mySlackId = (myToken?.token_data as Record<string, string>)?.authed_user_id || '';
-
         for (const ch of slackChannels) {
           const members = await getChannelMembers(ch.channel_identifier, userId);
 
           for (const member of members) {
             // ボットは除外
             if (member.isBot) continue;
-            // v7.0: 自分自身も含める（担当者リストに表示するため）
 
             if (!senderMap.has(member.slackUserId)) {
               senderMap.set(member.slackUserId, {
@@ -100,7 +92,6 @@ export async function POST(
       let messages: { from_address: string; from_name: string }[] = [];
 
       if (ch.service_name === 'slack' && senderMap.size > 0) {
-        // Slack API で取得済みならスキップ（フォールバック不要）
         const hasSlackMembers = Array.from(senderMap.values()).some(s => s.channel === 'slack');
         if (hasSlackMembers) continue;
       }
@@ -151,62 +142,10 @@ export async function POST(
       });
     }
 
-    const addressArray = Array.from(senderMap.keys());
-
-    // 既存 contact_persons を検索（id直接一致 or contact_channels.address一致）
-    const { data: contactsById } = await supabase
-      .from('contact_persons')
-      .select('id, name')
-      .in('id', addressArray);
-
-    const { data: channelMatches } = await supabase
-      .from('contact_channels')
-      .select('contact_id, address')
-      .in('address', addressArray);
-
-    // address → contact_id マッピング
-    const addressToContactId = new Map<string, string>();
-    if (contactsById) {
-      for (const c of contactsById) {
-        addressToContactId.set(c.id, c.id);
-      }
-    }
-    if (channelMatches) {
-      for (const ch of channelMatches) {
-        if (!addressToContactId.has(ch.address)) {
-          addressToContactId.set(ch.address, ch.contact_id);
-        }
-      }
-    }
-
-    // 安全策: 組織内の既存コンタクトを名前で照合（contact_channels未登録のケース対応）
-    if (project.organization_id) {
-      const { data: orgContacts } = await supabase
-        .from('contact_persons')
-        .select('id, name')
-        .eq('organization_id', project.organization_id);
-
-      if (orgContacts && orgContacts.length > 0) {
-        for (const [address, sender] of senderMap) {
-          if (!addressToContactId.has(address)) {
-            const nameMatch = orgContacts.find(c => c.name === sender.name);
-            if (nameMatch) {
-              addressToContactId.set(address, nameMatch.id);
-              // 次回のために contact_channels にも登録（エラーは無視）
-              const mainChannel = sender.channel === 'slack' ? 'slack' : sender.channel === 'chatwork' ? 'chatwork' : 'email';
-              await supabase.from('contact_channels').insert({
-                contact_id: nameMatch.id,
-                channel: mainChannel,
-                address: address,
-                user_id: userId,
-              }).then(() => {}).catch(() => {});
-            }
-          }
-        }
-      }
-    }
-
-    // 既存 project_members を取得
+    // ============================================================
+    // ★ 重複防止: 既存メンバーの全アドレスを収集
+    // project_members → contact_id → contact_channels.address で逆引き
+    // ============================================================
     const { data: existingMembers } = await supabase
       .from('project_members')
       .select('contact_id')
@@ -214,12 +153,85 @@ export async function POST(
 
     const existingContactIds = new Set((existingMembers || []).map(m => m.contact_id));
 
+    // 既存メンバーのcontact_channelsからアドレスを取得（逆引き）
+    const knownAddresses = new Set<string>();
+    if (existingContactIds.size > 0) {
+      const contactIdArray = Array.from(existingContactIds);
+      const { data: existingChannels } = await supabase
+        .from('contact_channels')
+        .select('contact_id, address')
+        .in('contact_id', contactIdArray);
+
+      if (existingChannels) {
+        for (const ch of existingChannels) {
+          knownAddresses.add(ch.address);
+        }
+      }
+    }
+
+    // 組織内の既存コンタクト名も収集（contact_channels未登録時の安全策）
+    const knownNames = new Map<string, string>(); // name → contact_id
+    if (project.organization_id) {
+      const { data: orgContacts } = await supabase
+        .from('contact_persons')
+        .select('id, name')
+        .eq('organization_id', project.organization_id);
+
+      if (orgContacts) {
+        for (const c of orgContacts) {
+          if (!knownNames.has(c.name)) {
+            knownNames.set(c.name, c.id);
+          }
+        }
+      }
+    }
+
+    // ============================================================
+    // メンバー追加ループ
+    // ============================================================
+    const addressArray = Array.from(senderMap.keys());
+
+    // グローバルなcontact_channels照合（アドレス→contact_id）
+    const addressToContactId = new Map<string, string>();
+    const { data: channelMatches } = await supabase
+      .from('contact_channels')
+      .select('contact_id, address')
+      .in('address', addressArray);
+
+    if (channelMatches) {
+      for (const ch of channelMatches) {
+        addressToContactId.set(ch.address, ch.contact_id);
+      }
+    }
+
     let addedCount = 0;
 
     for (const [address, sender] of senderMap) {
+      // ★ 重複チェック1: アドレスが既存メンバーに紐づいている
+      if (knownAddresses.has(address)) {
+        continue;
+      }
+
+      // contact_idの解決（3段階）
       let contactId = addressToContactId.get(address);
 
-      // コンタクトが存在しない場合は新規作成
+      // ★ 重複チェック2: 名前で既存コンタクトに一致
+      if (!contactId) {
+        const nameMatchId = knownNames.get(sender.name);
+        if (nameMatchId) {
+          contactId = nameMatchId;
+          // 次回のためにcontact_channelsにも登録
+          const mainChannel = sender.channel === 'slack' ? 'slack' : sender.channel === 'chatwork' ? 'chatwork' : 'email';
+          await supabase.from('contact_channels').insert({
+            contact_id: nameMatchId,
+            channel: mainChannel,
+            address: address,
+            user_id: userId,
+          });
+        }
+      }
+
+      // 新規コンタクト作成
       if (!contactId) {
         const newId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const mainChannel = sender.channel === 'slack' ? 'slack' : sender.channel === 'chatwork' ? 'chatwork' : 'email';
@@ -237,7 +249,6 @@ export async function POST(
 
         if (!createErr) {
           contactId = newId;
-          // contact_channels にも追加（エラーログ付き）
           const { error: chErr } = await supabase.from('contact_channels').insert({
             contact_id: newId,
             channel: mainChannel,
@@ -249,12 +260,14 @@ export async function POST(
           }
         } else {
           console.error('[Project Members Detect] contact_persons挿入失敗:', createErr.message, { address, name: sender.name });
+          continue;
         }
       }
 
-      if (!contactId || existingContactIds.has(contactId)) continue;
+      // ★ 重複チェック3: 既にproject_membersに存在
+      if (existingContactIds.has(contactId)) continue;
 
-      // project_members に追加（UNIQUE制約違反はスキップ）
+      // project_members に追加
       const { error: memberErr } = await supabase
         .from('project_members')
         .insert({
@@ -267,8 +280,8 @@ export async function POST(
       if (!memberErr) {
         addedCount++;
         existingContactIds.add(contactId);
+        knownAddresses.add(address);
       } else if (memberErr.code === '23505') {
-        // UNIQUE制約違反 = 既に登録済み → スキップ
         existingContactIds.add(contactId);
       }
     }
