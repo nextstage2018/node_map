@@ -29,6 +29,7 @@ interface SyncToCalendarParams {
   sourceType: 'task' | 'job' | 'meeting';
   sourceId: string;
   attendees?: string[];    // メールアドレス配列
+  recurrence?: string[];   // Google Calendar RRULE配列 例: ['RRULE:FREQ=WEEKLY;BYDAY=MO']
 }
 
 // ========================================
@@ -151,7 +152,7 @@ export async function createCalendarEventForSource(
       start: params.scheduledStart,
       end: params.scheduledEnd,
       attendees: params.attendees,
-    }, params.sourceType, params.sourceId);
+    }, params.sourceType, params.sourceId, params.recurrence);
 
     if (!event) {
       return { success: false, error: 'カレンダー予定作成に失敗' };
@@ -193,7 +194,8 @@ async function createEventWithExtendedProps(
   userId: string,
   eventParams: CreateEventParams,
   sourceType: 'task' | 'job' | 'meeting',
-  sourceId: string
+  sourceId: string,
+  recurrence?: string[]
 ): Promise<CalendarEvent | null> {
   // calendarClient の calendarFetch を直接使いたいが、
   // createEvent はラッパーなので、description にメタデータを埋め込む方式と
@@ -226,6 +228,9 @@ async function createEventWithExtendedProps(
   if (eventParams.location) eventBody.location = eventParams.location;
   if (eventParams.attendees && eventParams.attendees.length > 0) {
     eventBody.attendees = eventParams.attendees.map((email: string) => ({ email }));
+  }
+  if (recurrence && recurrence.length > 0) {
+    eventBody.recurrence = recurrence;
   }
 
   try {
