@@ -136,24 +136,29 @@ export async function GET(request: NextRequest) {
         allNodes.push(...taskNodes);
         allEdges.push(...taskEdges);
 
-        // 会話ターンデータを取得（思考マップ再生用）
+        // 会話ターンデータを取得（思考マップ再生用）- checkpointも含む
         const sb2 = getServerSupabase() || getSupabase();
         if (sb2) {
           const { data: convData } = await sb2
             .from('task_conversations')
             .select('id, role, content, phase, created_at')
             .eq('task_id', taskId)
-            .neq('phase', 'checkpoint')
             .order('created_at', { ascending: true });
 
           if (convData) {
-            conversations = convData.map((c: any, idx: number) => ({
-              turnIndex: idx + 1,
-              role: c.role,
-              content: c.content?.slice(0, 300) || '',
-              phase: c.phase,
-              createdAt: c.created_at,
-            }));
+            let turnCounter = 0;
+            conversations = convData.map((c: any) => {
+              const isCheckpoint = c.phase === 'checkpoint';
+              if (!isCheckpoint) turnCounter++;
+              return {
+                turnIndex: isCheckpoint ? turnCounter : turnCounter,
+                role: c.role,
+                content: c.content?.slice(0, 300) || '',
+                phase: c.phase,
+                createdAt: c.created_at,
+                isCheckpoint,
+              };
+            });
           }
         }
 
@@ -527,15 +532,28 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
   if (!sb) return { tasks: [], debug: { error: 'no supabase' } };
 
   try {
-    // プロジェクト内の全タスクを取得
+    // プロジェクト内の全タスクを取得（担当者情報付き）
     const { data: tasks, error: taskErr } = await sb
       .from('tasks')
-      .select('id, title, status')
+      .select('id, title, status, assigned_contact_id')
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false });
 
     if (taskErr || !tasks || tasks.length === 0) {
       return { tasks: [], debug: { taskErr, taskCount: tasks?.length || 0, projectId } };
+    }
+
+    // 担当者名を一括解決
+    const contactIds = [...new Set(tasks.filter(t => t.assigned_contact_id).map(t => t.assigned_contact_id))];
+    const contactMap: Record<string, string> = {};
+    if (contactIds.length > 0) {
+      const { data: contacts } = await sb
+        .from('contact_persons')
+        .select('id, name')
+        .in('id', contactIds);
+      for (const c of (contacts || [])) {
+        contactMap[c.id] = c.name;
+      }
     }
 
     const debugInfo: any[] = [];
@@ -547,6 +565,8 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
       nodeCount: number;
       edgeCount: number;
       evaluatedAt: string;
+      assigneeName: string | null;
+      assigneeContactId: string | null;
     }[] = [];
 
     // 各タスクのチェックポイント結果を取得
@@ -617,6 +637,8 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         nodeCount: nodeRes.count || 0,
         edgeCount: edgeRes.count || 0,
         evaluatedAt: checkpoints[0].created_at,
+        assigneeName: task.assigned_contact_id ? contactMap[task.assigned_contact_id] || null : null,
+        assigneeContactId: task.assigned_contact_id || null,
       });
     }
 
