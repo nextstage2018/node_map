@@ -3,7 +3,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Map, ChevronDown, Award, ArrowRight } from 'lucide-react';
+import { MapIcon, ChevronDown, Award, ArrowRight } from 'lucide-react';
 
 interface QualifiedTask {
   id: string;
@@ -454,7 +454,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-          <Map className="w-4 h-4 text-slate-500" />
+          <MapIcon className="w-4 h-4 text-slate-500" />
           {projectName} - 思考マップ
         </h2>
       </div>
@@ -561,7 +561,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       {!selectedTaskId ? (
         <div className="flex items-center justify-center h-64 bg-white border border-slate-200 rounded-lg">
           <div className="text-center">
-            <Map className="w-10 h-10 mx-auto mb-3 text-slate-200" />
+            <MapIcon className="w-10 h-10 mx-auto mb-3 text-slate-200" />
             <p className="text-xs text-slate-400">
               上のドロップダウンから<br />評価済みのタスクを選択してください
             </p>
@@ -574,7 +574,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       ) : renderError ? (
         <div className="flex items-center justify-center h-64 bg-white border border-red-200 rounded-lg">
           <div className="text-center">
-            <Map className="w-8 h-8 mx-auto mb-2 text-red-300" />
+            <MapIcon className="w-8 h-8 mx-auto mb-2 text-red-300" />
             <p className="text-xs text-red-500 mb-1">グラフ描画エラー</p>
             <p className="text-[10px] text-slate-400 max-w-sm">{renderError}</p>
           </div>
@@ -582,7 +582,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       ) : nodes.length === 0 ? (
         <div className="flex items-center justify-center h-64 bg-white border border-slate-200 rounded-lg">
           <div className="text-center">
-            <Map className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+            <MapIcon className="w-8 h-8 mx-auto mb-2 text-slate-300" />
             <p className="text-xs text-slate-400">
               このタスクにはまだ思考ノードがありません
             </p>
