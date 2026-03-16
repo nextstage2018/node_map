@@ -81,19 +81,28 @@ export async function POST(
           const startMinute = (meta.start_minute as number) || 0;
           const durationMin = (meta.duration_minutes as number) || 60;
 
-          // 次回開催日の開始・終了時刻を構築
-          const startTime = new Date(nextDate);
-          startTime.setHours(startHour, startMinute, 0, 0);
-          const endTime = new Date(startTime);
-          endTime.setMinutes(endTime.getMinutes() + durationMin);
+          // 次回開催日の開始・終了時刻を構築（JST +09:00 で明示）
+          const y = nextDate.getFullYear();
+          const mo = String(nextDate.getMonth() + 1).padStart(2, '0');
+          const d = String(nextDate.getDate()).padStart(2, '0');
+          const sh = String(startHour).padStart(2, '0');
+          const sm = String(startMinute).padStart(2, '0');
+
+          // 終了時刻を計算
+          const endTotalMin = startHour * 60 + startMinute + durationMin;
+          const eh = String(Math.floor(endTotalMin / 60)).padStart(2, '0');
+          const em = String(endTotalMin % 60).padStart(2, '0');
+
+          const scheduledStart = `${y}-${mo}-${d}T${sh}:${sm}:00+09:00`;
+          const scheduledEnd = `${y}-${mo}-${d}T${eh}:${em}:00+09:00`;
 
           const { createCalendarEventForSource } = await import('@/services/calendar/calendarSync.service');
           calendarResult = await createCalendarEventForSource({
             userId,
             title,
             description: `定期イベント（${type === 'meeting' ? 'MTG' : '定期作業'}）`,
-            scheduledStart: startTime.toISOString(),
-            scheduledEnd: endTime.toISOString(),
+            scheduledStart,
+            scheduledEnd,
             sourceType: type === 'meeting' ? 'meeting' : 'job',
             sourceId: rule.id,
           });
