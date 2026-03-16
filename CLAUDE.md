@@ -185,7 +185,7 @@ AI解析の改修イメージ:
 |---|---|---|
 | タイムライン | ビジネスログ（**読み取り専用**） | business_events |
 | 検討ツリー | 会議録からAI生成 + タスク提案パネル（v5.0） | decision_trees, decision_tree_nodes, meeting_records, task_suggestions |
-| 思考マップ | マイルストーン間の思考経路 | thought_task_nodes, thought_edges |
+| 思考マップ | Canvas2D思考可視化（縦: 抽象↔具体、横: 会話ターン時間軸）。再生バー・メンバーフィルタ・チェックポイント表示 | thought_task_nodes, thought_edges, task_conversations |
 | タスク | MS→タスク階層（2タブ: タスク一覧カンバン / マイルストーン一覧） | milestones, tasks |
 | 定期イベント | MTG / 定期作業。カレンダー連携・議事録自動取得 | project_recurring_rules, jobs |
 | メンバー | チャネル登録＋メンバー管理を統合。チャネルからメンバー自動取り込み対応 | project_channels, project_members, contact_persons, contact_channels |
@@ -527,6 +527,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
 - **v9.0 ダッシュボード**: ホーム画面は3カード構成（InboxReplyCard / CalendarWidget / TaskReminderCard）。旧秘書AIチャットは廃止
 - **v9.0 サイドバー**: アイコンは `LayoutDashboard`、ラベルは「ホーム」（旧: Bot / 秘書）
+- **思考マップ（v9.2）**: Canvas2Dベースの思考可視化。縦軸=抽象↔具体（フェーズ: seed/ideation/progress/result）、横軸=会話ターン（時間軸）。再生バー（play/pause/step/seek）で思考の変遷を追体験。ノード=知識キーワード（`thought_task_nodes`）、エッジ=思考の動線（`thought_edges`）、会話=`task_conversations`。チェックポイント（赤ダイヤモンド）・START/ENDマーカー・メンバーフィルタ・凡例付き。白背景（nm-*カラー準拠）。コンポーネント: `ThoughtMapTab.tsx`。API: `/api/nodes/thought-map`（qualified-tasksモードで担当者名付き）
 - **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task（テーマは廃止）
 - **タスク vs 定期イベント（旧ジョブ）**: タスク＝思考を伴う作業（MS配下任意）、定期イベント＝定期MTG or 定期作業（PJ配下。カレンダー連携・議事録自動取得対応）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）

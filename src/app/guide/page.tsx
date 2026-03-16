@@ -649,7 +649,21 @@ function OrganizationsTab() {
             <p className="font-medium text-slate-800 flex items-center gap-2 mb-1">
               <Brain className="w-4 h-4 text-blue-500" /> 思考マップ
             </p>
-            <p>マイルストーン間の思考経路を可視化。タスクの会話ログからAIが思考の流れを構造化します。</p>
+            <p className="mb-2">タスクごとの思考の軌跡をCanvas2Dで可視化。縦軸に「抽象↔具体」の深度、横軸に会話ターン（時間軸）を配置し、再生バーで思考の変遷を追体験できます。</p>
+            <div className="space-y-1.5 text-xs text-slate-500">
+              <p>・ノード = AI会話で使われた知識キーワード（フェーズ別に色分け: 着想/構想/展開/結論）</p>
+              <p>・エッジ = 思考の動線（メインルート: 青、抽象ジャンプ: オレンジ）</p>
+              <p>・START/ENDマーカー、チェックポイント（赤ダイヤモンド）で節目を明示</p>
+              <p>・ノードクリックでその時点の会話内容をプレビュー</p>
+              <p>・メンバーフィルタで担当者別にタスクを絞り込み可能</p>
+            </div>
+            <div className="flex gap-2 mt-2">
+              <Badge color="indigo" label="着想" />
+              <Badge color="blue" label="構想" />
+              <Badge color="green" label="展開" />
+              <Badge color="amber" label="結論" />
+              <Badge color="red" label="チェックポイント" />
+            </div>
           </div>
 
           <div className="p-3 bg-white rounded border border-slate-200">
