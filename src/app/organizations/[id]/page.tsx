@@ -185,8 +185,11 @@ export default function OrganizationDetailPage() {
     } catch { /* */ }
   }, [orgId]);
 
+  // v3.3: チャネルはPJ配下に移動。ヘッダー表示用にproject_channels数を集計
+  const [projectChannelCount, setProjectChannelCount] = useState(0);
   const fetchChannels = useCallback(async () => {
     try {
+      // 組織レベルチャネル（レガシー互換）
       const res = await fetch(`/api/organizations/${orgId}/channels`);
       const data = await res.json();
       if (data.success) setChannels(data.data || []);
@@ -205,7 +208,19 @@ export default function OrganizationDetailPage() {
     try {
       const res = await fetch(`/api/projects?organization_id=${orgId}`);
       const data = await res.json();
-      if (data.success) setProjects(data.data || []);
+      if (data.success) {
+        setProjects(data.data || []);
+        // プロジェクト配下のチャネル総数を集計
+        let chCount = 0;
+        for (const p of (data.data || [])) {
+          try {
+            const chRes = await fetch(`/api/projects/${p.id}/channels`);
+            const chData = await chRes.json();
+            if (chData.success) chCount += (chData.data || []).length;
+          } catch { /* */ }
+        }
+        setProjectChannelCount(chCount);
+      }
     } catch { /* */ }
   }, [orgId]);
 
@@ -396,7 +411,7 @@ export default function OrganizationDetailPage() {
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1"><FolderOpen className="w-3.5 h-3.5" />{projects.length} PJ</span>
               <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{members.length}人</span>
-              <span className="flex items-center gap-1"><Link2 className="w-3.5 h-3.5" />{channels.length} ch</span>
+              <span className="flex items-center gap-1"><Link2 className="w-3.5 h-3.5" />{projectChannelCount} ch</span>
             </div>
           </div>
         </div>

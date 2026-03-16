@@ -141,7 +141,7 @@ export default function ProjectSidebar({
   };
 
   return (
-    <aside className="w-56 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0">
+    <aside className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0">
       <div className="px-4 py-3 border-b border-slate-200">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">プロジェクト</h2>

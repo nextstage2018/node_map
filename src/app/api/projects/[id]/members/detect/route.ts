@@ -179,6 +179,33 @@ export async function POST(
       }
     }
 
+    // 安全策: 組織内の既存コンタクトを名前で照合（contact_channels未登録のケース対応）
+    if (project.organization_id) {
+      const { data: orgContacts } = await supabase
+        .from('contact_persons')
+        .select('id, name')
+        .eq('organization_id', project.organization_id);
+
+      if (orgContacts && orgContacts.length > 0) {
+        for (const [address, sender] of senderMap) {
+          if (!addressToContactId.has(address)) {
+            const nameMatch = orgContacts.find(c => c.name === sender.name);
+            if (nameMatch) {
+              addressToContactId.set(address, nameMatch.id);
+              // 次回のために contact_channels にも登録（エラーは無視）
+              const mainChannel = sender.channel === 'slack' ? 'slack' : sender.channel === 'chatwork' ? 'chatwork' : 'email';
+              await supabase.from('contact_channels').insert({
+                contact_id: nameMatch.id,
+                channel: mainChannel,
+                address: address,
+                user_id: userId,
+              }).then(() => {}).catch(() => {});
+            }
+          }
+        }
+      }
+    }
+
     // 既存 project_members を取得
     const { data: existingMembers } = await supabase
       .from('project_members')
@@ -210,19 +237,24 @@ export async function POST(
 
         if (!createErr) {
           contactId = newId;
-          // contact_channels にも追加
-          await supabase.from('contact_channels').insert({
+          // contact_channels にも追加（エラーログ付き）
+          const { error: chErr } = await supabase.from('contact_channels').insert({
             contact_id: newId,
             channel: mainChannel,
             address: address,
             user_id: userId,
           });
+          if (chErr) {
+            console.error('[Project Members Detect] contact_channels挿入失敗:', chErr.message, { newId, mainChannel, address });
+          }
+        } else {
+          console.error('[Project Members Detect] contact_persons挿入失敗:', createErr.message, { address, name: sender.name });
         }
       }
 
       if (!contactId || existingContactIds.has(contactId)) continue;
 
-      // project_members に追加
+      // project_members に追加（UNIQUE制約違反はスキップ）
       const { error: memberErr } = await supabase
         .from('project_members')
         .insert({
@@ -234,6 +266,9 @@ export async function POST(
 
       if (!memberErr) {
         addedCount++;
+        existingContactIds.add(contactId);
+      } else if (memberErr.code === '23505') {
+        // UNIQUE制約違反 = 既に登録済み → スキップ
         existingContactIds.add(contactId);
       }
     }
