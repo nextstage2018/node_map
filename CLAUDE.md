@@ -1497,7 +1497,7 @@ feedback_type:
 
 ---
 
-## v8.0 構造再設計 — テーマ廃止・MS週次サイクル・定期作業・アジェンダ強化（Phase 1-2 実装済み）
+## v8.0 構造再設計 — テーマ廃止・MS週次サイクル・定期作業・アジェンダ強化・プロジェクトログDoc（Phase 1-3 実装済み）
 
 ### 設計思想
 
@@ -1654,7 +1654,13 @@ Phase 4: アジェンダ強化
 - **繰り返しルールのrrule**: iCal RRULE形式。`FREQ=WEEKLY;BYDAY=MO`（毎週月曜）等
 - **カレンダー備考の文字数制限**: Google Calendar descriptionは最大8192文字。アジェンダが超えないよう制御
 - **会議サイクルはハードコードしない**: 月曜固定ではなく `projects.meeting_cycle_day` で曜日を設定可能（デフォルト1=月曜）
-- **アジェンダはカレンダーイベントのdescription**: 別ドキュメントではなくGoogle Calendar APIで会議イベントの詳細欄に直接記載
-- **⚠️ projects テーブル追加カラム**: `meeting_cycle_day` (INTEGER DEFAULT 1) + `meeting_cycle_enabled` (BOOLEAN DEFAULT true)
+- **アジェンダはプロジェクトログDoc + カレンダーリンク**: Google Docsに事前アジェンダを自動生成し、カレンダーイベントにDocリンクを貼付。カレンダーdescriptionへの直接記載はフォールバック
+- **⚠️ projects テーブル追加カラム**: `meeting_cycle_day` (INTEGER DEFAULT 1) + `meeting_cycle_enabled` (BOOLEAN DEFAULT true) + `log_document_id` (TEXT) + `log_document_url` (TEXT)
 - **⚠️ milestones テーブル追加カラム**: `source_meeting_record_id` (UUID REFERENCES meeting_records) + `auto_generated` (BOOLEAN DEFAULT false)
 - **⚠️ milestone_suggestions テーブル新設**: task_suggestionsと同様の構造。pending/accepted/dismissed のステータス管理
+- **⚠️ プロジェクトログDoc**: 1プロジェクト＝1 Google Docsドキュメント（正史）。最新の会議が先頭に配置。`projects.log_document_id` で管理
+- **プロジェクトログDocの配置**: `[NodeMap] 組織名/プロジェクト名/` フォルダ直下（drive_foldersのhierarchy_level=2）
+- **プロジェクトログDocの構造**: 日付セクション × 3ブロック（事前アジェンダ / 会議メモ / AI解析結果）
+- **事前アジェンダの自動生成**: Cron（generate-meeting-agendas）で翌営業日分を生成。decision_log + open_issues + MS進捗（タスク会話要約付き）+ 前回会議サマリ
+- **会議後の自動追記**: analyze API（ステップ9.7）でAI解析結果をDocに追記。決定事項 + タスク提案 + MS提案 + 未確定事項
+- **チャネル通知にDocリンク**: Slack Block Kit / Chatworkメッセージにプロジェクトログへのリンクを含める

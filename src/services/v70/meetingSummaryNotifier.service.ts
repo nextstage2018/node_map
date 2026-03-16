@@ -37,6 +37,8 @@ export interface MeetingSummaryNotifyParams {
     priority: 'high' | 'medium' | 'low';
   }[];
   userId: string;
+  // v8.0: プロジェクトログDocリンク
+  projectLogDocUrl?: string;
 }
 
 interface ProjectChannel {
@@ -183,6 +185,19 @@ function buildSlackSummaryBlocks(
       emoji: true,
     },
   });
+
+  // v8.0: プロジェクトログDocリンク
+  if (params.projectLogDocUrl) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: `📄 <${params.projectLogDocUrl}|プロジェクトログを開く>`,
+        },
+      ],
+    });
+  }
 
   // 要約
   if (params.summary) {
@@ -375,6 +390,12 @@ function buildChatworkSummaryText(
   const lines: string[] = [];
 
   lines.push(`[info][title]📋 ${params.meetingTitle}[/title]`);
+
+  // v8.0: プロジェクトログDocリンク
+  if (params.projectLogDocUrl) {
+    lines.push(`📄 プロジェクトログ: ${params.projectLogDocUrl}`);
+    lines.push('');
+  }
 
   // 要約
   if (params.summary) {

@@ -253,6 +253,8 @@ CREATE TABLE projects (
   color TEXT,
   meeting_cycle_day INTEGER DEFAULT 1,       -- v8.0: 週次会議曜日（0=日〜6=土、デフォルト1=月曜）
   meeting_cycle_enabled BOOLEAN DEFAULT true, -- v8.0: 週次サイクル有効/無効
+  log_document_id TEXT, -- v8.0: Google Docs プロジェクトログのドキュメントID
+  log_document_url TEXT, -- v8.0: Google Docs プロジェクトログのURL
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

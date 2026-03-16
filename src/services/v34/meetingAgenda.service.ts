@@ -288,20 +288,21 @@ export async function updateAgendaStatus(
 /**
  * Cron用: 全プロジェクトの翌営業日アジェンダを自動生成
  * v4.1: 生成後にカレンダー備考にアジェンダを注入
+ * v8.0: プロジェクトログDocに事前アジェンダを挿入 + カレンダーにDocリンク貼付
  */
 export async function generateAgendasForAllProjects(
   userId: string
-): Promise<{ generated: number; skipped: number; errors: number; calendarUpdated: number }> {
+): Promise<{ generated: number; skipped: number; errors: number; calendarUpdated: number; docsUpdated: number }> {
   const supabase = getServerSupabase() || getSupabase();
-  if (!supabase) return { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0 };
+  if (!supabase) return { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0, docsUpdated: 0 };
 
-  const stats = { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0 };
+  const stats = { generated: 0, skipped: 0, errors: 0, calendarUpdated: 0, docsUpdated: 0 };
 
   try {
     // アクティブなプロジェクトを取得
     const { data: projects, error } = await supabase
       .from('projects')
-      .select('id')
+      .select('id, name, log_document_id, log_document_url')
       .limit(50);
 
     if (error || !projects) {
@@ -319,7 +320,53 @@ export async function generateAgendasForAllProjects(
         if (result) {
           stats.generated++;
 
-          // v4.1: カレンダー備考にアジェンダを注入
+          // v8.0: プロジェクトログDocに事前アジェンダを挿入
+          try {
+            const {
+              getOrCreateProjectLogDoc,
+              collectAgendaData,
+              insertPreMeetingAgenda,
+              addDocLinkToCalendarEvent,
+            } = await import('@/services/v8/projectLogDoc.service');
+
+            // ログDoc取得（なければ自動作成）
+            const docInfo = await getOrCreateProjectLogDoc(userId, project.id);
+            if (docInfo) {
+              // アジェンダデータ収集
+              const agendaData = await collectAgendaData(project.id, meetingDate, userId);
+              if (agendaData) {
+                const inserted = await insertPreMeetingAgenda(userId, docInfo.documentId, agendaData);
+                if (inserted) {
+                  stats.docsUpdated++;
+                  console.log(`[MeetingAgenda Cron] v8.0 Doc更新: PJ ${project.name}`);
+                }
+              }
+
+              // カレンダーイベントにDocリンクを貼付
+              try {
+                const dayStart = `${meetingDate}T00:00:00+09:00`;
+                const dayEnd = `${meetingDate}T23:59:59+09:00`;
+                const { getEvents } = await import('@/services/calendar/calendarClient.service');
+                const events = await getEvents(userId, dayStart, dayEnd);
+                for (const event of events) {
+                  if (event.id) {
+                    await addDocLinkToCalendarEvent(
+                      userId,
+                      event.id,
+                      docInfo.documentUrl,
+                      event.description
+                    );
+                  }
+                }
+              } catch (calLinkErr) {
+                console.warn(`[MeetingAgenda Cron] カレンダーリンク貼付失敗:`, calLinkErr);
+              }
+            }
+          } catch (docErr) {
+            console.warn(`[MeetingAgenda Cron] v8.0 Doc処理失敗 PJ ${project.id}:`, docErr);
+          }
+
+          // v4.1: カレンダー備考にアジェンダを注入（既存機能、Doc未対応環境のフォールバック）
           try {
             const calendarUpdated = await injectAgendaToCalendarEvents(
               project.id,
