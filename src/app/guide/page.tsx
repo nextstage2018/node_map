@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
+import DataFlowTab from '@/components/guide/DataFlowTab';
 import {
   Bot, Inbox, Building2, Settings, BookOpen,
   MessageSquare, ListTodo, Briefcase, GitBranch,
@@ -11,11 +12,13 @@ import {
   ArrowRight, Layers, Users, FolderOpen,
   HardDrive, ClipboardList, KanbanSquare,
   UserCheck, User, Sparkles, ThumbsUp, ThumbsDown,
-  Pencil, GripVertical, Eye, RefreshCw, Hash, Bell, Send
+  Pencil, GripVertical, Eye, RefreshCw, Hash, Bell, Send,
+  Workflow
 } from 'lucide-react';
 
 const TABS = [
   { id: 'overview', label: 'はじめに', icon: BookOpen },
+  { id: 'dataflow', label: 'データフロー', icon: Workflow },
   { id: 'secretary', label: '秘書', icon: Bot },
   { id: 'tasks', label: 'タスク', icon: KanbanSquare },
   { id: 'inbox', label: 'インボックス', icon: Inbox },
@@ -924,6 +927,7 @@ export default function GuidePage() {
 
   const tabContent: Record<string, React.ReactNode> = {
     overview: <OverviewTab />,
+    dataflow: <DataFlowTab />,
     secretary: <SecretaryTab />,
     tasks: <TasksTab />,
     inbox: <InboxTab />,
