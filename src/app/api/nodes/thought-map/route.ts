@@ -121,9 +121,11 @@ export async function GET(request: NextRequest) {
 
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す
     // タスクの場合は元の種のノード+エッジも統合して返す（一連の思考の流れ）
+    // + 会話ターンデータも返す（思考マップの再生用）
     if (taskId || seedId) {
       let allNodes: any[] = [];
       let allEdges: any[] = [];
+      let conversations: any[] = [];
 
       if (taskId) {
         // タスクのノード+エッジ
@@ -133,6 +135,27 @@ export async function GET(request: NextRequest) {
         ]);
         allNodes.push(...taskNodes);
         allEdges.push(...taskEdges);
+
+        // 会話ターンデータを取得（思考マップ再生用）
+        const sb2 = getServerSupabase() || getSupabase();
+        if (sb2) {
+          const { data: convData } = await sb2
+            .from('task_conversations')
+            .select('id, role, content, phase, created_at')
+            .eq('task_id', taskId)
+            .neq('phase', 'checkpoint')
+            .order('created_at', { ascending: true });
+
+          if (convData) {
+            conversations = convData.map((c: any, idx: number) => ({
+              turnIndex: idx + 1,
+              role: c.role,
+              content: c.content?.slice(0, 300) || '',
+              phase: c.phase,
+              createdAt: c.created_at,
+            }));
+          }
+        }
 
         // 元の種があれば、種のノード+エッジも統合
         const sb = getServerSupabase() || getSupabase();
@@ -184,7 +207,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        data: { nodes: allNodes, edges: allEdges },
+        data: { nodes: allNodes, edges: allEdges, conversations },
       });
     }
 
