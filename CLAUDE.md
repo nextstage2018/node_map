@@ -374,7 +374,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | # | エンドポイント | 用途 | 主なデータソース | Max Tokens |
 |---|---|---|---|---|
 | ~~1~~ | ~~`/api/agent/chat`~~ | ~~秘書チャット~~ **削除済み（v9.0）** | - | - |
-| 2 | `/api/tasks/chat` | タスクAI会話 | tasks, task_conversations, projects | 1500 |
+| 2 | `/api/tasks/chat` | タスクAI会話 | tasks, task_conversations, projects, decision_log, boss_feedback_learnings, task_external_resources | 1500 |
 | 3 | `/api/ai/draft-reply` | 返信下書き | contact_persons, inbox_messages, calendar | 1000 |
 | 4 | `/api/ai/structure-job` | ジョブ構造化 | calendar, user_metadata, inbox_messages | 256-1024 |
 | 5 | `/api/consultations` | 相談回答生成 | consultations, jobs, user_metadata | 1024 |

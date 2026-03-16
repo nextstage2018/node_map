@@ -118,30 +118,6 @@ export async function POST(request: NextRequest) {
       console.error('[Tasks Chat] 外部資料コンテキスト取得エラー（続行）:', e);
     }
 
-    // Phase 61②: 関連する社内相談コンテキストを取得
-    try {
-      const sb2 = getServerSupabase() || getSupabase();
-      if (sb2 && task.projectId) {
-        // タスクに関連するジョブ経由の相談結果を取得
-        const { data: relatedConsultations } = await sb2
-          .from('consultations')
-          .select('question, answer, thread_summary, created_at')
-          .eq('status', 'answered')
-          .not('answer', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(3);
-        if (relatedConsultations && relatedConsultations.length > 0) {
-          const consultTexts = relatedConsultations.map((c: any) =>
-            `Q: ${c.question}\nA: ${c.answer}`
-          ).join('\n---\n');
-          chatContext.personalizedContext = (chatContext.personalizedContext || '') +
-            `\n\n## 関連する社内相談結果（参考情報）\n${consultTexts}`;
-        }
-      }
-    } catch (e) {
-      console.error('[Tasks Chat] 相談コンテキスト取得エラー（続行）:', e);
-    }
-
     // v7.1: ボスフィードバック学習コンテキストを取得
     try {
       const sbFb = getServerSupabase() || getSupabase();
