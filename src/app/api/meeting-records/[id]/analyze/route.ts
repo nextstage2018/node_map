@@ -769,12 +769,17 @@ milestone_suggestionsは「今週末にどうなっていたいか」を定め�
       console.error('[MeetingRecords Analyze] v7.0 チャネル通知エラー:', notifyError);
     }
 
-    // 11. v7.0: 検討ツリー生成（analyze API内で一体化）
+    // 11. v7.0: 検討ツリー生成（内部fetch廃止 → 直接DB操作）
     let treeResult = { created: 0, updated: 0, merged: 0 };
     if (analysisResult.topics && analysisResult.topics.length > 0) {
       try {
-        // 再解析時: この会議録由来の既存ノードを削除してから再生成
-        // まずプロジェクトの既存ツリーを取得
+        const { matchTopic, isChildNodeDuplicate, calculateMergedConfidence } = await import('@/services/nodemap/topicMatcher.service');
+        type DecisionTreeNodeForMatch = import('@/services/nodemap/topicMatcher.service').DecisionTreeNodeForMatch;
+
+        const sourceType = 'meeting';
+        const confidence = 0.85;
+
+        // 既存ツリーを取得 or 新規作成
         const { data: existingTrees } = await supabase
           .from('decision_trees')
           .select('id')
@@ -782,9 +787,11 @@ milestone_suggestionsは「今週末にどうなっていたいか」を定め�
           .order('created_at', { ascending: true })
           .limit(1);
 
+        let treeId: string;
         if (existingTrees && existingTrees.length > 0) {
-          const treeId = existingTrees[0].id;
-          // この会議録由来のノードを削除（子ノードもCASCADEで削除される場合は親のみ）
+          treeId = existingTrees[0].id;
+
+          // 再解析時: この会議録由来の既存ノードを削除
           const { data: meetingNodes } = await supabase
             .from('decision_tree_nodes')
             .select('id')
@@ -792,53 +799,98 @@ milestone_suggestionsは「今週末にどうなっていたいか」を定め�
             .eq('source_meeting_id', id);
 
           if (meetingNodes && meetingNodes.length > 0) {
-            const nodeIds = meetingNodes.map(n => n.id);
-            // まず子ノード（parent_node_idがこれらのノード）を削除
-            await supabase
-              .from('decision_tree_nodes')
-              .delete()
-              .eq('tree_id', treeId)
-              .in('parent_node_id', nodeIds);
-            // 次に親ノード自体を削除
-            await supabase
-              .from('decision_tree_nodes')
-              .delete()
-              .in('id', nodeIds);
+            const nodeIds = meetingNodes.map((n: { id: string }) => n.id);
+            await supabase.from('decision_tree_nodes').delete().eq('tree_id', treeId).in('parent_node_id', nodeIds);
+            await supabase.from('decision_tree_nodes').delete().in('id', nodeIds);
             console.log(`[MeetingRecords Analyze] 再解析: 既存ノード${meetingNodes.length}件を削除`);
+          }
+        } else {
+          // 新規ツリーを作成
+          const { data: newTree, error: createError } = await supabase
+            .from('decision_trees')
+            .insert({ project_id: record.project_id, title: '検討ツリー', description: '会議録から自動生成された検討ツリー' })
+            .select()
+            .single();
+          if (createError) throw createError;
+          treeId = newTree.id;
+          console.log(`[MeetingRecords Analyze] 新規検討ツリー作成: ${treeId}`);
+        }
+
+        // 既存ノードを取得
+        const { data: existingNodes } = await supabase.from('decision_tree_nodes').select('*').eq('tree_id', treeId);
+        const rootNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => !n.parent_node_id);
+
+        const createdNodes: string[] = [];
+        const updatedNodes: string[] = [];
+        const mergedNodes: string[] = [];
+
+        for (const topic of analysisResult.topics) {
+          const match = matchTopic(topic.title, rootNodes);
+          const matchingNode = match.matchedNode;
+
+          if (match.recommendedAction === 'merge' && matchingNode) {
+            // マージ or 更新
+            const currentMsgIds = matchingNode.source_message_ids || [];
+            let newSourceType = matchingNode.source_type || sourceType;
+            if (matchingNode.source_type && matchingNode.source_type !== sourceType) newSourceType = 'hybrid';
+            const newConfidence = calculateMergedConfidence(matchingNode.confidence_score || confidence, Math.max(currentMsgIds.length, 1), confidence);
+
+            if (topic.status === 'cancelled' && matchingNode.status !== 'cancelled') {
+              await supabase.from('decision_tree_nodes').update({ status: 'cancelled', cancel_reason: '会議録で方針変更', cancel_meeting_id: id, source_type: newSourceType, confidence_score: newConfidence, updated_at: new Date().toISOString() }).eq('id', matchingNode.id);
+              await supabase.from('decision_tree_node_history').insert({ node_id: matchingNode.id, previous_status: matchingNode.status, new_status: 'cancelled', reason: '会議録で方針変更', meeting_record_id: id });
+              updatedNodes.push(matchingNode.id);
+            } else if (topic.status === 'completed' && matchingNode.status !== 'completed') {
+              await supabase.from('decision_tree_nodes').update({ status: 'completed', source_type: newSourceType, confidence_score: newConfidence, updated_at: new Date().toISOString() }).eq('id', matchingNode.id);
+              await supabase.from('decision_tree_node_history').insert({ node_id: matchingNode.id, previous_status: matchingNode.status, new_status: 'completed', reason: '会議録で完了確認', meeting_record_id: id });
+              updatedNodes.push(matchingNode.id);
+            } else {
+              await supabase.from('decision_tree_nodes').update({ source_type: newSourceType, confidence_score: newConfidence, updated_at: new Date().toISOString() }).eq('id', matchingNode.id);
+              mergedNodes.push(matchingNode.id);
+            }
+
+            // options を子ノードとして追加
+            if (topic.options && topic.options.length > 0) {
+              const childNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => n.parent_node_id === matchingNode.id);
+              for (const option of topic.options) {
+                if (!isChildNodeDuplicate(option, childNodes)) {
+                  const { data: newNode } = await supabase.from('decision_tree_nodes').insert({ tree_id: treeId, parent_node_id: matchingNode.id, title: option, node_type: 'option', status: 'active', source_meeting_id: id, source_type: sourceType, confidence_score: confidence, sort_order: childNodes.length }).select().single();
+                  if (newNode) createdNodes.push(newNode.id);
+                }
+              }
+            }
+            // decision を子ノードとして追加
+            if (topic.decision) {
+              const childNodes: DecisionTreeNodeForMatch[] = (existingNodes || []).filter((n: any) => n.parent_node_id === matchingNode.id);
+              const existingDecision = childNodes.find(cn => cn.node_type === 'decision' && isChildNodeDuplicate(topic.decision!, [cn]));
+              if (!existingDecision) {
+                const { data: newNode } = await supabase.from('decision_tree_nodes').insert({ tree_id: treeId, parent_node_id: matchingNode.id, title: topic.decision, node_type: 'decision', status: 'active', source_meeting_id: id, source_type: sourceType, confidence_score: confidence, sort_order: childNodes.length }).select().single();
+                if (newNode) createdNodes.push(newNode.id);
+              }
+            }
+          } else {
+            // 新規 topic ノードを作成
+            const { data: topicNode, error: topicError } = await supabase.from('decision_tree_nodes').insert({ tree_id: treeId, parent_node_id: null, title: topic.title, node_type: 'topic', status: topic.status || 'active', source_meeting_id: id, source_type: sourceType, confidence_score: confidence, sort_order: rootNodes.length + createdNodes.length }).select().single();
+            if (topicError) { console.error('[MeetingRecords Analyze] topic作成エラー:', topicError); continue; }
+            createdNodes.push(topicNode.id);
+            await supabase.from('decision_tree_node_history').insert({ node_id: topicNode.id, previous_status: null, new_status: topic.status || 'active', reason: '会議録から自動生成', meeting_record_id: id });
+
+            // options を子ノードとして追加
+            if (topic.options && topic.options.length > 0) {
+              for (let i = 0; i < topic.options.length; i++) {
+                const { data: optionNode } = await supabase.from('decision_tree_nodes').insert({ tree_id: treeId, parent_node_id: topicNode.id, title: topic.options[i], node_type: 'option', status: 'active', source_meeting_id: id, source_type: sourceType, confidence_score: confidence, sort_order: i }).select().single();
+                if (optionNode) createdNodes.push(optionNode.id);
+              }
+            }
+            // decision を子ノードとして追加
+            if (topic.decision) {
+              const { data: decisionNode } = await supabase.from('decision_tree_nodes').insert({ tree_id: treeId, parent_node_id: topicNode.id, title: topic.decision, node_type: 'decision', status: 'active', source_meeting_id: id, source_type: sourceType, confidence_score: confidence, sort_order: topic.options ? topic.options.length : 0 }).select().single();
+              if (decisionNode) createdNodes.push(decisionNode.id);
+            }
           }
         }
 
-        // 検討ツリー生成API呼び出し（内部fetch）
-        const baseUrl = process.env.NEXT_PUBLIC_SITE_URL
-          || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-          || 'https://node-map-eight.vercel.app';
-        const generateUrl = `${baseUrl}/api/decision-trees/generate`;
-
-        const treeRes = await fetch(generateUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-cron-secret': process.env.CRON_SECRET || '',
-          },
-          body: JSON.stringify({
-            project_id: record.project_id,
-            meeting_record_id: id,
-            topics: analysisResult.topics,
-            source_type: 'meeting',
-          }),
-        });
-
-        if (treeRes.ok) {
-          const treeData = await treeRes.json();
-          treeResult = {
-            created: treeData.data?.created_count || 0,
-            updated: treeData.data?.updated_count || 0,
-            merged: treeData.data?.merged_count || 0,
-          };
-          console.log(`[MeetingRecords Analyze] 検討ツリー生成完了: created=${treeResult.created}, updated=${treeResult.updated}`);
-        } else {
-          console.error(`[MeetingRecords Analyze] 検討ツリー生成エラー: ${treeRes.status}`);
-        }
+        treeResult = { created: createdNodes.length, updated: updatedNodes.length, merged: mergedNodes.length };
+        console.log(`[MeetingRecords Analyze] 検討ツリー生成完了: created=${treeResult.created}, updated=${treeResult.updated}, merged=${treeResult.merged}`);
       } catch (treeError) {
         // 検討ツリー生成失敗してもメインパイプラインはブロックしない
         console.error('[MeetingRecords Analyze] 検討ツリー生成エラー:', treeError);
