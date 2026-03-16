@@ -1,5 +1,5 @@
 // V2-H: 思考マップタブ（プロジェクト詳細内）
-// チェックポイント70点以上のタスクを選択 → D3.js フォースグラフで思考ノードを可視化
+// チェックポイント評価済みのタスクを選択 → D3.js フォースグラフで思考ノードを可視化
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -60,7 +60,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 70点以上タスク一覧を取得
+  // 評価済みタスク一覧を取得
   const fetchQualifiedTasks = useCallback(async () => {
     setIsTasksLoading(true);
     try {
@@ -70,7 +70,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         setQualifiedTasks(json.data.tasks || []);
       }
     } catch (e) {
-      console.error('[ThoughtMapTab] 70点以上タスク取得エラー:', e);
+      console.error('[ThoughtMapTab] 評価済みタスク取得エラー:', e);
     } finally {
       setIsTasksLoading(false);
     }
@@ -413,11 +413,11 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         </div>
       </div>
 
-      {/* タスク選択ドロップダウン（70点以上のみ） */}
+      {/* タスク選択ドロップダウン（評価済みのみ） */}
       <div className="relative">
         <label className="block text-[10px] text-slate-500 mb-1 flex items-center gap-1">
           <Award className="w-3 h-3" />
-          チェックポイント70点以上のタスク
+          チェックポイント評価済みのタスク
         </label>
         <button
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -433,7 +433,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <div className="absolute z-10 mt-1 w-full max-w-md bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden max-h-72 overflow-y-auto">
             {qualifiedTasks.length === 0 ? (
               <div className="px-3 py-4 text-xs text-slate-400 text-center">
-                70点以上のタスクがありません。<br />
+                評価済みのタスクがありません。<br />
                 タスクのAI壁打ち後にチェックポイント評価を実施してください。
               </div>
             ) : (
@@ -499,7 +499,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <div className="text-center">
             <Map className="w-10 h-10 mx-auto mb-3 text-slate-200" />
             <p className="text-xs text-slate-400">
-              上のドロップダウンから<br />70点以上のタスクを選択してください
+              上のドロップダウンから<br />評価済みのタスクを選択してください
             </p>
           </div>
         </div>

@@ -570,11 +570,11 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         continue;
       }
 
-      if (score < 70) {
+      if (score < 0) {
         debugInfo.push({
           taskId: task.id,
           title: task.title,
-          reason: 'score_below_70',
+          reason: 'score_below_threshold',
           score,
         });
         continue;
