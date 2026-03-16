@@ -216,7 +216,7 @@ async function notifyViaProjectChannels(
     // プロジェクトに紐づくチャネルを取得
     const { data: channels } = await supabase
       .from('project_channels')
-      .select('service_name, identifier')
+      .select('service_name, channel_identifier')
       .eq('project_id', task.project_id);
 
     if (!channels || channels.length === 0) {
@@ -224,13 +224,13 @@ async function notifyViaProjectChannels(
       return false;
     }
 
-    console.log(`[TaskCompletionNotify] PJチャネル ${channels.length}件: ${channels.map((c: any) => `${c.service_name}:${c.identifier}`).join(', ')}`);
+    console.log(`[TaskCompletionNotify] PJチャネル ${channels.length}件: ${channels.map((c: any) => `${c.service_name}:${c.channel_identifier}`).join(', ')}`);
 
     let sent = false;
 
     for (const ch of channels) {
       try {
-        if (ch.service_name === 'slack' && ch.identifier) {
+        if (ch.service_name === 'slack' && ch.channel_identifier) {
           const token = await getSlackToken(userId);
           if (token) {
             const res = await fetch('https://slack.com/api/chat.postMessage', {
@@ -240,7 +240,7 @@ async function notifyViaProjectChannels(
                 'Authorization': `Bearer ${token}`,
               },
               body: JSON.stringify({
-                channel: ch.identifier,
+                channel: ch.channel_identifier,
                 text: message,
               }),
             });
@@ -250,10 +250,10 @@ async function notifyViaProjectChannels(
               sent = true;
             }
           }
-        } else if (ch.service_name === 'chatwork' && ch.identifier) {
+        } else if (ch.service_name === 'chatwork' && ch.channel_identifier) {
           const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
           if (token) {
-            const res = await fetch(`https://api.chatwork.com/v2/rooms/${ch.identifier}/messages`, {
+            const res = await fetch(`https://api.chatwork.com/v2/rooms/${ch.channel_identifier}/messages`, {
               method: 'POST',
               headers: {
                 'X-ChatWorkToken': token,
