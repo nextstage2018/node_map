@@ -62,9 +62,13 @@ export async function notifyTaskCompletion(
       .eq('id', taskId)
       .single();
 
-    if (!task) return false;
+    if (!task) {
+      console.log('[TaskCompletionNotify] タスクが見つかりません:', taskId);
+      return false;
+    }
 
     const typedTask = task as TaskForNotify;
+    console.log(`[TaskCompletionNotify] 通知開始: ${typedTask.title}, source_type=${typedTask.source_type}, project_id=${typedTask.project_id}, source_channel_id=${typedTask.source_channel_id}`);
 
     // v4.5: 外部タスク同期（Slack Block Kit カード更新 / Chatworkタスク完了）
     try {
@@ -89,6 +93,7 @@ export async function notifyTaskCompletion(
     let notified = false;
 
     // 経路1: source_type が slack/chatwork → 元スレッドに返信
+    console.log(`[TaskCompletionNotify] 経路判定: source_type=${typedTask.source_type}`);
     if (typedTask.source_type && ['slack', 'chatwork'].includes(typedTask.source_type) && typedTask.source_channel_id) {
       if (typedTask.source_type === 'slack') {
         notified = await notifySlack(typedTask, message, userId);
@@ -99,9 +104,11 @@ export async function notifyTaskCompletion(
 
     // 経路2: 元スレッドがない場合 → project_channels 経由でPJチャネルに投稿
     if (!notified && typedTask.project_id) {
+      console.log(`[TaskCompletionNotify] 経路2: PJチャネル経由で通知試行, project_id=${typedTask.project_id}`);
       notified = await notifyViaProjectChannels(supabase, typedTask, message, userId);
     }
 
+    console.log(`[TaskCompletionNotify] 結果: notified=${notified}`);
     return notified;
   } catch (error) {
     console.error('[TaskCompletionNotify] エラー:', error);
@@ -212,7 +219,12 @@ async function notifyViaProjectChannels(
       .select('service_name, identifier')
       .eq('project_id', task.project_id);
 
-    if (!channels || channels.length === 0) return false;
+    if (!channels || channels.length === 0) {
+      console.log(`[TaskCompletionNotify] PJチャネル未登録: project_id=${task.project_id}`);
+      return false;
+    }
+
+    console.log(`[TaskCompletionNotify] PJチャネル ${channels.length}件: ${channels.map((c: any) => `${c.service_name}:${c.identifier}`).join(', ')}`);
 
     let sent = false;
 
