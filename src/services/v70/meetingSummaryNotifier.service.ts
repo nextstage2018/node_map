@@ -145,6 +145,33 @@ async function sendSlackMeetingSummary(
 
   const threadTs = summaryRes.messageTs;
 
+  // thread_ts を meeting_records.metadata に保存（タスク完了通知でスレッド返信に使用）
+  if (threadTs) {
+    try {
+      const supabase = getServerSupabase() || getSupabase();
+      if (supabase) {
+        const { data: existingRecord } = await supabase
+          .from('meeting_records')
+          .select('metadata')
+          .eq('id', params.meetingRecordId)
+          .single();
+        const existingMeta = existingRecord?.metadata || {};
+        await supabase
+          .from('meeting_records')
+          .update({
+            metadata: {
+              ...existingMeta,
+              slack_thread_ts: threadTs,
+              slack_channel_id: channelId,
+            },
+          })
+          .eq('id', params.meetingRecordId);
+      }
+    } catch (e) {
+      console.warn('[MeetingSummaryNotifier] thread_ts保存失敗:', e);
+    }
+  }
+
   // --- パート2: タスク提案カード（スレッド内に個別投稿） ---
   if (params.actionItems.length > 0 && threadTs) {
     for (let i = 0; i < params.actionItems.length; i++) {

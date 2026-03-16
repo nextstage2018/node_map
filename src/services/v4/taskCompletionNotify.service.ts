@@ -102,9 +102,15 @@ export async function notifyTaskCompletion(
       }
     }
 
-    // 経路2: 元スレッドがない場合 → project_channels 経由でPJチャネルに投稿
+    // 経路2: 会議録起点のタスク → 会議サマリーのSlackスレッドに返信
     if (!notified && typedTask.project_id) {
-      console.log(`[TaskCompletionNotify] 経路2: PJチャネル経由で通知試行, project_id=${typedTask.project_id}`);
+      console.log(`[TaskCompletionNotify] 経路2: 会議スレッド検索, project_id=${typedTask.project_id}`);
+      notified = await notifyViaMeetingThread(supabase, typedTask, message, userId);
+    }
+
+    // 経路3: 上記いずれも失敗 → project_channels 経由でPJチャネルに投稿
+    if (!notified && typedTask.project_id) {
+      console.log(`[TaskCompletionNotify] 経路3: PJチャネル経由で通知試行, project_id=${typedTask.project_id}`);
       notified = await notifyViaProjectChannels(supabase, typedTask, message, userId);
     }
 
@@ -196,6 +202,68 @@ async function notifyChatwork(
     return true;
   } catch (error) {
     console.error('[TaskCompletionNotify] Chatwork通知エラー:', error);
+    return false;
+  }
+}
+
+/**
+ * 会議録サマリーのSlackスレッドに完了通知を返信
+ * task_suggestions → meeting_record_id → meeting_records.metadata.slack_thread_ts
+ */
+async function notifyViaMeetingThread(
+  supabase: any,
+  task: TaskForNotify,
+  message: string,
+  userId: string
+): Promise<boolean> {
+  try {
+    if (!task.project_id) return false;
+
+    // タスクに紐づく会議録を探す（task_suggestions 経由、または直近の会議録）
+    // 方法1: 直近の会議録でslack_thread_tsを持つものを探す
+    const { data: records } = await supabase
+      .from('meeting_records')
+      .select('id, metadata')
+      .eq('project_id', task.project_id)
+      .not('metadata', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    if (!records || records.length === 0) return false;
+
+    // slack_thread_ts を持つ会議録を探す
+    for (const record of records) {
+      const meta = record.metadata;
+      if (meta?.slack_thread_ts && meta?.slack_channel_id) {
+        const token = await getSlackToken(userId);
+        if (!token) continue;
+
+        const res = await fetch('https://slack.com/api/chat.postMessage', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            channel: meta.slack_channel_id,
+            text: message,
+            thread_ts: meta.slack_thread_ts,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.ok) {
+          console.log(`[TaskCompletionNotify] 会議スレッドに通知送信: ${task.title}`);
+          return true;
+        } else {
+          console.warn(`[TaskCompletionNotify] 会議スレッド返信失敗: ${data.error}`);
+        }
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('[TaskCompletionNotify] 会議スレッド通知エラー:', error);
     return false;
   }
 }
