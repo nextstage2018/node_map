@@ -338,6 +338,10 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             onBack={() => setShowChat(false)}
             onConversationUpdate={fetchDetail}
             onCheckpointScore={handleCheckpointScore}
+            onStatusChange={(tid, newStatus) => {
+              setTask(prev => prev ? { ...prev, status: newStatus } : prev);
+              onStatusChange?.(tid, newStatus);
+            }}
           />
         ) : (
           <>

@@ -16,18 +16,24 @@ interface Conversation {
   created_at: string;
 }
 
+interface CheckpointBreakdown {
+  goal_clarity: { score: number; comment: string };
+  thinking_depth: { score: number; comment: string };
+  proactive_vision: { score: number; comment: string };
+  risk_awareness: { score: number; comment: string };
+  quality_precision: { score: number; comment: string };
+}
+
 interface CheckpointResult {
   total_score: number;
-  breakdown: {
-    goal_clarity: { score: number; comment: string };
-    thinking_depth: { score: number; comment: string };
-    proactive_vision: { score: number; comment: string };
-    risk_awareness: { score: number; comment: string };
-    quality_precision: { score: number; comment: string };
-  };
+  breakdown: CheckpointBreakdown;
   overall_feedback: string;
   improvement_hints: string[];
   can_complete: boolean;
+  previous?: {
+    total_score: number;
+    breakdown: CheckpointBreakdown;
+  } | null;
 }
 
 interface TaskChatViewProps {
@@ -37,6 +43,7 @@ interface TaskChatViewProps {
   onBack: () => void;
   onConversationUpdate: () => void;
   onCheckpointScore?: (score: number, canComplete: boolean) => void;
+  onStatusChange?: (taskId: string, newStatus: string) => void;
 }
 
 interface AttachedFile {
@@ -90,6 +97,7 @@ export default function TaskChatView({
   onBack,
   onConversationUpdate,
   onCheckpointScore,
+  onStatusChange,
 }: TaskChatViewProps) {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -97,6 +105,7 @@ export default function TaskChatView({
   const [localConversations, setLocalConversations] = useState<Conversation[]>(conversations);
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
   const [checkpointResult, setCheckpointResult] = useState<CheckpointResult | null>(null);
+  const [previousResult, setPreviousResult] = useState<CheckpointResult | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [showCheckpointDetail, setShowCheckpointDetail] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -128,6 +137,22 @@ export default function TaskChatView({
     };
     reader.readAsDataURL(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // 会話開始時にステータスを自動で進行中に変更
+  const autoProgressStatus = async () => {
+    if (taskStatus === 'todo') {
+      try {
+        await fetch(`/api/tasks/${taskId}/status`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'in_progress' }),
+        });
+        onStatusChange?.(taskId, 'in_progress');
+      } catch (e) {
+        console.error('ステータス自動変更エラー:', e);
+      }
+    }
   };
 
   const handleSend = async () => {
@@ -166,6 +191,11 @@ export default function TaskChatView({
       textareaRef.current.style.height = 'auto';
     }
 
+    // 初回送信時にステータスを進行中に自動変更
+    if (localConversations.length === 0) {
+      autoProgressStatus();
+    }
+
     try {
       const res = await fetch('/api/tasks/chat', {
         method: 'POST',
@@ -197,6 +227,7 @@ export default function TaskChatView({
   // 初回AIメッセージ生成
   const handleInitialGreeting = async () => {
     setIsInitialLoading(true);
+    autoProgressStatus();
     try {
       const res = await fetch('/api/tasks/chat', {
         method: 'POST',
@@ -246,9 +277,49 @@ export default function TaskChatView({
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.data) {
+          // 前回結果を保持
+          if (data.data.previous) {
+            setPreviousResult(data.data.previous);
+          } else if (checkpointResult) {
+            setPreviousResult(checkpointResult);
+          }
           setCheckpointResult(data.data);
           setShowCheckpointDetail(true);
           onCheckpointScore?.(data.data.total_score, data.data.can_complete);
+
+          // 採点結果を会話に注入してAIに認識させる
+          const scoreMsg = buildCheckpointMessage(data.data, data.data.previous || checkpointResult);
+          try {
+            const chatRes = await fetch('/api/tasks/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                taskId,
+                message: scoreMsg,
+                phase: determinePhase(localConversations, taskStatus),
+              }),
+            });
+            if (chatRes.ok) {
+              const chatData = await chatRes.json();
+              if (chatData.success && chatData.data?.reply) {
+                const userMsg: Conversation = {
+                  id: `cp-user-${Date.now()}`,
+                  role: 'user',
+                  content: `[チェックポイント評価: ${data.data.total_score}点/100点]`,
+                  phase: 'progress',
+                  created_at: new Date().toISOString(),
+                };
+                const aiMsg: Conversation = {
+                  id: `cp-ai-${Date.now()}`,
+                  role: 'assistant',
+                  content: chatData.data.reply,
+                  phase: 'progress',
+                  created_at: new Date().toISOString(),
+                };
+                setLocalConversations(prev => [...prev, userMsg, aiMsg]);
+              }
+            }
+          } catch { /* 会話注入失敗は無視 */ }
         }
       }
     } catch (error) {
@@ -256,6 +327,37 @@ export default function TaskChatView({
     } finally {
       setIsEvaluating(false);
     }
+  };
+
+  // 採点結果をAIに渡すメッセージを構築
+  const buildCheckpointMessage = (result: CheckpointResult, prev?: CheckpointResult | null): string => {
+    const labels: Record<string, string> = {
+      goal_clarity: 'ゴール明確度',
+      thinking_depth: '思考の深度',
+      proactive_vision: '先回り・視座',
+      risk_awareness: 'リスク認識',
+      quality_precision: '練度・精度',
+    };
+    let msg = `チェックポイント評価を実施しました。結果: ${result.total_score}点/100点。\n`;
+    if (prev) {
+      const diff = result.total_score - prev.total_score;
+      msg += `前回から${diff >= 0 ? '+' : ''}${diff}点の変化。\n`;
+    }
+    msg += '\n内訳:\n';
+    for (const [key, label] of Object.entries(labels)) {
+      const k = key as keyof CheckpointBreakdown;
+      const score = result.breakdown[k].score;
+      const comment = result.breakdown[k].comment;
+      if (prev?.breakdown[k]) {
+        const diff = score - prev.breakdown[k].score;
+        msg += `- ${label}: ${score}/20（${diff >= 0 ? '+' : ''}${diff}）${comment}\n`;
+      } else {
+        msg += `- ${label}: ${score}/20 ${comment}\n`;
+      }
+    }
+    msg += `\n改善ヒント:\n${result.improvement_hints.map(h => `- ${h}`).join('\n')}`;
+    msg += '\n\nこの評価結果を踏まえて、特にスコアの低い観点について改善するためのアドバイスをください。';
+    return msg;
   };
 
   // スコアの色を取得
@@ -282,9 +384,6 @@ export default function TaskChatView({
     }
   };
 
-  const phase = determinePhase(localConversations, taskStatus);
-  const phaseLabel = phase === 'ideation' ? '着想' : phase === 'progress' ? '進行' : '結果';
-
   return (
     <div className="flex flex-col h-full">
       {/* ヘッダー */}
@@ -297,9 +396,6 @@ export default function TaskChatView({
         </button>
         <MessageCircle className="w-4 h-4 text-blue-500" />
         <span className="text-sm font-medium text-nm-text">AIに相談</span>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
-          {phaseLabel}フェーズ
-        </span>
         <div className="ml-auto">
           <button
             onClick={handleCheckpoint}
@@ -337,6 +433,15 @@ export default function TaskChatView({
                 {checkpointResult.total_score}点
               </span>
               <span className="text-[10px] text-slate-500">/ 100</span>
+              {previousResult && (() => {
+                const diff = checkpointResult.total_score - previousResult.total_score;
+                if (diff === 0) return null;
+                return (
+                  <span className={cn('text-[10px] font-medium', diff > 0 ? 'text-green-600' : 'text-red-500')}>
+                    {diff > 0 ? `+${diff}` : diff}
+                  </span>
+                );
+              })()}
               {checkpointResult.can_complete ? (
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">完了可能</span>
               ) : (
@@ -375,6 +480,15 @@ export default function TaskChatView({
                   <span className={cn('text-[11px] font-medium w-8 text-right', getScoreColor(item.score, 20))}>
                     {item.score}
                   </span>
+                  {previousResult?.breakdown[key] && (() => {
+                    const diff = item.score - previousResult.breakdown[key].score;
+                    if (diff === 0) return null;
+                    return (
+                      <span className={cn('text-[9px] font-medium w-6', diff > 0 ? 'text-green-600' : 'text-red-500')}>
+                        {diff > 0 ? `+${diff}` : diff}
+                      </span>
+                    );
+                  })()}
                   <span className="text-[10px] text-slate-500 flex-1 min-w-0 truncate">{item.comment}</span>
                 </div>
               );

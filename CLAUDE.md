@@ -79,6 +79,10 @@
 - **⚠️ タスク完了制限**: チェックポイント未実施 or 85点未満の場合、ステータスを「完了」に変更しようとすると確認ダイアログ表示（スキップ可能）。TaskDetailPanel.tsx の `handleStatusChange` で制御
 - **⚠️ TaskDetailPanel.tsx の関連資料**: URL入力に加えファイルアップロード対応（Base64変換 → `/api/drive/documents`）。組織情報（organization_id/organization_name）をdetail APIから取得して送信
 - **⚠️ tasks/chat AI会話にdecision_log注入**: プロジェクトの直近10件のactive/on_hold決定事項をAIプロンプトに自動注入
+- **⚠️ チェックポイント結果の保存と差分**: 採点結果は `task_conversations`（phase='checkpoint', role='assistant'）にJSON保存。次回採点時に前回結果を取得し、スコア差分（+/-）を5観点それぞれに表示
+- **⚠️ チェックポイント後の会話注入**: 採点実行後、結果をAIに送信して改善アドバイスを自動取得。会話履歴にも記録される
+- **⚠️ AI会話開始時のステータス自動変更**: タスクが「着手前（todo）」の状態でAI会話を開始すると、自動的に「進行中（in_progress）」に変更
+- **⚠️ チャット画面のフェーズ表示廃止**: ヘッダーの「着想/進行/結果フェーズ」バッジは削除。内部的にはphaseは維持（API互換）
 
 ---
 
