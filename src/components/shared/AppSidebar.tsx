@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  Bot, Inbox, Building2, Settings,
+  LayoutDashboard, Inbox, Building2, Settings,
   ChevronLeft, ChevronRight, BookOpen, CheckSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 
 // v4.0: タスク管理ページ追加（秘書とインボックスの間）
 const NAV_ITEMS = [
-  { href: '/', label: '秘書', icon: Bot },
+  { href: '/', label: 'ホーム', icon: LayoutDashboard },
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
@@ -69,7 +69,7 @@ export default function AppSidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2">
         <div className="space-y-1">
           {NAV_ITEMS.map((item) => {
-            // ホーム（秘書）はパスが / 完全一致のみアクティブ
+            // ホームはパスが / 完全一致のみアクティブ
             const isActive = item.href === '/'
               ? pathname === '/'
               : (pathname === item.href || pathname?.startsWith(item.href + '/'));
@@ -91,7 +91,7 @@ export default function AppSidebar() {
                         'text-slate-600 hover:text-slate-900 hover:bg-slate-50',
                         !collapsed && 'border-l-[3px] border-transparent'
                       ),
-                  // 秘書リンクを少し目立たせる
+                  // ホームリンクを少し目立たせる
                   item.href === '/' && !isActive && 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
                 )}
               >
