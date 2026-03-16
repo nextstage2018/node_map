@@ -204,22 +204,36 @@ export default function OrganizationDetailPage() {
     } catch { /* */ }
   }, [orgId]);
 
+  // v9.0fix: プロジェクト横断のユニークメンバー数
+  const [projectMemberCount, setProjectMemberCount] = useState(0);
+
   const fetchProjects = useCallback(async () => {
     try {
       const res = await fetch(`/api/projects?organization_id=${orgId}`);
       const data = await res.json();
       if (data.success) {
         setProjects(data.data || []);
-        // プロジェクト配下のチャネル総数を集計
+        // プロジェクト配下のチャネル総数 + ユニークメンバー数を集計
         let chCount = 0;
+        const uniqueContactIds = new Set<string>();
         for (const p of (data.data || [])) {
           try {
             const chRes = await fetch(`/api/projects/${p.id}/channels`);
             const chData = await chRes.json();
             if (chData.success) chCount += (chData.data || []).length;
           } catch { /* */ }
+          try {
+            const mRes = await fetch(`/api/projects/${p.id}/members`);
+            const mData = await mRes.json();
+            if (mData.success) {
+              for (const m of (mData.data || [])) {
+                uniqueContactIds.add(m.contact_id);
+              }
+            }
+          } catch { /* */ }
         }
         setProjectChannelCount(chCount);
+        setProjectMemberCount(uniqueContactIds.size);
       }
     } catch { /* */ }
   }, [orgId]);
@@ -410,7 +424,7 @@ export default function OrganizationDetailPage() {
             </div>
             <div className="flex items-center gap-3 text-xs text-slate-500">
               <span className="flex items-center gap-1"><FolderOpen className="w-3.5 h-3.5" />{projects.length} PJ</span>
-              <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{members.length}人</span>
+              <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{projectMemberCount}人</span>
               <span className="flex items-center gap-1"><Link2 className="w-3.5 h-3.5" />{projectChannelCount} ch</span>
             </div>
           </div>
@@ -426,7 +440,7 @@ export default function OrganizationDetailPage() {
         {/* 2カラムレイアウト: 左ツリーナビ + 右コンテンツ */}
         <div className="flex-1 overflow-hidden flex">
           {/* ===== 左ツリーナビ ===== */}
-          <div className="w-56 shrink-0 border-r border-slate-200 bg-white overflow-y-auto">
+          <div className="w-80 shrink-0 border-r border-slate-200 bg-white overflow-y-auto">
             <div className="py-2">
               {/* 組織レベルメニュー */}
               <div className="px-3 mb-1">
