@@ -1,10 +1,11 @@
 /**
  * v4.0 Phase 6: タスク完了時のSlack/Chatwork通知サービス
  *
- * タスクが完了（status='done'）になった時、元のSlack/Chatworkスレッドに
- * 完了通知を自動投稿する。
+ * タスクが完了（status='done'）になった時、通知を自動投稿する。
+ * - source_type が slack/chatwork → 元スレッドに返信
+ * - それ以外（会議録・手動作成等） → project_channels 経由でPJチャネルに投稿
  *
- * 前提: tasks テーブルに source_type / source_message_id / source_channel_id がある
+ * 前提: tasks テーブルに source_type / source_message_id / source_channel_id / project_id がある
  */
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -85,21 +86,23 @@ export async function notifyTaskCompletion(
       }
     }
 
-    // source_type がない、またはmanual/secretary/meeting_recordの場合はスキップ
-    if (!typedTask.source_type || !['slack', 'chatwork'].includes(typedTask.source_type)) {
-      return false;
+    let notified = false;
+
+    // 経路1: source_type が slack/chatwork → 元スレッドに返信
+    if (typedTask.source_type && ['slack', 'chatwork'].includes(typedTask.source_type) && typedTask.source_channel_id) {
+      if (typedTask.source_type === 'slack') {
+        notified = await notifySlack(typedTask, message, userId);
+      } else if (typedTask.source_type === 'chatwork') {
+        notified = await notifyChatwork(typedTask, message);
+      }
     }
 
-    if (!typedTask.source_channel_id) return false;
-
-    // Slackの場合: 元スレッドに完了通知を投稿（Block Kitカード更新とは別に）
-    if (typedTask.source_type === 'slack') {
-      return await notifySlack(typedTask, message, userId);
-    } else if (typedTask.source_type === 'chatwork') {
-      return await notifyChatwork(typedTask, message);
+    // 経路2: 元スレッドがない場合 → project_channels 経由でPJチャネルに投稿
+    if (!notified && typedTask.project_id) {
+      notified = await notifyViaProjectChannels(supabase, typedTask, message, userId);
     }
 
-    return false;
+    return notified;
   } catch (error) {
     console.error('[TaskCompletionNotify] エラー:', error);
     return false;
@@ -186,6 +189,80 @@ async function notifyChatwork(
     return true;
   } catch (error) {
     console.error('[TaskCompletionNotify] Chatwork通知エラー:', error);
+    return false;
+  }
+}
+
+/**
+ * project_channels 経由でPJチャネルに完了通知
+ * source_typeがslack/chatwork以外（会議録・手動作成等）のタスク用
+ */
+async function notifyViaProjectChannels(
+  supabase: any,
+  task: TaskForNotify,
+  message: string,
+  userId: string
+): Promise<boolean> {
+  try {
+    if (!task.project_id) return false;
+
+    // プロジェクトに紐づくチャネルを取得
+    const { data: channels } = await supabase
+      .from('project_channels')
+      .select('service_name, identifier')
+      .eq('project_id', task.project_id);
+
+    if (!channels || channels.length === 0) return false;
+
+    let sent = false;
+
+    for (const ch of channels) {
+      try {
+        if (ch.service_name === 'slack' && ch.identifier) {
+          const token = await getSlackToken(userId);
+          if (token) {
+            const res = await fetch('https://slack.com/api/chat.postMessage', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+              },
+              body: JSON.stringify({
+                channel: ch.identifier,
+                text: message,
+              }),
+            });
+            const data = await res.json();
+            if (data.ok) {
+              console.log(`[TaskCompletionNotify] Slack(PJチャネル)通知送信: ${task.title}`);
+              sent = true;
+            }
+          }
+        } else if (ch.service_name === 'chatwork' && ch.identifier) {
+          const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
+          if (token) {
+            const res = await fetch(`https://api.chatwork.com/v2/rooms/${ch.identifier}/messages`, {
+              method: 'POST',
+              headers: {
+                'X-ChatWorkToken': token,
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: `body=${encodeURIComponent(message)}`,
+            });
+            if (res.ok) {
+              console.log(`[TaskCompletionNotify] Chatwork(PJチャネル)通知送信: ${task.title}`);
+              sent = true;
+            }
+          }
+        }
+      } catch (chErr) {
+        console.warn(`[TaskCompletionNotify] チャネル通知失敗(${ch.service_name}):`, chErr);
+      }
+    }
+
+    return sent;
+  } catch (error) {
+    console.error('[TaskCompletionNotify] PJチャネル通知エラー:', error);
     return false;
   }
 }
