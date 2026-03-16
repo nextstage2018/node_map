@@ -532,6 +532,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **~~秘書チャットUI~~**: v9.0で廃止。`formatAssistantMessage()`・`suggestions` はレガシーコード
 - **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
 - **メンバー検出2経路**: Slackチャネルは `conversations.members` APIで直接取得（メッセージ不要）。Chatwork/Emailは `inbox_messages` から送信者検出。`getChannelMembers()` in `slackClient.service.ts`
+- **⚠️ メンバー重複防止（3重チェック）**: detect APIは①既存メンバーのcontact_channels逆引き→アドレス一致で除外、②組織内の名前一致でコンタクト再利用、③project_members.contact_id一致で除外。`getServerSupabase()`使用（キャッシュ問題対策）
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
 - **v3.4 決定ログ**: decision_log テーブル。不変ログ＋変更チェーン。decision_tree_nodes と連動
 - **v3.4 アジェンダ**: meeting_agenda テーブル。open_issues + decision_log + tasks から自動生成。JSONB items
@@ -1485,8 +1486,9 @@ feedback_type:
   - 特定の曜日にハードコードしない
 
 organization.relationship_type による分岐:
-  internal（自社）: MS原則必須。会議録からMS自動登録（即承認）
+  internal（自社）: MSは会議録からAI自動登録（即承認）。ただし会議内容次第で抽出されない場合もあるためオプション扱い
   client / partner: MS任意。作成しなくてもタスクは動く
+  ※ 全relationship_typeでMSなしでもタスクは正常動作（milestone_idはNULL許容）
 ```
 
 **AI解析プロンプトへの追加**:
@@ -1604,7 +1606,7 @@ Phase 4: アジェンダ強化
 - **⚠️ milestones テーブル追加カラム**: `source_meeting_record_id` (UUID REFERENCES meeting_records) + `auto_generated` (BOOLEAN DEFAULT false)
 - **⚠️ milestone_suggestions テーブル**: task_suggestionsと同様の構造。自動承認のため常にaccepted。milestones テーブルに同時INSERTされる
 - **⚠️ プロジェクトログDoc**: 1プロジェクト＝1 Google Docsドキュメント（正史）。最新の会議が先頭に配置。`projects.log_document_id` で管理
-- **プロジェクトログDocの配置**: `[NodeMap] 組織名/プロジェクト名/` フォルダ直下（drive_foldersのhierarchy_level=2）
+- **プロジェクトログDocの配置**: `[NodeMap] 組織名/プロジェクト名/` フォルダ直下（drive_foldersのhierarchy_level=2）。`getOrCreateProjectLogDoc()` がフォルダ未作成時にL1(組織)/L2(PJ)を自動作成してからDoc配置（Driveルートへの誤配置を防止）
 - **プロジェクトログDocの構造**: 日付セクション × 3ブロック（事前アジェンダ / 会議メモ / AI解析結果）
 - **事前アジェンダの自動生成**: Cron（generate-meeting-agendas）で翌営業日分を生成。decision_log + open_issues + MS進捗（タスク会話要約付き）+ 前回会議サマリ
 - **会議後の自動追記**: analyze API（ステップ9.7）でAI解析結果をDocに追記。決定事項 + タスク提案 + MS提案 + 未確定事項
