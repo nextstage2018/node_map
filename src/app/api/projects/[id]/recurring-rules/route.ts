@@ -97,20 +97,39 @@ export async function POST(
         const scheduledStart = `${y}-${mo}-${d}T${sh}:${sm}:00+09:00`;
         const scheduledEnd = `${y}-${mo}-${d}T${eh}:${em}:00+09:00`;
 
-        // プロジェクト名を取得してdescriptionに含める
+        // プロジェクト名・組織IDを取得
+        const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+        const sb = getServerSupabase() || getSupabase();
         let projectName = '';
-        try {
-          const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
-          const sb = getServerSupabase() || getSupabase();
-          if (sb) {
-            const { data: pj } = await sb.from('projects').select('name').eq('id', projectId).single();
+        let organizationId = '';
+        if (sb) {
+          try {
+            const { data: pj } = await sb.from('projects').select('name, organization_id').eq('id', projectId).single();
             projectName = pj?.name || '';
-          }
-        } catch { /* */ }
+            organizationId = pj?.organization_id || '';
+          } catch { /* */ }
+        }
+
+        // 参加者のメールアドレスを contact_channels から解決
+        const participants = (meta.participants as string[]) || [];
+        let attendeeEmails: string[] = [];
+        if (sb && participants.length > 0) {
+          try {
+            const { data: channels } = await sb
+              .from('contact_channels')
+              .select('address')
+              .in('contact_id', participants)
+              .eq('channel', 'email');
+            attendeeEmails = (channels || []).map(c => c.address).filter(Boolean);
+          } catch { /* */ }
+        }
 
         // description にID情報を記載（名寄せ用）
         const typeLabel = type === 'meeting' ? 'MTG' : '定期作業';
         const appUrl = 'https://node-map-eight.vercel.app';
+        const projectUrl = organizationId
+          ? `${appUrl}/organizations/${organizationId}?project=${projectId}`
+          : `${appUrl}/organizations`;
         const description = [
           `【NodeMap 定期イベント: ${typeLabel}】`,
           projectName ? `プロジェクト: ${projectName}` : '',
@@ -119,7 +138,7 @@ export async function POST(
           `project_id: ${projectId}`,
           `type: ${type}`,
           ``,
-          `${appUrl}/organizations/${projectId}`,
+          projectUrl,
         ].filter(Boolean).join('\n');
 
         const { createCalendarEventForSource } = await import('@/services/calendar/calendarSync.service');
@@ -132,7 +151,20 @@ export async function POST(
           sourceType: type === 'meeting' ? 'meeting' : 'job',
           sourceId: rule.id,
           recurrence: [`RRULE:${rrule}`],
+          attendees: attendeeEmails.length > 0 ? attendeeEmails : undefined,
         });
+
+        // calendar_event_id を metadata に保存（削除時に使用）
+        if (calendarResult?.success && calendarResult.calendarEventId && sb) {
+          const updatedMeta = { ...(metadata || {}), calendar_event_id: calendarResult.calendarEventId };
+          await sb
+            .from('project_recurring_rules')
+            .update({ metadata: updatedMeta })
+            .eq('id', rule.id);
+          // レスポンスにも反映
+          rule.metadata = updatedMeta;
+        }
+
         console.log('[RecurringRules] カレンダー即時登録:', calendarResult?.success ? '成功' : calendarResult?.error);
       } catch (calErr) {
         console.error('[RecurringRules] カレンダー登録エラー（ルール作成は成功）:', calErr);

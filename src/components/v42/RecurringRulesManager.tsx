@@ -133,14 +133,16 @@ export default function RecurringRulesManager({ projectId }: Props) {
       const res = await fetch(`/api/projects/${projectId}/members`);
       const data = await res.json();
       if (data.success) {
-        setMembers((data.data || []).map((m: Record<string, unknown>) => {
+        // メール登録済みメンバーのみ表示（カレンダー招待に必要）
+        const all = (data.data || []).map((m: Record<string, unknown>) => {
           const contact = (m.contact as Record<string, unknown>) || (m.contact_persons as Record<string, unknown>);
           return {
             contact_id: m.contact_id as string,
             name: (contact?.name as string) || (m.contact_id as string),
-            email: null,
+            email: (m.email as string) || null,
           };
-        }));
+        });
+        setMembers(all.filter((m: ProjectMember) => m.email !== null));
       }
     } catch { /* */ }
   }, [projectId]);

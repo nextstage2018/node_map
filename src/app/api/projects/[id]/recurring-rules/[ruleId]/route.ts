@@ -56,6 +56,19 @@ export async function DELETE(
 
     const { ruleId } = await params;
 
+    // 削除前にルール情報を取得（カレンダーイベント削除用）
+    const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
+    const sb = getServerSupabase() || getSupabase();
+    let calendarEventId: string | null = null;
+    if (sb) {
+      const { data: rule } = await sb
+        .from('project_recurring_rules')
+        .select('metadata')
+        .eq('id', ruleId)
+        .single();
+      calendarEventId = (rule?.metadata as Record<string, unknown>)?.calendar_event_id as string || null;
+    }
+
     const { deleteRecurringRule } = await import('@/services/v42/recurringRules.service');
     const success = await deleteRecurringRule(ruleId);
 
@@ -63,7 +76,20 @@ export async function DELETE(
       return NextResponse.json({ error: '削除に失敗しました' }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true });
+    // カレンダーイベントも削除
+    let calendarDeleted = false;
+    if (calendarEventId) {
+      try {
+        const { deleteCalendarEvent } = await import('@/services/calendar/calendarSync.service');
+        const result = await deleteCalendarEvent(calendarEventId, userId);
+        calendarDeleted = result.success;
+        console.log('[RecurringRules] カレンダー削除:', result.success ? '成功' : result.error);
+      } catch (err) {
+        console.error('[RecurringRules] カレンダー削除エラー:', err);
+      }
+    }
+
+    return NextResponse.json({ success: true, calendarDeleted });
   } catch (error) {
     console.error('[RecurringRules API] DELETE エラー:', error);
     return NextResponse.json({ error: '削除に失敗しました' }, { status: 500 });

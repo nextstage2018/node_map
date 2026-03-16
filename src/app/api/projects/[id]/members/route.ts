@@ -64,6 +64,24 @@ export async function GET(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
+    // 各メンバーのメールアドレスを contact_channels から取得
+    const contactIds = (data || []).map(pm => pm.contact_id).filter(Boolean);
+    let emailMap: Record<string, string> = {};
+    if (contactIds.length > 0) {
+      const { data: channels } = await supabase
+        .from('contact_channels')
+        .select('contact_id, address')
+        .in('contact_id', contactIds)
+        .eq('channel', 'email');
+      if (channels) {
+        for (const ch of channels) {
+          if (ch.contact_id && ch.address) {
+            emailMap[ch.contact_id] = ch.address;
+          }
+        }
+      }
+    }
+
     // レスポンス整形（フォールバックなし: 空なら空を返す）
     const members = (data || []).map(pm => ({
       id: pm.id,
@@ -72,6 +90,7 @@ export async function GET(
       created_at: pm.created_at,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       contact: (pm as any).contact_persons,
+      email: emailMap[pm.contact_id] || null,
     }));
 
     return NextResponse.json({ success: true, data: members });
