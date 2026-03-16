@@ -145,6 +145,7 @@ export default function OrganizationDetailPage() {
   // タスク（PJ選択時）
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
 
   // v3.3: ドキュメント→関連資料に移行。ProjectResourcesコンポーネント内で管理
 
@@ -257,6 +258,17 @@ export default function OrganizationDetailPage() {
     } catch { /* */ }
     finally { setIsLoadingTasks(false); }
   }, []);
+
+  // タスク削除
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks?id=${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+        setDeletingTaskId(null);
+      }
+    } catch { /* */ }
+  };
 
   // v3.3: fetchDocuments は ProjectResources に移動済み
 
@@ -708,17 +720,36 @@ export default function OrganizationDetailPage() {
                                 </div>
                                 <div className="space-y-1.5">
                                   {statusTasks.map(task => (
-                                    <button key={task.id}
-                                      onClick={() => router.push(`/?taskId=${task.id}&projectId=${currentProject.id}&message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`)}
-                                      className="w-full flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors text-left">
-                                      <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
-                                      {task.due_date && (
-                                        <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
-                                          <Clock className="w-3 h-3" />
-                                          {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
-                                        </span>
+                                    <div key={task.id} className="group relative">
+                                      {deletingTaskId === task.id ? (
+                                        <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+                                          <span className="flex-1 text-sm text-red-600">削除しますか？</span>
+                                          <button onClick={() => handleDeleteTask(task.id)} className="text-xs text-white bg-red-500 hover:bg-red-600 px-2.5 py-1 rounded">削除</button>
+                                          <button onClick={() => setDeletingTaskId(null)} className="text-xs text-slate-500 hover:text-slate-700 px-2.5 py-1 rounded border border-slate-200">戻る</button>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            onClick={() => router.push(`/?taskId=${task.id}&projectId=${currentProject.id}&message=${encodeURIComponent(`タスク「${task.title}」を進めたい`)}`)}
+                                            className="flex-1 flex items-center gap-2.5 px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 transition-colors text-left">
+                                            <span className="flex-1 text-sm text-slate-700 truncate">{task.title}</span>
+                                            {task.due_date && (
+                                              <span className="text-[10px] text-slate-400 shrink-0 flex items-center gap-0.5">
+                                                <Clock className="w-3 h-3" />
+                                                {new Date(task.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                                              </span>
+                                            )}
+                                          </button>
+                                          <button
+                                            onClick={() => setDeletingTaskId(task.id)}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 text-slate-300 hover:text-red-400 transition-all shrink-0"
+                                            title="タスクを削除"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
                                       )}
-                                    </button>
+                                    </div>
                                   ))}
                                 </div>
                               </div>

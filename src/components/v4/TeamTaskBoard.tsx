@@ -246,6 +246,26 @@ export default function TeamTaskBoard() {
     }
   };
 
+  // タスク削除
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const handleDeleteClick = (taskId: string) => {
+    setConfirmDeleteId(taskId);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!confirmDeleteId) return;
+    try {
+      const res = await fetch(`/api/tasks?id=${confirmDeleteId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTasks(prev => prev.filter(t => t.id !== confirmDeleteId));
+        setConfirmDeleteId(null);
+      }
+    } catch (error) {
+      console.error('削除エラー:', error);
+    }
+  };
+
   // AI提案の承認 → 担当者選択モーダルを開く
   const handleApproveProposal = (proposalId: string, items: ProposalItem[]) => {
     setAssigneeModal({ proposalId, items });
@@ -401,7 +421,7 @@ export default function TeamTaskBoard() {
                 count={todoTasks.length}
               >
                 {todoTasks.map(task => (
-                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
+                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onDelete={handleDeleteClick} onClick={setSelectedTaskId} />
                 ))}
               </TaskStageColumn>
 
@@ -412,7 +432,7 @@ export default function TeamTaskBoard() {
                 count={inProgressTasks.length}
               >
                 {inProgressTasks.map(task => (
-                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
+                  <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onDelete={handleDeleteClick} onClick={setSelectedTaskId} />
                 ))}
               </TaskStageColumn>
 
@@ -440,6 +460,19 @@ export default function TeamTaskBoard() {
             ) : null}
           </DragOverlay>
         </DndContext>
+      )}
+
+      {/* タスク削除確認 */}
+      {confirmDeleteId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm mx-4">
+            <p className="text-sm text-slate-700 mb-4">このタスクを削除しますか？この操作は取り消せません。</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmDeleteId(null)} className="px-4 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">キャンセル</button>
+              <button onClick={handleDeleteConfirm} className="px-4 py-2 text-sm text-white bg-red-500 rounded-lg hover:bg-red-600">削除</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 担当者選択モーダル */}

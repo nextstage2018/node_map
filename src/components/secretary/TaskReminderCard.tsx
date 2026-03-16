@@ -3,7 +3,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { CheckSquare, AlertTriangle, Clock, CalendarDays, Loader2, ExternalLink, User } from 'lucide-react';
+import { CheckSquare, AlertTriangle, Clock, CalendarDays, Loader2, ExternalLink, User, Trash2 } from 'lucide-react';
 import Link from 'next/link';
 
 interface Task {
@@ -25,6 +25,7 @@ export default function TaskReminderCard() {
   const [isLoading, setIsLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('overdue');
   const [counts, setCounts] = useState({ overdue: 0, today: 0, week: 0 });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     setIsLoading(true);
@@ -100,6 +101,17 @@ export default function TaskReminderCard() {
     { key: 'week', label: '今週', icon: <CalendarDays className="w-3 h-3" />, color: 'text-blue-600 bg-blue-50 border-blue-200' },
   ];
 
+  const handleDelete = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks?id=${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+        setDeletingId(null);
+        fetchTasks();
+      }
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className="bg-nm-surface rounded-xl border border-nm-border shadow-sm flex flex-col" style={{ minHeight: '400px' }}>
       {/* ヘッダー */}
@@ -163,31 +175,47 @@ export default function TaskReminderCard() {
                 </div>
                 <div className="space-y-1 ml-4">
                   {assigneeTasks.map((task) => (
-                    <Link
-                      key={task.id}
-                      href={`/tasks?taskId=${task.id}`}
-                      className="block px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-transparent hover:border-nm-border"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
-                          task.priority === 'high' ? 'bg-red-500' :
-                          task.priority === 'medium' ? 'bg-amber-500' : 'bg-slate-300'
-                        }`} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[11px] font-medium text-nm-text truncate">{task.title}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            {task.due_date && (
-                              <span className={`text-[10px] ${filter === 'overdue' ? 'text-red-500 font-medium' : 'text-nm-text-muted'}`}>
-                                {daysRemaining(task.due_date)}
-                              </span>
-                            )}
-                            {task.project_name && (
-                              <span className="text-[10px] text-nm-text-muted truncate">{task.project_name}</span>
-                            )}
-                          </div>
+                    <div key={task.id} className="relative group">
+                      {deletingId === task.id ? (
+                        <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-red-50 border border-red-200">
+                          <span className="text-[11px] text-red-600 flex-1">削除しますか？</span>
+                          <button onClick={() => handleDelete(task.id)} className="text-[10px] text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded">削除</button>
+                          <button onClick={() => setDeletingId(null)} className="text-[10px] text-slate-500 hover:text-slate-700 px-2 py-0.5 rounded border border-slate-200">戻る</button>
                         </div>
-                      </div>
-                    </Link>
+                      ) : (
+                        <Link
+                          href={`/tasks?taskId=${task.id}`}
+                          className="block px-2.5 py-2 rounded-lg hover:bg-slate-50 transition-colors border border-transparent hover:border-nm-border"
+                        >
+                          <div className="flex items-start gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                              task.priority === 'high' ? 'bg-red-500' :
+                              task.priority === 'medium' ? 'bg-amber-500' : 'bg-slate-300'
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium text-nm-text truncate">{task.title}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {task.due_date && (
+                                  <span className={`text-[10px] ${filter === 'overdue' ? 'text-red-500 font-medium' : 'text-nm-text-muted'}`}>
+                                    {daysRemaining(task.due_date)}
+                                  </span>
+                                )}
+                                {task.project_name && (
+                                  <span className="text-[10px] text-nm-text-muted truncate">{task.project_name}</span>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeletingId(task.id); }}
+                              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-slate-300 hover:text-red-400 transition-all shrink-0"
+                              title="タスクを削除"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </Link>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>

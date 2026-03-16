@@ -4,7 +4,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
-import { Calendar, User } from 'lucide-react';
+import { Calendar, User, Trash2 } from 'lucide-react';
 import type { MyTask } from './MyTaskCard';
 
 function formatDueDate(dateStr?: string): { label: string; color: string; bgColor: string } | null {
@@ -29,10 +29,11 @@ const PRIORITY_DOT: Record<string, string> = {
 interface TeamTaskCardProps {
   task: MyTask;
   onComplete?: (taskId: string) => void;
+  onDelete?: (taskId: string) => void;
   onClick?: (taskId: string) => void;
 }
 
-export default function TeamTaskCard({ task, onComplete, onClick }: TeamTaskCardProps) {
+export default function TeamTaskCard({ task, onComplete, onDelete, onClick }: TeamTaskCardProps) {
   const {
     attributes,
     listeners,
@@ -61,7 +62,7 @@ export default function TeamTaskCard({ task, onComplete, onClick }: TeamTaskCard
       {...listeners}
       onClick={() => onClick?.(task.id)}
       className={cn(
-        'rounded-lg border bg-white cursor-grab active:cursor-grabbing transition-all duration-300',
+        'rounded-lg border bg-white cursor-grab active:cursor-grabbing transition-all duration-300 group',
         'hover:shadow-md',
         onClick && 'cursor-pointer',
         task.status === 'done' && 'opacity-60',
@@ -102,7 +103,7 @@ export default function TeamTaskCard({ task, onComplete, onClick }: TeamTaskCard
           </h4>
         </div>
 
-        {/* 下段: 担当者 + 優先度 + 期限 */}
+        {/* 下段: 担当者 + 優先度 + 期限 + 削除 */}
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">
             {/* 担当者 */}
@@ -115,12 +116,24 @@ export default function TeamTaskCard({ task, onComplete, onClick }: TeamTaskCard
             {/* 優先度 */}
             <div className={cn('w-2 h-2 rounded-full', PRIORITY_DOT[task.priority] || PRIORITY_DOT.medium)} />
           </div>
-          {dueInfo && (
-            <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', dueInfo.color, dueInfo.bgColor)}>
-              <Calendar className="w-3 h-3 inline mr-0.5 -mt-0.5" />
-              {dueInfo.label}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {dueInfo && (
+              <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded', dueInfo.color, dueInfo.bgColor)}>
+                <Calendar className="w-3 h-3 inline mr-0.5 -mt-0.5" />
+                {dueInfo.label}
+              </span>
+            )}
+            {onDelete && (
+              <button
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onDelete(task.id); }}
+                onPointerDown={(e) => e.stopPropagation()}
+                className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-slate-300 hover:text-red-400 transition-all"
+                title="タスクを削除"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
