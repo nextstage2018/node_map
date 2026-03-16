@@ -77,6 +77,7 @@ export default function TaskChatView({
 }: TaskChatViewProps) {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [localConversations, setLocalConversations] = useState<Conversation[]>(conversations);
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -174,6 +175,46 @@ export default function TaskChatView({
     }
   };
 
+  // 初回AIメッセージ生成
+  const handleInitialGreeting = async () => {
+    setIsInitialLoading(true);
+    try {
+      const res = await fetch('/api/tasks/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId,
+          message: 'このタスクについて壁打ちを始めたいです。まず何から考えればいいですか？',
+          phase: 'ideation',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data?.reply) {
+          const userMsg: Conversation = {
+            id: `init-user-${Date.now()}`,
+            role: 'user',
+            content: 'このタスクについて壁打ちを始めたいです。',
+            phase: 'ideation',
+            created_at: new Date().toISOString(),
+          };
+          const aiMsg: Conversation = {
+            id: `init-ai-${Date.now()}`,
+            role: 'assistant',
+            content: data.data.reply,
+            phase: 'ideation',
+            created_at: new Date().toISOString(),
+          };
+          setLocalConversations([userMsg, aiMsg]);
+        }
+      }
+    } catch (error) {
+      console.error('初回AI会話エラー:', error);
+    } finally {
+      setIsInitialLoading(false);
+    }
+  };
+
   // テキストエリアの自動高さ調整
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
@@ -205,13 +246,27 @@ export default function TaskChatView({
 
       {/* メッセージ一覧 */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-        {localConversations.length === 0 && (
+        {localConversations.length === 0 && !isSending && !isInitialLoading && (
           <div className="text-center py-8">
             <MessageCircle className="w-8 h-8 text-slate-200 mx-auto mb-2" />
             <p className="text-xs text-slate-400">
               タスクについてAIに相談できます。<br />
               考え方の整理や方向性の壁打ちに活用してください。
             </p>
+            <button
+              onClick={handleInitialGreeting}
+              className="mt-3 px-4 py-2 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              AIと壁打ちを始める
+            </button>
+          </div>
+        )}
+
+        {isInitialLoading && localConversations.length === 0 && (
+          <div className="flex justify-start mt-4">
+            <div className="bg-slate-100 rounded-xl rounded-bl-sm px-3 py-2">
+              <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+            </div>
           </div>
         )}
 
