@@ -1,6 +1,6 @@
 // V2-H: 思考マップタブ — Canvas2Dベースの思考可視化
 // 縦軸: 抽象↔具体 / 横軸: 会話ターン（時間）/ 再生バーで思考の変遷を追体験
-// v9.1: トンマナ統一 + チェックポイント色分け + 開始/終了マーカー + メンバーフィルタ
+// v9.2: NodeMap白背景トンマナ統一（nm-* カラー準拠）
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -53,7 +53,6 @@ interface Props {
 }
 
 // ===== Constants =====
-// フェーズ → 抽象度レベル (0=最抽象, 4=最具体)
 const PHASE_ABSTRACT: Record<string, [number, number]> = {
   seed:     [0, 1],
   ideation: [0, 2],
@@ -61,17 +60,31 @@ const PHASE_ABSTRACT: Record<string, [number, number]> = {
   result:   [3, 4],
 };
 
-// フェーズ別の色
+// フェーズ色（白背景で映える濃い色）
 const PHASE_COLOR: Record<string, string> = {
-  seed:     '#a259ff',
-  ideation: '#4f8eff',
-  progress: '#43d9ad',
-  result:   '#ffd166',
+  seed:     '#7c3aed', // violet-600
+  ideation: '#2563eb', // blue-600
+  progress: '#059669', // emerald-600
+  result:   '#d97706', // amber-600
 };
-const DEFAULT_NODE_COLOR = '#64748B';
+const DEFAULT_NODE_COLOR = '#64748B'; // slate-500
 
 // チェックポイント色
-const CHECKPOINT_COLOR = '#ff5277';
+const CHECKPOINT_COLOR = '#ef4444'; // red-500
+
+// NodeMap配色
+const NM = {
+  bg: '#F8FAFC',        // slate-50
+  surface: '#FFFFFF',
+  border: '#E2E8F0',    // slate-200
+  borderHover: '#CBD5E1', // slate-300
+  text: '#1E293B',      // slate-800
+  textSecondary: '#64748B', // slate-500
+  textMuted: '#94A3B8',  // slate-400
+  primary: '#2563EB',    // blue-600
+  primaryLight: '#EFF6FF', // blue-50
+  primaryBorder: '#BFDBFE', // blue-200
+};
 
 // ===== Helper =====
 function hexA(hex: string, a: number): string {
@@ -185,7 +198,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         const maxNodeTurn = n.reduce((mx: number, nd: ThoughtNode) => Math.max(mx, nd.appearOrder), 0);
         const mt = Math.max(maxNodeTurn, c.filter((cv: ConversationTurn) => !cv.isCheckpoint).length);
         setMaxTurn(mt);
-        setCurrentTurn(mt); // 最初は全表示
+        setCurrentTurn(mt);
       }
     } catch (e) {
       console.error('[ThoughtMap] データ取得エラー:', e);
@@ -227,7 +240,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
 
   // ===== Layout Calculation =====
   const getNodePos = useCallback((n: ThoughtNode, W: number, H: number) => {
-    const PAD_L = 60, PAD_R = 40, PAD_T = 50, PAD_B = 30;
+    const PAD_L = 56, PAD_R = 36, PAD_T = 48, PAD_B = 28;
     const usableW = W - PAD_L - PAD_R;
     const usableH = H - PAD_T - PAD_B;
 
@@ -250,8 +263,9 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const W = canvas.width;
-    const H = canvas.height;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
     const turn = currentTurnRef.current;
     const allNodes = nodesRef.current;
     const allEdges = edgesRef.current;
@@ -259,67 +273,65 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     const hovered = hoveredNodeRef.current;
     const mt = maxTurnRef.current;
 
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
-    // --- Background: nm-surface互換のダーク ---
-    const bgGrad = ctx.createLinearGradient(0, 0, 0, H);
-    bgGrad.addColorStop(0, '#0c1021');
-    bgGrad.addColorStop(1, '#080c18');
-    ctx.fillStyle = bgGrad;
+    // --- Background: 白ベース ---
+    ctx.fillStyle = NM.bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Grid (subtle)
-    ctx.strokeStyle = 'rgba(79,142,255,0.03)';
-    ctx.lineWidth = 1;
-    for (let x = 60; x < W; x += 50) {
+    // Subtle grid
+    ctx.strokeStyle = hexA(NM.border, 0.3);
+    ctx.lineWidth = 0.5;
+    for (let x = 56; x < W; x += 50) {
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
     for (let y = 0; y < H; y += 50) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
 
-    // Abstract/Concrete zones
-    const PAD_T = 50, PAD_B = 30, PAD_L = 60;
+    const PAD_T = 48, PAD_B = 28, PAD_L = 56;
     const usableH = H - PAD_T - PAD_B;
-    const usableW = W - PAD_L - 40;
+    const usableW = W - PAD_L - 36;
 
-    // Top zone: abstract (purple tint)
+    // Top zone: abstract (violet tint)
     const gTop = ctx.createLinearGradient(0, PAD_T, 0, PAD_T + usableH * 0.3);
-    gTop.addColorStop(0, 'rgba(162,89,255,0.05)');
+    gTop.addColorStop(0, hexA('#7c3aed', 0.04));
     gTop.addColorStop(1, 'transparent');
     ctx.fillStyle = gTop;
     ctx.fillRect(PAD_L, PAD_T, W - PAD_L, usableH * 0.3);
 
-    // Bottom zone: concrete (green tint)
+    // Bottom zone: concrete (emerald tint)
     const gBot = ctx.createLinearGradient(0, H - PAD_B - usableH * 0.3, 0, H - PAD_B);
     gBot.addColorStop(0, 'transparent');
-    gBot.addColorStop(1, 'rgba(67,217,173,0.05)');
+    gBot.addColorStop(1, hexA('#059669', 0.04));
     ctx.fillStyle = gBot;
     ctx.fillRect(PAD_L, H - PAD_B - usableH * 0.3, W - PAD_L, usableH * 0.3);
 
     // Mid line
     const midY = PAD_T + usableH * 0.5;
-    ctx.strokeStyle = 'rgba(79,142,255,0.06)';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = hexA(NM.border, 0.5);
+    ctx.lineWidth = 0.5;
     ctx.setLineDash([4, 8]);
     ctx.beginPath(); ctx.moveTo(PAD_L, midY); ctx.lineTo(W, midY); ctx.stroke();
     ctx.setLineDash([]);
 
     // Axis labels
     ctx.save();
-    ctx.font = '600 10px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(162,89,255,0.4)';
+    ctx.font = '600 9px "Inter", system-ui, sans-serif';
+    ctx.fillStyle = hexA('#7c3aed', 0.4);
     ctx.textAlign = 'center';
-    ctx.translate(18, PAD_T + usableH * 0.2);
+    ctx.translate(16, PAD_T + usableH * 0.2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('A B S T R A C T', 0, 0);
     ctx.restore();
 
     ctx.save();
-    ctx.font = '600 10px "Inter", system-ui, sans-serif';
-    ctx.fillStyle = 'rgba(67,217,173,0.4)';
+    ctx.font = '600 9px "Inter", system-ui, sans-serif';
+    ctx.fillStyle = hexA('#059669', 0.4);
     ctx.textAlign = 'center';
-    ctx.translate(18, H - PAD_B - usableH * 0.2);
+    ctx.translate(16, H - PAD_B - usableH * 0.2);
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('C O N C R E T E', 0, 0);
     ctx.restore();
@@ -328,96 +340,95 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     if (mt > 0) {
       const startX = PAD_L;
       ctx.save();
-      ctx.strokeStyle = 'rgba(162,89,255,0.3)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = hexA('#7c3aed', 0.2);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
       ctx.beginPath();
-      ctx.moveTo(startX, PAD_T - 5);
-      ctx.lineTo(startX, H - PAD_B + 5);
+      ctx.moveTo(startX, PAD_T - 4);
+      ctx.lineTo(startX, H - PAD_B + 4);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Label
-      ctx.fillStyle = '#a259ff';
-      ctx.font = 'bold 9px "Inter", system-ui, sans-serif';
+      ctx.fillStyle = '#7c3aed';
+      ctx.font = 'bold 8px "Inter", system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('START', startX, PAD_T - 12);
+      ctx.fillText('START', startX, PAD_T - 10);
       ctx.restore();
 
       // --- END marker ---
       const endX = PAD_L + usableW;
       ctx.save();
-      ctx.strokeStyle = 'rgba(255,209,102,0.3)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = hexA('#d97706', 0.2);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 4]);
       ctx.beginPath();
-      ctx.moveTo(endX, PAD_T - 5);
-      ctx.lineTo(endX, H - PAD_B + 5);
+      ctx.moveTo(endX, PAD_T - 4);
+      ctx.lineTo(endX, H - PAD_B + 4);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = '#ffd166';
-      ctx.font = 'bold 9px "Inter", system-ui, sans-serif';
+      ctx.fillStyle = '#d97706';
+      ctx.font = 'bold 8px "Inter", system-ui, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText('END', endX, PAD_T - 12);
+      ctx.fillText('END', endX, PAD_T - 10);
       ctx.restore();
     }
 
     // --- Checkpoint markers ---
     const cpTurns = allConvs.filter(c => c.isCheckpoint && c.role === 'assistant').map(c => c.turnIndex);
     for (const cpTurn of cpTurns) {
-      if (cpTurn > turn) continue; // 未来のチェックポイントは非表示
+      if (cpTurn > turn) continue;
       const cpX = PAD_L + (mt > 0 ? (cpTurn / mt) * usableW : 0);
       ctx.save();
       // Vertical line
-      ctx.strokeStyle = hexA(CHECKPOINT_COLOR, 0.35);
-      ctx.lineWidth = 2;
-      ctx.setLineDash([6, 4]);
+      ctx.strokeStyle = hexA(CHECKPOINT_COLOR, 0.25);
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
       ctx.beginPath();
       ctx.moveTo(cpX, PAD_T);
       ctx.lineTo(cpX, H - PAD_B);
       ctx.stroke();
       ctx.setLineDash([]);
-      // Glow stripe
-      const cpGrad = ctx.createLinearGradient(cpX - 20, 0, cpX + 20, 0);
+      // Soft glow stripe
+      const cpGrad = ctx.createLinearGradient(cpX - 18, 0, cpX + 18, 0);
       cpGrad.addColorStop(0, 'transparent');
-      cpGrad.addColorStop(0.5, hexA(CHECKPOINT_COLOR, 0.06));
+      cpGrad.addColorStop(0.5, hexA(CHECKPOINT_COLOR, 0.04));
       cpGrad.addColorStop(1, 'transparent');
       ctx.fillStyle = cpGrad;
-      ctx.fillRect(cpX - 20, PAD_T, 40, usableH);
-      // Diamond icon at top
+      ctx.fillRect(cpX - 18, PAD_T, 36, usableH);
+      // Diamond icon
       ctx.fillStyle = CHECKPOINT_COLOR;
-      const dy = PAD_T - 8;
+      const dy = PAD_T - 6;
       ctx.beginPath();
-      ctx.moveTo(cpX, dy - 6);
-      ctx.lineTo(cpX + 5, dy);
-      ctx.lineTo(cpX, dy + 6);
-      ctx.lineTo(cpX - 5, dy);
+      ctx.moveTo(cpX, dy - 5);
+      ctx.lineTo(cpX + 4, dy);
+      ctx.lineTo(cpX, dy + 5);
+      ctx.lineTo(cpX - 4, dy);
       ctx.closePath();
       ctx.fill();
       // Label
-      ctx.font = 'bold 8px "Inter", system-ui, sans-serif';
+      ctx.font = 'bold 7px "Inter", system-ui, sans-serif';
       ctx.fillStyle = CHECKPOINT_COLOR;
       ctx.textAlign = 'center';
-      ctx.fillText('CHECK', cpX, dy - 10);
+      ctx.fillText('CHECK', cpX, dy - 9);
       ctx.restore();
     }
 
-    // Turn markers
+    // Turn markers at bottom
     if (mt > 0) {
-      ctx.fillStyle = 'rgba(200,212,240,0.1)';
+      ctx.fillStyle = NM.textMuted;
       ctx.font = '8px "Inter", system-ui, sans-serif';
       ctx.textAlign = 'center';
       const step = Math.max(1, Math.ceil(mt / 12));
       for (let t = step; t <= mt; t += step) {
         const tx = PAD_L + (t / mt) * usableW;
-        ctx.fillText(`T${t}`, tx, H - PAD_B + 16);
+        ctx.fillText(`T${t}`, tx, H - PAD_B + 14);
       }
     }
 
-    // --- Current turn indicator line ---
+    // --- Current turn indicator ---
     if (turn > 0 && turn < mt && mt > 0) {
       const ctX = PAD_L + (turn / mt) * usableW;
       ctx.save();
-      ctx.strokeStyle = 'rgba(79,142,255,0.15)';
+      ctx.strokeStyle = hexA(NM.primary, 0.12);
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(ctX, PAD_T);
@@ -445,15 +456,15 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         (PHASE_ABSTRACT[fromNode.appearPhase]?.[0] ?? 2) -
         (PHASE_ABSTRACT[toNode.appearPhase]?.[0] ?? 2)
       ) >= 2;
-      const col = isDetour || isAbstractJump ? '#ff9040' : '#4f8eff';
+      const col = isDetour || isAbstractJump ? '#f97316' : NM.primary; // orange-500 or blue-600
 
       const edgeTurn = Math.max(fromNode.appearOrder, toNode.appearOrder);
       const age = turn - edgeTurn;
-      const freshness = Math.max(0.2, 1 - age / Math.max(mt, 1) * 0.6);
-      const alpha = freshness * (isDetour ? 0.6 : 0.45);
+      const freshness = Math.max(0.2, 1 - age / Math.max(mt, 1) * 0.5);
+      const alpha = freshness * (isDetour ? 0.5 : 0.35);
 
       const angle = Math.atan2(pb.y - pa.y, pb.x - pa.x);
-      const R = 26;
+      const R = 24;
       const dist = Math.hypot(pb.x - pa.x, pb.y - pa.y);
       if (dist < 20) continue;
 
@@ -492,8 +503,8 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       if (isAbstractJump && age <= 2) {
         const mx = (sx + ex) / 2;
         const my = (sy + ey) / 2;
-        ctx.globalAlpha = 0.7;
-        ctx.fillStyle = '#ff9040';
+        ctx.globalAlpha = 0.6;
+        ctx.fillStyle = '#f97316';
         ctx.font = 'bold 9px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -512,16 +523,16 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       const isLast = node.appearOrder === mt;
       const isHov = hovered === node.nodeId;
       const col = PHASE_COLOR[node.appearPhase] || DEFAULT_NODE_COLOR;
-      const R = 26;
+      const R = 24;
 
       ctx.save();
 
       if (!visible) {
-        // Ghost
-        ctx.globalAlpha = 0.04;
-        ctx.strokeStyle = col;
+        // Ghost node
+        ctx.globalAlpha = 0.1;
+        ctx.strokeStyle = hexA(col, 0.4);
         ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
+        ctx.setLineDash([3, 4]);
         ctx.beginPath();
         ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
         ctx.stroke();
@@ -530,95 +541,121 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         continue;
       }
 
-      const alpha = isCurrent ? 1.0 : 0.5;
+      const alpha = isCurrent ? 1.0 : 0.6;
       ctx.globalAlpha = alpha;
 
-      // Outer glow
+      // Hover glow (soft)
       if (isCurrent || isHov) {
-        const g = ctx.createRadialGradient(pos.x, pos.y, R * 0.3, pos.x, pos.y, R * 2.5);
-        g.addColorStop(0, hexA(col, isHov ? 0.3 : 0.15));
+        const g = ctx.createRadialGradient(pos.x, pos.y, R * 0.5, pos.x, pos.y, R * 2.2);
+        g.addColorStop(0, hexA(col, isHov ? 0.12 : 0.08));
         g.addColorStop(1, 'transparent');
         ctx.fillStyle = g;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, R * 2.5, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, R * 2.2, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // Shadow
-      ctx.shadowColor = hexA(col, 0.35);
-      ctx.shadowBlur = isHov ? 20 : isCurrent ? 14 : 5;
+      // Node fill: white circle with colored border
+      ctx.shadowColor = hexA(col, isCurrent ? 0.25 : 0.1);
+      ctx.shadowBlur = isHov ? 16 : isCurrent ? 10 : 4;
 
-      // Fill
-      const gr = ctx.createRadialGradient(pos.x - R * 0.3, pos.y - R * 0.3, 0, pos.x, pos.y, R);
-      gr.addColorStop(0, hexA(col, isCurrent ? 0.35 : 0.14));
-      gr.addColorStop(1, hexA(col, isCurrent ? 0.08 : 0.03));
-      ctx.fillStyle = gr;
+      // White fill
+      ctx.fillStyle = NM.surface;
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.shadowBlur = 0;
 
-      // Border - START/END nodes get special treatment
+      // Colored border
       if (isFirst) {
         ctx.lineWidth = 2.5;
-        ctx.strokeStyle = hexA('#a259ff', 0.9);
+        ctx.strokeStyle = '#7c3aed';
       } else if (isLast) {
         ctx.lineWidth = 2.5;
-        ctx.strokeStyle = hexA('#ffd166', 0.9);
+        ctx.strokeStyle = '#d97706';
+      } else if (isCurrent) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = col;
       } else {
-        ctx.lineWidth = isCurrent ? 2 : 1.2;
-        ctx.strokeStyle = hexA(col, isCurrent ? 0.8 : 0.3);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = hexA(col, 0.4);
       }
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, R, 0, Math.PI * 2);
       ctx.stroke();
 
+      // Small colored dot at top-right of node (phase indicator)
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(pos.x + R * 0.65, pos.y - R * 0.65, 4, 0, Math.PI * 2);
+      ctx.fill();
+
       // START/END badges
       if (isFirst && visible) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#a259ff';
-        ctx.font = 'bold 7px "Inter", system-ui, sans-serif';
+        // Small pill badge above
+        const badgeW = 36, badgeH = 14;
+        const bx = pos.x - badgeW / 2;
+        const by = pos.y - R - 18;
+        ctx.fillStyle = hexA('#7c3aed', 0.1);
+        ctx.beginPath();
+        ctx.roundRect(bx, by, badgeW, badgeH, 7);
+        ctx.fill();
+        ctx.fillStyle = '#7c3aed';
+        ctx.font = 'bold 8px "Inter", system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('▶ START', pos.x, pos.y - R - 6);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('START', pos.x, by + badgeH / 2);
       }
       if (isLast && visible) {
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#ffd166';
-        ctx.font = 'bold 7px "Inter", system-ui, sans-serif';
+        const badgeW = 28, badgeH = 14;
+        const bx = pos.x - badgeW / 2;
+        const by = pos.y - R - 18;
+        ctx.fillStyle = hexA('#d97706', 0.1);
+        ctx.beginPath();
+        ctx.roundRect(bx, by, badgeW, badgeH, 7);
+        ctx.fill();
+        ctx.fillStyle = '#d97706';
+        ctx.font = 'bold 8px "Inter", system-ui, sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('■ END', pos.x, pos.y - R - 6);
+        ctx.textBaseline = 'middle';
+        ctx.fillText('END', pos.x, by + badgeH / 2);
       }
 
       // Pulse ring for current
       if (isCurrent) {
-        ctx.strokeStyle = hexA(col, 0.15);
+        ctx.globalAlpha = 0.25;
+        ctx.strokeStyle = col;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, R + 8, 0, Math.PI * 2);
+        ctx.arc(pos.x, pos.y, R + 7, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      // Label
+      // Label text
+      ctx.globalAlpha = isCurrent ? 1 : alpha;
       const label = node.nodeLabel || '';
       const displayLabel = label.length > 6 ? label.slice(0, 5) + '…' : label;
       const fs = Math.min(11, 120 / Math.max(label.length, 1) + 4);
       ctx.font = `${isCurrent ? '600 ' : ''}${fs}px "Inter", system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.globalAlpha = isCurrent ? 1 : alpha;
-      ctx.fillStyle = isCurrent ? '#fff' : hexA('#c8d4f0', 0.55);
+      ctx.fillStyle = isCurrent ? NM.text : NM.textSecondary;
       ctx.fillText(displayLabel, pos.x, pos.y);
 
       // Order number
       if (!isFirst && !isLast) {
-        ctx.font = 'bold 7px "Inter", system-ui, sans-serif';
-        ctx.fillStyle = hexA(col, 0.6);
+        ctx.font = '600 7px "Inter", system-ui, sans-serif';
+        ctx.fillStyle = NM.textMuted;
         ctx.fillText(`${node.appearOrder}`, pos.x, pos.y + R + 9);
       }
 
       ctx.restore();
     }
+
+    ctx.restore();
   }, [getNodePos, maxTurn]);
 
   // ===== Canvas Size & Redraw =====
@@ -632,8 +669,6 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       canvas.height = wrap.clientHeight * dpr;
       canvas.style.width = wrap.clientWidth + 'px';
       canvas.style.height = wrap.clientHeight + 'px';
-      const ctx = canvas.getContext('2d');
-      if (ctx) ctx.scale(dpr, dpr);
       draw();
     };
 
@@ -651,13 +686,14 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const W = canvas.width / (window.devicePixelRatio || 1);
-    const H = canvas.height / (window.devicePixelRatio || 1);
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
 
     const hit = nodesRef.current.find(n => {
       if (n.appearOrder > currentTurnRef.current) return false;
       const p = getNodePos(n, W, H);
-      return Math.hypot(p.x - mx, p.y - my) < 30;
+      return Math.hypot(p.x - mx, p.y - my) < 28;
     });
 
     setHoveredNode(hit ? hit.nodeId : null);
@@ -670,13 +706,14 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
-    const W = canvas.width / (window.devicePixelRatio || 1);
-    const H = canvas.height / (window.devicePixelRatio || 1);
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
 
     const hit = nodesRef.current.find(n => {
       if (n.appearOrder > currentTurnRef.current) return false;
       const p = getNodePos(n, W, H);
-      return Math.hypot(p.x - mx, p.y - my) < 30;
+      return Math.hypot(p.x - mx, p.y - my) < 28;
     });
 
     if (hit) {
@@ -699,7 +736,6 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
   const hoveredNodeData = nodes.find(n => n.nodeId === hoveredNode);
   const phaseLabel: Record<string, string> = { seed: '着想', ideation: '構想', progress: '展開', result: '結論' };
 
-  // Current turn description
   const currentEdges = edges.filter(e => {
     const from = nodes.find(n => n.nodeId === e.fromNodeId);
     const to = nodes.find(n => n.nodeId === e.toNodeId);
@@ -716,46 +752,37 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
   const selectedTask = filteredTasks.find(t => t.id === selectedTaskId);
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: '600px' }}>
+    <div className="flex flex-col h-full bg-nm-bg" style={{ minHeight: '600px' }}>
       {/* ===== Toolbar ===== */}
-      <div className="flex items-center gap-3 px-5 h-12 border-b flex-shrink-0"
-        style={{ borderColor: 'rgba(79,142,255,0.08)', background: '#0c1021' }}>
-        <span className="font-bold text-sm" style={{ color: '#4f8eff' }}>思考マップ</span>
-        <span style={{ width: 1, height: 18, background: 'rgba(79,142,255,0.1)' }} />
-        <span className="text-xs font-medium" style={{ color: '#c8d4f0' }}>{selectedTask?.title || projectName}</span>
-        <span style={{ width: 1, height: 18, background: 'rgba(79,142,255,0.1)' }} />
-        <span className="text-[10px]" style={{ color: 'rgba(200,212,240,0.3)' }}>縦軸：抽象 ↕ 具体　／　横軸：思考の時間</span>
+      <div className="flex items-center gap-3 px-5 h-12 border-b border-nm-border flex-shrink-0 bg-nm-surface">
+        <span className="font-bold text-sm text-nm-primary">思考マップ</span>
+        <span className="w-px h-4 bg-nm-border" />
+        <span className="text-xs font-medium text-nm-text truncate max-w-[300px]">{selectedTask?.title || projectName}</span>
+        <span className="w-px h-4 bg-nm-border" />
+        <span className="text-[10px] text-nm-text-muted">縦軸：抽象 ↕ 具体　／　横軸：思考の時間</span>
 
         {/* メンバーフィルタ */}
         {members.length > 0 && (
           <div className="relative ml-auto">
             <button
               onClick={() => { setIsMemberOpen(!isMemberOpen); setIsDropdownOpen(false); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-full border transition-all hover:border-blue-500/30"
-              style={{ borderColor: 'rgba(79,142,255,0.15)', color: '#c8d4f0', background: 'rgba(79,142,255,0.05)' }}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-full border border-nm-border hover:border-nm-border-hover transition-colors bg-nm-surface text-nm-text"
             >
-              <Users className="w-3 h-3" style={{ color: '#4f8eff' }} />
+              <Users className="w-3 h-3 text-nm-primary" />
               <span>{selectedMember === 'all' ? '全員' : members.find(m => m.id === selectedMember)?.name || '未割当'}</span>
-              <ChevronDown className={`w-3 h-3 transition-transform ${isMemberOpen ? 'rotate-180' : ''}`} style={{ color: 'rgba(200,212,240,0.3)' }} />
+              <ChevronDown className={`w-3 h-3 text-nm-text-muted transition-transform ${isMemberOpen ? 'rotate-180' : ''}`} />
             </button>
             {isMemberOpen && (
-              <div className="absolute right-0 z-50 mt-1 w-48 rounded-lg border overflow-hidden"
-                style={{ background: '#0d1226', borderColor: 'rgba(79,142,255,0.15)' }}>
+              <div className="absolute right-0 z-50 mt-1 w-48 rounded-lg border border-nm-border bg-nm-surface shadow-lg overflow-hidden">
                 <button
                   onClick={() => { setSelectedMember('all'); setIsMemberOpen(false); }}
-                  className="w-full text-left px-3 py-2 text-[11px] transition-colors"
-                  style={{ background: selectedMember === 'all' ? 'rgba(79,142,255,0.1)' : 'transparent', color: '#c8d4f0' }}
+                  className={`w-full text-left px-3 py-2 text-[11px] transition-colors ${selectedMember === 'all' ? 'bg-nm-primary-light text-nm-primary font-medium' : 'text-nm-text hover:bg-slate-50'}`}
                 >全員</button>
                 {members.map(m => (
                   <button
                     key={m.id}
                     onClick={() => { setSelectedMember(m.id); setIsMemberOpen(false); }}
-                    className="w-full text-left px-3 py-2 text-[11px] transition-colors border-t"
-                    style={{
-                      borderColor: 'rgba(79,142,255,0.06)',
-                      background: selectedMember === m.id ? 'rgba(79,142,255,0.1)' : 'transparent',
-                      color: selectedMember === m.id ? '#4f8eff' : '#c8d4f0',
-                    }}
+                    className={`w-full text-left px-3 py-2 text-[11px] transition-colors border-t border-nm-border ${selectedMember === m.id ? 'bg-nm-primary-light text-nm-primary font-medium' : 'text-nm-text hover:bg-slate-50'}`}
                   >{m.name}</button>
                 ))}
               </div>
@@ -768,42 +795,34 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <button
             onClick={() => { setIsDropdownOpen(!isDropdownOpen); setIsMemberOpen(false); }}
             disabled={isTasksLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-full border transition-all hover:border-blue-500/30 disabled:opacity-50"
-            style={{ borderColor: 'rgba(79,142,255,0.15)', color: '#c8d4f0', background: 'rgba(79,142,255,0.05)' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-full border border-nm-border hover:border-nm-border-hover transition-colors bg-nm-surface text-nm-text disabled:opacity-50"
           >
-            <Award className="w-3 h-3" style={{ color: '#4f8eff' }} />
+            <Award className="w-3 h-3 text-nm-primary" />
             <span className="truncate max-w-[160px]">
               {isTasksLoading ? '読込中...' : selectedTask?.title || 'タスク選択'}
             </span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} style={{ color: 'rgba(200,212,240,0.3)' }} />
+            <ChevronDown className={`w-3 h-3 text-nm-text-muted transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
           </button>
           {isDropdownOpen && (
-            <div className="absolute right-0 z-50 mt-1 w-80 rounded-lg border overflow-hidden max-h-72 overflow-y-auto"
-              style={{ background: '#0d1226', borderColor: 'rgba(79,142,255,0.15)' }}>
+            <div className="absolute right-0 z-50 mt-1 w-80 rounded-lg border border-nm-border bg-nm-surface shadow-lg overflow-hidden max-h-72 overflow-y-auto">
               {filteredTasks.length === 0 ? (
-                <div className="px-3 py-4 text-[11px] text-center" style={{ color: 'rgba(200,212,240,0.3)' }}>
+                <div className="px-3 py-4 text-[11px] text-center text-nm-text-muted">
                   評価済みタスクなし
                 </div>
               ) : filteredTasks.map(task => (
                 <button
                   key={task.id}
                   onClick={() => { setSelectedTaskId(task.id); setIsDropdownOpen(false); }}
-                  className="w-full text-left px-3 py-2.5 text-[11px] transition-colors border-t group"
-                  style={{
-                    borderColor: 'rgba(79,142,255,0.06)',
-                    background: selectedTaskId === task.id ? 'rgba(79,142,255,0.1)' : 'transparent',
-                    color: selectedTaskId === task.id ? '#4f8eff' : '#c8d4f0',
-                  }}
+                  className={`w-full text-left px-3 py-2.5 text-[11px] transition-colors border-t border-nm-border ${selectedTaskId === task.id ? 'bg-nm-primary-light' : 'hover:bg-slate-50'}`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-medium">{task.title}</span>
-                    <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                      style={{ background: 'rgba(79,142,255,0.12)', color: '#4f8eff' }}>
+                    <span className={`truncate font-medium ${selectedTaskId === task.id ? 'text-nm-primary' : 'text-nm-text'}`}>{task.title}</span>
+                    <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-nm-primary-light text-nm-primary">
                       {task.checkpointScore}点
                     </span>
                   </div>
                   {task.assigneeName && (
-                    <div className="text-[10px] mt-0.5" style={{ color: 'rgba(200,212,240,0.35)' }}>
+                    <div className="text-[10px] mt-0.5 text-nm-text-muted">
                       担当: {task.assigneeName}
                     </div>
                   )}
@@ -815,23 +834,23 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       </div>
 
       {/* ===== Canvas Area ===== */}
-      <div ref={wrapRef} className="flex-1 relative overflow-hidden" style={{ minHeight: '350px', background: '#0c1021' }}>
+      <div ref={wrapRef} className="flex-1 relative overflow-hidden bg-nm-bg" style={{ minHeight: '350px' }}>
         {!selectedTaskId ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
-              <div className="text-3xl mb-3 opacity-20">🧠</div>
-              <p className="text-xs" style={{ color: 'rgba(200,212,240,0.25)' }}>
+              <div className="text-3xl mb-3 opacity-30">🧠</div>
+              <p className="text-xs text-nm-text-muted">
                 タスクを選択して思考の軌跡を可視化
               </p>
             </div>
           </div>
         ) : isLoading ? (
           <div className="flex items-center justify-center h-full">
-            <div className="animate-pulse text-sm" style={{ color: '#4f8eff' }}>読み込み中...</div>
+            <div className="animate-pulse text-sm text-nm-primary">読み込み中...</div>
           </div>
         ) : nodes.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-xs" style={{ color: 'rgba(200,212,240,0.25)' }}>思考ノードがありません</p>
+            <p className="text-xs text-nm-text-muted">思考ノードがありません</p>
           </div>
         ) : (
           <canvas
@@ -845,16 +864,13 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
 
         {/* Tooltip */}
         {hoveredNodeData && (
-          <div className="fixed z-50 pointer-events-none rounded-lg px-3 py-2 text-xs max-w-[200px]"
+          <div className="fixed z-50 pointer-events-none rounded-lg px-3 py-2 text-xs max-w-[200px] bg-nm-surface border border-nm-border shadow-lg"
             style={{
-              background: 'rgba(12,16,33,0.97)',
-              border: '1px solid rgba(79,142,255,0.15)',
-              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
               top: '50%', left: '50%', transform: 'translate(-50%, -120%)',
               display: hoveredNode ? 'block' : 'none',
             }}>
-            <div className="font-bold text-[13px] text-white mb-0.5">{hoveredNodeData.nodeLabel}</div>
-            <div className="text-[10px]" style={{ color: 'rgba(200,212,240,0.4)' }}>
+            <div className="font-bold text-[13px] text-nm-text mb-0.5">{hoveredNodeData.nodeLabel}</div>
+            <div className="text-[10px] text-nm-text-muted">
               <span style={{ color: PHASE_COLOR[hoveredNodeData.appearPhase] || DEFAULT_NODE_COLOR }}>
                 {phaseLabel[hoveredNodeData.appearPhase] || hoveredNodeData.appearPhase}
               </span>
@@ -866,78 +882,69 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
 
       {/* ===== 会話プレビュー ===== */}
       {selectedConv && (
-        <div className="flex-shrink-0 px-5 py-2.5 border-t text-[11px] max-h-28 overflow-y-auto"
-          style={{ borderColor: 'rgba(79,142,255,0.08)', background: '#0d1226' }}>
+        <div className="flex-shrink-0 px-5 py-2.5 border-t border-nm-border text-[11px] max-h-28 overflow-y-auto bg-nm-surface">
           <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold" style={{ color: '#4f8eff' }}>
+            <span className="font-bold text-nm-primary">
               T{selectedConv.turnIndex} — {selectedConv.role === 'user' ? 'あなた' : 'AI'}
             </span>
-            <span style={{ color: 'rgba(200,212,240,0.3)' }}>{phaseLabel[selectedConv.phase] || selectedConv.phase}</span>
+            <span className="text-nm-text-muted">{phaseLabel[selectedConv.phase] || selectedConv.phase}</span>
           </div>
-          <p style={{ color: '#c8d4f0', lineHeight: 1.6 }}>{selectedConv.content}</p>
+          <p className="text-nm-text" style={{ lineHeight: 1.6 }}>{selectedConv.content}</p>
         </div>
       )}
 
       {/* ===== Playback Bar ===== */}
       {nodes.length > 0 && (
-        <div className="flex items-center gap-3 px-5 h-16 border-t flex-shrink-0"
-          style={{ borderColor: 'rgba(79,142,255,0.08)', background: '#0c1021' }}>
+        <div className="flex items-center gap-3 px-5 h-14 border-t border-nm-border flex-shrink-0 bg-nm-surface">
           {/* Play/Pause */}
           <button onClick={togglePlay}
-            className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-105"
-            style={{ background: 'linear-gradient(135deg, #4f8eff, #2563eb)' }}>
-            {isPlaying ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-all hover:scale-105 bg-nm-primary text-white">
+            {isPlaying ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
           </button>
 
           {/* Step */}
           <button onClick={() => stepTurn(-1)}
-            className="px-2.5 py-1 rounded-full border text-xs transition-all hover:border-blue-500/30"
-            style={{ borderColor: 'rgba(79,142,255,0.15)', color: 'rgba(200,212,240,0.4)' }}>
+            className="p-1.5 rounded-full border border-nm-border hover:border-nm-border-hover text-nm-text-muted transition-colors">
             <SkipBack className="w-3 h-3" />
           </button>
           <button onClick={() => stepTurn(1)}
-            className="px-2.5 py-1 rounded-full border text-xs transition-all hover:border-blue-500/30"
-            style={{ borderColor: 'rgba(79,142,255,0.15)', color: 'rgba(200,212,240,0.4)' }}>
+            className="p-1.5 rounded-full border border-nm-border hover:border-nm-border-hover text-nm-text-muted transition-colors">
             <SkipForward className="w-3 h-3" />
           </button>
 
-          {/* Track with checkpoint markers */}
-          <div className="flex-1 relative h-1.5 rounded-full cursor-pointer group"
-            style={{ background: 'rgba(79,142,255,0.08)' }}
+          {/* Track */}
+          <div className="flex-1 relative h-1.5 rounded-full cursor-pointer bg-slate-100"
             onClick={handleSeek}>
-            {/* Progress */}
             <div className="h-full rounded-full transition-all"
               style={{
-                background: 'linear-gradient(90deg, #a259ff, #4f8eff, #43d9ad)',
+                background: 'linear-gradient(90deg, #7c3aed, #2563eb, #059669)',
                 width: maxTurn > 0 ? `${(currentTurn / maxTurn) * 100}%` : '0%',
               }} />
-            {/* Checkpoint dots on track */}
+            {/* Checkpoint dots */}
             {checkpointTurns.map((cpT, i) => (
-              <div key={i} className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full"
+              <div key={i} className="absolute top-1/2 w-2.5 h-2.5 rounded-full"
                 style={{
                   left: maxTurn > 0 ? `${(cpT / maxTurn) * 100}%` : '0%',
                   transform: 'translate(-50%, -50%)',
                   background: CHECKPOINT_COLOR,
-                  boxShadow: `0 0 6px ${hexA(CHECKPOINT_COLOR, 0.5)}`,
+                  boxShadow: `0 0 4px ${hexA(CHECKPOINT_COLOR, 0.4)}`,
                 }} />
             ))}
             {/* Thumb */}
-            <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white pointer-events-none transition-all"
+            <div className="absolute top-1/2 w-3.5 h-3.5 rounded-full bg-white border-2 border-nm-primary pointer-events-none shadow-sm"
               style={{
-                border: '2px solid #4f8eff',
                 left: maxTurn > 0 ? `${(currentTurn / maxTurn) * 100}%` : '0%',
                 transform: 'translate(-50%, -50%)',
-                boxShadow: '0 0 8px rgba(79,142,255,0.3)',
               }} />
           </div>
 
           {/* Turn info */}
-          <div className="min-w-[120px] text-right">
-            <div className="font-extrabold text-lg" style={{ color: '#4f8eff' }}>
-              T<span>{currentTurn}</span>
-              <span className="text-[10px] font-normal ml-1" style={{ color: 'rgba(200,212,240,0.3)' }}>/ {maxTurn}</span>
+          <div className="min-w-[110px] text-right">
+            <div className="font-extrabold text-base text-nm-primary">
+              T{currentTurn}
+              <span className="text-[10px] font-normal text-nm-text-muted ml-1">/ {maxTurn}</span>
             </div>
-            <div className="text-[10px] truncate max-w-[120px]" style={{ color: 'rgba(200,212,240,0.3)' }}>
+            <div className="text-[10px] truncate max-w-[110px] text-nm-text-muted">
               {turnDesc}
             </div>
           </div>
@@ -946,26 +953,25 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
 
       {/* Legend */}
       {nodes.length > 0 && (
-        <div className="flex items-center gap-4 px-5 py-1.5 border-t flex-shrink-0 text-[9px]"
-          style={{ borderColor: 'rgba(79,142,255,0.06)', background: '#0a0e1a', color: 'rgba(200,212,240,0.3)' }}>
+        <div className="flex items-center gap-4 px-5 py-1.5 border-t border-nm-border flex-shrink-0 text-[9px] text-nm-text-muted bg-slate-50">
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#a259ff' }} />着想
+            <span className="w-2 h-2 rounded-full" style={{ background: '#7c3aed' }} />着想
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#4f8eff' }} />構想
+            <span className="w-2 h-2 rounded-full" style={{ background: '#2563eb' }} />構想
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#43d9ad' }} />展開
+            <span className="w-2 h-2 rounded-full" style={{ background: '#059669' }} />展開
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full" style={{ background: '#ffd166' }} />結論
+            <span className="w-2 h-2 rounded-full" style={{ background: '#d97706' }} />結論
           </span>
-          <span style={{ width: 1, height: 10, background: 'rgba(79,142,255,0.1)' }} />
+          <span className="w-px h-3 bg-nm-border" />
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rotate-45" style={{ background: CHECKPOINT_COLOR }} />チェックポイント
           </span>
           <span className="flex items-center gap-1">
-            <span className="w-3 h-0.5" style={{ background: '#ff9040' }} />抽象ジャンプ
+            <span className="w-3 h-0.5" style={{ background: '#f97316' }} />抽象ジャンプ
           </span>
         </div>
       )}
