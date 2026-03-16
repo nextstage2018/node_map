@@ -31,8 +31,8 @@ export async function PATCH(
     }
 
     if (status === 'done') {
-      // 完了の場合は既存のPUT /api/tasksの完了フローを呼び出す
-      // 通知・ナレッジ・アーカイブ・削除の全パイプラインを実行
+      // 完了の場合: ステータス更新 → 通知 → ビジネスイベント記録
+      // タスク本体はDBに残す（思考マップ・チェックポイント結果の参照に必要）
       try {
         // タスク情報を取得
         const { data: task } = await supabase
@@ -79,7 +79,7 @@ export async function PATCH(
           console.error('[Status API] 完了通知エラー:', e);
         }
 
-        // ビジネスイベントにアーカイブ
+        // ビジネスイベントに完了記録
         try {
           await supabase.from('business_events').insert({
             user_id: userId,
@@ -90,15 +90,15 @@ export async function PATCH(
             ai_generated: false,
           });
         } catch (e) {
-          console.error('[Status API] アーカイブエラー:', e);
+          console.error('[Status API] ビジネスイベント記録エラー:', e);
         }
 
-        // タスク削除（アーカイブ後）
-        await supabase.from('tasks').delete().eq('id', taskId);
+        // タスクはDBに残す（思考マップ・会話履歴・チェックポイント結果の参照に必要）
+        // ステータス更新は上部の notifyTaskCompletion 内で実施済み
 
         return NextResponse.json({
           success: true,
-          data: { id: taskId, status: 'done', archived: true },
+          data: { id: taskId, status: 'done' },
         });
       } catch (error) {
         console.error('[Status API] 完了処理エラー:', error);

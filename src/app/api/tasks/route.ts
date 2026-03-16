@@ -289,19 +289,14 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // タスク完了時: ビジネスログにアーカイブ → タスクを削除
+    // タスク完了時: ビジネスログに記録（タスク本体はDBに残す）
     if (body.status === 'done') {
       try {
         await TaskService.archiveTaskToBusinessLog(body.id, userId);
       } catch (archErr) {
-        console.error('[Tasks API] アーカイブエラー（タスク完了は成功）:', archErr);
+        console.error('[Tasks API] ビジネスイベント記録エラー（タスク完了は成功）:', archErr);
       }
-      // アーカイブ後にタスクを削除（カンバンから消える）
-      try {
-        await TaskService.deleteTask(body.id);
-      } catch (delErr) {
-        console.error('[Tasks API] タスク削除エラー（アーカイブ済み）:', delErr);
-      }
+      // タスクはDBに残す（思考マップ・会話履歴・チェックポイント結果の参照に必要）
     }
 
     return NextResponse.json({
