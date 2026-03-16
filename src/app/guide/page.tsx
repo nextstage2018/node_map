@@ -395,15 +395,54 @@ function TasksTab() {
       <SectionCard title="AIに相談する" icon={Brain}>
         <p className="mb-2">
           タスクの詳細パネルにある「AIに相談」ボタンをタップすると、そのタスクについてAIと壁打ちできます。
+          初回は「AIと壁打ちを始める」ボタンを押すと、AIが最初の質問を投げかけてくれます。
         </p>
         <div className="space-y-2 text-sm text-slate-600">
-          <p>AIはタスクの内容・プロジェクトの背景・過去の会話を踏まえて、一緒に考えてくれます。</p>
+          <p>AIはタスクの内容だけでなく、以下の情報を自動的に参照して応答します。</p>
+        </div>
+
+        <div className="mt-3 mb-3">
+          <p className="font-medium text-slate-700 mb-2 text-sm">AIが参照する情報</p>
+          <div className="space-y-1.5 text-xs text-slate-600">
+            <div className="flex items-start gap-2 p-2 bg-blue-50 rounded border border-blue-100">
+              <span className="font-semibold text-blue-700 shrink-0 w-28">タスク情報</span>
+              <span>タイトル・説明・構想メモ・期限（そのタスク固有）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">PJ・組織情報</span>
+              <span>プロジェクト名・概要、組織名・メモ（背景情報として）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">意思決定ログ</span>
+              <span>プロジェクトの直近10件の決定事項（会議録AI解析で自動蓄積）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">上長フィードバック</span>
+              <span>会議で検出された上長の指摘パターン（PJ横断で蓄積・学習）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">外部資料</span>
+              <span>タスク詳細から手動で追加した参考資料</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">会話履歴</span>
+              <span>過去のAI会話の全文（文脈を引き継ぎ）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-slate-50 rounded border border-slate-200">
+              <span className="font-semibold text-slate-700 shrink-0 w-28">パーソナライズ</span>
+              <span>性格タイプ・思考傾向・オーナー方針（日次AI分析で自動更新）</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-2 text-sm text-slate-600">
           <ExampleBox>
             「この提案書のアウトラインを考えて」<br />
             「クライアントへの報告をどう構成するか相談したい」<br />
             「このタスクの進め方がわからない」
           </ExampleBox>
           <p className="text-xs text-slate-400">※ AIとの会話内容は自動で要約され、タスク詳細パネルの「AI要約」に反映されます。</p>
+          <p className="text-xs text-slate-400">※ 深い調査が必要な場合、AIがディープリサーチ（外部AI）の利用を提案することがあります。</p>
         </div>
       </SectionCard>
 
