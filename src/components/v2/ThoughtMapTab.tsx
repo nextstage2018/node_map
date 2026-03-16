@@ -107,6 +107,9 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     fetchThoughtData();
   }, [fetchThoughtData]);
 
+  // グラフ描画エラー表示用
+  const [renderError, setRenderError] = useState<string | null>(null);
+
   // D3.js フォースグラフ描画
   useEffect(() => {
     if (!svgRef.current || nodes.length === 0) return;
@@ -115,270 +118,331 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
     const container = containerRef.current;
     if (!container) return;
 
-    const width = container.clientWidth;
-    const height = 500;
-
     // SVGをクリア
     while (svg.firstChild) svg.removeChild(svg.firstChild);
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.setAttribute('width', String(width));
-    svg.setAttribute('height', String(height));
+    setRenderError(null);
 
-    // D3用データを構築
-    const nodeMap = new Map<string, ThoughtNode>();
-    nodes.forEach(n => nodeMap.set(n.nodeId, n));
+    try {
+      const width = container.clientWidth || 800;
+      const height = 500;
 
-    const graphNodes = nodes.map(n => ({
-      id: n.nodeId,
-      label: n.nodeLabel,
-      phase: n.appearPhase,
-      order: n.appearOrder,
-      x: width / 2 + (Math.random() - 0.5) * 200,
-      y: height / 2 + (Math.random() - 0.5) * 200,
-      vx: 0,
-      vy: 0,
-    }));
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
 
-    const nodeIdSet = new Set(graphNodes.map(n => n.id));
-    const graphEdges = edges
-      .filter(e => nodeIdSet.has(e.fromNodeId) && nodeIdSet.has(e.toNodeId))
-      .map(e => ({
-        source: e.fromNodeId,
-        target: e.toNodeId,
-        type: e.edgeType,
+      // D3用データを構築
+      const nodeMap = new Map<string, ThoughtNode>();
+      nodes.forEach(n => nodeMap.set(n.nodeId, n));
+
+      const graphNodes = nodes.map(n => ({
+        id: n.nodeId,
+        label: n.nodeLabel || '',
+        phase: n.appearPhase || '',
+        order: n.appearOrder || 0,
+        x: width / 2 + (Math.random() - 0.5) * 200,
+        y: height / 2 + (Math.random() - 0.5) * 200,
+        vx: 0,
+        vy: 0,
       }));
 
-    // 力学シミュレーション（簡易版）
-    const nodeById = new Map(graphNodes.map(n => [n.id, n]));
+      const nodeIdSet = new Set(graphNodes.map(n => n.id));
+      const graphEdges = edges
+        .filter(e => nodeIdSet.has(e.fromNodeId) && nodeIdSet.has(e.toNodeId) && e.fromNodeId !== e.toNodeId)
+        .map(e => ({
+          source: e.fromNodeId,
+          target: e.toNodeId,
+          type: e.edgeType,
+        }));
 
-    // リンクごとにsource/targetノードへの参照を持たせる
-    const links = graphEdges.map(e => ({
-      source: nodeById.get(e.source)!,
-      target: nodeById.get(e.target)!,
-      type: e.type,
-    })).filter(l => l.source && l.target);
+      // 力学シミュレーション（簡易版）
+      const nodeById = new Map(graphNodes.map(n => [n.id, n]));
 
-    // 簡易フォースシミュレーション
-    const simulate = () => {
-      const alpha = 0.3;
-      const repulsion = 3000;
-      const linkDistance = 120;
-      const linkStrength = 0.1;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const centerStrength = 0.05;
+      // リンクごとにsource/targetノードへの参照を持たせる
+      const links = graphEdges.map(e => ({
+        source: nodeById.get(e.source)!,
+        target: nodeById.get(e.target)!,
+        type: e.type,
+      })).filter(l => l.source && l.target);
 
-      for (let iter = 0; iter < 200; iter++) {
-        // 反発力
-        for (let i = 0; i < graphNodes.length; i++) {
-          for (let j = i + 1; j < graphNodes.length; j++) {
-            const a = graphNodes[i];
-            const b = graphNodes[j];
-            let dx = b.x - a.x;
-            let dy = b.y - a.y;
-            let dist = Math.sqrt(dx * dx + dy * dy) || 1;
-            const force = repulsion / (dist * dist);
-            const fx = (dx / dist) * force * alpha;
-            const fy = (dy / dist) * force * alpha;
-            a.x -= fx;
-            a.y -= fy;
-            b.x += fx;
-            b.y += fy;
+      // 日本語含むラベルの幅を概算（CJK文字は2倍幅）
+      const estimateLabelWidth = (label: string): number => {
+        let w = 0;
+        for (const ch of label) {
+          // CJK文字かどうかを簡易判定
+          w += ch.charCodeAt(0) > 0x2E80 ? 12 : 7;
+        }
+        return w;
+      };
+
+      // 簡易フォースシミュレーション
+      const simulate = () => {
+        const alpha = 0.3;
+        const repulsion = 3000;
+        const linkDistance = 120;
+        const linkStrength = 0.1;
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const centerStrength = 0.05;
+
+        for (let iter = 0; iter < 200; iter++) {
+          // 反発力
+          for (let i = 0; i < graphNodes.length; i++) {
+            for (let j = i + 1; j < graphNodes.length; j++) {
+              const a = graphNodes[i];
+              const b = graphNodes[j];
+              const dx = b.x - a.x;
+              const dy = b.y - a.y;
+              const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+              const force = repulsion / (dist * dist);
+              const fx = (dx / dist) * force * alpha;
+              const fy = (dy / dist) * force * alpha;
+              if (isFinite(fx) && isFinite(fy)) {
+                a.x -= fx;
+                a.y -= fy;
+                b.x += fx;
+                b.y += fy;
+              }
+            }
+          }
+
+          // リンク引力
+          for (const link of links) {
+            const dx = link.target.x - link.source.x;
+            const dy = link.target.y - link.source.y;
+            const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+            const force = (dist - linkDistance) * linkStrength * alpha;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            if (isFinite(fx) && isFinite(fy)) {
+              link.source.x += fx;
+              link.source.y += fy;
+              link.target.x -= fx;
+              link.target.y -= fy;
+            }
+          }
+
+          // 中心への引力
+          for (const node of graphNodes) {
+            node.x += (centerX - node.x) * centerStrength * alpha;
+            node.y += (centerY - node.y) * centerStrength * alpha;
+          }
+
+          // NaN防止: 各イテレーションで座標を検証
+          for (const node of graphNodes) {
+            if (!isFinite(node.x)) node.x = centerX + Math.random() * 10;
+            if (!isFinite(node.y)) node.y = centerY + Math.random() * 10;
           }
         }
 
-        // リンク引力
-        for (const link of links) {
-          const dx = link.target.x - link.source.x;
-          const dy = link.target.y - link.source.y;
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-          const force = (dist - linkDistance) * linkStrength * alpha;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
-          link.source.x += fx;
-          link.source.y += fy;
-          link.target.x -= fx;
-          link.target.y -= fy;
-        }
-
-        // 中心への引力
+        // 境界内に収める（パディング付き）
+        const pad = 60;
         for (const node of graphNodes) {
-          node.x += (centerX - node.x) * centerStrength * alpha;
-          node.y += (centerY - node.y) * centerStrength * alpha;
+          node.x = Math.max(pad, Math.min(width - pad, node.x));
+          node.y = Math.max(pad, Math.min(height - pad, node.y));
         }
-      }
+      };
 
-      // 境界内に収める（パディング付き）
-      const pad = 60;
+      simulate();
+
+      // SVG描画 — namespace を明示
+      const NS = 'http://www.w3.org/2000/svg';
+
+      // defs（矢印マーカー）
+      const defs = document.createElementNS(NS, 'defs');
+
+      // ドロップシャドウフィルタ（feDropShadowの代わりに互換性の高い組み合わせ）
+      const filter = document.createElementNS(NS, 'filter');
+      filter.setAttribute('id', 'node-shadow');
+      filter.setAttribute('x', '-20%');
+      filter.setAttribute('y', '-20%');
+      filter.setAttribute('width', '140%');
+      filter.setAttribute('height', '140%');
+      const feGaussian = document.createElementNS(NS, 'feGaussianBlur');
+      feGaussian.setAttribute('in', 'SourceAlpha');
+      feGaussian.setAttribute('stdDeviation', '3');
+      feGaussian.setAttribute('result', 'blur');
+      filter.appendChild(feGaussian);
+      const feOffset = document.createElementNS(NS, 'feOffset');
+      feOffset.setAttribute('in', 'blur');
+      feOffset.setAttribute('dx', '0');
+      feOffset.setAttribute('dy', '2');
+      feOffset.setAttribute('result', 'offsetBlur');
+      filter.appendChild(feOffset);
+      const feFlood = document.createElementNS(NS, 'feFlood');
+      feFlood.setAttribute('flood-color', 'rgba(0,0,0,0.1)');
+      feFlood.setAttribute('result', 'color');
+      filter.appendChild(feFlood);
+      const feComposite = document.createElementNS(NS, 'feComposite');
+      feComposite.setAttribute('in', 'color');
+      feComposite.setAttribute('in2', 'offsetBlur');
+      feComposite.setAttribute('operator', 'in');
+      feComposite.setAttribute('result', 'shadow');
+      filter.appendChild(feComposite);
+      const feMerge = document.createElementNS(NS, 'feMerge');
+      const feMergeNode1 = document.createElementNS(NS, 'feMergeNode');
+      feMergeNode1.setAttribute('in', 'shadow');
+      feMerge.appendChild(feMergeNode1);
+      const feMergeNode2 = document.createElementNS(NS, 'feMergeNode');
+      feMergeNode2.setAttribute('in', 'SourceGraphic');
+      feMerge.appendChild(feMergeNode2);
+      filter.appendChild(feMerge);
+      defs.appendChild(filter);
+
+      // 矢印マーカー
+      const marker = document.createElementNS(NS, 'marker');
+      marker.setAttribute('id', 'arrowhead');
+      marker.setAttribute('viewBox', '0 0 10 7');
+      marker.setAttribute('refX', '10');
+      marker.setAttribute('refY', '3.5');
+      marker.setAttribute('markerWidth', '8');
+      marker.setAttribute('markerHeight', '6');
+      marker.setAttribute('orient', 'auto');
+      const arrowPath = document.createElementNS(NS, 'path');
+      arrowPath.setAttribute('d', 'M 0 0 L 10 3.5 L 0 7 z');
+      arrowPath.setAttribute('fill', '#94A3B8');
+      marker.appendChild(arrowPath);
+      defs.appendChild(marker);
+
+      // detour矢印
+      const markerDetour = document.createElementNS(NS, 'marker');
+      markerDetour.setAttribute('id', 'arrowhead-detour');
+      markerDetour.setAttribute('viewBox', '0 0 10 7');
+      markerDetour.setAttribute('refX', '10');
+      markerDetour.setAttribute('refY', '3.5');
+      markerDetour.setAttribute('markerWidth', '8');
+      markerDetour.setAttribute('markerHeight', '6');
+      markerDetour.setAttribute('orient', 'auto');
+      const arrowPathD = document.createElementNS(NS, 'path');
+      arrowPathD.setAttribute('d', 'M 0 0 L 10 3.5 L 0 7 z');
+      arrowPathD.setAttribute('fill', '#CBD5E1');
+      markerDetour.appendChild(arrowPathD);
+      defs.appendChild(markerDetour);
+
+      svg.appendChild(defs);
+
+      // エッジグループ
+      const edgeGroup = document.createElementNS(NS, 'g');
+      for (const link of links) {
+        const isDetour = link.type === 'detour';
+
+        // ノードの中心から端までのオフセットを計算
+        const dx = link.target.x - link.source.x;
+        const dy = link.target.y - link.source.y;
+        const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+
+        // ノードの半径分だけ短くする（ラベル長に応じた楕円の概算）
+        const sourceLabel = nodeMap.get(link.source.id)?.nodeLabel || '';
+        const targetLabel = nodeMap.get(link.target.id)?.nodeLabel || '';
+        const sourceRx = Math.max(30, estimateLabelWidth(sourceLabel) + 16);
+        const targetRx = Math.max(30, estimateLabelWidth(targetLabel) + 16);
+        const sourceRy = 20;
+        const targetRy = 20;
+
+        // エッジが楕円内に収まるほど近い場合はスキップ
+        const totalOffset = sourceRx + targetRx;
+        if (dist <= totalOffset * 0.8) continue;
+
+        // 楕円上の交点を概算（角度による）
+        const angle = Math.atan2(dy, dx);
+        const sourceOffset = getEllipseRadiusAtAngle(sourceRx, sourceRy, angle);
+        const targetOffset = getEllipseRadiusAtAngle(targetRx, targetRy, angle + Math.PI);
+
+        const x1 = link.source.x + (dx / dist) * sourceOffset;
+        const y1 = link.source.y + (dy / dist) * sourceOffset;
+        const x2 = link.target.x - (dx / dist) * targetOffset;
+        const y2 = link.target.y - (dy / dist) * targetOffset;
+
+        // NaNチェック
+        if (!isFinite(x1) || !isFinite(y1) || !isFinite(x2) || !isFinite(y2)) continue;
+
+        const line = document.createElementNS(NS, 'line');
+        line.setAttribute('x1', String(x1));
+        line.setAttribute('y1', String(y1));
+        line.setAttribute('x2', String(x2));
+        line.setAttribute('y2', String(y2));
+        line.setAttribute('stroke', isDetour ? '#CBD5E1' : '#94A3B8');
+        line.setAttribute('stroke-width', isDetour ? '1' : '1.5');
+        if (isDetour) line.setAttribute('stroke-dasharray', '4,3');
+        line.setAttribute('marker-end', isDetour ? 'url(#arrowhead-detour)' : 'url(#arrowhead)');
+        edgeGroup.appendChild(line);
+      }
+      svg.appendChild(edgeGroup);
+
+      // ノードグループ
+      const nodeGroup = document.createElementNS(NS, 'g');
       for (const node of graphNodes) {
-        node.x = Math.max(pad, Math.min(width - pad, node.x));
-        node.y = Math.max(pad, Math.min(height - pad, node.y));
+        const colors = PHASE_COLORS[node.phase] || DEFAULT_COLOR;
+        const labelText = node.label || '';
+        const rx = Math.max(30, estimateLabelWidth(labelText) + 16);
+        const ry = 20;
+
+        // NaNチェック
+        if (!isFinite(node.x) || !isFinite(node.y)) continue;
+
+        const g = document.createElementNS(NS, 'g');
+        g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
+
+        // 楕円ノード
+        const ellipse = document.createElementNS(NS, 'ellipse');
+        ellipse.setAttribute('rx', String(rx));
+        ellipse.setAttribute('ry', String(ry));
+        ellipse.setAttribute('fill', colors.fill);
+        ellipse.setAttribute('stroke', colors.stroke);
+        ellipse.setAttribute('stroke-width', '2');
+        ellipse.setAttribute('filter', 'url(#node-shadow)');
+        g.appendChild(ellipse);
+
+        // ラベル（長すぎる場合は省略）
+        const displayLabel = labelText.length > 12 ? labelText.slice(0, 11) + '…' : labelText;
+        const text = document.createElementNS(NS, 'text');
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('fill', colors.text);
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-weight', '600');
+        text.textContent = displayLabel;
+        g.appendChild(text);
+
+        // フェーズバッジ（右上）
+        if (colors.label) {
+          const badge = document.createElementNS(NS, 'text');
+          badge.setAttribute('x', String(rx - 8));
+          badge.setAttribute('y', String(-ry + 4));
+          badge.setAttribute('text-anchor', 'end');
+          badge.setAttribute('fill', colors.stroke);
+          badge.setAttribute('font-size', '8');
+          badge.setAttribute('font-weight', '500');
+          badge.textContent = colors.label;
+          g.appendChild(badge);
+        }
+
+        // 順序番号（左上）
+        const orderBadge = document.createElementNS(NS, 'circle');
+        orderBadge.setAttribute('cx', String(-rx + 8));
+        orderBadge.setAttribute('cy', String(-ry + 4));
+        orderBadge.setAttribute('r', '8');
+        orderBadge.setAttribute('fill', colors.stroke);
+        g.appendChild(orderBadge);
+
+        const orderText = document.createElementNS(NS, 'text');
+        orderText.setAttribute('x', String(-rx + 8));
+        orderText.setAttribute('y', String(-ry + 4));
+        orderText.setAttribute('text-anchor', 'middle');
+        orderText.setAttribute('dominant-baseline', 'middle');
+        orderText.setAttribute('fill', 'white');
+        orderText.setAttribute('font-size', '8');
+        orderText.setAttribute('font-weight', '700');
+        orderText.textContent = String(node.order);
+        g.appendChild(orderText);
+
+        nodeGroup.appendChild(g);
       }
-    };
+      svg.appendChild(nodeGroup);
 
-    simulate();
-
-    // SVG描画 — namespace を明示
-    const NS = 'http://www.w3.org/2000/svg';
-
-    // defs（矢印マーカー）
-    const defs = document.createElementNS(NS, 'defs');
-
-    // ドロップシャドウフィルタ
-    const filter = document.createElementNS(NS, 'filter');
-    filter.setAttribute('id', 'node-shadow');
-    filter.setAttribute('x', '-20%');
-    filter.setAttribute('y', '-20%');
-    filter.setAttribute('width', '140%');
-    filter.setAttribute('height', '140%');
-    const feDropShadow = document.createElementNS(NS, 'feDropShadow');
-    feDropShadow.setAttribute('dx', '0');
-    feDropShadow.setAttribute('dy', '2');
-    feDropShadow.setAttribute('stdDeviation', '3');
-    feDropShadow.setAttribute('flood-color', 'rgba(0,0,0,0.1)');
-    filter.appendChild(feDropShadow);
-    defs.appendChild(filter);
-
-    // 矢印マーカー
-    const marker = document.createElementNS(NS, 'marker');
-    marker.setAttribute('id', 'arrowhead');
-    marker.setAttribute('viewBox', '0 0 10 7');
-    marker.setAttribute('refX', '10');
-    marker.setAttribute('refY', '3.5');
-    marker.setAttribute('markerWidth', '8');
-    marker.setAttribute('markerHeight', '6');
-    marker.setAttribute('orient', 'auto');
-    const arrowPath = document.createElementNS(NS, 'path');
-    arrowPath.setAttribute('d', 'M 0 0 L 10 3.5 L 0 7 z');
-    arrowPath.setAttribute('fill', '#94A3B8');
-    marker.appendChild(arrowPath);
-    defs.appendChild(marker);
-
-    // detour矢印
-    const markerDetour = document.createElementNS(NS, 'marker');
-    markerDetour.setAttribute('id', 'arrowhead-detour');
-    markerDetour.setAttribute('viewBox', '0 0 10 7');
-    markerDetour.setAttribute('refX', '10');
-    markerDetour.setAttribute('refY', '3.5');
-    markerDetour.setAttribute('markerWidth', '8');
-    markerDetour.setAttribute('markerHeight', '6');
-    markerDetour.setAttribute('orient', 'auto');
-    const arrowPathD = document.createElementNS(NS, 'path');
-    arrowPathD.setAttribute('d', 'M 0 0 L 10 3.5 L 0 7 z');
-    arrowPathD.setAttribute('fill', '#CBD5E1');
-    markerDetour.appendChild(arrowPathD);
-    defs.appendChild(markerDetour);
-
-    svg.appendChild(defs);
-
-    // エッジグループ
-    const edgeGroup = document.createElementNS(NS, 'g');
-    for (const link of links) {
-      const isDetour = link.type === 'detour';
-
-      // ノードの中心から端までのオフセットを計算
-      const dx = link.target.x - link.source.x;
-      const dy = link.target.y - link.source.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      // ノードの半径分だけ短くする（ラベル長に応じた楕円の概算）
-      const sourceLabel = nodeMap.get(link.source.id)?.nodeLabel || '';
-      const targetLabel = nodeMap.get(link.target.id)?.nodeLabel || '';
-      const sourceRx = Math.max(30, sourceLabel.length * 7 + 16);
-      const targetRx = Math.max(30, targetLabel.length * 7 + 16);
-      const sourceRy = 20;
-      const targetRy = 20;
-
-      // 楕円上の交点を概算（角度による）
-      const angle = Math.atan2(dy, dx);
-      const sourceOffset = getEllipseRadiusAtAngle(sourceRx, sourceRy, angle);
-      const targetOffset = getEllipseRadiusAtAngle(targetRx, targetRy, angle + Math.PI);
-
-      const x1 = link.source.x + (dx / dist) * sourceOffset;
-      const y1 = link.source.y + (dy / dist) * sourceOffset;
-      const x2 = link.target.x - (dx / dist) * targetOffset;
-      const y2 = link.target.y - (dy / dist) * targetOffset;
-
-      const line = document.createElementNS(NS, 'line');
-      line.setAttribute('x1', String(x1));
-      line.setAttribute('y1', String(y1));
-      line.setAttribute('x2', String(x2));
-      line.setAttribute('y2', String(y2));
-      line.setAttribute('stroke', isDetour ? '#CBD5E1' : '#94A3B8');
-      line.setAttribute('stroke-width', isDetour ? '1' : '1.5');
-      line.setAttribute('stroke-dasharray', isDetour ? '4,3' : '');
-      line.setAttribute('marker-end', isDetour ? 'url(#arrowhead-detour)' : 'url(#arrowhead)');
-      edgeGroup.appendChild(line);
+    } catch (err) {
+      console.error('[ThoughtMapTab] SVG描画エラー:', err);
+      setRenderError(err instanceof Error ? err.message : 'グラフ描画中にエラーが発生しました');
     }
-    svg.appendChild(edgeGroup);
-
-    // ノードグループ
-    const nodeGroup = document.createElementNS(NS, 'g');
-    for (const node of graphNodes) {
-      const colors = PHASE_COLORS[node.phase] || DEFAULT_COLOR;
-      const labelText = node.label;
-      const rx = Math.max(30, labelText.length * 7 + 16);
-      const ry = 20;
-
-      const g = document.createElementNS(NS, 'g');
-      g.setAttribute('transform', `translate(${node.x}, ${node.y})`);
-
-      // 楕円ノード
-      const ellipse = document.createElementNS(NS, 'ellipse');
-      ellipse.setAttribute('rx', String(rx));
-      ellipse.setAttribute('ry', String(ry));
-      ellipse.setAttribute('fill', colors.fill);
-      ellipse.setAttribute('stroke', colors.stroke);
-      ellipse.setAttribute('stroke-width', '2');
-      ellipse.setAttribute('filter', 'url(#node-shadow)');
-      g.appendChild(ellipse);
-
-      // ラベル
-      const text = document.createElementNS(NS, 'text');
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('dominant-baseline', 'middle');
-      text.setAttribute('fill', colors.text);
-      text.setAttribute('font-size', '11');
-      text.setAttribute('font-weight', '600');
-      text.textContent = labelText;
-      g.appendChild(text);
-
-      // フェーズバッジ（右上）
-      if (colors.label) {
-        const badge = document.createElementNS(NS, 'text');
-        badge.setAttribute('x', String(rx - 8));
-        badge.setAttribute('y', String(-ry + 4));
-        badge.setAttribute('text-anchor', 'end');
-        badge.setAttribute('fill', colors.stroke);
-        badge.setAttribute('font-size', '8');
-        badge.setAttribute('font-weight', '500');
-        badge.textContent = colors.label;
-        g.appendChild(badge);
-      }
-
-      // 順序番号（左上）
-      const orderBadge = document.createElementNS(NS, 'circle');
-      orderBadge.setAttribute('cx', String(-rx + 8));
-      orderBadge.setAttribute('cy', String(-ry + 4));
-      orderBadge.setAttribute('r', '8');
-      orderBadge.setAttribute('fill', colors.stroke);
-      g.appendChild(orderBadge);
-
-      const orderText = document.createElementNS(NS, 'text');
-      orderText.setAttribute('x', String(-rx + 8));
-      orderText.setAttribute('y', String(-ry + 4));
-      orderText.setAttribute('text-anchor', 'middle');
-      orderText.setAttribute('dominant-baseline', 'middle');
-      orderText.setAttribute('fill', 'white');
-      orderText.setAttribute('font-size', '8');
-      orderText.setAttribute('font-weight', '700');
-      orderText.textContent = String(node.order);
-      g.appendChild(orderText);
-
-      nodeGroup.appendChild(g);
-    }
-    svg.appendChild(nodeGroup);
-
   }, [nodes, edges]);
 
   const selectedTask = qualifiedTasks.find(t => t.id === selectedTaskId);
@@ -506,6 +570,14 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
       ) : isLoading ? (
         <div className="flex items-center justify-center h-64 bg-white border border-slate-200 rounded-lg">
           <div className="animate-spin text-2xl">&#8987;</div>
+        </div>
+      ) : renderError ? (
+        <div className="flex items-center justify-center h-64 bg-white border border-red-200 rounded-lg">
+          <div className="text-center">
+            <Map className="w-8 h-8 mx-auto mb-2 text-red-300" />
+            <p className="text-xs text-red-500 mb-1">グラフ描画エラー</p>
+            <p className="text-[10px] text-slate-400 max-w-sm">{renderError}</p>
+          </div>
         </div>
       ) : nodes.length === 0 ? (
         <div className="flex items-center justify-center h-64 bg-white border border-slate-200 rounded-lg">
