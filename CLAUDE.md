@@ -545,7 +545,8 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **インボックス ポーリング**: メッセージ取得 `INBOX_POLL_INTERVAL=30秒`（`src/lib/constants.ts`）、バッジ更新 30秒（`AppSidebar.tsx`）
 - **日本語スペース除去**: `cleanJapaneseSpaces()` でCJK文字間のスペースを自動除去。AI解析入力時（`analyze/route.ts`）で適用
 - **AI解析 JSON修復**: `max_tokens: 12000`。AIレスポンスのJSONが途切れた場合、未閉じの括弧を自動補完して修復を試行
-- **business_events重複防止**: `meeting_record_id` で既存チェック。既にあれば更新（upsert）、なければ新規挿入
+- **business_events重複防止**: `meeting_record_id` で既存チェック（`.limit(1)` + 配列長チェック。`.single()` は0件でエラーになるため禁止）。既にあれば更新（upsert）、なければ新規挿入
+- **タイムライン削除ボタン**: BusinessTimeline.tsxにホバー表示のゴミ箱アイコン＋確認UI。API: `DELETE /api/business-events?id=xxx`
 - **会議録 再解析ボタン**: `MeetingRecordList.tsx` にRefreshCwアイコンで実装。AI解析＋検討ツリー生成＋チャネル通知を一括トリガー（v7.0統一パイプライン）。再解析時は既存ノード自動削除→再生成。未解析時は黄色バナーで通知
 - **検討ツリーAI最適化（v7.0）**: Claude AIが会議録から検討ツリーに最適な3-7テーマ（各2-7子ノード）を構造化。汎用的テーマ（「会議の目的」等）は除外。Geminiパーサーはフォールバック専用
 

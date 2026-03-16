@@ -6,7 +6,7 @@ import {
   Calendar, GitCommit, MessageSquare, CheckCircle, FileText,
   Flag, StickyNote, ChevronDown, ChevronRight, Filter,
   Clock, Bot, Phone, Mail, Handshake, Bookmark,
-  Loader2, X,
+  Loader2, X, Trash2,
 } from 'lucide-react';
 import {
   BusinessEvent, EVENT_TYPE_CONFIG,
@@ -97,6 +97,21 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
 
   // 詳細表示
   const [selectedEvent, setSelectedEvent] = useState<BusinessEvent | null>(null);
+
+  // 削除
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/business-events?id=${eventId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setEvents(prev => prev.filter(e => e.id !== eventId));
+        if (selectedEvent?.id === eventId) setSelectedEvent(null);
+      }
+    } catch { /* ignore */ }
+    finally { setDeletingId(null); }
+  };
 
   // データ取得
   const fetchEvents = useCallback(async () => {
@@ -197,7 +212,7 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
                       const isAuto = event.ai_generated;
 
                       return (
-                        <div key={event.id} className="relative flex gap-3">
+                        <div key={event.id} className="group relative flex gap-3">
                           {/* タイムラインドット */}
                           <div className={`relative z-10 w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${config.bgColor} ring-2 ring-white`}>
                             <Icon className={`w-3.5 h-3.5 ${config.textColor}`} />
@@ -212,6 +227,19 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
                           >
                             {/* カードヘッダー */}
                             <div className="px-3 py-2.5">
+                              {deletingId === event.id ? (
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="text-slate-600">削除しますか？</span>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleDelete(event.id); }}
+                                    className="px-2 py-0.5 bg-red-500 text-white rounded hover:bg-red-600"
+                                  >削除</button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); setDeletingId(null); }}
+                                    className="px-2 py-0.5 bg-slate-200 text-slate-600 rounded hover:bg-slate-300"
+                                  >戻る</button>
+                                </div>
+                              ) : (
                               <div className="flex items-center gap-2">
                                 <span className="text-[11px] font-medium text-slate-400 shrink-0">
                                   {formatDate(event.created_at)}
@@ -230,6 +258,16 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    setDeletingId(event.id);
+                                  }}
+                                  className="text-slate-300 hover:text-red-500 transition-colors shrink-0 opacity-0 group-hover:opacity-100"
+                                  title="削除"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSelectedEvent(event);
                                   }}
                                   className="text-slate-400 hover:text-blue-500 transition-colors shrink-0"
@@ -238,6 +276,7 @@ export default function BusinessTimeline({ projectId, projectName }: BusinessTim
                                   <ChevronRight className="w-4 h-4" />
                                 </button>
                               </div>
+                              )}
 
                               {/* 展開コンテンツ */}
                               {isExpanded && event.content && (

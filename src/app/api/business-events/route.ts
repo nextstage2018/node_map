@@ -189,3 +189,56 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+// ビジネスイベント削除
+export async function DELETE(request: NextRequest) {
+  try {
+    const userId = await getServerUserId();
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: '認証が必要です' },
+        { status: 401 }
+      );
+    }
+
+    const supabase = getServerSupabase() || createServerClient();
+    if (!supabase || !isSupabaseConfigured()) {
+      return NextResponse.json(
+        { success: false, error: 'Supabase未設定' },
+        { status: 400 }
+      );
+    }
+
+    const searchParams = request.nextUrl.searchParams;
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: 'id は必須です' },
+        { status: 400 }
+      );
+    }
+
+    const { error } = await supabase
+      .from('business_events')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[BusinessEvents API] 削除エラー:', error);
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('[BusinessEvents API] エラー:', error);
+    return NextResponse.json(
+      { success: false, error: 'ビジネスイベントの削除に失敗しました' },
+      { status: 500 }
+    );
+  }
+}
