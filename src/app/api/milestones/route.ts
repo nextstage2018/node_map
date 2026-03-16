@@ -109,22 +109,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    // 各マイルストーンのタスク進捗を取得
+    // 各マイルストーンのタスク進捗を取得（v8.0: タスク詳細も返す）
+    const includeTasks = searchParams.get('include_tasks') === 'true';
     const milestonesWithProgress = await Promise.all(
       (milestones || []).map(async (ms: { id: string }) => {
         const { data: tasks } = await supabase
           .from('tasks')
-          .select('id, status')
-          .eq('milestone_id', ms.id);
+          .select(includeTasks
+            ? 'id, title, status, due_date, priority, assigned_contact_id, contact_persons:assigned_contact_id(name)'
+            : 'id, status'
+          )
+          .eq('milestone_id', ms.id)
+          .order('due_date', { ascending: true, nullsFirst: false });
 
         const total = (tasks || []).length;
         const completed = (tasks || []).filter((t: { status: string }) => t.status === 'done').length;
 
-        return {
+        const result: Record<string, unknown> = {
           ...ms,
           task_total: total,
           task_completed: completed,
         };
+
+        if (includeTasks) {
+          result.tasks = (tasks || []).map((t: Record<string, unknown>) => ({
+            ...t,
+            assignee_name: (t.contact_persons as { name: string } | null)?.name || null,
+            contact_persons: undefined,
+          }));
+        }
+
+        return result;
       })
     );
 

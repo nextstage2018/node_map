@@ -481,7 +481,7 @@ export default function OrganizationDetailPage() {
                             { tab: 'decision_tree' as const, label: '検討ツリー', icon: GitBranch },
                             { tab: 'thought_map' as const, label: '思考マップ', icon: Map },
                             { tab: 'tasks' as const, label: 'タスク', icon: CheckSquare },
-                            { tab: 'jobs' as const, label: 'ジョブ', icon: StickyNote },
+                            { tab: 'jobs' as const, label: '定期イベント', icon: StickyNote },
                             { tab: 'members' as const, label: 'メンバー', icon: Users },
                             { tab: 'resources' as const, label: '関連資料', icon: Bookmark },
                           ].map(sub => (
@@ -626,12 +626,11 @@ export default function OrganizationDetailPage() {
                     }}
                   />
 
-                  {/* v8.0: マイルストーン提案パネル */}
+                  {/* v8.0: マイルストーン提案パネル（会議録一覧の直後に配置） */}
                   <MilestoneProposalPanel
                     projectId={currentProject.id}
                     refreshKey={taskProposalRefreshKey}
                     onAccepted={() => {
-                      // MS承認後にタスクタブも更新
                       setTreeRefreshKey(prev => prev + 1);
                     }}
                   />
@@ -706,13 +705,13 @@ export default function OrganizationDetailPage() {
               {/* v3.3 PJレベル: ジョブ（定型業務 / やることメモ） */}
               {activeNav.type === 'project' && activeNav.tab === 'jobs' && currentProject && (
                 <div className="p-6">
-                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject.name} - ジョブ</h2>
+                  <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject.name} - 定期イベント</h2>
                   <div className="flex items-center justify-center h-32 text-slate-400">
                     <div className="text-center">
                       <StickyNote className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs">ジョブ管理は秘書チャットから操作できます</p>
+                      <p className="text-xs">定期イベント管理は秘書チャットから操作できます</p>
                       <button
-                        onClick={() => router.push(`/?projectId=${currentProject.id}&message=${encodeURIComponent('ジョブ一覧を見せて')}`)}
+                        onClick={() => router.push(`/?projectId=${currentProject.id}&message=${encodeURIComponent('定期イベント一覧を見せて')}`)}
                         className="mt-2 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                       >秘書に相談</button>
                     </div>

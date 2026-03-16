@@ -3,7 +3,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Flag, Check, X, ChevronDown, ChevronRight, Loader2, Sparkles } from 'lucide-react';
+import { Flag, Check, X, ChevronDown, ChevronRight, Loader2, Sparkles, ExternalLink } from 'lucide-react';
 
 interface MilestoneSuggestion {
   id: string;
@@ -62,7 +62,8 @@ export default function MilestoneProposalPanel({
       if (editingId === suggestion.id && editData) {
         if (editData.title) body.title = editData.title;
         if (editData.target_date) body.target_date = editData.target_date;
-        if (editData.description) body.description = editData.description;
+        if (editData.description !== undefined) body.description = editData.description;
+        if (editData.success_criteria !== undefined) body.success_criteria = editData.success_criteria;
       }
 
       const res = await fetch(`/api/milestone-suggestions/${suggestion.id}`, {
@@ -131,14 +132,48 @@ export default function MilestoneProposalPanel({
                   <Flag className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
 
                   <div className="flex-1 min-w-0">
-                    {/* タイトル */}
+                    {/* 編集モード: 全フィールド表示 */}
                     {isEditing ? (
-                      <input
-                        type="text"
-                        value={editData.title ?? suggestion.title}
-                        onChange={(e) => setEditData({ ...editData, title: e.target.value })}
-                        className="w-full text-xs font-medium border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
+                      <div className="space-y-2">
+                        <div>
+                          <label className="block text-[10px] text-slate-500 mb-0.5">タイトル</label>
+                          <input
+                            type="text"
+                            value={editData.title ?? suggestion.title}
+                            onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                            className="w-full text-xs font-medium border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-500 mb-0.5">到達条件・ゴール</label>
+                          <textarea
+                            value={editData.description ?? suggestion.description ?? ''}
+                            onChange={(e) => setEditData({ ...editData, description: e.target.value })}
+                            rows={2}
+                            className="w-full text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                            placeholder="到達条件を記載"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-500 mb-0.5">達成条件</label>
+                          <textarea
+                            value={editData.success_criteria ?? suggestion.success_criteria ?? ''}
+                            onChange={(e) => setEditData({ ...editData, success_criteria: e.target.value })}
+                            rows={2}
+                            className="w-full text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                            placeholder="達成条件を記載"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-500 mb-0.5">期限</label>
+                          <input
+                            type="date"
+                            value={editData.target_date ?? suggestion.target_date ?? ''}
+                            onChange={(e) => setEditData({ ...editData, target_date: e.target.value })}
+                            className="text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
                     ) : (
                       <button
                         onClick={() => {
@@ -155,33 +190,24 @@ export default function MilestoneProposalPanel({
                       </button>
                     )}
 
-                    {/* メタ情報 */}
-                    <div className="flex items-center gap-2 mt-1">
-                      {isEditing ? (
-                        <input
-                          type="date"
-                          value={editData.target_date ?? suggestion.target_date ?? ''}
-                          onChange={(e) => setEditData({ ...editData, target_date: e.target.value })}
-                          className="text-[10px] border border-blue-300 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      ) : (
-                        <>
-                          {suggestion.target_date && (
-                            <span className="text-[10px] text-slate-400">
-                              期限: {new Date(suggestion.target_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
-                            </span>
-                          )}
-                          {suggestion.priority === 'high' && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600">高</span>
-                          )}
-                          {suggestion.related_task_titles?.length > 0 && (
-                            <span className="text-[10px] text-slate-400">
-                              関連タスク: {suggestion.related_task_titles.length}件
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </div>
+                    {/* メタ情報（非編集時のみ） */}
+                    {!isEditing && (
+                      <div className="flex items-center gap-2 mt-1">
+                        {suggestion.target_date && (
+                          <span className="text-[10px] text-slate-400">
+                            期限: {new Date(suggestion.target_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                        {suggestion.priority === 'high' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600">高</span>
+                        )}
+                        {suggestion.related_task_titles?.length > 0 && (
+                          <span className="text-[10px] text-slate-400">
+                            関連タスク: {suggestion.related_task_titles.length}件
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* 展開時の詳細 */}
                     {isExpanded && !isEditing && (
@@ -198,9 +224,21 @@ export default function MilestoneProposalPanel({
                         {suggestion.related_task_titles?.length > 0 && (
                           <div className="text-[11px]">
                             <span className="font-medium text-slate-600">関連タスク: </span>
-                            <span className="text-slate-500">
-                              {suggestion.related_task_titles.join('、')}
-                            </span>
+                            <ul className="mt-0.5 space-y-0.5">
+                              {suggestion.related_task_titles.map((title, idx) => (
+                                <li key={idx} className="flex items-center gap-1 text-slate-500">
+                                  <span>・{title}</span>
+                                  <a
+                                    href={`/tasks?search=${encodeURIComponent(title)}`}
+                                    className="text-blue-500 hover:text-blue-700"
+                                    title="タスクページで確認"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
                           </div>
                         )}
                       </div>
@@ -233,7 +271,10 @@ export default function MilestoneProposalPanel({
                             setEditData({
                               title: suggestion.title,
                               target_date: suggestion.target_date,
+                              description: suggestion.description,
+                              success_criteria: suggestion.success_criteria,
                             });
+                            setExpandedId(null);
                           }}
                           className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
                           title="編集して承認"
