@@ -110,12 +110,12 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 思考マップ用: プロジェクト内のチェックポイント85点以上タスク一覧
+    // 思考マップ用: プロジェクト内のチェックポイント70点以上タスク一覧
     if (projectId && mode === 'qualified-tasks') {
-      const qualifiedTasks = await getQualifiedTasks(projectId, viewerId);
+      const { tasks: qualifiedTasks, debug } = await getQualifiedTasks(projectId, viewerId);
       return NextResponse.json({
         success: true,
-        data: { tasks: qualifiedTasks },
+        data: { tasks: qualifiedTasks, debug },
       });
     }
 
@@ -489,28 +489,33 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
  * task_conversations(phase='checkpoint', role='assistant') のJSON contentからtotal_scoreを読む
  */
 async function getQualifiedTasks(projectId: string, userId: string): Promise<{
-  id: string;
-  title: string;
-  status: string;
-  checkpointScore: number;
-  nodeCount: number;
-  edgeCount: number;
-  milestoneName: string | null;
-  evaluatedAt: string;
-}[]> {
+  tasks: {
+    id: string;
+    title: string;
+    status: string;
+    checkpointScore: number;
+    nodeCount: number;
+    edgeCount: number;
+    evaluatedAt: string;
+  }[];
+  debug: any;
+}> {
   const sb = getServerSupabase() || getSupabase();
-  if (!sb) return [];
+  if (!sb) return { tasks: [], debug: { error: 'no supabase' } };
 
   try {
     // プロジェクト内の全タスクを取得
     const { data: tasks, error: taskErr } = await sb
       .from('tasks')
-      .select('id, title, status, milestone_id, milestones(title)')
+      .select('id, title, status')
       .eq('project_id', projectId)
       .order('updated_at', { ascending: false });
 
-    if (taskErr || !tasks || tasks.length === 0) return [];
+    if (taskErr || !tasks || tasks.length === 0) {
+      return { tasks: [], debug: { taskErr, taskCount: tasks?.length || 0, projectId } };
+    }
 
+    const debugInfo: any[] = [];
     const result: {
       id: string;
       title: string;
@@ -518,14 +523,13 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
       checkpointScore: number;
       nodeCount: number;
       edgeCount: number;
-      milestoneName: string | null;
       evaluatedAt: string;
     }[] = [];
 
     // 各タスクのチェックポイント結果を取得
     for (const task of tasks) {
       // 最新のチェックポイント結果を取得
-      const { data: checkpoints } = await sb
+      const { data: checkpoints, error: cpErr } = await sb
         .from('task_conversations')
         .select('content, created_at')
         .eq('task_id', task.id)
@@ -534,15 +538,47 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         .order('created_at', { ascending: false })
         .limit(1);
 
-      if (!checkpoints || checkpoints.length === 0) continue;
+      if (!checkpoints || checkpoints.length === 0) {
+        // デバッグ: このタスクの全conversation phaseを確認
+        const { data: allConvs } = await sb
+          .from('task_conversations')
+          .select('phase, role, created_at')
+          .eq('task_id', task.id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+        debugInfo.push({
+          taskId: task.id,
+          title: task.title,
+          reason: 'no_checkpoint_found',
+          cpErr,
+          recentConversations: allConvs?.map((c: any) => ({ phase: c.phase, role: c.role })) || [],
+        });
+        continue;
+      }
 
       let score = 0;
       try {
         const parsed = JSON.parse(checkpoints[0].content);
         score = parsed.total_score || 0;
-      } catch { continue; }
+      } catch (parseErr) {
+        debugInfo.push({
+          taskId: task.id,
+          title: task.title,
+          reason: 'json_parse_error',
+          contentPreview: checkpoints[0].content?.slice(0, 100),
+        });
+        continue;
+      }
 
-      if (score < 70) continue;
+      if (score < 70) {
+        debugInfo.push({
+          taskId: task.id,
+          title: task.title,
+          reason: 'score_below_70',
+          score,
+        });
+        continue;
+      }
 
       // ノード数・エッジ数を取得
       const [nodeRes, edgeRes] = await Promise.all([
@@ -550,7 +586,6 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
       ]);
 
-      const ms = task.milestones as any;
       result.push({
         id: task.id,
         title: task.title,
@@ -558,7 +593,6 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         checkpointScore: score,
         nodeCount: nodeRes.count || 0,
         edgeCount: edgeRes.count || 0,
-        milestoneName: ms?.title || null,
         evaluatedAt: checkpoints[0].created_at,
       });
     }
@@ -566,9 +600,9 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
     // スコア降順でソート
     result.sort((a, b) => b.checkpointScore - a.checkpointScore);
 
-    return result;
+    return { tasks: result, debug: { totalTasks: tasks.length, debugInfo } };
   } catch (error) {
     console.error('[Thought Map] getQualifiedTasks エラー:', error);
-    return [];
+    return { tasks: [], debug: { error: String(error) } };
   }
 }
