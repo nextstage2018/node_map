@@ -490,7 +490,7 @@ export default function OrganizationDetailPage() {
                             <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
                           )}
                           <FolderOpen className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span className="flex-1 text-left truncate">{project.name}</span>
+                          <span className="flex-1 text-left truncate">{project.name.length > 14 ? project.name.slice(0, 14) + '...' : project.name}</span>
                           <span className={`text-[9px] px-1 py-0.5 rounded-full shrink-0 ${statusConfig.color}`}>
                             {statusConfig.label}
                           </span>
