@@ -706,16 +706,6 @@ export default function OrganizationDetailPage() {
               {activeNav.type === 'project' && activeNav.tab === 'jobs' && currentProject && (
                 <div className="p-6">
                   <h2 className="text-sm font-bold text-slate-800 mb-4">{currentProject.name} - 定期イベント</h2>
-                  <div className="flex items-center justify-center h-32 text-slate-400">
-                    <div className="text-center">
-                      <StickyNote className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                      <p className="text-xs">定期イベント管理は秘書チャットから操作できます</p>
-                      <button
-                        onClick={() => router.push(`/?projectId=${currentProject.id}&message=${encodeURIComponent('定期イベント一覧を見せて')}`)}
-                        className="mt-2 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
-                      >秘書に相談</button>
-                    </div>
-                  </div>
                   {/* v4.2: 繰り返しルール管理 */}
                   <RecurringRulesManager projectId={currentProject.id} />
                 </div>
