@@ -156,6 +156,7 @@ export async function createProjectLogDoc(
 
 /**
  * 既存のログドキュメントIDを取得。なければ新規作成
+ * v9.0fix: フォルダが未作成の場合、ルール通りのDriveフォルダ構造を自動作成してからDoc配置
  */
 export async function getOrCreateProjectLogDoc(
   userId: string,
@@ -180,9 +181,10 @@ export async function getOrCreateProjectLogDoc(
     };
   }
 
-  // プロジェクトフォルダを取得（あれば）
+  // プロジェクトフォルダを取得 or 自動作成
   let parentFolderId: string | undefined;
   try {
+    // まずDBから既存フォルダを検索
     const { data: folder } = await supabase
       .from('drive_folders')
       .select('drive_folder_id')
@@ -190,9 +192,36 @@ export async function getOrCreateProjectLogDoc(
       .eq('hierarchy_level', 2)
       .limit(1)
       .single();
-    if (folder) parentFolderId = folder.drive_folder_id;
-  } catch {
-    // フォルダなしでもDoc作成は続行（Driveルートに配置）
+
+    if (folder) {
+      parentFolderId = folder.drive_folder_id;
+    } else if (project.organization_id) {
+      // フォルダが存在しない → ルール通りの構造を自動作成
+      // [NodeMap] 組織名/ → プロジェクト名/ の順で作成
+      const { getOrCreateOrgFolder, getOrCreateProjectFolder } = await import('@/services/drive/driveClient.service');
+
+      // 組織名を取得
+      const { data: org } = await supabase
+        .from('organizations')
+        .select('name')
+        .eq('id', project.organization_id)
+        .single();
+
+      if (org) {
+        // L1: [NodeMap] 組織名/
+        const orgFolderId = await getOrCreateOrgFolder(userId, project.organization_id, org.name);
+        if (orgFolderId) {
+          // L2: プロジェクト名/
+          const projFolderId = await getOrCreateProjectFolder(userId, project.organization_id, projectId, project.name);
+          if (projFolderId) {
+            parentFolderId = projFolderId;
+            console.log(`[ProjectLogDoc] Driveフォルダ自動作成: [NodeMap] ${org.name}/${project.name}/`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[ProjectLogDoc] フォルダ取得/作成でエラー（Docはルートに配置）:', err);
   }
 
   return createProjectLogDoc(userId, projectId, project.name, parentFolderId);
