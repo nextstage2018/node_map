@@ -33,6 +33,15 @@ export async function GET(request: NextRequest) {
     const projectId = searchParams.get('projectId') || undefined; // V2-H
     const mode = searchParams.get('mode'); // 'overview' = 全体マップ
 
+    // 思考マップ用: プロジェクト内のチェックポイント70点以上タスク一覧（userIdなしでもOK）
+    if (projectId && mode === 'qualified-tasks') {
+      const { tasks: qualifiedTasks, debug } = await getQualifiedTasks(projectId, viewerId);
+      return NextResponse.json({
+        success: true,
+        data: { tasks: qualifiedTasks, debug },
+      });
+    }
+
     // ユーザー指定なし → 組織内の全ユーザー一覧（思考ノード数付き）を返す
     if (!targetUserId) {
       const users = await getThoughtMapUsers();
@@ -108,15 +117,6 @@ export async function GET(request: NextRequest) {
           data: { milestones: milestones || [] },
         });
       }
-    }
-
-    // 思考マップ用: プロジェクト内のチェックポイント70点以上タスク一覧
-    if (projectId && mode === 'qualified-tasks') {
-      const { tasks: qualifiedTasks, debug } = await getQualifiedTasks(projectId, viewerId);
-      return NextResponse.json({
-        success: true,
-        data: { tasks: qualifiedTasks, debug },
-      });
     }
 
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す
