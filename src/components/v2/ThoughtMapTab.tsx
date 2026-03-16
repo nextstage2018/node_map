@@ -1,5 +1,5 @@
 // V2-H: 思考マップタブ（プロジェクト詳細内）
-// チェックポイント85点以上のタスクを選択 → D3.js フォースグラフで思考ノードを可視化
+// チェックポイント70点以上のタスクを選択 → D3.js フォースグラフで思考ノードを可視化
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -12,7 +12,6 @@ interface QualifiedTask {
   checkpointScore: number;
   nodeCount: number;
   edgeCount: number;
-  milestoneName: string | null;
   evaluatedAt: string;
 }
 
@@ -61,7 +60,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 85点以上タスク一覧を取得
+  // 70点以上タスク一覧を取得
   const fetchQualifiedTasks = useCallback(async () => {
     setIsTasksLoading(true);
     try {
@@ -71,7 +70,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         setQualifiedTasks(json.data.tasks || []);
       }
     } catch (e) {
-      console.error('[ThoughtMapTab] 85点以上タスク取得エラー:', e);
+      console.error('[ThoughtMapTab] 70点以上タスク取得エラー:', e);
     } finally {
       setIsTasksLoading(false);
     }
@@ -414,11 +413,11 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
         </div>
       </div>
 
-      {/* タスク選択ドロップダウン（85点以上のみ） */}
+      {/* タスク選択ドロップダウン（70点以上のみ） */}
       <div className="relative">
         <label className="block text-[10px] text-slate-500 mb-1 flex items-center gap-1">
           <Award className="w-3 h-3" />
-          チェックポイント85点以上のタスク
+          チェックポイント70点以上のタスク
         </label>
         <button
           onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -434,7 +433,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <div className="absolute z-10 mt-1 w-full max-w-md bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden max-h-72 overflow-y-auto">
             {qualifiedTasks.length === 0 ? (
               <div className="px-3 py-4 text-xs text-slate-400 text-center">
-                85点以上のタスクがありません。<br />
+                70点以上のタスクがありません。<br />
                 タスクのAI壁打ち後にチェックポイント評価を実施してください。
               </div>
             ) : (
@@ -457,7 +456,6 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400">
-                    {task.milestoneName && <span>MS: {task.milestoneName}</span>}
                     <span>ノード{task.nodeCount} / エッジ{task.edgeCount}</span>
                     <span className={`px-1 py-0.5 rounded ${
                       task.status === 'done' ? 'bg-green-50 text-green-600'
@@ -491,7 +489,6 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-500">
             <span>ノード: {nodes.length}個</span>
             <span>エッジ: {edges.length}本</span>
-            {selectedTask.milestoneName && <span>MS: {selectedTask.milestoneName}</span>}
           </div>
         </div>
       )}
@@ -502,7 +499,7 @@ export default function ThoughtMapTab({ projectId, projectName }: Props) {
           <div className="text-center">
             <Map className="w-10 h-10 mx-auto mb-3 text-slate-200" />
             <p className="text-xs text-slate-400">
-              上のドロップダウンから<br />85点以上のタスクを選択してください
+              上のドロップダウンから<br />70点以上のタスクを選択してください
             </p>
           </div>
         </div>

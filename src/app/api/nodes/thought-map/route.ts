@@ -542,7 +542,7 @@ async function getQualifiedTasks(projectId: string, userId: string): Promise<{
         score = parsed.total_score || 0;
       } catch { continue; }
 
-      if (score < 85) continue;
+      if (score < 70) continue;
 
       // ノード数・エッジ数を取得
       const [nodeRes, edgeRes] = await Promise.all([
