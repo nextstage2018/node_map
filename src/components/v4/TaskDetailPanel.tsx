@@ -106,6 +106,8 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   const [newDocUrl, setNewDocUrl] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isSavingDoc, setIsSavingDoc] = useState(false);
+  const [checkpointScore, setCheckpointScore] = useState<number | null>(null);
+  const [canComplete, setCanComplete] = useState<boolean>(true);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -210,6 +212,11 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
   // ステータス変更
   const handleStatusChange = async (newStatus: string) => {
     if (!task || task.status === newStatus) return;
+    // 完了にするにはチェックポイント85点以上が必要
+    if (newStatus === 'done' && !canComplete) {
+      alert('タスクを完了にするにはチェックポイント評価で85点以上が必要です。AIに相談画面で「チェック」ボタンを押してください。');
+      return;
+    }
     try {
       await fetch(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
@@ -221,6 +228,12 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
     } catch (error) {
       console.error('ステータス更新エラー:', error);
     }
+  };
+
+  // チェックポイントスコア受信
+  const handleCheckpointScore = (score: number, canCompleteTask: boolean) => {
+    setCheckpointScore(score);
+    setCanComplete(canCompleteTask);
   };
 
   // 関連資料追加（URL登録モード）
@@ -322,6 +335,7 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
             taskStatus={task.status}
             onBack={() => setShowChat(false)}
             onConversationUpdate={fetchDetail}
+            onCheckpointScore={handleCheckpointScore}
           />
         ) : (
           <>
@@ -408,9 +422,14 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                         )}
                       >
                         {STATUS_OPTIONS.map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          <option key={opt.value} value={opt.value}>
+                            {opt.value === 'done' && !canComplete ? `${opt.label}（要チェック）` : opt.label}
+                          </option>
                         ))}
                       </select>
+                      {!canComplete && checkpointScore !== null && (
+                        <span className="text-[10px] text-red-500 font-medium">{checkpointScore}点</span>
+                      )}
                     </div>
                   </div>
 

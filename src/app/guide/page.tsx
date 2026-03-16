@@ -444,6 +444,37 @@ function TasksTab() {
           <p className="text-xs text-slate-400">※ AIとの会話内容は自動で要約され、タスク詳細パネルの「AI要約」に反映されます。</p>
           <p className="text-xs text-slate-400">※ 深い調査が必要な場合、AIがディープリサーチ（外部AI）の利用を提案することがあります。</p>
         </div>
+
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="font-medium text-slate-700 mb-2 text-sm">チェックポイント評価（品質チェック）</p>
+          <p className="text-sm text-slate-600 mb-2">
+            AIとの会話が2往復以上になると、ヘッダーの「チェック」ボタンが有効になります。
+            タスクの進行品質を100点満点で客観評価し、85点以上で「完了」ステータスに変更できるようになります。
+          </p>
+          <div className="space-y-1.5 text-xs text-slate-600 mb-2">
+            <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">
+              <span className="font-semibold text-purple-700 shrink-0 w-28">ゴール明確度</span>
+              <span>完了条件が具体的に定義されているか（20点）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">
+              <span className="font-semibold text-purple-700 shrink-0 w-28">思考の深度</span>
+              <span>「そもそも」の問いが立てられ、構造化されているか — 伸二メソッド観点（20点）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">
+              <span className="font-semibold text-purple-700 shrink-0 w-28">先回り・視座</span>
+              <span>プロジェクト全体での位置づけ、上長の期待を先読みしているか — BOSS観点（20点）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">
+              <span className="font-semibold text-purple-700 shrink-0 w-28">リスク認識</span>
+              <span>失敗シナリオや依存関係を洗い出しているか（20点）</span>
+            </div>
+            <div className="flex items-start gap-2 p-2 bg-purple-50 rounded border border-purple-100">
+              <span className="font-semibold text-purple-700 shrink-0 w-28">練度・精度</span>
+              <span>根拠に基づいた判断と改善サイクルの意識があるか（20点）</span>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400">※ 85点未満の場合はAIの改善ヒントを参考に会話を深めてから再チェックしてください。</p>
+        </div>
       </SectionCard>
 
       <SectionCard title="タスク作成のまとめ" icon={CheckCircle}>

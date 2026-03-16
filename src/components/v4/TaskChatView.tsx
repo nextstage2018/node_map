@@ -3,7 +3,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, MessageCircle, ArrowLeft, Paperclip, X, FileText, Image as ImageIcon } from 'lucide-react';
+import { Send, Loader2, MessageCircle, ArrowLeft, Paperclip, X, FileText, Image as ImageIcon, ClipboardCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface Conversation {
@@ -16,12 +16,27 @@ interface Conversation {
   created_at: string;
 }
 
+interface CheckpointResult {
+  total_score: number;
+  breakdown: {
+    goal_clarity: { score: number; comment: string };
+    thinking_depth: { score: number; comment: string };
+    proactive_vision: { score: number; comment: string };
+    risk_awareness: { score: number; comment: string };
+    quality_precision: { score: number; comment: string };
+  };
+  overall_feedback: string;
+  improvement_hints: string[];
+  can_complete: boolean;
+}
+
 interface TaskChatViewProps {
   taskId: string;
   conversations: Conversation[];
   taskStatus: string;
   onBack: () => void;
   onConversationUpdate: () => void;
+  onCheckpointScore?: (score: number, canComplete: boolean) => void;
 }
 
 interface AttachedFile {
@@ -74,12 +89,16 @@ export default function TaskChatView({
   taskStatus,
   onBack,
   onConversationUpdate,
+  onCheckpointScore,
 }: TaskChatViewProps) {
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isInitialLoading, setIsInitialLoading] = useState(false);
   const [localConversations, setLocalConversations] = useState<Conversation[]>(conversations);
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
+  const [checkpointResult, setCheckpointResult] = useState<CheckpointResult | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [showCheckpointDetail, setShowCheckpointDetail] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -215,6 +234,45 @@ export default function TaskChatView({
     }
   };
 
+  // チェックポイント評価
+  const handleCheckpoint = async () => {
+    if (isEvaluating) return;
+    setIsEvaluating(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/checkpoint`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.data) {
+          setCheckpointResult(data.data);
+          setShowCheckpointDetail(true);
+          onCheckpointScore?.(data.data.total_score, data.data.can_complete);
+        }
+      }
+    } catch (error) {
+      console.error('チェックポイント評価エラー:', error);
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
+  // スコアの色を取得
+  const getScoreColor = (score: number, max: number = 100) => {
+    const pct = (score / max) * 100;
+    if (pct >= 85) return 'text-green-600';
+    if (pct >= 60) return 'text-amber-600';
+    return 'text-red-500';
+  };
+
+  const getScoreBgColor = (score: number, max: number = 100) => {
+    const pct = (score / max) * 100;
+    if (pct >= 85) return 'bg-green-50 border-green-200';
+    if (pct >= 60) return 'bg-amber-50 border-amber-200';
+    return 'bg-red-50 border-red-200';
+  };
+
   // テキストエリアの自動高さ調整
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
@@ -242,7 +300,117 @@ export default function TaskChatView({
         <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-medium">
           {phaseLabel}フェーズ
         </span>
+        <div className="ml-auto">
+          <button
+            onClick={handleCheckpoint}
+            disabled={isEvaluating || localConversations.length < 2}
+            className={cn(
+              'flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors',
+              checkpointResult
+                ? `${getScoreBgColor(checkpointResult.total_score)} border`
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200',
+              (isEvaluating || localConversations.length < 2) && 'opacity-50 cursor-not-allowed'
+            )}
+            title={localConversations.length < 2 ? 'AIとの会話が必要です' : 'タスク品質をチェック'}
+          >
+            {isEvaluating ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <ClipboardCheck className="w-3 h-3" />
+            )}
+            {checkpointResult ? (
+              <span className={getScoreColor(checkpointResult.total_score)}>{checkpointResult.total_score}点</span>
+            ) : (
+              <span>チェック</span>
+            )}
+          </button>
+        </div>
       </div>
+
+      {/* チェックポイント結果パネル */}
+      {checkpointResult && showCheckpointDetail && (
+        <div className={cn('shrink-0 border-b mx-4 my-2 rounded-lg p-3 border', getScoreBgColor(checkpointResult.total_score))}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <ClipboardCheck className={cn('w-4 h-4', getScoreColor(checkpointResult.total_score))} />
+              <span className={cn('text-lg font-bold', getScoreColor(checkpointResult.total_score))}>
+                {checkpointResult.total_score}点
+              </span>
+              <span className="text-[10px] text-slate-500">/ 100</span>
+              {checkpointResult.can_complete ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">完了可能</span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-600 font-medium">85点以上で完了可能</span>
+              )}
+            </div>
+            <button
+              onClick={() => setShowCheckpointDetail(false)}
+              className="p-0.5 rounded hover:bg-white/50 transition-colors"
+            >
+              <ChevronUp className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          </div>
+
+          {/* 5観点の内訳 */}
+          <div className="space-y-1.5 mb-2">
+            {[
+              { key: 'goal_clarity' as const, label: 'ゴール明確度' },
+              { key: 'thinking_depth' as const, label: '思考の深度' },
+              { key: 'proactive_vision' as const, label: '先回り・視座' },
+              { key: 'risk_awareness' as const, label: 'リスク認識' },
+              { key: 'quality_precision' as const, label: '練度・精度' },
+            ].map(({ key, label }) => {
+              const item = checkpointResult.breakdown[key];
+              return (
+                <div key={key} className="flex items-center gap-2">
+                  <span className="text-[11px] text-slate-600 w-24 shrink-0">{label}</span>
+                  <div className="flex-1 h-1.5 bg-white/60 rounded-full overflow-hidden">
+                    <div
+                      className={cn('h-full rounded-full transition-all',
+                        item.score >= 17 ? 'bg-green-500' : item.score >= 12 ? 'bg-amber-500' : 'bg-red-400'
+                      )}
+                      style={{ width: `${(item.score / 20) * 100}%` }}
+                    />
+                  </div>
+                  <span className={cn('text-[11px] font-medium w-8 text-right', getScoreColor(item.score, 20))}>
+                    {item.score}
+                  </span>
+                  <span className="text-[10px] text-slate-500 flex-1 min-w-0 truncate">{item.comment}</span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* フィードバック */}
+          <p className="text-[11px] text-slate-700 leading-relaxed mb-1.5">{checkpointResult.overall_feedback}</p>
+
+          {/* 改善ヒント */}
+          {checkpointResult.improvement_hints.length > 0 && (
+            <div className="space-y-0.5">
+              {checkpointResult.improvement_hints.map((hint, i) => (
+                <p key={i} className="text-[10px] text-slate-500">💡 {hint}</p>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 折りたたみ時のスコアバー */}
+      {checkpointResult && !showCheckpointDetail && (
+        <button
+          onClick={() => setShowCheckpointDetail(true)}
+          className={cn('shrink-0 mx-4 mt-2 flex items-center gap-2 px-3 py-1.5 rounded-lg border text-left transition-colors hover:opacity-80', getScoreBgColor(checkpointResult.total_score))}
+        >
+          <ClipboardCheck className={cn('w-3.5 h-3.5', getScoreColor(checkpointResult.total_score))} />
+          <span className={cn('text-sm font-bold', getScoreColor(checkpointResult.total_score))}>{checkpointResult.total_score}点</span>
+          {checkpointResult.can_complete ? (
+            <span className="text-[10px] text-green-600">完了可能</span>
+          ) : (
+            <span className="text-[10px] text-red-500">85点以上で完了可能</span>
+          )}
+          <ChevronDown className="w-3 h-3 text-slate-400 ml-auto" />
+        </button>
+      )}
 
       {/* メッセージ一覧 */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
