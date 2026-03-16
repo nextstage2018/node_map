@@ -181,17 +181,9 @@ AI解析の改修イメージ:
 | メンバー | チャネル登録＋メンバー管理を統合。チャネルからメンバー自動取り込み対応 | project_channels, project_members, contact_persons, contact_channels |
 | 関連資料 | ドキュメント・スプレッドシートURL一覧。タグ検索対応 | drive_documents |
 
-### リダイレクトページ
+### リダイレクトページ（v9.0クリーンアップで全削除済み）
 
-| 旧URL | リダイレクト先 |
-|---|---|
-| /thought-map | / |
-| /jobs | / |
-| /memos | / |
-| /master | /settings |
-| /contacts | / |
-| /business-log | / |
-| /agent | / |
+旧URL（/thought-map, /jobs, /memos, /master, /contacts, /business-log, /agent, /seeds, /nodemap）のリダイレクトページは削除済み。直アクセス時は404になる。
 
 ---
 
@@ -254,7 +246,7 @@ AI解析の改修イメージ:
 | `drive_folders` | Driveフォルダ | UUID | v3.3新構造: 組織/PJ/（ジョブ\|会議議事録\|MS）/タスク。L1-L2は作成時自動生成、L3以降は動的生成 |
 | `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。milestone_id, job_id 追加済み。タグ検索対応 |
 | `thought_snapshots` | スナップショット | UUID | initial_goal / final_landing |
-| `secretary_conversations` | 秘書会話 | UUID | AIコンテキスト用（UI復元なし） |
+| ~~`secretary_conversations`~~ | ~~秘書会話~~ **DROP済み（v9.0）** | - | - |
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
 | `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
@@ -278,8 +270,7 @@ AI解析の改修イメージ:
 ## ~~秘書AI — 44 Intent~~（v9.0で廃止）
 
 > **v9.0でAIチャット秘書を廃止し、3カード型ダッシュボードに置き換え。**
-> 以下のintent分類・`classifyIntent()`・`/api/agent/chat`・`SecretaryChat.tsx`・`secretary_conversations`テーブルは全て**レガシー**。
-> コードは残存しているが、ホーム画面（`/`）からは参照されていない。次回クリーンアップ対象。
+> v9.0クリーンアップで以下を全削除済み: `SecretaryChat.tsx`・`WelcomeDashboard.tsx`・`ChatCards.tsx`・`QuickActions.tsx`・`/api/agent/chat`・`/api/agent/conversations`・`secretary_conversations`テーブル（DROP済み）。
 
 ---
 
@@ -381,7 +372,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 
 | # | エンドポイント | 用途 | 主なデータソース | Max Tokens |
 |---|---|---|---|---|
-| 1 | `/api/agent/chat` | 秘書チャット | inbox, tasks, jobs, calendar, contacts | 2000 |
+| ~~1~~ | ~~`/api/agent/chat`~~ | ~~秘書チャット~~ **削除済み（v9.0）** | - | - |
 | 2 | `/api/tasks/chat` | タスクAI会話 | tasks, task_conversations, projects | 1500 |
 | 3 | `/api/ai/draft-reply` | 返信下書き | contact_persons, inbox_messages, calendar | 1000 |
 | 4 | `/api/ai/structure-job` | ジョブ構造化 | calendar, user_metadata, inbox_messages | 256-1024 |
@@ -402,7 +393,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 
 | エンドポイント | 用途 | トリガー |
 |---|---|---|
-| `/api/webhooks/meetgeek` | ~~MeetGeek会議録自動取り込み~~ **v7.0で廃止（即時200返却）** | MeetGeek会議完了時 |
+| ~~`/api/webhooks/meetgeek`~~ | **削除済み（v7.0→v9.0クリーンアップ）** | - |
 | `/api/webhooks/slack/events` | Slack メンション応答 + タスク作成 + リアクション | Slack Events API（app_mention, message, reaction_added） |
 | `/api/webhooks/chatwork/events` | Chatwork メンション応答 + タスク作成 + タスク完了 | Chatwork Webhook（mention_to_me, message_created） |
 
@@ -1669,18 +1660,17 @@ Phase 4: アジェンダ強化
 - 期限残り日数表示（「3日超過」「今日」「2日後」）
 - タスク詳細へのリンク（`/tasks?taskId=X`）
 
-### 廃止されたもの
+### 廃止・削除済み（v9.0クリーンアップ完了）
 
-| 項目 | 状態 | 備考 |
-|---|---|---|
-| SecretaryChat.tsx | コード残存・未参照 | 次回クリーンアップで削除可 |
-| WelcomeDashboard.tsx | コード残存・未参照 | 同上 |
-| ChatCards.tsx / QuickActions.tsx | コード残存・未参照 | 同上 |
-| /api/agent/chat | コード残存・未参照 | 同上 |
-| /api/agent/conversations | コード残存・未参照 | 同上 |
-| secretary_conversations テーブル | データ残存 | テーブル削除検討 |
-| 44 intent分類 | コード残存・未参照 | classifyIntent()含む |
-| URLパラメータコンテキスト注入 | 廃止 | page.tsxから除去済み |
+| 項目 | 状態 |
+|---|---|
+| SecretaryChat.tsx / WelcomeDashboard.tsx / ChatCards.tsx / QuickActions.tsx | **削除済み** |
+| /api/agent/chat / /api/agent/conversations | **削除済み** |
+| secretary_conversations テーブル | **DROP済み** |
+| /api/webhooks/meetgeek | **削除済み** |
+| リダイレクトページ（/agent, /jobs, /memos等 9ページ） | **削除済み** |
+| 44 intent分類（classifyIntent） | agent/chat と共に削除済み |
+| URLパラメータコンテキスト注入 | page.tsxから除去済み |
 
 ### 新規ファイル
 
