@@ -5,7 +5,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 
-// GET: 指定コンタクトに関連するbusiness_events・unified_messagesを時系列で返す
+// GET: 指定コンタクトに関連するbusiness_events・inbox_messagesを時系列で返す
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -50,7 +50,7 @@ export async function GET(
     let messages: { id: string; subject: string; body: string; channel: string; from_address: string; timestamp: string }[] = [];
     if (addresses.length > 0) {
       const { data: msgs, error: msgsError } = await supabase
-        .from('unified_messages')
+        .from('inbox_messages')
         .select('id, subject, body, channel, from_address, timestamp')
         .eq('user_id', userId)
         .in('from_address', addresses)

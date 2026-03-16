@@ -3,7 +3,7 @@
 最終更新: 2026-03-16
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) + v9.0 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -129,35 +129,26 @@ AI解析の改修イメージ:
                  ＋ 進行中タスク一覧（既存tasksから）
 ```
 
-### 秘書コンテキスト自動注入
+### ~~秘書コンテキスト自動注入~~（v9.0で廃止）
 
-秘書（ホーム画面）はURLパラメータでコンテキストを受け取る。プロジェクト詳細画面からの遷移時に自動付与。
+> v9.0でAIチャット秘書を廃止。URLパラメータによるコンテキスト注入、秘書選択UI、v3.2チャットUI改善は全てレガシー。
 
-```
-/?projectId=xxx&taskId=yyy&message=テキスト
-```
+### v9.0: ダッシュボード（3カード構成）
 
-対応パラメータ: `projectId`, `taskId`, `organizationId`, `messageId`, `contactId`, `message`
+ホーム画面（`/`）を3カード型ダッシュボードに完全置き換え。
 
-### 秘書選択UI
-
-テキスト入力だけでなく、カード型選択UIで操作を簡素化。
-
-| カード種別 | 用途 |
-|---|---|
-| `action_selector` | プロジェクトコンテキスト時のアクション選択 |
-| `project_selector` | プロジェクト未指定時のPJ選択 |
-| `milestone_selector` | タスク作成時のMS選択 |
-
-### v3.2: 秘書チャットUI改善
-
-| 機能 | 実装 | 備考 |
+| カード | コンポーネント | 主な機能 |
 |---|---|---|
-| **テキスト構造化表示** | `formatAssistantMessage()` in SecretaryChat.tsx | 【】見出し、箇条書き、**太字**、番号リストをリッチ表示。`#`マークダウン見出しは**未対応**（残課題） |
-| **動的選択肢（suggestions）** | APIレスポンスに`suggestions[]`追加 | intentに応じた次のアクション候補。入力エリア上に青いチップボタンで表示 |
-| **マイルストーン開閉式カード** | `milestone_overview`カードタイプ | プロジェクト単位グルーピング → 開閉 → MS期日・タスク件数・進捗バー・超過日数 |
-| **タスクカード安全化** | TaskProgressCard / TaskResumeCard | `sendMessage`ループ除去。プロジェクトリンク or チャット入力プリセットに変更 |
-| **カレンダー primaryのみ** | `getAllCalendarEvents` | 他人のカレンダーを除外。primaryのみ取得 |
+| インボックス返信 | `InboxReplyCard.tsx` | 未読一覧 → 詳細 → AI返信生成 → 確認 → 返信送信 |
+| カレンダー | `CalendarWidget.tsx` | 月カレンダー + 予定一覧 + 予定新規作成 |
+| タスクリマインダー | `TaskReminderCard.tsx` | 超過/今日/今週フィルタ。担当者別グルーピング |
+
+```
+使用API（新規バックエンド不要、既存を活用）:
+  インボックス: GET /api/messages, POST /api/messages/read, POST /api/ai/draft-reply, POST /api/messages/reply
+  カレンダー: GET /api/calendar?mode=range, POST /api/calendar
+  タスク: GET /api/tasks/my?limit=50
+```
 
 ---
 
@@ -167,7 +158,7 @@ AI解析の改修イメージ:
 
 | 画面 | URL | 主なテーブル |
 |---|---|---|
-| 秘書 | / | secretary_conversations, inbox_messages, tasks |
+| ホーム（ダッシュボード） | / | inbox_messages, tasks, calendar（3カード: インボックス返信 / カレンダー / タスクリマインダー） |
 | インボックス | /inbox | inbox_messages |
 | タスク | /tasks | tasks（統合カンバン: PJ選択+担当者フィルタ+日付フィルタ） |
 | 組織・プロジェクト | /organizations | organizations, projects, business_events |
@@ -244,7 +235,7 @@ AI解析の改修イメージ:
 |---|---|---|---|
 | `contact_persons` | コンタクト本体 | TEXT | 手動生成。linked_user_id でアカウント紐づけ |
 | `contact_channels` | 連絡先 | UUID | UNIQUE(contact_id, channel, address) |
-| `inbox_messages` | メッセージ（受信+送信） | TEXT | **user_idカラムなし**。directionで区別 |
+| `inbox_messages` | メッセージ（受信+送信） | TEXT | user_id TEXT NOT NULL。directionで区別 |
 | `organizations` | 組織 | UUID | domain重複チェック |
 | `organization_channels` | 組織チャネル | UUID | UNIQUE(org_id, service_name, channel_id) |
 | `projects` | プロジェクト | UUID | organization_id で組織に紐づく |
@@ -284,58 +275,11 @@ AI解析の改修イメージ:
 
 ---
 
-## 秘書AI — 44 Intent
+## ~~秘書AI — 44 Intent~~（v9.0で廃止）
 
-キーワードベース意図分類（< 10ms）で高速判定。優先度順に評価。
-
-**⚠️ V2 intent（#40〜44）は classifyIntent() 内で #29 create_project より前に配置すること**
-
-| # | Intent | 用途 |
-|---|---|---|
-| 1 | `briefing` | 今日の状況・ブリーフィング |
-| 2 | `inbox` | メッセージ一覧 |
-| 3 | `message_detail` | 特定メッセージ詳細 |
-| 4 | `reply_draft` | 返信下書き生成 |
-| 5 | `create_job` | ジョブ作成（AIに任せる） |
-| 6 | `calendar` | カレンダー・予定確認 |
-| 7 | `schedule` | 日程調整・空き時間 |
-| 8 | `tasks` | タスク状況 |
-| 9 | `jobs` | ジョブ・対応必要 |
-| 10 | `projects` | プロジェクト一覧 |
-| 11 | `documents` | ドキュメント・ファイル一覧 |
-| 12 | `file_intake` | ファイル確認・承認フロー |
-| 13 | `store_file` | ファイル格納指示 |
-| 14 | `share_file` | ファイル共有 |
-| 15 | `thought_map` | 思考マップ |
-| 16 | `business_log` | ビジネスログ |
-| 17 | `business_summary` | 活動要約・週間レポート |
-| 18 | `create_business_event` | → `upload_meeting_record` にリダイレクト（手動登録廃止） |
-| 19 | `knowledge_structuring` | ナレッジ構造化提案 |
-| 20 | `create_calendar_event` | カレンダー予定作成 |
-| 21 | `create_drive_folder` | Driveフォルダ作成 |
-| 22 | `create_task` | タスク作成 |
-| 23 | `task_progress` | タスク進行（AIに相談） |
-| 24 | `pattern_analysis` | 傾向分析 |
-| 25 | `knowledge_reuse` | 過去知見の再利用 |
-| 26 | `setup_organization` | 組織セットアップ |
-| 27 | `create_contact` | コンタクト作成 |
-| 28 | `create_organization` | 組織作成（手動） |
-| 29 | `create_project` | プロジェクト作成 |
-| 30 | `search_contact` | コンタクト検索 |
-| 31 | `task_negotiation` | タスク修正提案・調整 |
-| 32 | `consultations` | 社内相談確認 |
-| 33 | `link_channel` | チャンネル→PJ紐づけ |
-| 34 | `task_external_resource` | タスクに外部資料を取り込み |
-| 35 | `knowledge_nodes` | 期間別ナレッジノード表示 |
-| 36 | `settings_change` | 設定変更 |
-| 37 | `org_projects` | 特定組織のPJ一覧 |
-| 38 | `project_tasks` | 特定PJのタスク一覧 |
-| 39 | `general` | その他 |
-| 40 | `upload_meeting_record` | 会議録アップロード・AI解析 |
-| 41 | `milestone_status` | マイルストーン状況確認 |
-| 42 | `decision_tree` | 検討ツリー表示・更新 |
-| 43 | `checkpoint_evaluation` | チェックポイント評価実行 |
-| 44 | `create_milestone` | マイルストーン作成 |
+> **v9.0でAIチャット秘書を廃止し、3カード型ダッシュボードに置き換え。**
+> 以下のintent分類・`classifyIntent()`・`/api/agent/chat`・`SecretaryChat.tsx`・`secretary_conversations`テーブルは全て**レガシー**。
+> コードは残存しているが、ホーム画面（`/`）からは参照されていない。次回クリーンアップ対象。
 
 ---
 
@@ -579,7 +523,8 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - メール署名: メールのみ自動付与（Slack/CWは付与しない）
 - AI文体学習: `getUserWritingStyle()` で過去送信10件を参照
 - パーソナライズ: `buildPersonalizedContext()` で性格タイプ・思考傾向・オーナー方針を注入
-- 秘書会話はUI復元しない（毎回ダッシュボード表示。DBはAIコンテキスト用のみ）
+- **v9.0 ダッシュボード**: ホーム画面は3カード構成（InboxReplyCard / CalendarWidget / TaskReminderCard）。旧秘書AIチャットは廃止
+- **v9.0 サイドバー**: アイコンは `LayoutDashboard`、ラベルは「ホーム」（旧: Bot / 秘書）
 - **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task（テーマは廃止）
 - **タスク vs 定期イベント（旧ジョブ）**: タスク＝思考を伴う作業（MS配下任意）、定期イベント＝定期MTG or 定期作業（PJ配下。カレンダー連携・議事録自動取得対応）
 - **3つのログ**: ビジネスログ（事実）/ 検討ツリー（意思決定）/ 思考ログ（個人の思考経路）
@@ -593,7 +538,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **Gemini会議メモ自動取り込み（v6.0→v7.0改善）**: Cron（`sync-meeting-notes`）が48時間以内のGoogle Meetイベントをスキャン → 添付 or Drive検索でGemini Docs検出 → Docs APIでテキスト取得 → **Claude AI解析**（v7.0で全source_type統一） → meeting_records + パイプライン実行（検討ツリー生成＋チャネル通知含む）
 - **カレンダー**: `getAllCalendarEvents` はprimaryカレンダーのみ取得
 - **タスクカード**: TaskProgressCard / TaskResumeCard は安全化済み。`/tasks`ページは統合カンバンボード（v5.0）
-- **秘書チャットUI**: `formatAssistantMessage()`でリッチ表示。`suggestions`（動的選択肢）対応
+- **~~秘書チャットUI~~**: v9.0で廃止。`formatAssistantMessage()`・`suggestions` はレガシーコード
 - **メンバーフォールバック廃止**: project_membersが空でも組織メンバーを返さない。チャネル自動取り込みが正規フロー
 - **メンバー検出2経路**: Slackチャネルは `conversations.members` APIで直接取得（メッセージ不要）。Chatwork/Emailは `inbox_messages` から送信者検出。`getChannelMembers()` in `slackClient.service.ts`
 - **v3.4 未確定事項**: open_issues テーブルで管理。AI解析で自動検出→自動クローズ。21日以上放置で `stale`
@@ -1051,6 +996,7 @@ v6.0 Gemini会議メモ連携           ← 実装済み
 v7.0 会議録チャネル自動共有 + MeetGeek廃止 ← 実装済み
 v7.1 タスクAI強化（画像認識・フィードバック学習・ディープリサーチ提案）← 実装済み
 v8.0 構造再設計（テーマ廃止・MS週次サイクル・定期イベント・プロジェクトログDoc）← Phase 1-3 実装済み
+v9.0 秘書ダッシュボード化（AIチャット廃止→3カード: インボックス/カレンダー/タスクリマインダー）← 実装済み
 ```
 
 ---
@@ -1677,3 +1623,77 @@ Phase 4: アジェンダ強化
 - **⚠️ 参加者の表示条件**: RecurringRulesManagerの参加者選択は `contact_channels` にemail登録済みのメンバーのみ表示。未登録メンバーはメンバータブでメール追加が必要
 - **⚠️ members API にemail追加済み**: `GET /api/projects/[id]/members` が `contact_channels`(email) から各メンバーのメールアドレスを取得して `email` フィールドで返す
 - **⚠️ タスクページ2タブ構成**: 「タスク一覧」（カンバン）+ 「マイルストーン」（展開式カード+ネストタスク）。`include_tasks=true` パラメータでMS配下タスクを一括取得
+
+---
+
+## v9.0 秘書ダッシュボード化（実装済み）
+
+### 概要
+
+ホーム画面（`/`）をAIチャット秘書（44 intent）から3カード型ダッシュボードに完全置き換え。会議録サイクルが確立したため、秘書チャットの多機能は不要になった。
+
+### 設計思想
+
+```
+【旧（v8.0以前）】
+  / → SecretaryChat.tsx（44 intent AIチャット）
+  URLパラメータでコンテキスト注入、カード型選択UI、会話履歴
+
+【新（v9.0）】
+  / → SecretaryDashboard.tsx（3カード）
+  インボックス返信 / カレンダー / タスクリマインダー
+  シンプル・高速・直接操作
+```
+
+### 3カード構成
+
+**カード1: インボックス返信（InboxReplyCard.tsx）**
+- 3段階フロー: リスト表示 → 詳細表示 → 返信編集・送信
+- 未読メッセージをフィルタ表示（最大10件）
+- チャネルアイコン: Slack=紫S、Chatwork=オレンジC、Email=Mailアイコン
+- AI返信生成（`/api/ai/draft-reply`）→ 編集 → 送信（`/api/messages/reply`）
+- 既読マーク（`/api/messages/read`）は詳細表示時に自動実行
+
+**カード2: カレンダー（CalendarWidget.tsx）**
+- 月カレンダーグリッド（7×6セル）
+- 日付選択 → その日の予定一覧表示
+- イベントドット表示（最大3個/日）
+- 予定新規作成フォーム（タイトル・日付・開始/終了時刻）
+- Google Calendar未連携時のフォールバック表示
+- タイムゾーン: `+09:00`（JST）明示
+
+**カード3: タスクリマインダー（TaskReminderCard.tsx）**
+- 3フィルタ: 超過（赤）/ 今日（黄）/ 今週（青）+ カウントバッジ
+- 担当者別グルーピング（`assignee_name` → フォールバック「自分」）
+- 優先度ドット（高=赤、中=黄、低=灰）
+- 期限残り日数表示（「3日超過」「今日」「2日後」）
+- タスク詳細へのリンク（`/tasks?taskId=X`）
+
+### 廃止されたもの
+
+| 項目 | 状態 | 備考 |
+|---|---|---|
+| SecretaryChat.tsx | コード残存・未参照 | 次回クリーンアップで削除可 |
+| WelcomeDashboard.tsx | コード残存・未参照 | 同上 |
+| ChatCards.tsx / QuickActions.tsx | コード残存・未参照 | 同上 |
+| /api/agent/chat | コード残存・未参照 | 同上 |
+| /api/agent/conversations | コード残存・未参照 | 同上 |
+| secretary_conversations テーブル | データ残存 | テーブル削除検討 |
+| 44 intent分類 | コード残存・未参照 | classifyIntent()含む |
+| URLパラメータコンテキスト注入 | 廃止 | page.tsxから除去済み |
+
+### 新規ファイル
+
+| ファイル | 用途 |
+|---|---|
+| `src/components/secretary/SecretaryDashboard.tsx` | ダッシュボード本体（3カードグリッド） |
+| `src/components/secretary/InboxReplyCard.tsx` | インボックス返信カード |
+| `src/components/secretary/CalendarWidget.tsx` | カレンダーウィジェット |
+| `src/components/secretary/TaskReminderCard.tsx` | タスクリマインダーカード |
+
+### 修正ファイル
+
+| ファイル | 変更内容 |
+|---|---|
+| `src/app/page.tsx` | SecretaryChat → SecretaryDashboard に置き換え。URLパラメータ処理を全削除 |
+| `src/components/shared/AppSidebar.tsx` | アイコン: Bot → LayoutDashboard、ラベル: 秘書 → ホーム |
