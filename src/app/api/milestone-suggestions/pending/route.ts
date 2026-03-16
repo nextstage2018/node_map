@@ -1,4 +1,5 @@
-// v8.0: マイルストーン提案取得API（pending状態のもの）
+// v8.0: 自動登録マイルストーン取得API
+// auto_generated=true のマイルストーンを返す（MS提案は自動承認に変更済み）
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -27,11 +28,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'DB接続エラー' }, { status: 500 });
     }
 
+    // 自動登録されたマイルストーン（直近30日、pendingのもの）を取得
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
     const { data, error } = await supabase
-      .from('milestone_suggestions')
-      .select('*')
+      .from('milestones')
+      .select('id, project_id, title, description, success_criteria, due_date, status, auto_generated, source_meeting_record_id, created_at')
       .eq('project_id', projectId)
-      .eq('status', 'pending')
+      .eq('auto_generated', true)
+      .in('status', ['pending', 'in_progress'])
+      .gte('created_at', thirtyDaysAgo.toISOString())
       .order('created_at', { ascending: false });
 
     if (error) {

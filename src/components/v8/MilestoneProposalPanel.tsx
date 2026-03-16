@@ -1,21 +1,20 @@
-// v8.0: マイルストーン提案パネル（検討ツリータブに配置）
-// 会議録AI解析から自動抽出されたMS提案を承認/編集/却下するUI
+// v8.0: 自動登録マイルストーン管理パネル（検討ツリータブに配置）
+// 会議録AI解析から自動登録されたMSを編集/削除するUI
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Flag, Check, X, ChevronDown, ChevronRight, Loader2, Sparkles, ExternalLink } from 'lucide-react';
+import { Flag, ChevronDown, ChevronRight, Loader2, Sparkles, Trash2 } from 'lucide-react';
 
-interface MilestoneSuggestion {
+interface AutoMilestone {
   id: string;
   project_id: string;
-  meeting_record_id: string | null;
   title: string;
   description: string | null;
   success_criteria: string | null;
-  target_date: string | null;
-  priority: string;
-  related_task_titles: string[];
+  due_date: string | null;
   status: string;
+  auto_generated: boolean;
+  source_meeting_record_id: string | null;
   created_at: string;
 }
 
@@ -30,50 +29,60 @@ export default function MilestoneProposalPanel({
   refreshKey = 0,
   onAccepted,
 }: MilestoneProposalPanelProps) {
-  const [suggestions, setSuggestions] = useState<MilestoneSuggestion[]>([]);
+  const [milestones, setMilestones] = useState<AutoMilestone[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editData, setEditData] = useState<Partial<MilestoneSuggestion>>({});
+  const [editData, setEditData] = useState<Partial<AutoMilestone>>({});
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  const fetchSuggestions = useCallback(async () => {
+  const fetchMilestones = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await fetch(`/api/milestone-suggestions/pending?project_id=${projectId}`);
       const data = await res.json();
       if (data.success) {
-        setSuggestions(data.data || []);
+        setMilestones(data.data || []);
       }
     } catch { /* ignore */ }
     finally { setIsLoading(false); }
   }, [projectId]);
 
   useEffect(() => {
-    fetchSuggestions();
-  }, [fetchSuggestions, refreshKey]);
+    fetchMilestones();
+  }, [fetchMilestones, refreshKey]);
 
-  // 承認
-  const handleAccept = async (suggestion: MilestoneSuggestion) => {
-    setProcessingId(suggestion.id);
+  // 編集保存
+  const handleSave = async (milestone: AutoMilestone) => {
+    setProcessingId(milestone.id);
     try {
-      const body: Record<string, unknown> = { status: 'accepted' };
-      // 編集中のデータがあれば送信
-      if (editingId === suggestion.id && editData) {
-        if (editData.title) body.title = editData.title;
-        if (editData.target_date) body.target_date = editData.target_date;
-        if (editData.description !== undefined) body.description = editData.description;
-        if (editData.success_criteria !== undefined) body.success_criteria = editData.success_criteria;
-      }
+      const body: Record<string, unknown> = {};
+      if (editData.title) body.title = editData.title;
+      if (editData.due_date !== undefined) body.target_date = editData.due_date;
+      if (editData.description !== undefined) body.description = editData.description;
+      if (editData.success_criteria !== undefined) body.success_criteria = editData.success_criteria;
 
-      const res = await fetch(`/api/milestone-suggestions/${suggestion.id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/milestones/${milestone.id}`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
-        setSuggestions((prev) => prev.filter((s) => s.id !== suggestion.id));
+        // ローカル更新
+        setMilestones((prev) =>
+          prev.map((m) =>
+            m.id === milestone.id
+              ? {
+                  ...m,
+                  title: (editData.title ?? m.title),
+                  description: (editData.description ?? m.description),
+                  success_criteria: (editData.success_criteria ?? m.success_criteria),
+                  due_date: (editData.due_date ?? m.due_date),
+                }
+              : m
+          )
+        );
         setEditingId(null);
         setEditData({});
         onAccepted?.();
@@ -82,35 +91,35 @@ export default function MilestoneProposalPanel({
     finally { setProcessingId(null); }
   };
 
-  // 却下
-  const handleDismiss = async (id: string) => {
+  // 削除
+  const handleDelete = async (id: string) => {
+    if (!confirm('このマイルストーンを削除しますか？')) return;
     setProcessingId(id);
     try {
-      const res = await fetch(`/api/milestone-suggestions/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'dismissed' }),
+      const res = await fetch(`/api/milestones/${id}`, {
+        method: 'DELETE',
       });
       const data = await res.json();
       if (data.success) {
-        setSuggestions((prev) => prev.filter((s) => s.id !== id));
+        setMilestones((prev) => prev.filter((m) => m.id !== id));
+        onAccepted?.();
       }
     } catch { /* ignore */ }
     finally { setProcessingId(null); }
   };
 
   // 表示なし
-  if (!isLoading && suggestions.length === 0) return null;
+  if (!isLoading && milestones.length === 0) return null;
 
   return (
     <div className="mb-4">
       <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-t-lg border border-blue-200">
         <Sparkles className="w-4 h-4 text-blue-500" />
         <span className="text-xs font-medium text-blue-700">
-          マイルストーン提案
+          自動登録マイルストーン
         </span>
         <span className="text-[10px] text-blue-400 ml-auto">
-          {suggestions.length}件
+          {milestones.length}件
         </span>
       </div>
 
@@ -120,26 +129,26 @@ export default function MilestoneProposalPanel({
         </div>
       ) : (
         <div className="border-x border-b border-blue-200 rounded-b-lg divide-y divide-blue-100">
-          {suggestions.map((suggestion) => {
-            const isExpanded = expandedId === suggestion.id;
-            const isEditing = editingId === suggestion.id;
-            const isProcessing = processingId === suggestion.id;
+          {milestones.map((milestone) => {
+            const isExpanded = expandedId === milestone.id;
+            const isEditing = editingId === milestone.id;
+            const isProcessing = processingId === milestone.id;
 
             return (
-              <div key={suggestion.id} className="px-3 py-2.5">
+              <div key={milestone.id} className="px-3 py-2.5">
                 {/* メイン行 */}
                 <div className="flex items-start gap-2">
                   <Flag className="w-3.5 h-3.5 text-blue-500 mt-0.5 shrink-0" />
 
                   <div className="flex-1 min-w-0">
-                    {/* 編集モード: 全フィールド表示 */}
+                    {/* 編集モード */}
                     {isEditing ? (
                       <div className="space-y-2">
                         <div>
                           <label className="block text-[10px] text-slate-500 mb-0.5">タイトル</label>
                           <input
                             type="text"
-                            value={editData.title ?? suggestion.title}
+                            value={editData.title ?? milestone.title}
                             onChange={(e) => setEditData({ ...editData, title: e.target.value })}
                             className="w-full text-xs font-medium border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
@@ -147,7 +156,7 @@ export default function MilestoneProposalPanel({
                         <div>
                           <label className="block text-[10px] text-slate-500 mb-0.5">到達条件・ゴール</label>
                           <textarea
-                            value={editData.description ?? suggestion.description ?? ''}
+                            value={editData.description ?? milestone.description ?? ''}
                             onChange={(e) => setEditData({ ...editData, description: e.target.value })}
                             rows={2}
                             className="w-full text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
@@ -157,7 +166,7 @@ export default function MilestoneProposalPanel({
                         <div>
                           <label className="block text-[10px] text-slate-500 mb-0.5">達成条件</label>
                           <textarea
-                            value={editData.success_criteria ?? suggestion.success_criteria ?? ''}
+                            value={editData.success_criteria ?? milestone.success_criteria ?? ''}
                             onChange={(e) => setEditData({ ...editData, success_criteria: e.target.value })}
                             rows={2}
                             className="w-full text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
@@ -168,8 +177,8 @@ export default function MilestoneProposalPanel({
                           <label className="block text-[10px] text-slate-500 mb-0.5">期限</label>
                           <input
                             type="date"
-                            value={editData.target_date ?? suggestion.target_date ?? ''}
-                            onChange={(e) => setEditData({ ...editData, target_date: e.target.value })}
+                            value={editData.due_date ?? milestone.due_date ?? ''}
+                            onChange={(e) => setEditData({ ...editData, due_date: e.target.value })}
                             className="text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
                         </div>
@@ -177,7 +186,7 @@ export default function MilestoneProposalPanel({
                     ) : (
                       <button
                         onClick={() => {
-                          setExpandedId(isExpanded ? null : suggestion.id);
+                          setExpandedId(isExpanded ? null : milestone.id);
                         }}
                         className="flex items-center gap-1 text-xs font-medium text-slate-700 hover:text-blue-600 transition-colors text-left"
                       >
@@ -186,25 +195,23 @@ export default function MilestoneProposalPanel({
                         ) : (
                           <ChevronRight className="w-3 h-3 shrink-0" />
                         )}
-                        {suggestion.title}
+                        {milestone.title}
                       </button>
                     )}
 
                     {/* メタ情報（非編集時のみ） */}
                     {!isEditing && (
                       <div className="flex items-center gap-2 mt-1">
-                        {suggestion.target_date && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                          AI自動登録
+                        </span>
+                        {milestone.due_date && (
                           <span className="text-[10px] text-slate-400">
-                            期限: {new Date(suggestion.target_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                            期限: {new Date(milestone.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                           </span>
                         )}
-                        {suggestion.priority === 'high' && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-50 text-red-600">高</span>
-                        )}
-                        {suggestion.related_task_titles?.length > 0 && (
-                          <span className="text-[10px] text-slate-400">
-                            関連タスク: {suggestion.related_task_titles.length}件
-                          </span>
+                        {milestone.status === 'in_progress' && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-green-50 text-green-600">進行中</span>
                         )}
                       </div>
                     )}
@@ -212,33 +219,13 @@ export default function MilestoneProposalPanel({
                     {/* 展開時の詳細 */}
                     {isExpanded && !isEditing && (
                       <div className="mt-2 pl-1 space-y-1.5">
-                        {suggestion.description && (
-                          <p className="text-[11px] text-slate-500">{suggestion.description}</p>
+                        {milestone.description && (
+                          <p className="text-[11px] text-slate-500">{milestone.description}</p>
                         )}
-                        {suggestion.success_criteria && (
+                        {milestone.success_criteria && (
                           <div className="text-[11px]">
                             <span className="font-medium text-slate-600">達成条件: </span>
-                            <span className="text-slate-500">{suggestion.success_criteria}</span>
-                          </div>
-                        )}
-                        {suggestion.related_task_titles?.length > 0 && (
-                          <div className="text-[11px]">
-                            <span className="font-medium text-slate-600">関連タスク: </span>
-                            <ul className="mt-0.5 space-y-0.5">
-                              {suggestion.related_task_titles.map((title, idx) => (
-                                <li key={idx} className="flex items-center gap-1 text-slate-500">
-                                  <span>・{title}</span>
-                                  <a
-                                    href={`/tasks?search=${encodeURIComponent(title)}`}
-                                    className="text-blue-500 hover:text-blue-700"
-                                    title="タスクページで確認"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <ExternalLink className="w-3 h-3" />
-                                  </a>
-                                </li>
-                              ))}
-                            </ul>
+                            <span className="text-slate-500">{milestone.success_criteria}</span>
                           </div>
                         )}
                       </div>
@@ -250,11 +237,11 @@ export default function MilestoneProposalPanel({
                     {isEditing ? (
                       <>
                         <button
-                          onClick={() => handleAccept(suggestion)}
+                          onClick={() => handleSave(milestone)}
                           disabled={isProcessing}
                           className="px-2 py-1 text-[10px] font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 transition-colors"
                         >
-                          {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : '承認'}
+                          {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : '保存'}
                         </button>
                         <button
                           onClick={() => { setEditingId(null); setEditData({}); }}
@@ -267,41 +254,33 @@ export default function MilestoneProposalPanel({
                       <>
                         <button
                           onClick={() => {
-                            setEditingId(suggestion.id);
+                            setEditingId(milestone.id);
                             setEditData({
-                              title: suggestion.title,
-                              target_date: suggestion.target_date,
-                              description: suggestion.description,
-                              success_criteria: suggestion.success_criteria,
+                              title: milestone.title,
+                              due_date: milestone.due_date,
+                              description: milestone.description,
+                              success_criteria: milestone.success_criteria,
                             });
                             setExpandedId(null);
                           }}
                           className="p-1 text-slate-400 hover:text-blue-500 transition-colors"
-                          title="編集して承認"
+                          title="編集"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                           </svg>
                         </button>
                         <button
-                          onClick={() => handleAccept(suggestion)}
+                          onClick={() => handleDelete(milestone.id)}
                           disabled={isProcessing}
-                          className="p-1 text-green-500 hover:text-green-700 disabled:opacity-50 transition-colors"
-                          title="承認"
+                          className="p-1 text-slate-300 hover:text-red-500 disabled:opacity-50 transition-colors"
+                          title="削除"
                         >
                           {isProcessing ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
-                            <Check className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           )}
-                        </button>
-                        <button
-                          onClick={() => handleDismiss(suggestion.id)}
-                          disabled={isProcessing}
-                          className="p-1 text-slate-300 hover:text-red-500 disabled:opacity-50 transition-colors"
-                          title="却下"
-                        >
-                          <X className="w-3.5 h-3.5" />
                         </button>
                       </>
                     )}

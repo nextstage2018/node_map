@@ -280,7 +280,7 @@ AI解析の改修イメージ:
 | `decision_log` | 意思決定ログ | UUID | project_id必須。previous_decision_idで変更チェーン。**status CHECK: active/superseded/reverted/on_hold**。implementation_status別管理 |
 | `meeting_agenda` | 会議アジェンダ | UUID | project_id必須。items JSONB配列。**status CHECK: draft/confirmed/completed**。UNIQUE(project_id, meeting_date)。自動生成→確認→完了のライフサイクル |
 | `boss_feedback_learnings` | 上長フィードバック学習 | UUID | project_id必須。会議録AI解析で上長の指摘事項を自動抽出。タスクAI会話に注入して判断基準の差を縮める |
-| `milestone_suggestions` | MS提案 | UUID | v8.0: 会議録AI解析から自動抽出。検討ツリータブで承認/却下。pending/accepted/dismissed |
+| `milestone_suggestions` | MS提案 | UUID | v8.0: 会議録AI解析から自動抽出→自動承認→milestones即登録。検討ツリータブで編集/削除のみ |
 
 ---
 
@@ -588,6 +588,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - **ナレッジはバックエンド基盤**: 専用UIなし。会議録・メッセージから自動抽出され、AIが内部で自動参照
 - **対称データパイプライン**: 会議録(A-1)とチャネルメッセージ(A-2)から business_events / decision_trees / knowledge が対称的に自動生成
 - **タスク提案（v5.0改善済み）**: 会議録AI解析でaction_items抽出（担当者ごとに集約+文脈付き） → task_suggestions → 検討ツリータブで直接承認（秘書経由は廃止）
+- **MS提案（v8.0自動承認）**: 会議録AI解析でmilestone_suggestions抽出→自動承認→milestones即登録（auto_generated=true）。MilestoneProposalPanelは編集/削除のみ
 - **MeetGeek廃止（v7.0）**: Webhookは即時200返却。Gemini会議メモに完全移行済み
 - **Gemini会議メモ自動取り込み（v6.0→v7.0改善）**: Cron（`sync-meeting-notes`）が48時間以内のGoogle Meetイベントをスキャン → 添付 or Drive検索でGemini Docs検出 → Docs APIでテキスト取得 → **Claude AI解析**（v7.0で全source_type統一） → meeting_records + パイプライン実行（検討ツリー生成＋チャネル通知含む）
 - **カレンダー**: `getAllCalendarEvents` はprimaryカレンダーのみ取得
@@ -1533,9 +1534,9 @@ feedback_type:
   ① 前週MSの振り返り（達成/未達）← 会議イベントのdescriptionに自動記載
   ② 今週やることの議論 ← 人間が会議で話す
   ③ 「今週末にどうなっていたいか」← 人間が言語化
-  ④ 会議録AI解析 → ③の発言からMS提案を自動抽出
-  ⑤ 検討ツリータブでMS提案を確認・承認
-  ⑥ 承認されたMSにタスク提案が紐づく
+  ④ 会議録AI解析 → ③の発言からMS自動抽出→milestones即登録（自動承認）
+  ⑤ 検討ツリータブで自動登録MSを確認・任意で編集/削除
+  ⑥ 自動登録されたMSにタスク提案が紐づく
   ⑦ タスク完了時 → MS進捗を自動更新
   ⑧ 週末 → MS達成度判定（評価エージェント）
   ⑨ 未達タスクは次週MSに自動持ち越し
@@ -1547,14 +1548,16 @@ feedback_type:
   - 特定の曜日にハードコードしない
 
 organization.relationship_type による分岐:
-  internal（自社）: MS原則必須。会議録からMS自動提案
+  internal（自社）: MS原則必須。会議録からMS自動登録（即承認）
   client / partner: MS任意。作成しなくてもタスクは動く
 ```
 
 **AI解析プロンプトへの追加**:
-- 会議録AI解析で `milestone_suggestions` を新規抽出
+- 会議録AI解析で `milestone_suggestions` を自動抽出→ **自動承認（milestones即登録）**
 - 「1週間後の理想像」「今週のゴール」「到達点」等の発言を検出
 - 提案形式: `{ title, target_date(1週間後), success_criteria, tasks[] }`
+- 抽出されたMS提案は `milestone_suggestions`（status='accepted'）と `milestones`（auto_generated=true）の両方に同時保存
+- 検討ツリータブのMilestoneProposalPanelでは編集/削除のみ可能（承認/却下ボタンなし）
 
 **タスク完了時のMS進捗更新**:
 - タスクを `done` にした時点で、所属MSの進捗率を再計算
@@ -1620,11 +1623,11 @@ v8.0 追加内容:
 ### 実装フェーズ（優先順）
 
 ```
-Phase 1: テーマ廃止 + MS自動提案
+Phase 1: テーマ廃止 + MS自動登録 ✅
   - UI上のテーマ参照を完全除去
-  - 会議録AI解析に milestone_suggestions 抽出を追加
-  - 検討ツリータブにMS提案パネルを配置
-  - internal PJでは MS提案を強調表示
+  - 会議録AI解析で milestone_suggestions 自動抽出→milestones即登録（自動承認）
+  - 検討ツリータブにMS管理パネルを配置（編集/削除のみ。承認/却下ボタンなし）
+  - internal PJでは MS自動登録を強調表示（「AI自動登録」バッジ）
 
 Phase 2: タスク完了 → MS進捗自動更新
   - タスクステータス変更時にMS進捗率を再計算
@@ -1655,14 +1658,14 @@ Phase 4: アジェンダ強化
 
 - **テーマテーブルは削除しない**: 既存データの参照整合性のため残す。新規作成のみ停止
 - **internal判定**: `organizations.relationship_type = 'internal'` で判定。プロジェクト単位ではなく組織単位
-- **MS提案の承認フロー**: 会議録のタスク提案と同様、検討ツリータブで確認・承認
+- **MS自動承認フロー**: 会議録AI解析で抽出→`milestone_suggestions`(accepted)+`milestones`(auto_generated=true)に同時保存。MilestoneProposalPanelは編集/削除のみ
 - **繰り返しルールのrrule**: iCal RRULE形式。`FREQ=WEEKLY;BYDAY=MO`（毎週月曜）等
 - **カレンダー備考の文字数制限**: Google Calendar descriptionは最大8192文字。アジェンダが超えないよう制御
 - **会議サイクルはハードコードしない**: 月曜固定ではなく `projects.meeting_cycle_day` で曜日を設定可能（デフォルト1=月曜）
 - **アジェンダはプロジェクトログDoc + カレンダーリンク**: Google Docsに事前アジェンダを自動生成し、カレンダーイベントにDocリンクを貼付。カレンダーdescriptionへの直接記載はフォールバック
 - **⚠️ projects テーブル追加カラム**: `meeting_cycle_day` (INTEGER DEFAULT 1) + `meeting_cycle_enabled` (BOOLEAN DEFAULT true) + `log_document_id` (TEXT) + `log_document_url` (TEXT)
 - **⚠️ milestones テーブル追加カラム**: `source_meeting_record_id` (UUID REFERENCES meeting_records) + `auto_generated` (BOOLEAN DEFAULT false)
-- **⚠️ milestone_suggestions テーブル新設**: task_suggestionsと同様の構造。pending/accepted/dismissed のステータス管理
+- **⚠️ milestone_suggestions テーブル**: task_suggestionsと同様の構造。自動承認のため常にaccepted。milestones テーブルに同時INSERTされる
 - **⚠️ プロジェクトログDoc**: 1プロジェクト＝1 Google Docsドキュメント（正史）。最新の会議が先頭に配置。`projects.log_document_id` で管理
 - **プロジェクトログDocの配置**: `[NodeMap] 組織名/プロジェクト名/` フォルダ直下（drive_foldersのhierarchy_level=2）
 - **プロジェクトログDocの構造**: 日付セクション × 3ブロック（事前アジェンダ / 会議メモ / AI解析結果）

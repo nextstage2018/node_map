@@ -66,7 +66,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, start_context, target_date, achieved_date, status, sort_order, theme_id } = body;
+    const { title, description, start_context, target_date, achieved_date, status, sort_order, theme_id, success_criteria } = body;
 
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -74,6 +74,7 @@ export async function PUT(
     if (title !== undefined) updateData.title = title.trim();
     if (description !== undefined) updateData.description = description?.trim() || null;
     if (start_context !== undefined) updateData.start_context = start_context?.trim() || null;
+    if (success_criteria !== undefined) updateData.success_criteria = success_criteria?.trim() || null;
     if (target_date !== undefined) updateData.target_date = target_date || null;
     if (achieved_date !== undefined) updateData.achieved_date = achieved_date || null;
     if (status !== undefined) updateData.status = status;
