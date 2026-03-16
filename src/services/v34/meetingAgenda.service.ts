@@ -99,12 +99,37 @@ export async function generateAgenda(
 
     if (openIssues) {
       for (const issue of openIssues) {
+        const stagnantInfo = `${issue.days_stagnant}日経過${issue.status === 'stale' ? '（停滞中・要対応）' : ''}`;
+        const descParts: string[] = [stagnantInfo];
+
+        // 課題の説明文（AI解析で生成された文脈）を追加
+        if (issue.description) {
+          const descText = issue.description.length > 150
+            ? issue.description.substring(0, 150) + '...'
+            : issue.description;
+          descParts.push(`背景: ${descText}`);
+        }
+
+        // 関連する直近の決定事項があれば参照情報を追加
+        try {
+          const { data: relatedDecisions } = await supabase
+            .from('decision_log')
+            .select('title')
+            .eq('project_id', projectId)
+            .eq('status', 'active')
+            .ilike('title', `%${issue.title.substring(0, 20)}%`)
+            .limit(1);
+          if (relatedDecisions && relatedDecisions.length > 0) {
+            descParts.push(`関連決定: ${relatedDecisions[0].title}`);
+          }
+        } catch { /* ignore */ }
+
         items.push({
           id: crypto.randomUUID(),
           type: 'open_issue',
           reference_id: issue.id,
           title: issue.title,
-          description: issue.description || `${issue.days_stagnant}日経過${issue.status === 'stale' ? '（停滞）' : ''}`,
+          description: descParts.join('\n'),
           priority: issue.priority_level,
           assigned_contact_id: issue.assigned_contact_id,
           discussed: false,
@@ -141,7 +166,7 @@ export async function generateAgenda(
       }
     }
 
-    // 3. 進行中タスクの進捗確認
+    // 3. 進行中タスクの進捗確認（AI会話要約 + 関連資料リンク付き）
     const { data: inProgressTasks } = await supabase
       .from('tasks')
       .select('id, title, status, due_date, assigned_to')
@@ -153,16 +178,73 @@ export async function generateAgenda(
     if (inProgressTasks) {
       for (const task of inProgressTasks) {
         const isOverdue = task.due_date && new Date(task.due_date) < new Date();
+
+        // タスクの最新AI会話を取得（取り組み内容の要約として）
+        let progressSummary = '';
+        try {
+          const { data: latestConvs } = await supabase
+            .from('task_conversations')
+            .select('content, role, phase')
+            .eq('task_id', task.id)
+            .eq('role', 'assistant')
+            .neq('phase', 'checkpoint')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (latestConvs && latestConvs.length > 0) {
+            const text = latestConvs[0].content;
+            progressSummary = text.length > 200 ? text.substring(0, 200) + '...' : text;
+          }
+        } catch { /* ignore */ }
+
+        // 関連資料リンクを取得
+        let docInfo = '';
+        try {
+          const { data: docs } = await supabase
+            .from('drive_documents')
+            .select('title, document_url')
+            .eq('task_id', task.id)
+            .not('document_url', 'is', null)
+            .limit(3);
+          if (docs && docs.length > 0) {
+            docInfo = '\n📎 ' + docs.map((d: any) => d.title || '資料').join(', ');
+          }
+        } catch { /* ignore */ }
+
+        // チェックポイントスコアを取得
+        let scoreInfo = '';
+        try {
+          const { data: cpData } = await supabase
+            .from('task_conversations')
+            .select('content')
+            .eq('task_id', task.id)
+            .eq('phase', 'checkpoint')
+            .eq('role', 'assistant')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (cpData && cpData.length > 0) {
+            try {
+              const parsed = JSON.parse(cpData[0].content);
+              if (parsed.total_score) scoreInfo = ` [品質: ${parsed.total_score}点]`;
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+
+        const datePart = isOverdue
+          ? `⚠️ 期限超過: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`
+          : task.due_date
+            ? `期限: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`
+            : '期限未設定';
+
+        const descParts = [datePart + scoreInfo];
+        if (progressSummary) descParts.push(`進捗: ${progressSummary}`);
+        if (docInfo) descParts.push(docInfo);
+
         items.push({
           id: crypto.randomUUID(),
           type: 'task_progress',
           reference_id: task.id,
           title: task.title,
-          description: isOverdue
-            ? `期限超過: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`
-            : task.due_date
-              ? `期限: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`
-              : '期限未設定',
+          description: descParts.join('\n'),
           priority: isOverdue ? 'high' : 'medium',
           assigned_contact_id: task.assigned_to || null,
           discussed: false,
@@ -172,28 +254,81 @@ export async function generateAgenda(
       }
     }
 
-    // 4. v4.0: 直近1週間の完了タスク（business_events から成果報告）
-    const { data: completedTasks } = await supabase
-      .from('business_events')
-      .select('id, title, content, event_date, created_at')
+    // 4. v4.0: 直近1週間の完了タスク（タスク本体から成果情報を取得）
+    const { data: completedTasksRaw } = await supabase
+      .from('tasks')
+      .select('id, title, status, due_date, assigned_to, updated_at')
       .eq('project_id', projectId)
-      .eq('event_type', 'task_completed')
-      .gte('created_at', weekAgo)
-      .order('created_at', { ascending: false })
+      .eq('status', 'done')
+      .gte('updated_at', weekAgo)
+      .order('updated_at', { ascending: false })
       .limit(5);
 
-    if (completedTasks) {
-      for (const event of completedTasks) {
-        // タイトルから「タスク完了: 」プレフィックスを除去
-        const cleanTitle = (event.title || event.content || '').replace(/^タスク完了:\s*/, '');
+    if (completedTasksRaw) {
+      for (const task of completedTasksRaw) {
+        // 完了タスクのAI会話要約を取得（何に取り組んだかの概要）
+        let completionSummary = '';
+        try {
+          const { data: convs } = await supabase
+            .from('task_conversations')
+            .select('content, role, phase')
+            .eq('task_id', task.id)
+            .eq('role', 'assistant')
+            .neq('phase', 'checkpoint')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (convs && convs.length > 0) {
+            const text = convs[0].content;
+            completionSummary = text.length > 200 ? text.substring(0, 200) + '...' : text;
+          }
+        } catch { /* ignore */ }
+
+        // 成果物（関連資料）リンクを取得
+        let deliverables = '';
+        try {
+          const { data: docs } = await supabase
+            .from('drive_documents')
+            .select('title, document_url')
+            .eq('task_id', task.id)
+            .not('document_url', 'is', null)
+            .limit(3);
+          if (docs && docs.length > 0) {
+            deliverables = '\n📎 成果物: ' + docs.map((d: any) => `${d.title || '資料'}(${d.document_url})`).join(', ');
+          }
+        } catch { /* ignore */ }
+
+        // チェックポイントスコアを取得
+        let scoreInfo = '';
+        try {
+          const { data: cpData } = await supabase
+            .from('task_conversations')
+            .select('content')
+            .eq('task_id', task.id)
+            .eq('phase', 'checkpoint')
+            .eq('role', 'assistant')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (cpData && cpData.length > 0) {
+            try {
+              const parsed = JSON.parse(cpData[0].content);
+              if (parsed.total_score) scoreInfo = ` [最終品質: ${parsed.total_score}点]`;
+            } catch { /* ignore */ }
+          }
+        } catch { /* ignore */ }
+
+        const completedDate = `完了日: ${new Date(task.updated_at).toLocaleDateString('ja-JP')}`;
+        const descParts = [completedDate + scoreInfo];
+        if (completionSummary) descParts.push(`取り組み内容: ${completionSummary}`);
+        if (deliverables) descParts.push(deliverables);
+
         items.push({
           id: crypto.randomUUID(),
           type: 'task_completed',
-          reference_id: event.id,
-          title: `【成果報告】${cleanTitle}`,
-          description: event.content || `完了日: ${new Date(event.event_date || event.created_at).toLocaleDateString('ja-JP')}`,
+          reference_id: task.id,
+          title: `【成果報告】${task.title}`,
+          description: descParts.join('\n'),
           priority: 'low',
-          assigned_contact_id: null,
+          assigned_contact_id: task.assigned_to || null,
           discussed: false,
           resolution_note: null,
           estimated_minutes: 3,

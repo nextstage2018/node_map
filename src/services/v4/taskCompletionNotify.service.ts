@@ -15,6 +15,31 @@ interface TaskForNotify {
   source_type: string | null;
   source_message_id: string | null;
   source_channel_id: string | null;
+  project_id: string | null;
+}
+
+interface DocLink {
+  title: string;
+  url: string;
+}
+
+/**
+ * タスクに紐づく関連資料リンクを取得
+ */
+async function getTaskDocumentLinks(supabase: any, taskId: string): Promise<DocLink[]> {
+  try {
+    const { data: docs } = await supabase
+      .from('drive_documents')
+      .select('title, document_url')
+      .eq('task_id', taskId)
+      .not('document_url', 'is', null)
+      .limit(5);
+
+    if (!docs || docs.length === 0) return [];
+    return docs.map((d: any) => ({ title: d.title || '資料', url: d.document_url }));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -32,7 +57,7 @@ export async function notifyTaskCompletion(
     // タスクのソース情報を取得（v4.5: 外部同期カラムも含む）
     const { data: task } = await supabase
       .from('tasks')
-      .select('id, title, source_type, source_message_id, source_channel_id, slack_message_ts, external_task_id')
+      .select('id, title, source_type, source_message_id, source_channel_id, slack_message_ts, external_task_id, project_id')
       .eq('id', taskId)
       .single();
 
@@ -48,13 +73,16 @@ export async function notifyTaskCompletion(
       console.error('[TaskCompletionNotify] 外部同期エラー（無視して続行）:', syncErr);
     }
 
-    // v4.5: Block Kitカードまたは外部タスクが存在する場合、
-    // カード更新だけで十分なのでテキスト通知はスキップ（2重通知防止）
-    const hasSlackCard = !!(task as Record<string, unknown>).slack_message_ts;
-    const hasChatworkTask = !!(task as Record<string, unknown>).external_task_id;
-    if (hasSlackCard || hasChatworkTask) {
-      console.log(`[TaskCompletionNotify] 外部タスク同期済み、テキスト通知スキップ: ${typedTask.title}`);
-      return true;
+    // 関連資料リンクを取得
+    const docLinks = await getTaskDocumentLinks(supabase, taskId);
+
+    // 完了通知メッセージを構築
+    let message = `✅ タスク完了: ${typedTask.title}`;
+    if (docLinks.length > 0) {
+      message += '\n\n📎 関連資料:';
+      for (const doc of docLinks) {
+        message += `\n・${doc.title}: ${doc.url}`;
+      }
     }
 
     // source_type がない、またはmanual/secretary/meeting_recordの場合はスキップ
@@ -64,8 +92,7 @@ export async function notifyTaskCompletion(
 
     if (!typedTask.source_channel_id) return false;
 
-    const message = `✅ タスク完了: ${typedTask.title}`;
-
+    // Slackの場合: 元スレッドに完了通知を投稿（Block Kitカード更新とは別に）
     if (typedTask.source_type === 'slack') {
       return await notifySlack(typedTask, message, userId);
     } else if (typedTask.source_type === 'chatwork') {
