@@ -110,6 +110,15 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 思考マップ用: プロジェクト内のチェックポイント85点以上タスク一覧
+    if (projectId && mode === 'qualified-tasks') {
+      const qualifiedTasks = await getQualifiedTasks(projectId, viewerId);
+      return NextResponse.json({
+        success: true,
+        data: { tasks: qualifiedTasks },
+      });
+    }
+
     // タスク/種 指定あり → そのタスクの思考ノード＋エッジを返す
     // タスクの場合は元の種のノード+エッジも統合して返す（一連の思考の流れ）
     if (taskId || seedId) {
@@ -471,6 +480,95 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
     return result;
   } catch (error) {
     console.error('[Thought Map] getUserTasksWithNodeCount エラー:', error);
+    return [];
+  }
+}
+
+/**
+ * プロジェクト内のチェックポイント85点以上タスク一覧を取得
+ * task_conversations(phase='checkpoint', role='assistant') のJSON contentからtotal_scoreを読む
+ */
+async function getQualifiedTasks(projectId: string, userId: string): Promise<{
+  id: string;
+  title: string;
+  status: string;
+  checkpointScore: number;
+  nodeCount: number;
+  edgeCount: number;
+  milestoneName: string | null;
+  evaluatedAt: string;
+}[]> {
+  const sb = getServerSupabase() || getSupabase();
+  if (!sb) return [];
+
+  try {
+    // プロジェクト内の全タスクを取得
+    const { data: tasks, error: taskErr } = await sb
+      .from('tasks')
+      .select('id, title, status, milestone_id, milestones(title)')
+      .eq('project_id', projectId)
+      .order('updated_at', { ascending: false });
+
+    if (taskErr || !tasks || tasks.length === 0) return [];
+
+    const result: {
+      id: string;
+      title: string;
+      status: string;
+      checkpointScore: number;
+      nodeCount: number;
+      edgeCount: number;
+      milestoneName: string | null;
+      evaluatedAt: string;
+    }[] = [];
+
+    // 各タスクのチェックポイント結果を取得
+    for (const task of tasks) {
+      // 最新のチェックポイント結果を取得
+      const { data: checkpoints } = await sb
+        .from('task_conversations')
+        .select('content, created_at')
+        .eq('task_id', task.id)
+        .eq('phase', 'checkpoint')
+        .eq('role', 'assistant')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (!checkpoints || checkpoints.length === 0) continue;
+
+      let score = 0;
+      try {
+        const parsed = JSON.parse(checkpoints[0].content);
+        score = parsed.total_score || 0;
+      } catch { continue; }
+
+      if (score < 85) continue;
+
+      // ノード数・エッジ数を取得
+      const [nodeRes, edgeRes] = await Promise.all([
+        sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
+        sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
+      ]);
+
+      const ms = task.milestones as any;
+      result.push({
+        id: task.id,
+        title: task.title,
+        status: task.status || 'todo',
+        checkpointScore: score,
+        nodeCount: nodeRes.count || 0,
+        edgeCount: edgeRes.count || 0,
+        milestoneName: ms?.title || null,
+        evaluatedAt: checkpoints[0].created_at,
+      });
+    }
+
+    // スコア降順でソート
+    result.sort((a, b) => b.checkpointScore - a.checkpointScore);
+
+    return result;
+  } catch (error) {
+    console.error('[Thought Map] getQualifiedTasks エラー:', error);
     return [];
   }
 }
