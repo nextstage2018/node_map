@@ -251,7 +251,8 @@ export default function ProjectResources({ projectId, projectName, organizationI
           is_external_url: true,
           milestoneId: formMsId || undefined,
           taskId: formTaskId || undefined,
-          jobId: formJobId || undefined,
+          // jobId は送らない（定期イベントは project_recurring_rules で jobs テーブルとFK不一致のため）
+          // 定期イベント名はタグで保持
           documentType: formDocType,
           tags,
         }),
@@ -297,8 +298,8 @@ export default function ProjectResources({ projectId, projectName, organizationI
           milestoneName: formMsId ? msMap[formMsId] : undefined,
           taskId: formTaskId || undefined,
           taskName: formTaskId ? taskMap[formTaskId] : undefined,
-          jobId: formJobId || undefined,
-          jobName: formJobId ? jobMap[formJobId] : undefined,
+          // jobId は送らない（定期イベントは project_recurring_rules で jobs テーブルとFK不一致のため）
+          // 定期イベント名はタグで保持
           documentType: formDocType,
           tags,
         }),
@@ -363,7 +364,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
           document_type: editDocType || undefined,
           milestone_id: editMsId || null,
           task_id: editTaskId || null,
-          job_id: editJobId || null,
+          // job_id は送らない（定期イベントは project_recurring_rules で jobs テーブルとFK不一致のため）
           tags: autoTags,
         }),
       });

@@ -4,7 +4,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '@/lib/utils';
-import { Calendar, User, Trash2 } from 'lucide-react';
+import { Calendar, User, Trash2, Briefcase } from 'lucide-react';
 import type { MyTask } from './MyTaskCard';
 
 function formatDueDate(dateStr?: string): { label: string; color: string; bgColor: string } | null {
@@ -71,9 +71,16 @@ export default function TeamTaskCard({ task, onComplete, onDelete, onClick }: Te
       )}
     >
       <div className="p-3">
-        {/* パンくず */}
-        {(task.theme_title || task.milestone_title) && (
-          <div className="text-[10px] text-nm-text-secondary truncate mb-1">
+        {/* プロジェクト名 + パンくず */}
+        {(task.project_name || task.theme_title || task.milestone_title) && (
+          <div className="flex items-center gap-1 text-[10px] text-nm-text-secondary truncate mb-1">
+            {task.project_name && (
+              <span className="inline-flex items-center gap-0.5 text-slate-500">
+                <Briefcase className="w-2.5 h-2.5" />
+                {task.project_name}
+              </span>
+            )}
+            {task.project_name && task.milestone_title && <span className="text-slate-300">›</span>}
             {[task.theme_title, task.milestone_title].filter(Boolean).join(' > ')}
           </div>
         )}
@@ -106,13 +113,11 @@ export default function TeamTaskCard({ task, onComplete, onDelete, onClick }: Te
         {/* 下段: 担当者 + 優先度 + 期限 + 削除 */}
         <div className="flex items-center justify-between mt-2">
           <div className="flex items-center gap-2">
-            {/* 担当者 */}
-            {task.assignee_name && (
-              <span className="flex items-center gap-0.5 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                <User className="w-3 h-3" />
-                {task.assignee_name}
-              </span>
-            )}
+            {/* 担当者（常に表示、未設定時は「自分」） */}
+            <span className="flex items-center gap-0.5 text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+              <User className="w-3 h-3" />
+              {task.assignee_name || '自分'}
+            </span>
             {/* 優先度 */}
             <div className={cn('w-2 h-2 rounded-full', PRIORITY_DOT[task.priority] || PRIORITY_DOT.medium)} />
           </div>
