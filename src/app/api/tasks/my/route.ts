@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
         id, title, description, status, priority, phase, task_type,
         due_date, scheduled_start, scheduled_end,
         source_type, source_message_id, assigned_contact_id,
-        project_id, milestone_id, created_at, updated_at
+        project_id, milestone_id, created_at, updated_at, user_id
       `)
       .order('updated_at', { ascending: false });
 

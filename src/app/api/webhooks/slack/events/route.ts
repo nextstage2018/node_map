@@ -153,6 +153,35 @@ async function processTaskCreation(params: {
       return;
     }
 
+    // Slack user_id → NodeMap user_id を解決
+    let taskOwnerId = ownerUserId; // フォールバック: オーナー
+    try {
+      const { getServerSupabase: getSB2, getSupabase: getS2 } = await import('@/lib/supabase');
+      const sb2 = getSB2() || getS2();
+      if (sb2 && userId) {
+        const { data: cc } = await sb2
+          .from('contact_channels')
+          .select('contact_id')
+          .eq('channel', 'slack')
+          .eq('address', userId)
+          .limit(1)
+          .maybeSingle();
+        if (cc?.contact_id) {
+          const { data: cp } = await sb2
+            .from('contact_persons')
+            .select('linked_user_id')
+            .eq('id', cc.contact_id)
+            .single();
+          if (cp?.linked_user_id) {
+            taskOwnerId = cp.linked_user_id;
+            console.log(`[Slack Events] タスク所有者解決: Slack ${userId} → NodeMap ${taskOwnerId}`);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Slack Events] ユーザー解決エラー（フォールバック: owner）:', e);
+    }
+
     // 即レス：処理開始を通知（POSTハンドラで送信済みの場合はスキップ）
     if (!skipInstantReply) {
       sendQuickReply(channelId, threadTs, 'タスク処理を開始します...');
@@ -170,7 +199,7 @@ async function processTaskCreation(params: {
       serviceName: 'slack',
       channelId,
       messageId: `slack-${channelId}-${messageTs}`,
-      userId: ownerUserId,
+      userId: taskOwnerId,
       senderName: undefined,
       senderIdentifier: userId, // Slack user ID (U...)
       threadTs,                  // v4.5: Block Kitカードをスレッド内に投稿
@@ -250,13 +279,27 @@ async function processReactionTaskCreation(params: {
     const messageText = await fetchMessageText(channelId, messageTs, ownerUserId);
     if (!messageText) return;
 
+    // Slack user_id → NodeMap user_id を解決
+    let taskOwnerId2 = ownerUserId;
+    try {
+      const { getServerSupabase: getSB3, getSupabase: getS3 } = await import('@/lib/supabase');
+      const sb3 = getSB3() || getS3();
+      if (sb3 && userId) {
+        const { data: cc2 } = await sb3.from('contact_channels').select('contact_id').eq('channel', 'slack').eq('address', userId).limit(1).maybeSingle();
+        if (cc2?.contact_id) {
+          const { data: cp2 } = await sb3.from('contact_persons').select('linked_user_id').eq('id', cc2.contact_id).single();
+          if (cp2?.linked_user_id) taskOwnerId2 = cp2.linked_user_id;
+        }
+      }
+    } catch { /* フォールバック: owner */ }
+
     const { createTaskFromMessage } = await import('@/services/v4/taskFromMessage.service');
     const result = await createTaskFromMessage({
       messageText,
       serviceName: 'slack',
       channelId,
       messageId: sourceMessageId,
-      userId: ownerUserId,
+      userId: taskOwnerId2,
       senderIdentifier: userId, // Slack user ID (U...)
       threadTs: messageTs,       // v4.5: Block Kitカードをスレッド内に投稿
     });

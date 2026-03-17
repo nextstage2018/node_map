@@ -217,7 +217,7 @@ async function fetchDiffInBackground(
     }
     if (canFetch.chatwork && syncStates.chatwork.last_sync_at) {
       fetchPromises.push(
-        fetchChatworkMessages(20).then(msgs => {
+        fetchChatworkMessages(20, userId).then(msgs => {
           const sinceDate = new Date(syncStates.chatwork.last_sync_at!);
           newMessages.push(...msgs.filter(c => new Date(c.timestamp) > sinceDate));
         }).catch(e => console.error('[Messages API] Chatwork差分取得エラー:', e))
@@ -611,7 +611,7 @@ async function fetchAllFromAPIs(
   }
 
   if (isDemo || hasChatworkSubs) {
-    fetchPromises.push(fetchChatworkMessages(limit));
+    fetchPromises.push(fetchChatworkMessages(limit, userId));
   } else {
     fetchPromises.push(Promise.resolve([]));
   }

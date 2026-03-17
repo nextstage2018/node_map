@@ -1,9 +1,11 @@
 // チャネル一覧取得API
 // GET ?service=slack → Slack チャネル一覧
 // GET ?service=chatwork → Chatwork ルーム一覧
+// ユーザー個別のOAuthトークン（user_service_tokens）を優先使用
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
+import { createServerClient } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +15,58 @@ interface AvailableChannel {
   channel_type: string;
   member_count?: number;
   is_subscribed: boolean;
+}
+
+/**
+ * user_service_tokensからユーザー個別のトークンを取得
+ * 見つからない場合は環境変数にフォールバック
+ */
+async function getUserToken(userId: string, serviceName: string): Promise<string> {
+  const supabase = createServerClient();
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('user_service_tokens')
+        .select('token_data')
+        .eq('user_id', userId)
+        .eq('service_name', serviceName)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      if (data?.token_data) {
+        // Slack: access_token or bot_token
+        if (serviceName === 'slack') {
+          const token = data.token_data.access_token || data.token_data.bot_token;
+          if (token) {
+            console.log(`[Channels Available] ${serviceName}: ユーザー個別トークン使用 (userId: ${userId.slice(0, 8)}...)`);
+            return token;
+          }
+        }
+        // Chatwork: api_token
+        if (serviceName === 'chatwork') {
+          const token = data.token_data.api_token;
+          if (token) {
+            console.log(`[Channels Available] ${serviceName}: ユーザー個別トークン使用 (userId: ${userId.slice(0, 8)}...)`);
+            return token;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[Channels Available] ${serviceName} DB token取得エラー:`, e);
+    }
+  }
+
+  // フォールバック: 環境変数
+  if (serviceName === 'slack') {
+    console.log(`[Channels Available] slack: 環境変数SLACK_BOT_TOKENにフォールバック`);
+    return process.env.SLACK_BOT_TOKEN || '';
+  }
+  if (serviceName === 'chatwork') {
+    console.log(`[Channels Available] chatwork: 環境変数にフォールバック`);
+    return process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN || '';
+  }
+  return '';
 }
 
 export async function GET(request: NextRequest) {
@@ -35,9 +89,9 @@ export async function GET(request: NextRequest) {
     let channels: AvailableChannel[] = [];
 
     if (service === 'slack') {
-      channels = await getSlackChannels();
+      channels = await getSlackChannels(userId);
     } else if (service === 'chatwork') {
-      channels = await getChatworkRooms();
+      channels = await getChatworkRooms(userId);
     }
 
     return NextResponse.json({ success: true, data: channels });
@@ -50,10 +104,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function getSlackChannels(): Promise<AvailableChannel[]> {
-  const token = process.env.SLACK_BOT_TOKEN;
+async function getSlackChannels(userId: string): Promise<AvailableChannel[]> {
+  const token = await getUserToken(userId, 'slack');
   if (!token) {
-    console.log('[Channels Available] SLACK_BOT_TOKEN 未設定');
+    console.log('[Channels Available] Slackトークン未設定');
     return [];
   }
 
@@ -81,10 +135,10 @@ async function getSlackChannels(): Promise<AvailableChannel[]> {
   }
 }
 
-async function getChatworkRooms(): Promise<AvailableChannel[]> {
-  const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
+async function getChatworkRooms(userId: string): Promise<AvailableChannel[]> {
+  const token = await getUserToken(userId, 'chatwork');
   if (!token) {
-    console.log('[Channels Available] CHATWORK_API_TOKEN 未設定');
+    console.log('[Channels Available] Chatworkトークン未設定');
     return [];
   }
 

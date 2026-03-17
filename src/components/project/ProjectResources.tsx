@@ -231,8 +231,8 @@ export default function ProjectResources({ projectId, projectName, organizationI
     }
   };
 
-  // MS or ジョブ必須チェック
-  const hasLocation = !!(formMsId || formJobId);
+  // 格納先は任意（MS・タスク・ジョブいずれも未選択でもOK）
+  const hasLocation = true;
 
   // URL登録
   const submitUrl = async () => {
@@ -447,38 +447,24 @@ export default function ProjectResources({ projectId, projectName, organizationI
   };
 
   // 格納先セレクト群（共通）
-  const LocationSelects = ({ msId, setMsId, taskId, setTaskId, jobId, setJobId, required }: {
+  const LocationSelects = ({ msId, setMsId, taskId, setTaskId, jobId, setJobId }: {
     msId: string; setMsId: (v: string) => void;
     taskId: string; setTaskId: (v: string) => void;
     jobId: string; setJobId: (v: string) => void;
-    required?: boolean;
   }) => (
     <div>
-      {required && (
-        <p className="text-[10px] text-slate-500 mb-1">
-          格納先 <span className="text-red-500">*</span>
-          <span className="text-slate-400 ml-1">マイルストーンまたはジョブのどちらかを選択してください</span>
-        </p>
-      )}
-    <div className="grid grid-cols-3 gap-2">
-      <div>
-        <label className="text-[10px] text-slate-500 mb-0.5 block">マイルストーン</label>
-        <select value={msId} onChange={(e) => setMsId(e.target.value)}
-          className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="">指定なし</option>
-          {milestones.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-      </div>
+      <p className="text-[10px] text-slate-500 mb-1">格納先（任意）</p>
+    <div className="grid grid-cols-2 gap-2">
       <div>
         <label className="text-[10px] text-slate-500 mb-0.5 block">タスク</label>
-        <select value={taskId} onChange={(e) => setTaskId(e.target.value)}
+        <select value={msId} onChange={(e) => setMsId(e.target.value)}
           className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">指定なし</option>
           {tasks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>
       </div>
       <div>
-        <label className="text-[10px] text-slate-500 mb-0.5 block">ジョブ</label>
+        <label className="text-[10px] text-slate-500 mb-0.5 block">定期イベント</label>
         <select value={jobId} onChange={(e) => setJobId(e.target.value)}
           className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">指定なし</option>
@@ -646,12 +632,11 @@ export default function ProjectResources({ projectId, projectName, organizationI
             )}
           </div>
 
-          {/* 格納先（MS or ジョブ必須） */}
+          {/* 格納先（任意） */}
           <LocationSelects
             msId={formMsId} setMsId={setFormMsId}
             taskId={formTaskId} setTaskId={setFormTaskId}
             jobId={formJobId} setJobId={setFormJobId}
-            required
           />
 
           {/* 追加タグ */}

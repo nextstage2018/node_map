@@ -22,6 +22,7 @@ export interface MyTask {
   theme_title?: string;
   assigned_contact_id?: string;
   assignee_name?: string;
+  user_id?: string;
   created_at: string;
   updated_at: string;
   // フェードアウト用

@@ -1,9 +1,11 @@
 import { UnifiedMessage, Attachment } from '@/lib/types';
 import { cleanChatworkBody } from '@/lib/utils';
+import { createServerClient } from '@/lib/supabase';
 
 /**
  * Chatwork連携サービス
  * Chatwork APIを使用してメッセージの取得・送信を行う
+ * ユーザー個別トークン（user_service_tokens）を優先使用
  */
 
 const CHATWORK_API_BASE = 'https://api.chatwork.com/v2';
@@ -16,13 +18,52 @@ function getToken(): string {
   return process.env.CHATWORK_API_TOKEN || '';
 }
 
+/**
+ * DBからユーザー個別のChatworkトークンを取得
+ * 見つからない場合は環境変数にフォールバック
+ */
+async function getTokenFromDB(userId?: string): Promise<string> {
+  if (!userId) return getToken();
+
+  const supabase = createServerClient();
+  if (!supabase) return getToken();
+
+  try {
+    const { data, error } = await supabase
+      .from('user_service_tokens')
+      .select('token_data')
+      .eq('user_id', userId)
+      .eq('service_name', 'chatwork')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error('[Chatwork] トークンDB取得エラー:', error.message);
+      return getToken();
+    }
+
+    const token = data?.token_data?.api_token;
+    if (token) {
+      console.log(`[Chatwork] DBからユーザー個別トークン取得成功 (userId: ${userId.slice(0, 8)}...)`);
+      return token;
+    }
+  } catch (e) {
+    console.error('[Chatwork] トークンDB取得例外:', e);
+  }
+  return getToken();
+}
+
 /** リクエスト間にディレイを入れる */
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** 現在のリクエストで使うトークン（chatworkFetchWithToken用） */
+let _currentToken = '';
+
 async function chatworkFetch(endpoint: string, options?: RequestInit) {
-  const token = getToken();
+  const token = _currentToken || getToken();
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(`${CHATWORK_API_BASE}${endpoint}`, {
@@ -62,14 +103,19 @@ async function chatworkFetch(endpoint: string, options?: RequestInit) {
 
 /**
  * Chatworkメッセージを取得し、UnifiedMessage形式に変換
+ * @param limit 取得件数上限
+ * @param userId 認証ユーザーID（DBトークン取得に使用）
  */
-export async function fetchChatworkMessages(limit: number = 50): Promise<UnifiedMessage[]> {
-  const token = getToken();
+export async function fetchChatworkMessages(limit: number = 50, userId?: string): Promise<UnifiedMessage[]> {
+  const token = await getTokenFromDB(userId);
 
   if (!token) {
     console.log('[Chatwork] トークン未設定のためスキップ');
     return [];
   }
+
+  // chatworkFetch内で使うトークンを設定
+  _currentToken = token;
 
   try {
     // ルーム一覧を取得
@@ -200,11 +246,13 @@ export async function fetchChatworkMessages(limit: number = 50): Promise<Unified
 
     console.log(`[Chatwork] 合計 ${messages.length}件のメッセージを取得`);
 
+    _currentToken = ''; // リセット
     return messages.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   } catch (error) {
     console.error('[Chatwork] 全体エラー:', error);
+    _currentToken = ''; // リセット
     return [];
   }
 }

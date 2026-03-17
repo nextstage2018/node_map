@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/core';
 import { ChevronDown, Filter, FolderOpen, CheckSquare, Flag, Calendar, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/components/auth/AuthProvider';
 import AppLayout from '@/components/shared/AppLayout';
 import TaskStageColumn from '@/components/v4/TaskStageColumn';
 import TeamTaskCard from '@/components/v4/TeamTaskCard';
@@ -70,6 +71,8 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 };
 
 export default function TasksPage() {
+  const { user } = useAuth();
+  const currentUserId = user?.id || '';
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [tasks, setTasks] = useState<MyTask[]>([]);
@@ -231,16 +234,20 @@ export default function TasksPage() {
       .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   }, [projectMembers, tasks]);
 
-  // フィルタ適用（「自分」はmyContactIdで絞り込み）
+  // フィルタ適用（「自分」はmyContactId + user_idで絞り込み）
   const filteredTasks = useMemo(() => {
     if (selectedAssigneeId === 'all') return tasks;
     if (selectedAssigneeId === 'unassigned') return tasks.filter(t => !t.assigned_contact_id);
     if (selectedAssigneeId === 'me') {
-      if (!myContactId) return tasks; // contact_id未取得時は全件表示
-      return tasks.filter(t => t.assigned_contact_id === myContactId || !t.assigned_contact_id);
+      // 自分のタスク = 担当者が自分 OR (担当者未設定かつ作成者が自分)
+      return tasks.filter(t => {
+        if (t.assigned_contact_id === myContactId) return true;
+        if (!t.assigned_contact_id && t.user_id === currentUserId) return true;
+        return false;
+      });
     }
     return tasks.filter(t => t.assigned_contact_id === selectedAssigneeId);
-  }, [tasks, selectedAssigneeId, myContactId]);
+  }, [tasks, selectedAssigneeId, myContactId, currentUserId]);
 
   // ステータスごとにグループ化
   const todoTasks = filteredTasks.filter(t => t.status === 'todo');
