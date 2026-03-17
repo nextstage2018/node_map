@@ -122,12 +122,30 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // user_id → 名前の逆引きマップ（assigned_contact_idがnullの場合のフォールバック用）
+    let userIdToNameMap: Record<string, string> = {};
+    const uniqueUserIds = [...new Set(tasks.map(t => t.user_id).filter(Boolean))];
+    if (uniqueUserIds.length > 0) {
+      const { data: linkedContacts } = await supabase
+        .from('contact_persons')
+        .select('name, linked_user_id')
+        .in('linked_user_id', uniqueUserIds);
+      if (linkedContacts) {
+        userIdToNameMap = Object.fromEntries(
+          linkedContacts.map(c => [c.linked_user_id, c.name])
+        );
+      }
+    }
+
     // パンくず + 担当者名付きデータに変換
     const enrichedTasks = tasks.map(task => ({
       ...task,
       project_name: task.project_id ? projectMap[task.project_id] || null : null,
       milestone_title: task.milestone_id ? milestoneMap[task.milestone_id] || null : null,
-      assignee_name: task.assigned_contact_id ? contactMap[task.assigned_contact_id] || null : null,
+      // 優先順: assigned_contact_id → user_id逆引き → null
+      assignee_name: task.assigned_contact_id
+        ? contactMap[task.assigned_contact_id] || null
+        : userIdToNameMap[task.user_id] || null,
     }));
 
     return NextResponse.json({ success: true, data: enrichedTasks });

@@ -274,7 +274,25 @@ export class TaskService {
       if (req.estimatedHours) insertData.estimated_hours = req.estimatedHours;
       if (req.recurrenceType) insertData.recurrence_type = req.recurrenceType;
       if (req.recurrenceDay !== undefined) insertData.recurrence_day = req.recurrenceDay;
-      if (req.assigneeContactId) insertData.assignee_contact_id = req.assigneeContactId;
+      if (req.assigneeContactId) {
+        insertData.assigned_contact_id = req.assigneeContactId;
+      } else if ((req as any).userId) {
+        // 手動作成時: 担当者未指定なら作成者自身をセット（linked_user_id逆引き）
+        try {
+          const { data: selfContact } = await sb
+            .from('contact_persons')
+            .select('id')
+            .eq('linked_user_id', (req as any).userId)
+            .limit(1)
+            .maybeSingle();
+          if (selfContact) {
+            insertData.assigned_contact_id = selfContact.id;
+          }
+        } catch (e) {
+          // フォールバック: 名前解決失敗してもタスク作成はブロックしない
+          console.warn('[TaskClient] assigned_contact_id自動解決失敗:', e);
+        }
+      }
       // v5.0: 期限・作成元
       if (req.dueDate) insertData.due_date = req.dueDate;
       if (req.sourceType) insertData.source_type = req.sourceType;

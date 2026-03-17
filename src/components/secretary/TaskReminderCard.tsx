@@ -73,7 +73,7 @@ export default function TaskReminderCard() {
 
   // 担当者別グルーピング
   const groupedTasks = tasks.reduce<Record<string, Task[]>>((acc, task) => {
-    const assignee = task.assignee_name || '自分';
+    const assignee = task.assignee_name || '未割当';
     if (!acc[assignee]) acc[assignee] = [];
     acc[assignee].push(task);
     return acc;
