@@ -57,6 +57,25 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}/settings?error=slack_token_failed`);
     }
 
+    // 認証ユーザーのプロフィールを取得（個人名表示用）
+    let authedUserName = '';
+    let authedUserEmail = '';
+    const authedUserId = tokenData.authed_user?.id || '';
+    if (authedUserId && tokenData.access_token) {
+      try {
+        const profileRes = await fetch(`https://slack.com/api/users.info?user=${authedUserId}`, {
+          headers: { Authorization: `Bearer ${tokenData.access_token}` },
+        });
+        const profileData = await profileRes.json();
+        if (profileData.ok && profileData.user) {
+          authedUserName = profileData.user.real_name || profileData.user.name || '';
+          authedUserEmail = profileData.user.profile?.email || '';
+        }
+      } catch (e) {
+        console.warn('[Slack OAuth] ユーザープロフィール取得失敗（続行）:', e);
+      }
+    }
+
     // トークンをDBに保存（Service Role Key でRLSをバイパス）
     const sb = createServerClient();
     const userId = state;
@@ -77,8 +96,11 @@ export async function GET(request: NextRequest) {
               bot_user_id: tokenData.bot_user_id || '',
               scope: tokenData.scope || '',
               // 認証ユーザー自身のSlack ID（メッセージのuser_id紐づけに必要）
-              authed_user_id: tokenData.authed_user?.id || '',
+              authed_user_id: authedUserId,
               authed_user_scope: tokenData.authed_user?.scope || '',
+              // 認証ユーザーの個人情報（サイドバー表示用）
+              authed_user_name: authedUserName,
+              authed_user_email: authedUserEmail,
             },
             is_active: true,
             connected_at: now,

@@ -139,9 +139,13 @@ export default function SettingsPage() {
           const serviceName = token.service_name;
           if (newChannels[serviceName]) {
             const scope = token.token_data?.scope || '';
+            // Slack: 個人名を優先表示（なければワークスペース名）
+            const slackDisplayName = serviceName === 'slack'
+              ? (token.token_data?.authed_user_name || token.token_data?.team_name || '接続済み')
+              : undefined;
             newChannels[serviceName] = {
               connected: token.is_active,
-              accountName: token.token_data?.email || token.token_data?.team_name || token.token_data?.account_name || '接続済み',
+              accountName: slackDisplayName || token.token_data?.email || token.token_data?.team_name || token.token_data?.account_name || '接続済み',
               ...(serviceName === 'gmail' ? {
                 hasCalendarScope: scope.includes('calendar'),
                 hasDriveScope: scope.includes('drive'),

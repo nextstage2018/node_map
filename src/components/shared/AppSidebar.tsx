@@ -81,7 +81,9 @@ export default function AppSidebar() {
                 mismatch: !!(loginEmail && email && loginEmail !== email),
               };
             } else if (t.service_name === 'slack' && t.is_active) {
-              status.slack = { connected: true, name: t.token_data?.team_name || 'Slack' };
+              // 個人名を優先表示（なければワークスペース名）
+              const slackName = t.token_data?.authed_user_name || t.token_data?.team_name || 'Slack';
+              status.slack = { connected: true, name: slackName };
             } else if (t.service_name === 'chatwork' && t.is_active) {
               status.chatwork = { connected: true, name: t.token_data?.account_name || 'CW' };
             }
