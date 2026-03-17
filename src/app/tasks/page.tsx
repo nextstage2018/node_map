@@ -71,14 +71,16 @@ const TASK_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function TasksPage() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [tasks, setTasks] = useState<MyTask[]>([]);
   const [filter, setFilter] = useState<FilterType>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [activeTask, setActiveTask] = useState<MyTask | null>(null);
   const [fadingTasks, setFadingTasks] = useState<Set<string>>(new Set());
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('all');
+  const [selectedAssigneeId, setSelectedAssigneeId] = useState<string>('me');
+  const [myContactId, setMyContactId] = useState<string | null>(null);
+  const [projectMembers, setProjectMembers] = useState<{ contact_id: string; name: string }[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('tasks');
 
   // マイルストーン一覧用
@@ -91,6 +93,24 @@ export default function TasksPage() {
       activationConstraint: { distance: 8 },
     })
   );
+
+  // 自分のcontact_id取得
+  useEffect(() => {
+    const fetchMe = async () => {
+      try {
+        const res = await fetch('/api/contacts/me');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.data) {
+            setMyContactId(data.data.id);
+          }
+        }
+      } catch (error) {
+        console.error('自分のコンタクト取得エラー:', error);
+      }
+    };
+    fetchMe();
+  }, []);
 
   // プロジェクト一覧取得
   useEffect(() => {
@@ -105,9 +125,6 @@ export default function TasksPage() {
               name: p.name,
             }));
             setProjects(pjs);
-            if (pjs.length > 0 && !selectedProjectId) {
-              setSelectedProjectId(pjs[0].id);
-            }
           }
         }
       } catch (error) {
@@ -117,12 +134,16 @@ export default function TasksPage() {
     fetchProjects();
   }, []);
 
-  // タスク取得
+  // タスク取得（「すべて」選択時は全PJのタスクを取得）
   const fetchTasks = useCallback(async () => {
-    if (!selectedProjectId) return;
     setIsLoading(true);
     try {
-      const params = new URLSearchParams({ filter, project_id: selectedProjectId });
+      const params = new URLSearchParams({ filter });
+      if (selectedProjectId !== 'all') {
+        params.set('project_id', selectedProjectId);
+      }
+      // project_id未指定時は自分のタスクのみ（/api/tasks/my の仕様）
+      // project_id指定時はそのPJの全タスク
       const res = await fetch(`/api/tasks/my?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -143,7 +164,7 @@ export default function TasksPage() {
 
   // マイルストーン一覧取得
   const fetchMilestones = useCallback(async () => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId || selectedProjectId === 'all') return;
     setIsMsLoading(true);
     try {
       const res = await fetch(`/api/milestones?project_id=${selectedProjectId}&include_tasks=true`);
@@ -166,29 +187,60 @@ export default function TasksPage() {
     }
   }, [activeTab, fetchMilestones]);
 
-  // プロジェクト変更時にフィルタリセット
+  // プロジェクト変更時: メンバー取得 + フィルタを「自分」にリセット
   useEffect(() => {
-    setSelectedAssigneeId('all');
+    setSelectedAssigneeId('me');
+    if (selectedProjectId && selectedProjectId !== 'all') {
+      const fetchMembers = async () => {
+        try {
+          const res = await fetch(`/api/projects/${selectedProjectId}/members`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.data) {
+              const members = data.data.map((m: { contact_id: string; contact?: { name?: string } }) => ({
+                contact_id: m.contact_id,
+                name: m.contact?.name || '不明',
+              }));
+              setProjectMembers(members);
+            }
+          }
+        } catch (error) {
+          console.error('メンバー取得エラー:', error);
+        }
+      };
+      fetchMembers();
+    } else {
+      setProjectMembers([]);
+    }
   }, [selectedProjectId]);
 
-  // 担当者一覧を抽出
+  // 担当者一覧: project_membersベース + タスクに出てくる担当者もマージ
   const assignees = useMemo(() => {
     const map = new Map<string, string>();
+    // project_membersから全メンバーを追加
+    projectMembers.forEach(m => {
+      map.set(m.contact_id, m.name);
+    });
+    // タスクに出てくる担当者もマージ（メンバー未登録の場合に備えて）
     tasks.forEach(t => {
-      if (t.assigned_contact_id && t.assignee_name) {
+      if (t.assigned_contact_id && t.assignee_name && !map.has(t.assigned_contact_id)) {
         map.set(t.assigned_contact_id, t.assignee_name);
       }
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-  }, [tasks]);
+  }, [projectMembers, tasks]);
 
-  // フィルタ適用
+  // フィルタ適用（「自分」はmyContactIdで絞り込み）
   const filteredTasks = useMemo(() => {
     if (selectedAssigneeId === 'all') return tasks;
     if (selectedAssigneeId === 'unassigned') return tasks.filter(t => !t.assigned_contact_id);
+    if (selectedAssigneeId === 'me') {
+      if (!myContactId) return tasks; // contact_id未取得時は全件表示
+      return tasks.filter(t => t.assigned_contact_id === myContactId || !t.assigned_contact_id);
+    }
     return tasks.filter(t => t.assigned_contact_id === selectedAssigneeId);
-  }, [tasks, selectedAssigneeId]);
+  }, [tasks, selectedAssigneeId, myContactId]);
 
   // ステータスごとにグループ化
   const todoTasks = filteredTasks.filter(t => t.status === 'todo');
@@ -330,6 +382,7 @@ export default function TasksPage() {
                   onChange={(e) => setSelectedProjectId(e.target.value)}
                   className="text-sm font-medium text-nm-text bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none"
                 >
+                  <option value="all">すべてのプロジェクト</option>
                   {projects.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -373,36 +426,35 @@ export default function TasksPage() {
             {activeTab === 'tasks' && (
               <>
                 {/* 担当者フィルタ */}
-                {assignees.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <Filter className="w-3.5 h-3.5 text-slate-400" />
-                    <div className="relative">
-                      <select
-                        value={selectedAssigneeId}
-                        onChange={(e) => setSelectedAssigneeId(e.target.value)}
-                        className={cn(
-                          'text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none',
-                          selectedAssigneeId !== 'all' ? 'text-blue-600 font-medium border-blue-200 bg-blue-50' : 'text-nm-text'
-                        )}
-                      >
-                        <option value="all">全員</option>
-                        {assignees.map(a => (
-                          <option key={a.id} value={a.id}>{a.name}</option>
-                        ))}
-                        <option value="unassigned">未割り当て</option>
-                      </select>
-                      <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                    {selectedAssigneeId !== 'all' && (
-                      <button
-                        onClick={() => setSelectedAssigneeId('all')}
-                        className="text-xs text-slate-400 hover:text-slate-600 underline"
-                      >
-                        解除
-                      </button>
-                    )}
+                <div className="flex items-center gap-2">
+                  <Filter className="w-3.5 h-3.5 text-slate-400" />
+                  <div className="relative">
+                    <select
+                      value={selectedAssigneeId}
+                      onChange={(e) => setSelectedAssigneeId(e.target.value)}
+                      className={cn(
+                        'text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-8 focus:outline-none focus:border-blue-400 appearance-none',
+                        selectedAssigneeId !== 'all' ? 'text-blue-600 font-medium border-blue-200 bg-blue-50' : 'text-nm-text'
+                      )}
+                    >
+                      <option value="me">自分</option>
+                      <option value="all">全員</option>
+                      {assignees.filter(a => a.id !== myContactId).map(a => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                      <option value="unassigned">未割り当て</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
-                )}
+                  {selectedAssigneeId !== 'me' && (
+                    <button
+                      onClick={() => setSelectedAssigneeId('me')}
+                      className="text-xs text-slate-400 hover:text-slate-600 underline"
+                    >
+                      リセット
+                    </button>
+                  )}
+                </div>
 
                 {/* 区切り線 */}
                 <div className="h-5 w-px bg-slate-200" />
