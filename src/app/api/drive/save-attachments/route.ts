@@ -1,10 +1,10 @@
-// Phase 62: メッセージ添付ファイルをDriveに保存するAPI
+// Phase 62 → v10.0: メッセージ添付ファイルをDriveに直接保存するAPI
 // インボックスの「📁 Drive」ボタンから即時実行で呼ばれる
+// v10.0: ステージング廃止。受領フォルダに直接保存
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import * as DriveService from '@/services/drive/driveClient.service';
-import { classifyFile } from '@/services/drive/fileClassification.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
         savedFiles: okCount,
         results,
         message: okCount > 0
-          ? `${okCount}件のファイルをDriveステージングに保存しました。秘書の「届いたファイル確認」で承認してください。`
+          ? `${okCount}件のファイルをDriveの受領フォルダに保存しました。`
           : 'ファイルの保存に失敗しました',
       },
     });
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// 1つのファイルをDrive一時フォルダにアップロード→AI分類→ステージング登録
+// v10.0: 1つのファイルを受領フォルダに直接アップロード→drive_documentsに記録（ステージング廃止）
 async function processSingleAttachment(
   userId: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -204,56 +204,41 @@ async function processSingleAttachment(
   tempFolderId: string | null,
   sourceChannel: string,
 ) {
-  // 1. 一時フォルダにアップロード
-  let tempDriveFileId: string | null = null;
-  if (tempFolderId) {
-    const tempFile = await DriveService.uploadFile(userId, fileData.data, fileName, mimeType, tempFolderId);
-    tempDriveFileId = tempFile?.id || null;
+  // 1. ファイル名を標準化
+  const uploadFileName = DriveService.generateV33FileName(
+    fileName,
+    undefined,
+    msg.created_at ? new Date(msg.created_at) : undefined
+  );
+
+  // 2. アップロード先フォルダ決定（受領フォルダ優先、なければ一時フォルダ）
+  let targetFolderId = tempFolderId;
+  if (orgProject.orgId && orgProject.orgName && orgProject.projectId && orgProject.projectName) {
+    await DriveService.getOrCreateOrgFolder(userId, orgProject.orgId, orgProject.orgName);
+    await DriveService.getOrCreateProjectFolder(userId, orgProject.orgId, orgProject.projectId, orgProject.projectName);
+    const receivedFolderId = await DriveService.getOrCreateDirectionFolder(
+      userId, orgProject.orgId, orgProject.projectId, 'received'
+    );
+    if (receivedFolderId) targetFolderId = receivedFolderId;
   }
 
-  // 2. AI分類
-  const sourceTypeMap: Record<string, string> = {
-    email: msg.direction === 'sent' ? 'submitted_email' : 'received_email',
-    slack: msg.direction === 'sent' ? 'submitted_chat' : 'received_chat',
-    chatwork: msg.direction === 'sent' ? 'submitted_chat' : 'received_chat',
-  };
-  const sourceType = sourceTypeMap[sourceChannel] || 'received_email';
+  // 3. Driveにアップロード
+  const driveFile = await DriveService.uploadFile(userId, fileData.data, uploadFileName, mimeType, targetFolderId);
+  if (!driveFile) return;
 
-  const classification = await classifyFile({
-    fileName,
-    mimeType,
-    emailSubject: msg.subject || undefined,
-    emailBody: msg.body ? String(msg.body).slice(0, 200) : undefined,
-    senderName: msg.from_name || undefined,
-    senderAddress: msg.from_address || undefined,
-    direction: msg.direction === 'sent' ? 'sent' : 'received',
-    messageDate: msg.created_at,
-    organizationName: orgProject.orgName || undefined,
-    projectName: orgProject.projectName || undefined,
-  });
-
-  // 3. ステージングに登録
-  await DriveService.saveStagingFile({
+  // 4. drive_documentsに直接記録（ステージング経由なし）
+  await DriveService.recordDocument({
     userId,
-    sourceMessageId: msg.id,
-    sourceType,
-    sourceFromName: msg.from_name || undefined,
-    sourceFromAddress: msg.from_address || undefined,
-    sourceSubject: msg.subject || undefined,
-    fileName,
-    mimeType,
-    fileSizeBytes: fileData.data.length,
-    tempDriveFileId: tempDriveFileId || undefined,
     organizationId: orgProject.orgId || undefined,
-    organizationName: orgProject.orgName || undefined,
     projectId: orgProject.projectId || undefined,
-    projectName: orgProject.projectName || undefined,
-    aiDocumentType: classification.documentType,
-    aiDirection: classification.direction,
-    aiYearMonth: classification.yearMonth,
-    aiSuggestedName: classification.suggestedName,
-    aiConfidence: classification.confidence,
-    aiReasoning: classification.reasoning,
+    driveFileId: driveFile.id,
+    driveFolderId: targetFolderId,
+    fileName: driveFile.name,
+    fileSizeBytes: fileData.data.length,
+    mimeType,
+    driveUrl: driveFile.webViewLink,
+    direction: 'received',
     sourceChannel,
+    sourceMessageId: msg.id,
   });
 }
