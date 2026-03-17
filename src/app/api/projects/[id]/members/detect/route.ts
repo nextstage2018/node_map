@@ -71,6 +71,8 @@ export async function POST(
             // ボットは除外
             if (member.isBot) continue;
 
+            console.log(`[Project Members Detect] Slackメンバー: ${member.realName || member.name} (${member.slackUserId}), email: ${member.email || '(なし)'}`);
+
             if (!senderMap.has(member.slackUserId)) {
               senderMap.set(member.slackUserId, {
                 address: member.slackUserId,
@@ -340,12 +342,16 @@ export async function POST(
       }
     }
 
+    // メール取得状況を集計
+    const emailCount = Array.from(senderMap.values()).filter(s => !!s.email).length;
+    console.log(`[Project Members Detect] 結果: ${senderMap.size}人検出, ${emailCount}人メールあり, ${addedCount}人追加`);
+
     return NextResponse.json({
       success: true,
-      data: { detected: senderMap.size, added: addedCount },
+      data: { detected: senderMap.size, added: addedCount, emailsFound: emailCount },
       message: addedCount > 0
-        ? `${senderMap.size}人検出、${addedCount}人を追加しました。`
-        : `${senderMap.size}人検出しましたが、全員既にメンバーです。`,
+        ? `${senderMap.size}人検出、${addedCount}人を追加しました。（メール取得: ${emailCount}人）`
+        : `${senderMap.size}人検出しましたが、全員既にメンバーです。（メール取得: ${emailCount}人）`,
     });
   } catch (error) {
     console.error('[Project Members Detect API] エラー:', error);

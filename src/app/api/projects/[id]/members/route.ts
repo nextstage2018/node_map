@@ -1,7 +1,7 @@
 // v3.3: プロジェクトメンバー管理 API（GET / POST / DELETE）
 // project_members テーブルを使用（組織メンバーからの移行）
 import { NextResponse, NextRequest } from 'next/server';
-import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
+import { createServerClient, getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
@@ -17,7 +17,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
 
-    const supabase = createServerClient();
+    const supabase = getServerSupabase() || getSupabase();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: true, data: [] });
     }
@@ -148,7 +148,7 @@ export async function POST(
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
 
-    const supabase = createServerClient();
+    const supabase = getServerSupabase() || getSupabase();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
     }
@@ -252,7 +252,7 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
 
-    const supabase = createServerClient();
+    const supabase = getServerSupabase() || getSupabase();
     if (!supabase || !isSupabaseConfigured()) {
       return NextResponse.json({ success: false, error: 'Supabase未設定' }, { status: 400 });
     }

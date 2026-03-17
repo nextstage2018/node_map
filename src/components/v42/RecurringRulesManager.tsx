@@ -36,6 +36,20 @@ interface ProjectMember {
   email: string | null;
 }
 
+// メンバーのメールアドレスを contact_channels に保存
+async function saveContactEmail(contactId: string, email: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/contacts/${contactId}/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: 'email', address: email }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 interface Props {
   projectId: string;
 }
@@ -117,6 +131,8 @@ export default function RecurringRulesManager({ projectId }: Props) {
   const [formMeetingNotes, setFormMeetingNotes] = useState(true); // 議事録読み取り
   const [formCalendarSync, setFormCalendarSync] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null); // メール入力中のcontact_id
+  const [emailInput, setEmailInput] = useState('');
 
   const fetchRules = useCallback(async () => {
     setIsLoading(true);
@@ -133,7 +149,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
       const res = await fetch(`/api/projects/${projectId}/members`);
       const data = await res.json();
       if (data.success) {
-        // メール登録済みメンバーのみ表示（カレンダー招待に必要）
+        // 全メンバーを表示（メール有無問わず）
         const all = (data.data || []).map((m: Record<string, unknown>) => {
           const contact = (m.contact as Record<string, unknown>) || (m.contact_persons as Record<string, unknown>);
           return {
@@ -142,7 +158,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
             email: (m.email as string) || null,
           };
         });
-        setMembers(all.filter((m: ProjectMember) => m.email !== null));
+        setMembers(all);
       }
     } catch { /* */ }
   }, [projectId]);
@@ -469,20 +485,98 @@ export default function RecurringRulesManager({ projectId }: Props) {
             {members.length === 0 ? (
               <p className="text-[10px] text-slate-400 italic">プロジェクトメンバーがいません（メンバータブで追加）</p>
             ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {members.map(m => (
-                  <button
-                    key={m.contact_id}
-                    onClick={() => toggleParticipant(m.contact_id)}
-                    className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${
-                      formParticipants.includes(m.contact_id)
-                        ? 'bg-blue-50 border-blue-300 text-blue-700'
-                        : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
-                    }`}
-                  >
-                    {m.name}
-                  </button>
-                ))}
+              <div className="space-y-1.5">
+                {members.map(m => {
+                  const hasEmail = !!m.email;
+                  const isSelected = formParticipants.includes(m.contact_id);
+                  const isEditingThis = editingEmailId === m.contact_id;
+
+                  return (
+                    <div key={m.contact_id} className="flex items-center gap-2">
+                      {/* メンバー選択ボタン */}
+                      <button
+                        onClick={() => {
+                          if (hasEmail) {
+                            toggleParticipant(m.contact_id);
+                          }
+                        }}
+                        className={`px-2.5 py-1 text-[11px] rounded-full border transition-colors ${
+                          !hasEmail
+                            ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-default'
+                            : isSelected
+                              ? 'bg-blue-50 border-blue-300 text-blue-700'
+                              : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        {m.name}
+                      </button>
+
+                      {/* メール状態表示 */}
+                      {hasEmail ? (
+                        <span className="text-[10px] text-slate-400">{m.email}</span>
+                      ) : isEditingThis ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="email"
+                            value={emailInput}
+                            onChange={(e) => setEmailInput(e.target.value)}
+                            placeholder="email@example.com"
+                            className="px-2 py-0.5 text-[11px] border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && emailInput.includes('@')) {
+                                saveContactEmail(m.contact_id, emailInput).then(ok => {
+                                  if (ok) {
+                                    setMembers(prev => prev.map(pm =>
+                                      pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
+                                    ));
+                                    setEditingEmailId(null);
+                                    setEmailInput('');
+                                  }
+                                });
+                              }
+                              if (e.key === 'Escape') {
+                                setEditingEmailId(null);
+                                setEmailInput('');
+                              }
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              if (emailInput.includes('@')) {
+                                saveContactEmail(m.contact_id, emailInput).then(ok => {
+                                  if (ok) {
+                                    setMembers(prev => prev.map(pm =>
+                                      pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
+                                    ));
+                                    setEditingEmailId(null);
+                                    setEmailInput('');
+                                  }
+                                });
+                              }
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => { setEditingEmailId(null); setEmailInput(''); }}
+                            className="text-slate-400 hover:text-slate-600"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditingEmailId(m.contact_id); setEmailInput(''); }}
+                          className="text-[10px] text-amber-600 hover:text-amber-700 underline"
+                        >
+                          メール未登録（登録する）
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
