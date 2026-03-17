@@ -44,6 +44,9 @@
 
 ### 追加の注意
 
+- **⚠️ tasks.assigned_contact_id の自動セット**: タスク作成時、`assigned_contact_id` 未指定なら `user_id` → `contact_persons.linked_user_id` 逆引きで作成者自身を自動セット。tasks/my APIでも同様のフォールバック名前解決あり
+- **⚠️ drive_documents.direction の明示**: 手動アップロード・URL登録時は必ず `direction: 'submitted'` を明示。未指定だとDBデフォルト `'received'` になり受領資料タブに誤表示される
+- **⚠️ ファイルステージング廃止（v10.0）**: チャネル添付ファイルは `drive_file_staging` を経由せず `drive_documents` に直接保存。受領フォルダ（PJ配下「受領」）に自動格納
 - **⚠️ contact_persons.owner_user_id**: カラム名は `owner_user_id`（UUID型）。`user_id` ではない。`email`/`phone` カラムも存在しない（`contact_channels` に格納）
 - **⚠️ contact_persons.relationship_type の制約**: CHECK制約あり。許可値は `'internal'`, `'client'`, `'partner'` の3つのみ。`'unknown'` は不可
 - **⚠️ contact_persons.main_channel の制約**: CHECK制約あり。許可値は `'email'`, `'slack'`, `'chatwork'` の3つのみ
@@ -252,9 +255,9 @@ AI解析の改修イメージ:
 | `thought_task_nodes` | ノード紐づけ | UUID | UNIQUE(task_id, node_id)。milestone_id nullable |
 | `thought_edges` | 思考動線 | UUID | UNIQUE(task_id, from_node_id, to_node_id) |
 | `knowledge_master_entries` | ナレッジ | TEXT | 手動生成。field_id NULLable。v3.0: source_meeting_record_id 追加 |
-| `drive_file_staging` | ファイルステージング | UUID | AI分類→承認→最終配置 |
-| `drive_folders` | Driveフォルダ | UUID | v3.3新構造: 組織/PJ/（ジョブ\|会議議事録\|MS）/タスク。L1-L2は作成時自動生成、L3以降は動的生成 |
-| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。milestone_id, job_id 追加済み。タグ検索対応 |
+| `drive_file_staging` | ファイルステージング | UUID | **v10.0で廃止（自動承認化）**。レガシーデータのみ残存 |
+| `drive_folders` | Driveフォルダ | UUID | v10.0: シンプル3フォルダ構造（組織/PJ/提出\|受領）。L1=組織, L2=PJ, L3=方向 |
+| `drive_documents` | Driveドキュメント | UUID | task_id ON DELETE SET NULL。milestone_id, job_id 追加済み。タグ検索対応。direction='submitted'/'received'でカテゴリ分類 |
 | `thought_snapshots` | スナップショット | UUID | initial_goal / final_landing |
 | ~~`secretary_conversations`~~ | ~~秘書会話~~ **DROP済み（v9.0）** | - | - |
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
@@ -457,8 +460,8 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | `/api/cron/enrich-contacts` | 毎日 21:00 | コンタクトプロフィール自動取得 |
 | `/api/cron/analyze-contacts` | 毎日 22:00 | コンタクトコミュニケーション分析 |
 | `/api/cron/extract-message-nodes` | 毎日 22:30 | メッセージからキーワード抽出 |
-| `/api/cron/sync-drive-documents` | 毎日 23:00 | Gmail添付→Driveステージング |
-| `/api/cron/clean-drive-staging` | 毎日 00:30 | 期限切れステージングファイル削除 |
+| `/api/cron/sync-drive-documents` | 毎日 23:00 | 全チャネル添付ファイル→受領フォルダに直接保存（v10.0: ステージング廃止） |
+| `/api/cron/clean-drive-staging` | 毎日 00:30 | 期限切れステージングファイル削除（レガシー） |
 | `/api/cron/sync-business-events` | 毎日 01:00 | メッセージからビジネスイベント生成 |
 | `/api/cron/sync-channel-topics` | 毎日 01:30 | チャネルメッセージ→検討ツリー統合（v3.0） |
 | `/api/cron/extract-knowledge-from-meetings` | 毎日 02:00 | 会議録→ナレッジ抽出（v3.0） |
@@ -596,7 +599,7 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 ## v3.3 プロジェクト中心リストラクチャリング（全Phase完了）
 
 ### 概要
-組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。チャネルとメンバーを1タブに統合。Driveフォルダ構造を用途別に再設計。
+組織レベルの「メンバー」「チャネル」をプロジェクト配下に移動。チャネルとメンバーを1タブに統合。Driveフォルダ構造はv10.0でシンプル化（組織/PJ/提出|受領）。
 
 ### 現在の構成
 - **組織レベル**: 「設定」タブのみ（メンバー・チャネルUI削除済み）
@@ -627,16 +630,16 @@ MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
 - MS/タスク/ジョブをプルダウンで指定して格納先を明確化
 - カード内にフォルダパス表示
 
-### Driveフォルダ構造
+### Driveフォルダ構造（v10.0: シンプル化）
 ```
 [NodeMap] 組織名/
 └── プロジェクト名/
-    ├── 定期イベント/       ← 定期MTG・定期作業の資料
-    ├── 会議議事録/         ← MeetGeek等の格納先
-    └── マイルストーン/
-        └── MS名/
-            └── タスク名/   ← タスク関連ドキュメント蓄積
+    ├── 提出/       ← ユーザー手動アップロード・URL登録（direction='submitted'）
+    └── 受領/       ← チャネル（Slack/CW/Email）からの自動取り込み（direction='received'）
 ```
+- 細かい分類はDriveフォルダではなく、DBの `document_type` / `tags` / `task_id` で管理
+- タスクカードからのアップロードは `task_id` が自動紐づけされ「提出」フォルダに格納
+- v3.3以前の旧フォルダ（定期イベント/会議議事録/マイルストーン/タスク）は既存データ参照用に残存
 
 ---
 
@@ -1006,6 +1009,7 @@ v7.0 会議録チャネル自動共有 + MeetGeek廃止 ← 実装済み
 v7.1 タスクAI強化（画像認識・フィードバック学習・ディープリサーチ提案）← 実装済み
 v8.0 構造再設計（テーマ廃止・MS週次サイクル・定期イベント・プロジェクトログDoc）← Phase 1-3 実装済み
 v9.0 秘書ダッシュボード化（AIチャット廃止→3カード: インボックス/カレンダー/タスクリマインダー）← 実装済み
+v10.0 バグ修正・構造改善（タスク担当者自動セット・関連資料direction修正・Driveフォルダシンプル化・ステージング廃止）← 実装済み
 ```
 
 ---
@@ -1675,7 +1679,7 @@ Phase 4: アジェンダ強化
 
 **カード3: タスクリマインダー（TaskReminderCard.tsx）**
 - 3フィルタ: 超過（赤）/ 今日（黄）/ 今週（青）+ カウントバッジ
-- 担当者別グルーピング（`assignee_name` → フォールバック「自分」）
+- 担当者別グルーピング（`assignee_name` → フォールバック「未割当」）
 - 優先度ドット（高=赤、中=黄、低=灰）
 - 期限残り日数表示（「3日超過」「今日」「2日後」）
 - タスク詳細へのリンク（`/tasks?taskId=X`）

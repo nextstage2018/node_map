@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-17（v9.0クリーンアップ: seeds/seed_conversations/themes/secretary_conversations DROP済み反映）
+最終更新: 2026-03-17（v10.0: drive_file_staging廃止・drive_folders簡素化・drive_documents direction明示化・tasks assigned_contact_id自動設定）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -505,6 +505,7 @@ CREATE INDEX idx_tasks_calendar_event ON tasks(calendar_event_id);
 - **v4.5**: external_task_id — Chatworkネイティブタスクとの紐づけ用。slack_message_ts — Slack Block Kitカードの更新用
 - **v4.5**: external_sync_status で外部同期状態を管理（none/synced/failed）
 - **v5.0**: source_type に `'meeting_record'` を設定するとタスク詳細で「会議議事録」と表示。due_date は TaskProposalPanel 承認時に引き継ぎ
+- **v10.0**: assigned_contact_id の自動設定 — 手動タスク作成時に担当者未指定の場合、`contact_persons.linked_user_id` 逆引きで作成者自身をセット。担当者名表示は `assigned_contact_id` → `user_id` 逆引き（`contact_persons.linked_user_id`）→ null のフォールバックチェーン
 - task_id → task_conversations（1対多）
 - task_id → task_members（1対多）
 - task_id → thought_task_nodes（1対多）
@@ -1163,28 +1164,23 @@ CREATE INDEX idx_drive_folders_project_resource ON drive_folders(project_id, res
 
 #### 注意事項
 
-- **v3.3 新フォルダ構造（用途別）**:
+- **v10.0 シンプルフォルダ構造（現行）**:
   ```
   [NodeMap] A社/                       ← level=1, organization_id
     プロジェクトX/                      ← level=2, project_id
-      ジョブ/                           ← level=3, resource_type='job'
-        SEOレポート/                   ← level=4, job_id
-      会議議事録/                       ← level=3, resource_type='meeting'
-        2026-03/                       ← level=4, year_month
-      マイルストーン/                   ← level=3, resource_type='milestone'
-        MS名/                          ← level=4, milestone_id
-          タスク名/                    ← level=5, task_id
+      提出/                            ← level=3, direction='submitted'
+      受領/                            ← level=3, direction='received'
   ```
-- **旧構造（互換性維持・残置）**:
+- **v3.3 旧フォルダ構造（廃止・残置データのみ）**:
   ```
-  受領/                             ← level=3, direction='received'
-    2026-03/                       ← level=4, year_month='2026-03'
-  提出/                             ← level=3, direction='submitted'
+  [NodeMap] A社/プロジェクトX/ジョブ/SEOレポート/   ← 旧: resource_type='job'
+  [NodeMap] A社/プロジェクトX/会議議事録/2026-03/   ← 旧: resource_type='meeting'
+  [NodeMap] A社/プロジェクトX/マイルストーン/MS名/タスク名/  ← 旧: resource_type='milestone'
   ```
-- hierarchy_level: 1=組織 / 2=プロジェクト / 3=用途別(or旧方向) / 4=サブフォルダ / 5=タスク
-- resource_type: 'job'/'meeting'/'milestone'（v3.3新構造用、level=3のみ）
-- direction: 'received'/'submitted'（旧構造用、level=3のみ）
-- milestone_id, job_id, task_id: 各レベルのリソース紐づけ
+- hierarchy_level: 1=組織 / 2=プロジェクト / 3=提出or受領（v10.0）
+- direction: 'received'/'submitted'（v10.0の現行構造、level=3）
+- resource_type: 'job'/'meeting'/'milestone'（旧構造の残置データ用）
+- milestone_id, job_id, task_id: 旧構造の残置データ用。v10.0では未使用
 - **RLS**: user_id でフィルタ
 
 ---
@@ -1239,7 +1235,8 @@ CREATE INDEX idx_drive_documents_tags ON drive_documents USING GIN(tags);
 
 - link_type: Phase 45a: 'embed'/'link'/'external_url'（v3.3）
 - document_type: Phase 44: 書類種別（'見積書'/'契約書'等）/ 'reference'（v3.3 URL登録）
-- direction: Phase 44: 'received'/'submitted'
+- **direction**: `'received'`（受領資料）/ `'submitted'`（提出資料）。**v10.0: DBデフォルトは'received'のため、提出資料登録時は必ず明示的に`direction: 'submitted'`を設定すること**
+- **⚠️ v10.0 カテゴリ判定ロジック**: 受領資料 = `source_channel IS NOT NULL OR direction = 'received'`、提出資料 = `source_channel IS NULL AND direction != 'received'`
 - tags: TEXT[] — v3.3: タグ検索対応。GINインデックスで高速検索
 - milestone_id: v3.3追加。マイルストーン紐づけ（ON DELETE SET NULL）
 - job_id: v3.3追加。ジョブ紐づけ（ON DELETE SET NULL）
@@ -1248,9 +1245,9 @@ CREATE INDEX idx_drive_documents_tags ON drive_documents USING GIN(tags);
 
 ---
 
-### drive_file_staging（ファイル一時保管・承認フロー）
+### drive_file_staging（ファイル一時保管・承認フロー）— v10.0で廃止
 
-**目的**: Phase 44: メール受信→秘書確認→最終配置の3段階管理
+**目的**: ~~Phase 44: メール受信→秘書確認→最終配置の3段階管理~~ **v10.0で承認フロー廃止。チャネル受信ファイルはdrive_documentsに直接保存（direction='received'）。テーブルは残存するが新規レコードは作成されない**
 
 #### CREATE TABLE
 
@@ -1294,16 +1291,12 @@ CREATE INDEX idx_drive_file_staging_created_at ON drive_file_staging(created_at)
 
 #### 注意事項
 
-- **ステータス遷移**:
-  - pending_review → approved → uploaded
-  - pending_review → rejected
-  - pending_review → expired（14日放置）
-- **クリーンアップCron**:
-  - 14日経過 → status='expired'
-  - 30日超 rejected/expired → Driveファイル削除 + DB削除
-- source_channel: Phase 45a: 'email'/'slack'/'chatwork'
-- AI分類（ai_*）と ユーザー確定（confirmed_*）の二段構成
-- approved 時に approved_at + final_drive_file_id を設定→ drive_documents 登録
+- **⚠️ v10.0で廃止**: 承認フローは廃止。チャネル受信ファイルは`drive_documents`に直接保存される（`direction='received'`）
+- **既存データ**: テーブルは残存。過去のステージングデータは参照可能
+- **クリーンアップCron**（`clean-drive-staging`）: 既存の期限切れデータを掃除するため維持
+- ~~ステータス遷移: pending_review → approved → uploaded / rejected / expired~~
+- source_channel: 'email'/'slack'/'chatwork'
+- AI分類（ai_*）と ユーザー確定（confirmed_*）の二段構成（旧フロー用）
 
 ---
 
