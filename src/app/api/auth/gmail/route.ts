@@ -2,7 +2,7 @@
 // GET: Google OAuth認証URLにリダイレクト
 // マルチユーザー対応: getServerUserId()でログインユーザーを特定
 import { NextResponse } from 'next/server';
-import { getServerUserId } from '@/lib/serverAuth';
+import { getServerUserId, getServerUserEmail } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +37,10 @@ export async function GET() {
       );
     }
 
+    // ログインユーザーのメールアドレスを取得（login_hint用）
+    const userEmail = await getServerUserEmail();
+    console.log('[OAuth Start] login_hint:', userEmail || '(なし)');
+
     // Google OAuth URLを生成
     const params = new URLSearchParams({
       client_id: GOOGLE_CLIENT_ID,
@@ -47,6 +51,11 @@ export async function GET() {
       prompt: 'consent',
       state: userId, // ユーザーIDをstateに含めてコールバックで取得
     });
+
+    // login_hint: ログインユーザーのメールで正しいGoogleアカウントを自動選択
+    if (userEmail) {
+      params.set('login_hint', userEmail);
+    }
 
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     console.log('[OAuth Start] redirect_uri:', REDIRECT_URI);

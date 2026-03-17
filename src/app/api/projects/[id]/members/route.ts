@@ -80,6 +80,43 @@ export async function GET(
           }
         }
       }
+
+      // linked_user_id を持つメンバーのうち、contact_channelsにメールがないもの
+      // → user_service_tokens(gmail)のtoken_data.emailで補完
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const membersWithoutEmail = (data || []).filter((pm: any) => {
+        const contact = (pm as any).contact_persons;
+        return contact?.linked_user_id && !emailMap[pm.contact_id];
+      });
+      if (membersWithoutEmail.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const linkedUserIds = membersWithoutEmail.map((pm: any) => (pm as any).contact_persons?.linked_user_id).filter(Boolean);
+        if (linkedUserIds.length > 0) {
+          const { data: tokens } = await supabase
+            .from('user_service_tokens')
+            .select('user_id, token_data')
+            .in('user_id', linkedUserIds)
+            .eq('service_name', 'gmail')
+            .eq('is_active', true);
+          if (tokens) {
+            // user_id → email マップ
+            const userEmailMap: Record<string, string> = {};
+            for (const t of tokens) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const email = (t.token_data as any)?.email;
+              if (email) userEmailMap[t.user_id] = email;
+            }
+            // contact_id → email に変換
+            for (const pm of membersWithoutEmail) {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const linkedUserId = (pm as any).contact_persons?.linked_user_id;
+              if (linkedUserId && userEmailMap[linkedUserId]) {
+                emailMap[pm.contact_id] = userEmailMap[linkedUserId];
+              }
+            }
+          }
+        }
+      }
     }
 
     // レスポンス整形（フォールバックなし: 空なら空を返す）
