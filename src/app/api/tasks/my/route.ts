@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'DB接続エラー' }, { status: 500 });
     }
 
+    // show_all=true: プロジェクト未指定でも全タスクを返す（担当者フィルタ「全員」用）
+    const showAll = searchParams.get('show_all') === 'true';
+
     // 基本クエリ
     let query = supabase
       .from('tasks')
@@ -39,6 +42,9 @@ export async function GET(request: NextRequest) {
     if (projectId) {
       // プロジェクト指定: プロジェクト内全タスク（メンバー全員分）
       query = query.eq('project_id', projectId);
+    } else if (showAll) {
+      // show_all: 全プロジェクトの全タスク（担当者名付き）
+      // user_idフィルタなし → 全メンバーのタスクを返す
     } else {
       // プロジェクト未指定: 自分のタスクのみ
       query = query.eq('user_id', userId);
@@ -101,9 +107,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 担当者名を付与（プロジェクト指定時）
+    // 担当者名を付与（プロジェクト指定時 or show_all時）
     let contactMap: Record<string, string> = {};
-    if (projectId) {
+    if (projectId || showAll) {
       const contactIds = [...new Set(tasks.filter(t => t.assigned_contact_id).map(t => t.assigned_contact_id))];
       if (contactIds.length > 0) {
         const { data: contacts } = await supabase

@@ -162,7 +162,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
       const [msRes, taskRes, jobRes] = await Promise.all([
         fetch(`/api/milestones?projectId=${projectId}`),
         fetch(`/api/tasks?project_id=${projectId}`),
-        fetch(`/api/jobs?projectId=${projectId}`),
+        fetch(`/api/projects/${projectId}/recurring-rules`),
       ]);
       const [msData, taskData, jobData] = await Promise.all([
         msRes.json(), taskRes.json(), jobRes.json(),
@@ -457,7 +457,7 @@ export default function ProjectResources({ projectId, projectName, organizationI
     <div className="grid grid-cols-2 gap-2">
       <div>
         <label className="text-[10px] text-slate-500 mb-0.5 block">タスク</label>
-        <select value={msId} onChange={(e) => setMsId(e.target.value)}
+        <select value={taskId} onChange={(e) => setTaskId(e.target.value)}
           className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">指定なし</option>
           {tasks.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}

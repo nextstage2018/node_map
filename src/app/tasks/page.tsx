@@ -145,8 +145,10 @@ export default function TasksPage() {
       if (selectedProjectId !== 'all') {
         params.set('project_id', selectedProjectId);
       }
-      // project_id未指定時は自分のタスクのみ（/api/tasks/my の仕様）
-      // project_id指定時はそのPJの全タスク
+      // 担当者「全員」選択時はshow_all=trueで全メンバーのタスクを返す
+      if (selectedAssigneeId !== 'me') {
+        params.set('show_all', 'true');
+      }
       const res = await fetch(`/api/tasks/my?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -159,7 +161,7 @@ export default function TasksPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [selectedProjectId, filter]);
+  }, [selectedProjectId, filter, selectedAssigneeId]);
 
   useEffect(() => {
     fetchTasks();
