@@ -1,12 +1,11 @@
 // Phase 45a: Google Drive 添付ファイル自動同期 Cron Job（全チャネル + URL検出対応）
-// inbox_messages（email/slack/chatwork）の添付ファイルを自動検出 → 一時フォルダにアップロード → AI分類 → ステージング登録
+// inbox_messages（email/slack/chatwork）の添付ファイルを自動検出 → 受領フォルダに直接アップロード → drive_documents記録
 // 本文中のGoogle Docs/Sheets/Drive URLもdrive_documentsにリンクとして記録
-// ユーザー承認後に最終フォルダへ移動（承認は秘書チャットの FileIntakeCard 経由）
+// v10.0: ステージング廃止。自動で受領資料フォルダに直接保存（不要なら後から削除）
 // 日次実行（vercel.json で設定）
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import * as DriveService from '@/services/drive/driveClient.service';
-import { classifyFile } from '@/services/drive/fileClassification.service';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // 最大2分
@@ -285,7 +284,8 @@ async function processChatworkAttachments(supabase: any, msg: any, metadata: any
 }
 
 // ========================================
-// 共通: 添付ファイル1件の処理（DL → アップロード → AI分類 → staging登録）
+// 共通: 添付ファイル1件の処理（DL → 受領フォルダにアップロード → drive_documents直接記録）
+// v10.0: ステージング廃止。自動で受領資料フォルダに直接保存
 // ========================================
 async function processAttachment(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -310,76 +310,66 @@ async function processAttachment(
       return;
     }
 
-    // 1. 一時フォルダにアップロード
-    let tempDriveFileId: string | null = null;
-    if (tempFolderId) {
-      const tempFile = await DriveService.uploadFile(
-        userId,
-        fileData.data,
-        fileName,
-        mimeType,
-        tempFolderId
+    // v3.3: ファイル名を命名規則に変換 (YYYY-MM-DD_原名.ext)
+    const uploadFileName = DriveService.generateV33FileName(
+      fileName,
+      undefined,
+      msg.created_at ? new Date(msg.created_at) : undefined
+    );
+
+    // 受領フォルダを決定（組織/PJ指定あり → 受領フォルダ、なし → 一時フォルダ）
+    let targetFolderId = tempFolderId;
+    if (orgProject.orgId && orgProject.orgName && orgProject.projectId && orgProject.projectName) {
+      // 組織/PJフォルダを確保してから受領フォルダを取得
+      await DriveService.getOrCreateOrgFolder(userId, orgProject.orgId, orgProject.orgName);
+      await DriveService.getOrCreateProjectFolder(userId, orgProject.orgId, orgProject.projectId, orgProject.projectName);
+      const receivedFolderId = await DriveService.getOrCreateDirectionFolder(
+        userId, orgProject.orgId, orgProject.projectId, 'received'
       );
-      tempDriveFileId = tempFile?.id || null;
+      if (receivedFolderId) {
+        targetFolderId = receivedFolderId;
+      }
     }
 
-    // 2. AI分類
-    const sourceTypeMap: Record<string, string> = {
-      email: msg.direction === 'sent' ? 'submitted_email' : 'received_email',
-      slack: msg.direction === 'sent' ? 'submitted_chat' : 'received_chat',
-      chatwork: msg.direction === 'sent' ? 'submitted_chat' : 'received_chat',
-    };
-    const sourceType = sourceTypeMap[sourceChannel] || 'received_email';
+    if (!targetFolderId) {
+      console.warn(`[Cron/DriveDocs] フォルダ未取得: ${fileName}`);
+      stats.errors++;
+      return;
+    }
 
-    const classification = await classifyFile({
-      fileName,
-      mimeType,
-      emailSubject: msg.subject || undefined,
-      emailBody: msg.body ? String(msg.body).slice(0, 200) : undefined,
-      senderName: msg.from_name || undefined,
-      senderAddress: msg.from_address || undefined,
-      direction: msg.direction === 'sent' ? 'sent' : 'received',
-      messageDate: msg.created_at,
-      organizationName: orgProject.orgName || undefined,
-      projectName: orgProject.projectName || undefined,
-    });
-
-    // 3. ステージングに登録
-    // v3.3: ファイル名を新命名規則に変換 (YYYY-MM-DD_種別_原名.ext)
-    const suggestedName = classification.suggestedName
-      || DriveService.generateV33FileName(
-          fileName,
-          classification.documentType,
-          msg.created_at ? new Date(msg.created_at) : undefined
-        );
-
-    const stagingId = await DriveService.saveStagingFile({
+    // Driveにアップロード（受領フォルダに直接）
+    const driveFile = await DriveService.uploadFile(
       userId,
-      sourceMessageId: msg.id,
-      sourceType,
-      sourceFromName: msg.from_name || undefined,
-      sourceFromAddress: msg.from_address || undefined,
-      sourceSubject: msg.subject || undefined,
-      fileName,
+      fileData.data,
+      uploadFileName,
       mimeType,
-      fileSizeBytes: fileData.data.length,
-      tempDriveFileId: tempDriveFileId || undefined,
+      targetFolderId
+    );
+
+    if (!driveFile) {
+      stats.errors++;
+      return;
+    }
+
+    // drive_documentsに直接記録（ステージング不要）
+    const docId = await DriveService.recordDocument({
+      userId,
       organizationId: orgProject.orgId || undefined,
-      organizationName: orgProject.orgName || undefined,
       projectId: orgProject.projectId || undefined,
-      projectName: orgProject.projectName || undefined,
-      aiDocumentType: classification.documentType,
-      aiDirection: classification.direction,
-      aiYearMonth: classification.yearMonth,
-      aiSuggestedName: suggestedName,
-      aiConfidence: classification.confidence,
-      aiReasoning: classification.reasoning,
+      driveFileId: driveFile.id,
+      driveFolderId: targetFolderId,
+      fileName: driveFile.name,
+      fileSizeBytes: fileData.data.length,
+      mimeType,
+      driveUrl: driveFile.webViewLink,
+      direction: 'received',
       sourceChannel,
+      sourceMessageId: msg.id,
     });
 
-    if (stagingId) {
+    if (docId) {
       stats.staged++;
-      console.log(`[Cron/DriveDocs] ステージング登録: ${fileName} (${sourceChannel}) → ${classification.documentType} (${Math.round(classification.confidence * 100)}%)`);
+      console.log(`[Cron/DriveDocs] 受領資料登録: ${uploadFileName} (${sourceChannel})`);
     } else {
       stats.errors++;
     }

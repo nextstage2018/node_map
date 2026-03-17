@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
           web_view_link: google_drive_url,
           link_type: 'external_url',
           document_type: documentType || 'reference',
+          direction: 'submitted',
           task_id: taskId || null,
           milestone_id: milestoneId || null,
           job_id: jobId || null,
@@ -120,34 +121,18 @@ export async function POST(request: NextRequest) {
     }
 
     // フォルダ取得 or 作成
+    // v10.0: シンプル3フォルダ構造（組織/PJ/提出資料|受領資料|議事録）
+    // ユーザー手動アップロード → 「提出資料」フォルダ
     let folderId: string | null = null;
 
     if (organizationId && organizationName && projectId && projectName) {
-      // v3.3 新構造: 用途別フォルダにターゲット指定
-      if (jobId && jobName) {
-        folderId = await DriveService.ensureNewStructureFolder(
-          userId, organizationId, organizationName, projectId, projectName,
-          { type: 'job', jobId, jobName }
-        );
-      } else if (taskId && taskName && milestoneId && milestoneName) {
-        folderId = await DriveService.ensureNewStructureFolder(
-          userId, organizationId, organizationName, projectId, projectName,
-          { type: 'task', milestoneId, milestoneName, taskId, taskName }
-        );
-      } else if (milestoneId && milestoneName) {
-        folderId = await DriveService.ensureNewStructureFolder(
-          userId, organizationId, organizationName, projectId, projectName,
-          { type: 'milestone', milestoneId, milestoneName }
-        );
-      } else {
-        // MS/タスク/ジョブ未指定 → プロジェクトフォルダ直下
-        const orgFolderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
-        if (orgFolderId) {
-          folderId = await DriveService.getOrCreateProjectFolder(
-            userId, organizationId, projectId, projectName
-          );
-        }
-      }
+      // 組織 + PJフォルダを確保
+      await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
+      await DriveService.getOrCreateProjectFolder(userId, organizationId, projectId, projectName);
+      // 提出資料フォルダに格納
+      folderId = await DriveService.getOrCreateDirectionFolder(
+        userId, organizationId, projectId, 'submitted'
+      );
     } else if (organizationId && organizationName) {
       // 組織のみ（PJ未指定）
       folderId = await DriveService.getOrCreateOrgFolder(userId, organizationId, organizationName);
@@ -202,6 +187,7 @@ export async function POST(request: NextRequest) {
       fileSizeBytes: driveFile.size,
       mimeType: driveFile.mimeType,
       driveUrl: driveFile.webViewLink,
+      direction: 'submitted',
       milestoneId: milestoneId || undefined,
       jobId: jobId || undefined,
       taskId: taskId || undefined,
