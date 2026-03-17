@@ -717,7 +717,7 @@ function OrganizationsTab() {
               <p className="font-medium text-slate-700">登録時の機能</p>
               <div className="space-y-1 pl-2">
                 <p>• <span className="font-medium">書類種別</span>: 提案資料・見積書・契約書・請求書・レポート・議事録・マニュアル・デザイン・仕様書・その他の10種から選択</p>
-                <p>• <span className="font-medium">格納先の指定</span>: マイルストーンまたは定期イベントの選択が必須。タスクも選択可能</p>
+                <p>• <span className="font-medium">格納先の指定</span>: マイルストーン・定期イベント・タスクを任意で紐づけ可能。Driveでは「提出」フォルダに自動格納</p>
                 <p>• <span className="font-medium">命名規則の自動適用</span>: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_資料名.拡張子</span></p>
                 <p>• <span className="font-medium">タグの自動付与</span>: 書類種別・MS名・タスク名・定期イベント名・登録者名が自動でタグ付け。手動追加も可能</p>
                 <p>• <span className="font-medium">編集・削除</span>: 登録済み資料の種別・格納先・タグの変更、削除に対応</p>
@@ -729,20 +729,18 @@ function OrganizationsTab() {
       </SectionCard>
 
       <SectionCard title="Driveフォルダ構造" icon={HardDrive}>
-        <p className="mb-3">Google Driveのフォルダは以下の構造で自動生成されます。組織・プロジェクトまでは作成時に自動生成、それ以降はファイル保存時に動的生成されます。</p>
+        <p className="mb-3">Google Driveのフォルダはシンプルな3階層で自動生成されます。細かい分類はフォルダではなく、DB上のタグ・書類種別・タスク紐づけで管理します。</p>
         <div className="bg-slate-50 rounded-lg p-4 font-mono text-sm text-slate-700 space-y-1">
           <p>[NodeMap] 組織名/</p>
           <p className="pl-4">└── プロジェクト名/</p>
-          <p className="pl-12">├── 定期イベント/　　← 定期MTG・定期作業の資料</p>
-          <p className="pl-12">├── 会議議事録/　　　← Gemini会議メモ等の格納先</p>
-          <p className="pl-12">└── マイルストーン/</p>
-          <p className="pl-20">└── MS名/</p>
-          <p className="pl-28">└── タスク名/　← ドキュメント蓄積先</p>
+          <p className="pl-12">├── 提出/　← 手動アップロード・URL登録した資料</p>
+          <p className="pl-12">└── 受領/　← Slack・Chatwork等から自動取り込まれた資料</p>
         </div>
         <div className="mt-3 space-y-1 text-xs text-slate-500">
           <p>ファイル名ルール: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_原名.ext</span></p>
           <p>メタデータタグ: 書類種別・MS名・タスク名・定期イベント名・登録者名で自動タグ付け＋手動追加可能</p>
-          <p>フォルダ自動生成: 組織・プロジェクトは作成時、定期イベント/会議議事録/MS/タスクはファイル保存時に動的生成</p>
+          <p>受領資料の自動取り込み: チャネル連携されたSlack・Chatworkの添付ファイルが毎日自動で「受領」フォルダに保存されます</p>
+          <p>特定ファイルの検索: タグ・書類種別・タスク紐づけなどDB上の情報で絞り込みできます</p>
         </div>
       </SectionCard>
 
