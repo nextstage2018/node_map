@@ -146,6 +146,38 @@ export default function OrganizationDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const [showNewTaskForm, setShowNewTaskForm] = useState(false);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+
+  const handleCreateTask = async () => {
+    if (!newTaskTitle.trim() || !currentProject) return;
+    setIsCreatingTask(true);
+    try {
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTaskTitle.trim(),
+          status: 'todo',
+          priority: 'medium',
+          phase: 'ideation',
+          projectId: currentProject.id,
+        }),
+      });
+      if (res.ok) {
+        setNewTaskTitle('');
+        setShowNewTaskForm(false);
+        // タスク一覧をリフレッシュ
+        const taskRes = await fetch(`/api/tasks/my?project_id=${currentProject.id}&limit=100`);
+        const taskData = await taskRes.json();
+        if (taskData.success) setTasks(taskData.data || []);
+      }
+    } catch (error) {
+      console.error('タスク作成エラー:', error);
+    }
+    setIsCreatingTask(false);
+  };
 
   // v3.3: ドキュメント→関連資料に移行。ProjectResourcesコンポーネント内で管理
 
@@ -688,7 +720,47 @@ export default function OrganizationDetailPage() {
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-sm font-bold text-slate-800">{currentProject.name} - タスク</h2>
+                    <button
+                      onClick={() => setShowNewTaskForm(true)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-[11px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      タスク作成
+                    </button>
                   </div>
+
+                  {/* 新規タスク作成フォーム */}
+                  {showNewTaskForm && (
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={newTaskTitle}
+                          onChange={(e) => setNewTaskTitle(e.target.value)}
+                          placeholder="タスク名を入力..."
+                          className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.nativeEvent.isComposing) handleCreateTask();
+                            if (e.key === 'Escape') { setShowNewTaskForm(false); setNewTaskTitle(''); }
+                          }}
+                        />
+                        <button
+                          onClick={handleCreateTask}
+                          disabled={!newTaskTitle.trim() || isCreatingTask}
+                          className="px-3 py-1.5 text-[11px] font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                        >
+                          {isCreatingTask ? '作成中...' : '作成'}
+                        </button>
+                        <button
+                          onClick={() => { setShowNewTaskForm(false); setNewTaskTitle(''); }}
+                          className="p-1.5 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* V2-I: マイルストーンセクション（進捗・評価表示） */}
                   <MilestoneSection projectId={currentProject.id} />

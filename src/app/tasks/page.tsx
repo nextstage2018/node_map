@@ -334,6 +334,20 @@ export default function TasksPage() {
     }
   };
 
+  // タスク削除
+  const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
+  const handleDelete = async (taskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks?id=${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setTasks(prev => prev.filter(t => t.id !== taskId));
+        setDeletingTaskId(null);
+      }
+    } catch (error) {
+      console.error('タスク削除エラー:', error);
+    }
+  };
+
   // クイック追加
   const handleQuickAdd = async (title: string, dueDate?: string) => {
     try {
@@ -487,6 +501,16 @@ export default function TasksPage() {
         {/* === タスク一覧タブ（カンバン） === */}
         {activeTab === 'tasks' && (
           <>
+            {/* 削除確認バー */}
+            {deletingTaskId && (
+              <div className="mx-4 mt-2 flex items-center gap-2 px-4 py-2 bg-red-50 border border-red-200 rounded-lg">
+                <span className="flex-1 text-sm text-red-600">
+                  「{tasks.find(t => t.id === deletingTaskId)?.title}」を削除しますか？
+                </span>
+                <button onClick={() => handleDelete(deletingTaskId)} className="text-xs text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded">削除</button>
+                <button onClick={() => setDeletingTaskId(null)} className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded border border-slate-200">キャンセル</button>
+              </div>
+            )}
             {isLoading ? (
               <div className="flex items-center justify-center flex-1 text-slate-400">
                 <div className="animate-pulse text-sm">読み込み中...</div>
@@ -515,7 +539,7 @@ export default function TasksPage() {
                       headerExtra={<QuickTaskForm onSubmit={handleQuickAdd} />}
                     >
                       {todoTasks.map(task => (
-                        <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
+                        <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onDelete={setDeletingTaskId} onClick={setSelectedTaskId} />
                       ))}
                     </TaskStageColumn>
 
@@ -526,7 +550,7 @@ export default function TasksPage() {
                       count={inProgressTasks.length}
                     >
                       {inProgressTasks.map(task => (
-                        <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onClick={setSelectedTaskId} />
+                        <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onDelete={setDeletingTaskId} onClick={setSelectedTaskId} />
                       ))}
                     </TaskStageColumn>
 
