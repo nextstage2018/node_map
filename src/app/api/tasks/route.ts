@@ -28,19 +28,19 @@ export async function GET(request: NextRequest) {
     if (sourceMessageId) {
       const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
       const sb = getServerSupabase() || getSupabase();
+      // マルチユーザー対応: user_idフィルタを削除（チーム共有データ）
       const { data, error } = await sb
         .from('tasks')
         .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
-        .eq('user_id', userId)
         .eq('source_message_id', sourceMessageId)
         .limit(5);
 
       if (error) {
         // source_message_id カラムがない場合はフォールバック（seeds経由で検索）
+        // マルチユーザー対応: seeds経由検索もuser_idフィルタなし
         const { data: seedData } = await sb
           .from('seeds')
           .select('id')
-          .eq('user_id', userId)
           .eq('source_message_id', sourceMessageId)
           .limit(1);
 
@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
           const { data: taskData } = await sb
             .from('tasks')
             .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
-            .eq('user_id', userId)
             .eq('seed_id', seedData[0].id)
             .limit(5);
           return NextResponse.json({ success: true, data: taskData || [] });
@@ -61,7 +60,6 @@ export async function GET(request: NextRequest) {
         const { data: seedData } = await sb
           .from('seeds')
           .select('id')
-          .eq('user_id', userId)
           .eq('source_message_id', sourceMessageId)
           .limit(1);
 
@@ -69,7 +67,6 @@ export async function GET(request: NextRequest) {
           const { data: taskData } = await sb
             .from('tasks')
             .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
-            .eq('user_id', userId)
             .eq('seed_id', seedData[0].id)
             .limit(5);
           return NextResponse.json({ success: true, data: taskData || [] });
@@ -88,10 +85,10 @@ export async function GET(request: NextRequest) {
       if (!sb) {
         return NextResponse.json({ success: true, data: [] });
       }
+      // マルチユーザー対応: user_idフィルタを削除（プロジェクト内全タスクを返す）
       const { data, error } = await sb
         .from('tasks')
         .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id, milestone_id, description, scheduled_start, scheduled_end')
-        .eq('user_id', userId)
         .eq('project_id', projectId)
         .order('updated_at', { ascending: false });
 
@@ -221,7 +218,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const task = await TaskService.updateTask(body.id, { ...body, userId });
+    // マルチユーザー対応: userIdをフィルタに使わない（チームメンバーがステータス変更できるように）
+    const task = await TaskService.updateTask(body.id, { ...body });
     if (!task) {
       return NextResponse.json(
         { success: false, error: 'タスクが見つかりません' },
@@ -344,11 +342,11 @@ export async function DELETE(request: NextRequest) {
       const { getServerSupabase, getSupabase } = await import('@/lib/supabase');
       const sb = getServerSupabase() || getSupabase();
       if (sb) {
+        // マルチユーザー対応: user_idフィルタを削除
         const { data: taskData } = await sb
           .from('tasks')
           .select('calendar_event_id')
           .eq('id', taskId)
-          .eq('user_id', userId)
           .single();
         if (taskData?.calendar_event_id) {
           const { deleteCalendarEvent } = await import('@/services/calendar/calendarSync.service');
@@ -359,7 +357,8 @@ export async function DELETE(request: NextRequest) {
       console.error('[Tasks API] カレンダー削除エラー（続行）:', calErr);
     }
 
-    const success = await TaskService.deleteTask(taskId, userId);
+    // マルチユーザー対応: userIdフィルタなしで削除（チームメンバーが削除できるように）
+    const success = await TaskService.deleteTask(taskId);
     if (!success) {
       return NextResponse.json(
         { success: false, error: 'タスク削除に失敗しました' },

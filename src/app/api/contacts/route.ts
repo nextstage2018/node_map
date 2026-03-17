@@ -242,10 +242,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. 既存のcontact_personsテーブルからデータ取得（1コンタクト=1行、channels=配列、組織JOIN）
+    // マルチユーザー対応: owner_user_idフィルタを削除（全コンタクトを共有表示）
     const { data: existingContacts } = await supabase
       .from('contact_persons')
-      .select('*, contact_channels(*), organizations(relationship_type)')
-      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
+      .select('*, contact_channels(*), organizations(relationship_type)');
 
     // 3. Phase 35: senderの統計情報をアドレス/名前で引けるマップに変換
     // 「Me」やログインユーザーのアドレスを除外
@@ -635,11 +635,11 @@ export async function PUT(request: NextRequest) {
     // Phase 54: company_name変更時に組織を自動リンク
     if (companyName !== undefined && companyName) {
       // 現在のコンタクト情報を取得してメールドメインを抽出
+      // マルチユーザー対応: owner_user_idフィルタを削除
       const { data: currentContact } = await supabase
         .from('contact_persons')
         .select('organization_id, contact_channels(address, channel)')
         .eq('id', id)
-        .or(`owner_user_id.eq.${userId},owner_user_id.is.null`)
         .single();
 
       if (currentContact && !currentContact.organization_id) {
@@ -653,11 +653,11 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    // マルチユーザー対応: owner_user_idフィルタを削除
     const { error } = await supabase
       .from('contact_persons')
       .update(updateData)
-      .eq('id', id)
-      .or(`owner_user_id.eq.${userId},owner_user_id.is.null`);
+      .eq('id', id);
 
     if (error) {
       console.error('[Contacts API] 更新エラー:', error);

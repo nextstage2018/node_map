@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
     const organizationId = searchParams.get('organization_id') || '';
     const limitParam = searchParams.get('limit');
 
+    // マルチユーザー対応: user_idフィルタを削除（チーム共有データ）
     let query = supabase
       .from('projects')
       .select('*, organizations(name)')
-      .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
     if (status) {
@@ -238,11 +238,11 @@ export async function PUT(request: NextRequest) {
     if (status !== undefined) updateData.status = status;
     if (organizationId !== undefined) updateData.organization_id = organizationId || null;
 
+    // マルチユーザー対応: user_idフィルタを削除（チームメンバーが更新できるように）
     const { data, error } = await supabase
       .from('projects')
       .update(updateData)
       .eq('id', projectId)
-      .eq('user_id', userId)
       .select('*, organizations(name)')
       .single();
 

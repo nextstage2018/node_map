@@ -1,6 +1,8 @@
 // Phase 24: Gmail OAuth 2.0 フロー開始
 // GET: Google OAuth認証URLにリダイレクト
+// マルチユーザー対応: getServerUserId()でログインユーザーを特定
 import { NextResponse } from 'next/server';
+import { getServerUserId } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +25,10 @@ const SCOPES = [
 
 export async function GET() {
   try {
-    // ENV_TOKEN_OWNER_ID が設定されている場合は常にそれを使う
-    // （getServerUserId()はAPIルートでCookie読取りが不安定なため）
-    const userId = process.env.ENV_TOKEN_OWNER_ID || 'demo-user-001';
-    console.log('[OAuth Start] userId:', userId, '(ENV_TOKEN_OWNER_ID直接使用)');
+    // マルチユーザー対応: ログインユーザーのIDを取得（フォールバック: ENV_TOKEN_OWNER_ID）
+    const serverUserId = await getServerUserId();
+    const userId = serverUserId || process.env.ENV_TOKEN_OWNER_ID || 'demo-user-001';
+    console.log('[OAuth Start] userId:', userId, serverUserId ? '(getServerUserId)' : '(ENV_TOKEN_OWNER_ID fallback)');
 
     if (!GOOGLE_CLIENT_ID) {
       return NextResponse.json(

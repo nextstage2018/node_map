@@ -49,13 +49,14 @@ export async function GET(request: NextRequest) {
 
     steps.push({ label: '認証コード受信', status: 'OK', detail: `長さ=${code.length}, 先頭=${code.substring(0, 8)}...` });
 
-    // 2. ENV_TOKEN_OWNER_ID
-    const userId = process.env.ENV_TOKEN_OWNER_ID;
+    // 2. マルチユーザー対応: stateパラメータからuserIdを取得（フォールバック: ENV_TOKEN_OWNER_ID）
+    const stateUserId = request.nextUrl.searchParams.get('state');
+    const userId = stateUserId || process.env.ENV_TOKEN_OWNER_ID;
     if (!userId) {
-      steps.push({ label: 'ユーザーID', status: 'NG', detail: 'ENV_TOKEN_OWNER_ID未設定' });
+      steps.push({ label: 'ユーザーID', status: 'NG', detail: 'stateパラメータもENV_TOKEN_OWNER_IDも未設定' });
       return htmlResponse('設定エラー', steps);
     }
-    steps.push({ label: 'ユーザーID', status: 'OK', detail: userId.substring(0, 8) + '...' });
+    steps.push({ label: 'ユーザーID', status: 'OK', detail: `${userId.substring(0, 8)}... (${stateUserId ? 'state' : 'ENV'})` });
 
     // 3. トークン交換
     const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {

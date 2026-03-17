@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
     const projectId = searchParams.get('project_id');
     const eventType = searchParams.get('event_type');
 
+    // マルチユーザー対応: user_idフィルタを削除（チーム共有データ）
     let query = supabase
       .from('business_events')
       .select('*, contact_persons(id, name, company_name)')
-      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (projectId) {
@@ -43,10 +43,10 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[BusinessEvents API] 取得エラー:', error);
       // JOINエラー時はフォールバック（contact_personsが外部キーでない場合）
+      // マルチユーザー対応: フォールバックでもuser_idフィルタなし
       let fallbackQuery = supabase
         .from('business_events')
         .select('*')
-        .eq('user_id', userId)
         .order('created_at', { ascending: false });
 
       // フォールバックでもproject_idフィルタを維持
@@ -219,11 +219,11 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // マルチユーザー対応: user_idフィルタを削除
     const { error } = await supabase
       .from('business_events')
       .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
+      .eq('id', id);
 
     if (error) {
       console.error('[BusinessEvents API] 削除エラー:', error);

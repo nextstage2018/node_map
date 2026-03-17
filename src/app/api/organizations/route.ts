@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search') || '';
 
+    // マルチユーザー対応: user_idフィルタを削除（チーム共有データ）
     let query = supabase
       .from('organizations')
       .select('*')
-      .eq('user_id', userId)
       .order('name', { ascending: true });
 
     if (search) {
