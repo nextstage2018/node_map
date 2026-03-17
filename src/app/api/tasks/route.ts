@@ -157,9 +157,9 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '不明なエラー';
-    console.error('[Tasks API] タスク作成エラー:', message);
+    console.error('[Tasks API] タスク作成エラー:', message, error);
     return NextResponse.json(
-      { success: false, error: 'タスクの作成に失敗しました' },
+      { success: false, error: `タスクの作成に失敗しました: ${message}` },
       { status: 500 }
     );
   }

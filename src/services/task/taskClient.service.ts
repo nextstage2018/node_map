@@ -286,14 +286,14 @@ export class TaskService {
         .single();
 
       if (error) {
-        console.error('Error creating task in Supabase:', error);
-        return newTask;
+        console.error('Error creating task in Supabase:', error.message, error.code, error.details);
+        throw new Error(`タスク作成DB失敗: ${error.message} (code: ${error.code})`);
       }
 
       return mapTaskFromDb(data);
     } catch (error) {
       console.error('Error creating task:', error);
-      return newTask;
+      throw error;
     }
   }
 

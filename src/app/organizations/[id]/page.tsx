@@ -150,9 +150,11 @@ export default function OrganizationDetailPage() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isCreatingTask, setIsCreatingTask] = useState(false);
 
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
   const handleCreateTask = async () => {
     if (!newTaskTitle.trim() || !currentProject) return;
     setIsCreatingTask(true);
+    setTaskCreateError(null);
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -165,16 +167,20 @@ export default function OrganizationDetailPage() {
           projectId: currentProject.id,
         }),
       });
-      if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
         setNewTaskTitle('');
         setShowNewTaskForm(false);
         // タスク一覧をリフレッシュ
         const taskRes = await fetch(`/api/tasks/my?project_id=${currentProject.id}&limit=100`);
         const taskData = await taskRes.json();
         if (taskData.success) setTasks(taskData.data || []);
+      } else {
+        setTaskCreateError(data.error || `タスク作成に失敗しました（${res.status}）`);
       }
     } catch (error) {
       console.error('タスク作成エラー:', error);
+      setTaskCreateError('タスク作成中にエラーが発生しました');
     }
     setIsCreatingTask(false);
   };
@@ -759,6 +765,12 @@ export default function OrganizationDetailPage() {
                           <X className="w-4 h-4" />
                         </button>
                       </div>
+                      {taskCreateError && (
+                        <div className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                          {taskCreateError}
+                          <button onClick={() => setTaskCreateError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+                        </div>
+                      )}
                     </div>
                   )}
 

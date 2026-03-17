@@ -349,7 +349,9 @@ export default function TasksPage() {
   };
 
   // クイック追加
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const handleQuickAdd = async (title: string, dueDate?: string) => {
+    setQuickAddError(null);
     try {
       const res = await fetch('/api/tasks', {
         method: 'POST',
@@ -360,14 +362,23 @@ export default function TasksPage() {
           status: 'todo',
           priority: 'medium',
           phase: 'ideation',
-          projectId: selectedProjectId || undefined,
+          projectId: selectedProjectId !== 'all' ? selectedProjectId : undefined,
         }),
       });
       if (res.ok) {
-        fetchTasks();
+        const data = await res.json();
+        if (data.success) {
+          fetchTasks();
+        } else {
+          setQuickAddError(data.error || 'タスク作成に失敗しました');
+        }
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setQuickAddError(data.error || `タスク作成に失敗しました（${res.status}）`);
       }
     } catch (error) {
       console.error('タスク作成エラー:', error);
+      setQuickAddError('タスク作成中にエラーが発生しました');
     }
   };
 
@@ -536,7 +547,17 @@ export default function TasksPage() {
                       stageId="todo"
                       itemIds={todoTasks.map(t => t.id)}
                       count={todoTasks.length}
-                      headerExtra={<QuickTaskForm onSubmit={handleQuickAdd} />}
+                      headerExtra={
+                        <div>
+                          <QuickTaskForm onSubmit={handleQuickAdd} />
+                          {quickAddError && (
+                            <div className="mt-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
+                              {quickAddError}
+                              <button onClick={() => setQuickAddError(null)} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+                            </div>
+                          )}
+                        </div>
+                      }
                     >
                       {todoTasks.map(task => (
                         <TeamTaskCard key={task.id} task={task} onComplete={handleComplete} onDelete={setDeletingTaskId} onClick={setSelectedTaskId} />
