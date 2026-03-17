@@ -386,7 +386,7 @@ export async function fetchSlackMessages(limit: number = 50, userId?: string): P
 export async function getChannelMembers(
   channelId: string,
   userId?: string
-): Promise<{ slackUserId: string; name: string; realName: string; isBot: boolean }[]> {
+): Promise<{ slackUserId: string; name: string; realName: string; isBot: boolean; email: string }[]> {
   const token = await getTokenFromDB(userId);
   if (!token) return [];
 
@@ -404,7 +404,7 @@ export async function getChannelMembers(
     if (memberIds.length === 0) return [];
 
     // 各メンバーのユーザー情報を取得
-    const members: { slackUserId: string; name: string; realName: string; isBot: boolean }[] = [];
+    const members: { slackUserId: string; name: string; realName: string; isBot: boolean; email: string }[] = [];
 
     for (const memberId of memberIds) {
       try {
@@ -414,11 +414,15 @@ export async function getChannelMembers(
         const fullResult = await client.users.info({ user: memberId });
         const isBot = fullResult.user?.is_bot || false;
 
+        // メールアドレスを取得（カレンダー招待用）
+        const email = fullResult.user?.profile?.email || '';
+
         members.push({
           slackUserId: memberId,
           name: userInfo.name,
           realName: userInfo.realName,
           isBot,
+          email,
         });
       } catch {
         // 個別ユーザー情報取得失敗はスキップ
@@ -427,6 +431,7 @@ export async function getChannelMembers(
           name: memberId,
           realName: memberId,
           isBot: false,
+          email: '',
         });
       }
     }

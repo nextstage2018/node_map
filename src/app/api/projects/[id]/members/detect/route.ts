@@ -52,8 +52,8 @@ export async function POST(
       });
     }
 
-    // 送信者マップ: address → { address, name, channel }
-    const senderMap = new Map<string, { address: string; name: string; channel: string }>();
+    // 送信者マップ: address → { address, name, channel, email? }
+    const senderMap = new Map<string, { address: string; name: string; channel: string; email?: string }>();
 
     // ============================================================
     // 経路1: Slack API で直接チャネルメンバーを取得
@@ -76,6 +76,7 @@ export async function POST(
                 address: member.slackUserId,
                 name: member.realName || member.name,
                 channel: 'slack',
+                email: member.email || undefined,
               });
             }
           }
@@ -209,6 +210,33 @@ export async function POST(
     for (const [address, sender] of senderMap) {
       // ★ 重複チェック1: アドレスが既存メンバーに紐づいている
       if (knownAddresses.has(address)) {
+        // 既存メンバーでもメールアドレスがあれば contact_channels(email) に追加
+        // → カレンダー招待で参加者として表示するために必要
+        if (sender.email) {
+          const existingContactId = addressToContactId.get(address);
+          if (existingContactId) {
+            const { data: existingEmail } = await supabase
+              .from('contact_channels')
+              .select('id')
+              .eq('contact_id', existingContactId)
+              .eq('channel', 'email')
+              .eq('address', sender.email)
+              .limit(1);
+
+            if (!existingEmail || existingEmail.length === 0) {
+              await supabase.from('contact_channels').insert({
+                contact_id: existingContactId,
+                channel: 'email',
+                address: sender.email,
+                user_id: userId,
+              }).then(({ error: emailErr }) => {
+                if (emailErr && emailErr.code !== '23505') {
+                  console.warn('[Project Members Detect] 既存メンバーemail追加失敗:', emailErr.message);
+                }
+              });
+            }
+          }
+        }
         continue;
       }
 
@@ -261,6 +289,32 @@ export async function POST(
         } else {
           console.error('[Project Members Detect] contact_persons挿入失敗:', createErr.message, { address, name: sender.name });
           continue;
+        }
+      }
+
+      // ★ Slackメンバーのメールアドレスがあれば contact_channels(email) にも追加
+      // → カレンダー招待（参加者選択）に必要
+      if (sender.email && contactId) {
+        // 既にemail登録済みか確認してから追加（UNIQUE制約対策）
+        const { data: existingEmail } = await supabase
+          .from('contact_channels')
+          .select('id')
+          .eq('contact_id', contactId)
+          .eq('channel', 'email')
+          .eq('address', sender.email)
+          .limit(1);
+
+        if (!existingEmail || existingEmail.length === 0) {
+          await supabase.from('contact_channels').insert({
+            contact_id: contactId,
+            channel: 'email',
+            address: sender.email,
+            user_id: userId,
+          }).then(({ error: emailErr }) => {
+            if (emailErr && emailErr.code !== '23505') {
+              console.warn('[Project Members Detect] email contact_channels追加失敗:', emailErr.message, { contactId, email: sender.email });
+            }
+          });
         }
       }
 
