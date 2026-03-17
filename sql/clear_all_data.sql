@@ -102,7 +102,7 @@ TRUNCATE TABLE decision_trees CASCADE;
 -- タスク → マイルストーン → テーマ
 TRUNCATE TABLE tasks CASCADE;
 TRUNCATE TABLE milestones CASCADE;
-TRUNCATE TABLE themes CASCADE;
+-- themes は DROP済み（v9.0クリーンアップ）
 
 -- 会議録
 TRUNCATE TABLE meeting_records CASCADE;

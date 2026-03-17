@@ -57,29 +57,11 @@ export async function GET(
       .order('created_at', { ascending: false })
       .limit(10);
 
-    // 3b. 種経由でタスクになったもの
-    const { data: seeds } = await sb
-      .from('seeds')
-      .select('id')
-      .in('source_message_id', messageIds)
-      .limit(50);
+    // v9.0: seeds テーブル DROP済み。種経由検索は不要
 
-    let seedTasks: any[] = [];
-    if (seeds && seeds.length > 0) {
-      const seedIds = seeds.map(s => s.id);
-      const { data } = await sb
-        .from('tasks')
-        .select('id, title, status, priority, created_at')
-        .eq('user_id', userId)
-        .in('seed_id', seedIds)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      seedTasks = data || [];
-    }
-
-    // 4. 重複排除して結合
+    // 4. 結合
     const taskMap = new Map();
-    [...(directTasks || []), ...seedTasks].forEach(t => {
+    (directTasks || []).forEach(t => {
       if (!taskMap.has(t.id)) taskMap.set(t.id, t);
     });
 

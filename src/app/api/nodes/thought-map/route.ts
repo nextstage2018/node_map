@@ -317,27 +317,15 @@ async function getUserOverviewMap(userId: string): Promise<{
       });
     }
 
-    // タスク/種の簡易一覧（フィルター用）
+    // タスクの簡易一覧（フィルター用）— v9.0: seeds DROP済み
     const { data: taskRows } = await sb
       .from('tasks')
       .select('id, title, phase, status')
-      .eq('user_id', userId);
-    const { data: seedRows } = await sb
-      .from('seeds')
-      .select('id, content, status')
       .eq('user_id', userId);
 
     const tasks: any[] = [];
     for (const t of (taskRows || [])) {
       tasks.push({ id: t.id, type: 'task', title: t.title, phase: t.phase || 'ideation' });
-    }
-    for (const s of (seedRows || [])) {
-      tasks.push({
-        id: s.id,
-        type: 'seed',
-        title: s.content?.slice(0, 40) + (s.content?.length > 40 ? '...' : ''),
-        phase: 'seed',
-      });
     }
 
     return { nodes, edges, tasks };
@@ -427,34 +415,19 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
 
-    // ユーザーの種一覧
-    const { data: seeds } = await sb
-      .from('seeds')
-      .select('id, content, status, created_at')
-      .eq('user_id', userId)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
+    // v9.0: seeds テーブル DROP済み。タスクのノード数のみ取得
 
-    // 各タスク/種のノード数とエッジ数を取得
+    // 各タスクのノード数とエッジ数を取得
     const result: typeof getUserTasksWithNodeCount extends (...args: any) => Promise<infer R> ? R : never = [];
 
-    // タスク（元の種のノード数も加算）
     for (const task of (tasks || [])) {
-      const countPromises: Promise<any>[] = [
+      const [nodeRes, edgeRes] = await Promise.all([
         sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
         sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('task_id', task.id),
-      ];
-      // 元の種のノード数も加算
-      if (task.seed_id) {
-        countPromises.push(
-          sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('seed_id', task.seed_id),
-          sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('seed_id', task.seed_id),
-        );
-      }
+      ]);
 
-      const counts = await Promise.all(countPromises);
-      const nodeCount = (counts[0].count || 0) + (counts[2]?.count || 0);
-      const edgeCount = (counts[1].count || 0) + (counts[3]?.count || 0);
+      const nodeCount = nodeRes.count || 0;
+      const edgeCount = edgeRes.count || 0;
 
       // ノードが1つ以上あるタスクのみ表示
       if (nodeCount > 0) {
@@ -468,39 +441,6 @@ async function getUserTasksWithNodeCount(userId: string): Promise<{
           edgeCount,
           createdAt: task.created_at,
           updatedAt: task.updated_at,
-        });
-      }
-    }
-
-    // タスク化済みの種IDを収集（タスク側で統合表示するため）
-    const taskifiedSeedIds = new Set(
-      (tasks || []).filter(t => t.seed_id).map(t => t.seed_id)
-    );
-
-    // 種（タスク化されていないもののみ表示）
-    for (const seed of (seeds || [])) {
-      // この種が既にタスク化されていれば、タスク側で統合表示するのでスキップ
-      if (taskifiedSeedIds.has(seed.id)) continue;
-
-      const [nodeRes, edgeRes] = await Promise.all([
-        sb.from('thought_task_nodes').select('id', { count: 'exact', head: true }).eq('seed_id', seed.id),
-        sb.from('thought_edges').select('id', { count: 'exact', head: true }).eq('seed_id', seed.id),
-      ]);
-
-      const nodeCount = nodeRes.count || 0;
-      const edgeCount = edgeRes.count || 0;
-
-      if (nodeCount > 0) {
-        result.push({
-          id: seed.id,
-          type: 'seed',
-          title: seed.content?.slice(0, 50) + (seed.content?.length > 50 ? '...' : ''),
-          phase: 'seed',
-          status: seed.status,
-          nodeCount,
-          edgeCount,
-          createdAt: seed.created_at,
-          updatedAt: seed.created_at,
         });
       }
     }

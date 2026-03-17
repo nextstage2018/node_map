@@ -1166,22 +1166,8 @@ export class ThoughtNodeService {
         }
       }
 
+      // v9.0: seeds テーブル DROP済み。seedDetailsは空Mapで処理を継続
       const seedDetails = new Map<string, { title: string; status: string; createdAt: string }>();
-      if (seedIds.length > 0) {
-        const { data: seeds } = await sb
-          .from('seeds')
-          .select('id, content, status, created_at')
-          .in('id', seedIds);
-        if (seeds) {
-          for (const s of seeds) {
-            seedDetails.set(s.id, {
-              title: (s.content || '').slice(0, 50) + (s.content?.length > 50 ? '...' : ''),
-              status: s.status,
-              createdAt: s.created_at,
-            });
-          }
-        }
-      }
 
       // 5. スコア計算＋結果構築
       const results: {

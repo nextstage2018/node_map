@@ -717,9 +717,9 @@ function OrganizationsTab() {
               <p className="font-medium text-slate-700">登録時の機能</p>
               <div className="space-y-1 pl-2">
                 <p>• <span className="font-medium">書類種別</span>: 提案資料・見積書・契約書・請求書・レポート・議事録・マニュアル・デザイン・仕様書・その他の10種から選択</p>
-                <p>• <span className="font-medium">格納先の指定</span>: マイルストーンまたはジョブの選択が必須。タスクも選択可能</p>
+                <p>• <span className="font-medium">格納先の指定</span>: マイルストーンまたは定期イベントの選択が必須。タスクも選択可能</p>
                 <p>• <span className="font-medium">命名規則の自動適用</span>: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_資料名.拡張子</span></p>
-                <p>• <span className="font-medium">タグの自動付与</span>: 書類種別・MS名・タスク名・ジョブ名・登録者名が自動でタグ付け。手動追加も可能</p>
+                <p>• <span className="font-medium">タグの自動付与</span>: 書類種別・MS名・タスク名・定期イベント名・登録者名が自動でタグ付け。手動追加も可能</p>
                 <p>• <span className="font-medium">編集・削除</span>: 登録済み資料の種別・格納先・タグの変更、削除に対応</p>
               </div>
             </div>
@@ -741,7 +741,7 @@ function OrganizationsTab() {
         </div>
         <div className="mt-3 space-y-1 text-xs text-slate-500">
           <p>ファイル名ルール: <span className="font-mono bg-slate-100 px-1 rounded">YYYY-MM-DD_種別_原名.ext</span></p>
-          <p>メタデータタグ: 書類種別・MS名・タスク名・ジョブ名・登録者名で自動タグ付け＋手動追加可能</p>
+          <p>メタデータタグ: 書類種別・MS名・タスク名・定期イベント名・登録者名で自動タグ付け＋手動追加可能</p>
           <p>フォルダ自動生成: 組織・プロジェクトは作成時、定期イベント/会議議事録/MS/タスクはファイル保存時に動的生成</p>
         </div>
       </SectionCard>

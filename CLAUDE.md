@@ -1,6 +1,6 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-16
+最終更新: 2026-03-17
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
 > V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) + v9.0 実装済み。作業開始前に必ず読んでください。
@@ -260,15 +260,15 @@ AI解析の改修イメージ:
 | `contact_patterns` | パターン分析 | UUID | 日次Cron自動計算 |
 | `user_thinking_tendencies` | 思考傾向 | UUID | 日次Cron AI分析 |
 | `business_events` | ビジネスイベント | UUID | ai_generated / meeting_record_id nullable |
-| `themes` | テーマ（任意中間レイヤー） | UUID | project_id 必須 |
-| `milestones` | マイルストーン | UUID | project_id 必須、theme_id nullable。**status CHECK: pending/in_progress/achieved/missed のみ** |
+| ~~`themes`~~ | ~~テーマ~~ **DROP済み（v9.0）** | - | milestones.theme_id は NULLable残存 |
+| `milestones` | マイルストーン | UUID | project_id 必須。**status CHECK: pending/in_progress/achieved/missed のみ** |
 | `meeting_records` | 会議録 | UUID | project_id 必須。**source_type CHECK: text/file/transcription/meetgeek/gemini**。source_file_id TEXT型。v3.0: participants/meeting_start_at/meeting_end_at/metadata/highlights 追加。v6.0: 'gemini'追加（カレンダーイベントIDをsource_file_idに格納） |
 | `decision_trees` | 検討ツリーのルート | UUID | project_id 必須 |
 | `decision_tree_nodes` | 検討ツリーのノード | UUID | parent_node_id で階層構造。v3.0: source_type/confidence_score/source_message_ids 追加 |
 | `decision_tree_node_history` | ノード状態変更履歴 | UUID | node_id FK CASCADE |
 | `milestone_evaluations` | チェックポイント評価結果 | UUID | milestone_id FK CASCADE |
 | `evaluation_learnings` | 評価エージェント学習データ | UUID | AI判定 vs 人間判定の差分 |
-| `seeds` | 種ボックス（廃止済み） | UUID | 参照のみ。新規作成しない |
+| ~~`seeds`~~ | ~~種ボックス~~ **DROP済み（v9.0）** | - | seed_conversations も DROP済み。tasks.seed_id 等は NULLable残存 |
 | `open_issues` | 未確定事項トラッカー | UUID | project_id必須。**status CHECK: open/resolved/stale**。priority_score自動算出。days_stagnant Cron更新。UNIQUE(project_id, title, source_type) |
 | `decision_log` | 意思決定ログ | UUID | project_id必須。previous_decision_idで変更チェーン。**status CHECK: active/superseded/reverted/on_hold**。implementation_status別管理 |
 | `meeting_agenda` | 会議アジェンダ | UUID | project_id必須。items JSONB配列。**status CHECK: draft/confirmed/completed**。UNIQUE(project_id, meeting_date)。自動生成→確認→完了のライフサイクル |
@@ -281,6 +281,7 @@ AI解析の改修イメージ:
 
 > **v9.0でAIチャット秘書を廃止し、3カード型ダッシュボードに置き換え。**
 > v9.0クリーンアップで以下を全削除済み: `SecretaryChat.tsx`・`WelcomeDashboard.tsx`・`ChatCards.tsx`・`QuickActions.tsx`・`/api/agent/chat`・`/api/agent/conversations`・`secretary_conversations`テーブル（DROP済み）。
+> さらに v9.0 廃止機能クリーンアップで以下もDROP・削除済み: `seeds`・`seed_conversations`・`themes`・`thinking_logs`・`weekly_node_confirmations` テーブル（DROP済み）、関連API・コンポーネント・サービス・型定義すべて削除。
 
 ---
 
@@ -1690,6 +1691,11 @@ Phase 4: アジェンダ強化
 | リダイレクトページ（/agent, /jobs, /memos等 9ページ） | **削除済み** |
 | 44 intent分類（classifyIntent） | agent/chat と共に削除済み |
 | URLパラメータコンテキスト注入 | page.tsxから除去済み |
+| seeds / seed_conversations テーブル | **DROP済み**（API・コンポーネント・サービス・型定義も全削除） |
+| themes テーブル | **DROP済み**（API・コンポーネント・型定義も全削除） |
+| thinking_logs テーブル | **DROP済み**（API・サービス・コンポーネントも全削除） |
+| weekly_node_confirmations テーブル | **DROP済み**（API・コンポーネントも全削除） |
+| GoalSuggestionReview / goals/batch-create API | **削除済み**（themes依存） |
 
 ### 新規ファイル
 

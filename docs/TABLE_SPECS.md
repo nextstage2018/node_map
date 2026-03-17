@@ -1,6 +1,6 @@
 # NodeMap テーブル仕様書（SSOT）— DB現状マスタ
 
-最終更新: 2026-03-16（task_conversations に user_id カラム追加確認、タスク詳細API修正）
+最終更新: 2026-03-17（v9.0クリーンアップ: seeds/seed_conversations/themes/secretary_conversations DROP済み反映）
 
 > **このドキュメントの目的**: 現在のデータベーススキーマの完全な記録。各テーブルについて、用途・CREATE TABLE文・インデックス・制約・注意事項を網羅しています。
 >
@@ -272,7 +272,6 @@ CREATE INDEX idx_projects_organization_id ON projects(organization_id);
 - **RLS**: user_id でフィルタ
 - status: 'active'/'paused'/'completed'
 - project_id → project_channels（1対多）
-- project_id → seeds（1対多）
 - project_id → tasks（1対多）
 - project_id → business_events（1対多）
 - project_id → drive_folders（1対多）
@@ -348,35 +347,11 @@ CREATE INDEX idx_project_members_contact_id ON project_members(contact_id);
 - role: 'owner' / 'member' / 'viewer'
 - メンバーカード展開で contact_persons の編集 + contact_channels の管理が可能
 
-### themes（テーマ：任意中間レイヤー）
+### ~~themes~~（v9.0で DROP済み）
 
-**目的**: プロジェクト配下の任意グルーピング。マイルストーンをテーマ単位で整理可能
+> テーマテーブルは v9.0 クリーンアップで削除。milestones.theme_id は残存（NULLable、参照先なし）。
 
-#### CREATE TABLE
-
-```sql
-CREATE TABLE IF NOT EXISTS themes (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  title TEXT NOT NULL,
-  description TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  sort_order INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-#### インデックス
-
-```sql
-CREATE INDEX IF NOT EXISTS idx_themes_project ON themes(project_id);
-```
-
-#### 注意事項
-
-- **任意レイヤー**: テーマは省略可能。マイルストーンの theme_id は NULL 許容
-- **4階層（v8.0）**: Organization > Project > Milestone（任意） > Task
+---
 
 ### milestones（マイルストーン）
 
@@ -388,7 +363,7 @@ CREATE INDEX IF NOT EXISTS idx_themes_project ON themes(project_id);
 CREATE TABLE IF NOT EXISTS milestones (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,  -- v8.0: NULL運用（テーマ廃止）
+  theme_id UUID,  -- v9.0: themes テーブル DROP済み。NULLable残存カラム
   title TEXT NOT NULL,
   description TEXT,
   start_context TEXT,
@@ -473,7 +448,7 @@ CREATE TABLE tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL,
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-  seed_id UUID REFERENCES seeds(id) ON DELETE SET NULL,
+  seed_id UUID,  -- v9.0: seeds テーブル DROP済み。NULLable残存カラム
   title TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL DEFAULT 'todo' CHECK(status IN ('todo', 'in_progress', 'done')),
@@ -495,7 +470,7 @@ CREATE TABLE tasks (
   slack_message_ts TEXT,                                            -- v4.5: Slack Block Kit カードのts（chat.update用）
   external_sync_status TEXT DEFAULT 'none' CHECK (external_sync_status IN ('none', 'synced', 'failed')), -- v4.5: 外部同期状態
   milestone_id UUID REFERENCES milestones(id) ON DELETE SET NULL,
-  theme_id UUID REFERENCES themes(id) ON DELETE SET NULL,
+  theme_id UUID,  -- v9.0: themes テーブル DROP済み。NULLable残存カラム
   estimated_hours NUMERIC(6,2) DEFAULT NULL,              -- v4.1: 見積もり工数（時間）
   actual_hours NUMERIC(6,2) DEFAULT NULL,                 -- v4.1: 実績工数（時間）
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -766,70 +741,10 @@ CREATE INDEX idx_memo_conversations_turn_id ON memo_conversations(turn_id);
 
 ---
 
-### seeds（種：廃止予定ボックス）
+### ~~seeds / seed_conversations~~（v9.0で DROP済み）
 
-**目的**: Phase 40 の段階的廃止予定。種のAI会話記録
-
-#### CREATE TABLE
-
-```sql
-CREATE TABLE seeds (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL,
-  title TEXT,
-  content TEXT,
-  phase TEXT NOT NULL DEFAULT 'seed',
-  project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
-  source_from TEXT,
-  source_date TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-#### インデックス
-
-```sql
-CREATE INDEX idx_seeds_user_id ON seeds(user_id);
-CREATE INDEX idx_seeds_project_id ON seeds(project_id);
-```
-
-#### 注意事項
-
-- phase: 'seed'/'ideation'
-- source_from: Phase 41 で指定（'inbox'/'memo'等）
-- seed_id → seed_conversations（1対多）
-- seed_id → tasks（1対多）（種→タスク変換時） Phase 40c
-- seed_id → thought_task_nodes（1対多）
-- seed_id → thought_edges（1対多）
-- Phase 41 で confirmSeed() を全面改修。種をタスクに変換する際に AI が ideation_summary を自動生成
-
----
-
-### seed_conversations（種内AI会話）
-
-**目的**: 種の構想段階AI会話（種→タスク変換時にタスク会話に引き継ぎ）
-
-#### CREATE TABLE
-
-```sql
-CREATE TABLE seed_conversations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  seed_id UUID NOT NULL REFERENCES seeds(id) ON DELETE CASCADE,
-  user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-  content TEXT NOT NULL,
-  turn_id UUID DEFAULT gen_random_uuid(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-#### インデックス
-
-```sql
-CREATE INDEX idx_seed_conversations_seed_id ON seed_conversations(seed_id);
-CREATE INDEX idx_seed_conversations_turn_id ON seed_conversations(turn_id);
-```
+> seeds、seed_conversations テーブルは v9.0 クリーンアップで削除。
+> tasks.seed_id、thought_task_nodes.seed_id、thought_edges.seed_id は NULLable カラムとして残存（参照先なし）。
 
 ---
 
@@ -1042,9 +957,9 @@ CREATE INDEX idx_knowledge_fields_domain_id ON knowledge_fields(domain_id);
 
 ---
 
-### thought_task_nodes（タスク/種 ↔ ナレッジノード紐づけ）
+### thought_task_nodes（タスク ↔ ナレッジノード紐づけ）
 
-**目的**: どのタスク/種がどのキーワード（ノード）を使ったかの記録
+**目的**: どのタスクがどのキーワード（ノード）を使ったかの記録
 
 #### CREATE TABLE
 
@@ -1052,7 +967,7 @@ CREATE INDEX idx_knowledge_fields_domain_id ON knowledge_fields(domain_id);
 CREATE TABLE thought_task_nodes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
-  seed_id UUID REFERENCES seeds(id) ON DELETE CASCADE,
+  seed_id UUID,  -- v9.0: seeds テーブル DROP済み。NULLable残存カラム
   node_id TEXT NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
   appear_order INT,
@@ -1079,12 +994,11 @@ CREATE INDEX idx_thought_task_nodes_user_id ON thought_task_nodes(user_id);
 #### 注意事項
 
 - **UNIQUE(task_id, node_id)**: タスク内での同ノード重複登録防止
-- **UNIQUE(seed_id, node_id)**: 種内での同ノード重複登録防止
+- **UNIQUE(seed_id, node_id)**: 種内での同ノード重複登録防止（レガシー）
 - **CHECK(task_id IS NOT NULL OR seed_id IS NOT NULL)**: どちらか必須
 - appear_phase: 'seed'/'ideation'/'progress'/'result'
 - is_main_route: メイン思考ルートか脇道か
 - 思考マップUI: ユーザーのタスク一覧→ノード可視化（多対多で統合）
-- ノード検索: 特定キーワードが使われたタスク/種を逆検索
 
 ---
 
@@ -1098,7 +1012,7 @@ CREATE INDEX idx_thought_task_nodes_user_id ON thought_task_nodes(user_id);
 CREATE TABLE thought_edges (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
-  seed_id UUID REFERENCES seeds(id) ON DELETE CASCADE,
+  seed_id UUID,  -- v9.0: seeds テーブル DROP済み。NULLable残存カラム
   from_node_id TEXT NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
   to_node_id TEXT NOT NULL REFERENCES knowledge_master_entries(id) ON DELETE CASCADE,
   user_id TEXT NOT NULL,
@@ -1393,41 +1307,13 @@ CREATE INDEX idx_drive_file_staging_created_at ON drive_file_staging(created_at)
 
 ---
 
-## 7. 秘書・会話関連テーブル
+## 7. 会話・外部資料関連テーブル
 
-### secretary_conversations（秘書AI会話永続化）
+### ~~secretary_conversations~~（v9.0で DROP済み）
 
-**目的**: Phase 53: 秘書チャットのAIコンテキスト保持（UI復元はしない）
+> 秘書AI会話テーブルは v9.0 クリーンアップで削除。秘書チャットは3カード型ダッシュボードに置き換え。
 
-#### CREATE TABLE
-
-```sql
-CREATE TABLE secretary_conversations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL,
-  role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-  content TEXT NOT NULL DEFAULT '',
-  cards JSONB,
-  session_id TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-#### インデックス
-
-```sql
-CREATE INDEX idx_secretary_conversations_user_id ON secretary_conversations(user_id);
-CREATE INDEX idx_secretary_conversations_session_id ON secretary_conversations(session_id);
-CREATE INDEX idx_secretary_conversations_created_at ON secretary_conversations(created_at);
-```
-
-#### 注意事項
-
-- role: 'user' / 'assistant'
-- cards: JSONB で複数カード（InboxSummary+TaskResume 等）を一度に保存可能
-- session_id で「セッション単位」の束ねが可能（オプション）
-- 秘書チャット開く度に、過去15-30件の会話をDBから読み込み→ Claude API のコンテキストに注入
-- UI は毎回ダッシュボード表示。過去会話は復元しない（テキスト形式での UI レンダリングなし）
+---
 
 ### task_external_resources（Phase E: タスク外部資料）
 
@@ -2115,13 +2001,7 @@ users (Supabase auth)
   │     │  ├─ thought_snapshots (task_id)
   │     │  ├─ drive_documents (task_id)
   │     │  └─ task_external_resources (task_id) [Phase E]
-  │     ├─ seeds (project_id) [廃止予定]
-  │     │  ├─ seed_conversations (seed_id)
-  │     │  ├─ thought_task_nodes (seed_id)
-  │     │  └─ thought_edges (seed_id)
-  │     ├─ themes (project_id) [任意中間レイヤー]
-  │     │  └─ milestones (theme_id) [テーマ配下]
-  │     ├─ milestones (project_id) [テーマなしも可]
+  │     ├─ milestones (project_id)
   │     │  └─ tasks (milestone_id)
   │     ├─ business_events (project_id)
   │     ├─ open_issues (project_id) [v3.4]
@@ -2139,7 +2019,6 @@ users (Supabase auth)
   ├─ inbox_messages [チャネル別に複数]
   ├─ inbox_sync_state (user_id)
   ├─ user_service_tokens (user_id)
-  ├─ secretary_conversations (user_id)
   ├─ user_thinking_tendencies (user_id)
   └─ knowledge_* (user_id作成) ← ナレッジは複数ユーザー共有
      ├─ knowledge_master_entries (user_id)

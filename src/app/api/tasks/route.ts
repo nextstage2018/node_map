@@ -36,41 +36,8 @@ export async function GET(request: NextRequest) {
         .limit(5);
 
       if (error) {
-        // source_message_id カラムがない場合はフォールバック（seeds経由で検索）
-        // マルチユーザー対応: seeds経由検索もuser_idフィルタなし
-        const { data: seedData } = await sb
-          .from('seeds')
-          .select('id')
-          .eq('source_message_id', sourceMessageId)
-          .limit(1);
-
-        if (seedData && seedData.length > 0) {
-          const { data: taskData } = await sb
-            .from('tasks')
-            .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
-            .eq('seed_id', seedData[0].id)
-            .limit(5);
-          return NextResponse.json({ success: true, data: taskData || [] });
-        }
+        // v9.0: seeds テーブル DROP済み。フォールバック不要
         return NextResponse.json({ success: true, data: [] });
-      }
-
-      // 直接マッチがなければ seeds 経由でも検索
-      if (!data || data.length === 0) {
-        const { data: seedData } = await sb
-          .from('seeds')
-          .select('id')
-          .eq('source_message_id', sourceMessageId)
-          .limit(1);
-
-        if (seedData && seedData.length > 0) {
-          const { data: taskData } = await sb
-            .from('tasks')
-            .select('id, title, status, priority, phase, due_date, updated_at, project_id, seed_id')
-            .eq('seed_id', seedData[0].id)
-            .limit(5);
-          return NextResponse.json({ success: true, data: taskData || [] });
-        }
       }
 
       return NextResponse.json({ success: true, data: data || [] });
