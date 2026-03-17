@@ -554,7 +554,7 @@ ${ideationUserCount >= 1 && coveredItems.length < 4 ? `- 次は「${['ゴール'
     ];
     if (task.description) contextParts.push(`- 説明: ${task.description}`);
     if (task.ideationSummary) contextParts.push(`- 構想メモ:\n${task.ideationSummary}`);
-    if (task.seedId) contextParts.push(`- ※このタスクは「種ボックス」のアイデアから生まれたものです。種での検討内容が構想メモに反映されています。`);
+    // Seeds機能は廃止済み（v9.0クリーンアップ）
     if ((task as any).dueDate) contextParts.push(`- 期限: ${(task as any).dueDate}`);
 
     const personalizedStr = projectContext?.personalizedContext || '';

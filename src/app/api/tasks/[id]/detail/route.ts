@@ -70,25 +70,16 @@ export async function GET(
       }));
     }
 
-    // 3. マイルストーン・テーマ情報
+    // 3. マイルストーン情報（テーマは廃止済み: v8.0）
     let milestoneTitle: string | null = null;
-    let themeTitle: string | null = null;
     if (task.milestone_id) {
       const { data: ms } = await supabase
         .from('milestones')
-        .select('id, title, theme_id')
+        .select('id, title')
         .eq('id', task.milestone_id)
         .single();
       if (ms) {
         milestoneTitle = ms.title;
-        if (ms.theme_id) {
-          const { data: theme } = await supabase
-            .from('themes')
-            .select('id, title')
-            .eq('id', ms.theme_id)
-            .single();
-          if (theme) themeTitle = theme.title;
-        }
       }
     }
 
@@ -201,8 +192,7 @@ export async function GET(
         organization_name: organizationName,
         milestone_id: task.milestone_id,
         milestone_title: milestoneTitle,
-        theme_id: task.theme_id,
-        theme_title: themeTitle,
+        // theme は廃止済み（v8.0）
         result_summary: task.result_summary,
         ideation_summary: task.ideation_summary,
         created_at: task.created_at,

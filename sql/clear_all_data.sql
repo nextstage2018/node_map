@@ -22,7 +22,7 @@ TRUNCATE TABLE task_negotiations CASCADE;
 TRUNCATE TABLE thought_edges CASCADE;
 TRUNCATE TABLE thought_task_nodes CASCADE;
 TRUNCATE TABLE thought_snapshots CASCADE;
-TRUNCATE TABLE thinking_logs CASCADE;
+-- thinking_logs は DROP済み（v9.0クリーンアップ）
 
 -- 検討ツリー末端
 TRUNCATE TABLE decision_tree_node_history CASCADE;
@@ -51,7 +51,7 @@ TRUNCATE TABLE node_clusters CASCADE;
 TRUNCATE TABLE cluster_nodes CASCADE;
 TRUNCATE TABLE user_nodes CASCADE;
 TRUNCATE TABLE edge_tasks CASCADE;
-TRUNCATE TABLE weekly_node_confirmations CASCADE;
+-- weekly_node_confirmations は DROP済み（v9.0クリーンアップ）
 
 -- Drive関連
 TRUNCATE TABLE drive_documents CASCADE;
@@ -80,9 +80,7 @@ TRUNCATE TABLE goals CASCADE;
 TRUNCATE TABLE memo_conversations CASCADE;
 TRUNCATE TABLE idea_memos CASCADE;
 
--- 種関連
-TRUNCATE TABLE seed_conversations CASCADE;
-TRUNCATE TABLE seeds CASCADE;
+-- seeds/seed_conversations は DROP済み（v9.0クリーンアップ）
 
 -- 相談
 TRUNCATE TABLE consultations CASCADE;

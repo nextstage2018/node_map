@@ -3,10 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { cn } from '@/lib/utils';
 import { KNOWLEDGE_DOMAIN_CONFIG } from '@/lib/constants';
-import type { NodeData, NodeType, UnderstandingLevel, ThinkingLog, CreateThinkingLogRequest } from '@/lib/types';
+import type { NodeData, NodeType, UnderstandingLevel } from '@/lib/types';
 import Button from '@/components/ui/Button';
-import ThinkingLogInput from '@/components/thinking/ThinkingLogInput';
-import ThinkingLogTimeline from '@/components/thinking/ThinkingLogTimeline';
 
 const NODE_TYPE_LABELS: Record<NodeType, string> = {
   keyword: 'キーワード',
@@ -48,85 +46,7 @@ export default function NodeDetailPanel({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Phase 30: 思考ログ
-  const [thinkingLogs, setThinkingLogs] = useState<ThinkingLog[]>([]);
-  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
-  const [isSubmittingLog, setIsSubmittingLog] = useState(false);
-  const [showThinkingLogs, setShowThinkingLogs] = useState(false);
-
-  // 思考ログ取得
-  const fetchThinkingLogs = useCallback(async (nodeId: string) => {
-    setIsLoadingLogs(true);
-    try {
-      const res = await fetch(`/api/thinking-logs?linkedNodeId=${nodeId}`);
-      const data = await res.json();
-      if (data.success) {
-        setThinkingLogs(data.data);
-      }
-    } catch {
-      // サイレント
-    } finally {
-      setIsLoadingLogs(false);
-    }
-  }, []);
-
-  // 思考ログ作成
-  const handleCreateLog = useCallback(async (req: CreateThinkingLogRequest) => {
-    if (!node) return;
-    setIsSubmittingLog(true);
-    try {
-      const res = await fetch('/api/thinking-logs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...req,
-          linkedNodeId: node.id,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setThinkingLogs((prev) => [data.data, ...prev]);
-      }
-    } catch {
-      // サイレント
-    } finally {
-      setIsSubmittingLog(false);
-    }
-  }, [node]);
-
-  // 思考ログ削除
-  const handleDeleteLog = useCallback(async (logId: string) => {
-    try {
-      const res = await fetch(`/api/thinking-logs?logId=${logId}`, {
-        method: 'DELETE',
-      });
-      const data = await res.json();
-      if (data.success) {
-        setThinkingLogs((prev) => prev.filter((l) => l.id !== logId));
-      }
-    } catch {
-      // サイレント
-    }
-  }, []);
-
-  // 思考ログ編集（簡易: 内容更新）
-  const handleEditLog = useCallback(async (log: ThinkingLog) => {
-    const newContent = prompt('思考ログを編集', log.content);
-    if (newContent === null || newContent === log.content) return;
-    try {
-      const res = await fetch('/api/thinking-logs', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ logId: log.id, content: newContent }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setThinkingLogs((prev) => prev.map((l) => (l.id === log.id ? data.data : l)));
-      }
-    } catch {
-      // サイレント
-    }
-  }, []);
+  // Phase 30: 思考ログは廃止済み（v9.0クリーンアップ）
 
   // ノード変更時に編集フォームを初期化
   useEffect(() => {
@@ -137,9 +57,7 @@ export default function NodeDetailPanel({
       setIsEditing(false);
       setShowDeleteConfirm(false);
       setError(null);
-      // 思考ログをリセット
-      setThinkingLogs([]);
-      setShowThinkingLogs(false);
+      // 思考ログは廃止済み
     }
   }, [node]);
 
@@ -449,47 +367,7 @@ export default function NodeDetailPanel({
           </div>
         )}
 
-        {/* Phase 30: 思考ログセクション */}
-        <div className="border-t border-slate-100 pt-4">
-          <button
-            onClick={() => {
-              const next = !showThinkingLogs;
-              setShowThinkingLogs(next);
-              if (next && thinkingLogs.length === 0 && node) {
-                fetchThinkingLogs(node.id);
-              }
-            }}
-            className="flex items-center justify-between w-full text-left"
-          >
-            <label className="text-xs font-semibold text-slate-500">
-              思考ログ
-            </label>
-            <svg
-              className={`w-4 h-4 text-slate-400 transition-transform ${showThinkingLogs ? 'rotate-180' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-
-          {showThinkingLogs && (
-            <div className="mt-3 space-y-3">
-              <ThinkingLogInput
-                defaultLinkedNodeId={node.id}
-                onSubmit={handleCreateLog}
-                isSubmitting={isSubmittingLog}
-              />
-              <ThinkingLogTimeline
-                logs={thinkingLogs}
-                onEdit={handleEditLog}
-                onDelete={handleDeleteLog}
-                isLoading={isLoadingLogs}
-              />
-            </div>
-          )}
-        </div>
+        {/* Phase 30: 思考ログセクションは廃止済み（v9.0クリーンアップ） */}
 
         {/* エラー表示 */}
         {error && (

@@ -328,30 +328,7 @@ export interface Job {
   consultationId?: string;
 }
 
-// 種の状態
-export type SeedStatus = 'pending' | 'confirmed';
-
-// 種（タスク化前のアイデア・メモ）
-export interface Seed {
-  id: string;
-  content: string;             // ユーザーが入力した生テキスト or AI要約
-  sourceChannel?: ChannelType;
-  sourceMessageId?: string;
-  sourceFrom?: string;         // Phase 40b: 発信者（名前 or アドレス）
-  sourceDate?: string;         // Phase 40b: 元メッセージの日時
-  projectId?: string;          // Phase 40b: 紐づくプロジェクト
-  projectName?: string;        // Phase 40b: プロジェクト名（表示用）
-  createdAt: string;
-  status: SeedStatus;
-  tags?: string[];             // Phase 40: タグ
-  // AI構造化結果（確認フェーズで生成）
-  structured?: {
-    goal: string;
-    content: string;
-    concerns: string;
-    deadline?: string;
-  };
-}
+// Seeds（種ボックス）は廃止済み（v9.0クリーンアップ）
 
 // タスクボードの表示モード
 export type TaskBoardViewMode = 'status' | 'timeline';
@@ -401,21 +378,7 @@ export interface CreateMemoRequest {
   tags?: string[];
 }
 
-// 種作成リクエスト
-export interface CreateSeedRequest {
-  content: string;
-  sourceChannel?: ChannelType;
-  sourceMessageId?: string;
-  sourceFrom?: string;         // Phase 40b: 発信者
-  sourceDate?: string;         // Phase 40b: 元メッセージ日時
-  projectId?: string;          // Phase 40b: プロジェクトID
-  contextMessages?: {          // Phase 40b: AI種化用の前後コンテキスト
-    from: string;
-    body: string;
-    timestamp: string;
-    isTarget?: boolean;        // 種化ボタンを押したメッセージ
-  }[];
-}
+// CreateSeedRequest は廃止済み（v9.0クリーンアップ）
 
 // ===== Phase 3: 設定画面 / API接続 =====
 
@@ -867,24 +830,7 @@ export interface BusinessEvent {
   updatedAt: string;
 }
 
-// ===== Phase 20: 週次ノードバナー =====
-
-export interface WeeklyNodeConfirmRequest {
-  userId: string;
-  nodeIds: string[];
-  weekStart: string;
-}
-
-export interface WeeklyNodeConfirmResponse {
-  confirmedCount: number;
-  updatedNodes: NodeData[];
-}
-
-export interface WeeklyNodesResponse {
-  nodes: NodeData[];
-  weekStart: string;
-  alreadyConfirmed: boolean;
-}
+// Phase 20 週次ノードバナーは廃止済み（v9.0クリーンアップ）
 
 // ===== Google Drive ドキュメント管理 =====
 

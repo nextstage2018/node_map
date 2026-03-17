@@ -58,38 +58,24 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // マイルストーン/テーマ情報
+    // マイルストーン情報（テーマは廃止済み: v8.0）
     const milestoneIds = [...new Set((tasks || []).filter(t => t.milestone_id).map(t => t.milestone_id))];
-    let milestoneMap: Record<string, { title: string; theme_id?: string }> = {};
-    let themeMap: Record<string, string> = {};
+    let milestoneMap: Record<string, string> = {};
 
     if (milestoneIds.length > 0) {
       const { data: milestones } = await supabase
         .from('milestones')
-        .select('id, title, theme_id')
+        .select('id, title')
         .in('id', milestoneIds);
       if (milestones) {
-        milestoneMap = Object.fromEntries(milestones.map(m => [m.id, { title: m.title, theme_id: m.theme_id }]));
-        const themeIds = [...new Set(milestones.filter(m => m.theme_id).map(m => m.theme_id))];
-        if (themeIds.length > 0) {
-          const { data: themes } = await supabase
-            .from('themes')
-            .select('id, title')
-            .in('id', themeIds);
-          if (themes) {
-            themeMap = Object.fromEntries(themes.map(t => [t.id, t.title]));
-          }
-        }
+        milestoneMap = Object.fromEntries(milestones.map(m => [m.id, m.title]));
       }
     }
 
     const enrichedTasks = (tasks || []).map(task => ({
       ...task,
       assignee_name: task.assigned_contact_id ? contactMap[task.assigned_contact_id] || null : null,
-      milestone_title: task.milestone_id ? milestoneMap[task.milestone_id]?.title || null : null,
-      theme_title: task.milestone_id && milestoneMap[task.milestone_id]?.theme_id
-        ? themeMap[milestoneMap[task.milestone_id].theme_id!] || null
-        : null,
+      milestone_title: task.milestone_id ? milestoneMap[task.milestone_id] || null : null,
     }));
 
     return NextResponse.json({ success: true, data: enrichedTasks });

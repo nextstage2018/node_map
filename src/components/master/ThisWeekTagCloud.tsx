@@ -8,7 +8,6 @@ interface WeekNode {
   label: string;
   frequency: number;
   relatedTaskIds: string[];
-  relatedSeedIds: string[];
   category: string;
   color: string;
 }
@@ -132,11 +131,7 @@ export default function ThisWeekTagCloud() {
                 タスク: {selectedNode.relatedTaskIds.length}
               </span>
             )}
-            {selectedNode.relatedSeedIds.length > 0 && (
-              <span className="bg-green-50 text-green-600 px-1.5 py-0.5 rounded">
-                種: {selectedNode.relatedSeedIds.length}
-              </span>
-            )}
+            {/* Seeds機能は廃止済み */}
           </div>
         </div>
       )}

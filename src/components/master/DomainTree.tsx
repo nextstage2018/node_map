@@ -551,12 +551,12 @@ function EntryDetailPanel({ entry, onUpdate, onClose }: {
           <div className="space-y-1">
             {relatedTasks.map((task: any) => (
               <a
-                key={task.task_id || task.seed_id}
-                href={task.task_id ? `/tasks` : `/seeds`}
+                key={task.task_id}
+                href={`/tasks`}
                 className="flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-800 hover:underline"
               >
                 <ExternalLink className="w-3 h-3" />
-                {task.task_title || task.seed_title || (task.task_id ? `タスク ${task.task_id.slice(0, 8)}` : `種 ${task.seed_id?.slice(0, 8)}`)}
+                {task.task_title || (task.task_id ? `タスク ${task.task_id.slice(0, 8)}` : '不明')}
               </a>
             ))}
           </div>

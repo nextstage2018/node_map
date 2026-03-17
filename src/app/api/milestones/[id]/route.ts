@@ -66,7 +66,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, description, start_context, target_date, achieved_date, status, sort_order, theme_id, success_criteria } = body;
+    const { title, description, start_context, target_date, achieved_date, status, sort_order, success_criteria } = body;
 
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -79,7 +79,7 @@ export async function PUT(
     if (achieved_date !== undefined) updateData.achieved_date = achieved_date || null;
     if (status !== undefined) updateData.status = status;
     if (sort_order !== undefined) updateData.sort_order = sort_order;
-    if (theme_id !== undefined) updateData.theme_id = theme_id || null;
+    // theme_id は廃止済み（v8.0）
 
     const { data, error } = await supabase
       .from('milestones')

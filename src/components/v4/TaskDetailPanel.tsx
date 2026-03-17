@@ -57,8 +57,6 @@ interface TaskDetail {
   organization_name?: string;
   milestone_id?: string;
   milestone_title?: string;
-  theme_id?: string;
-  theme_title?: string;
   result_summary?: string;
   ideation_summary?: string;
   created_at: string;

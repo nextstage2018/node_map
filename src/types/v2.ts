@@ -2,23 +2,12 @@
 // V2 新規テーブル TypeScript型定義
 // ============================================================
 
-/** テーマ（任意の中間レイヤー） */
-export interface Theme {
-  id: string;
-  project_id: string;
-  title: string;
-  description: string | null;
-  sort_order: number;
-  status: 'active' | 'completed' | 'archived';
-  created_at: string;
-  updated_at: string;
-}
+// Theme（テーマ）は廃止済み（v8.0クリーンアップ）
 
 /** マイルストーン（1週間チェックポイント） */
 export interface Milestone {
   id: string;
   project_id: string;
-  theme_id: string | null;
   title: string;
   description: string | null;
   start_context: string | null;
