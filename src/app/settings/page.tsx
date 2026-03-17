@@ -388,6 +388,33 @@ export default function SettingsPage() {
               {/* Google連携の機能一覧（接続済みの場合） */}
               {channels.gmail.connected && (
                 <Card variant="flat" padding="md" className="bg-slate-50 border border-slate-200 -mt-2">
+                  {/* 連携アカウント不一致警告 */}
+                  {channels.gmail.accountName && profile.email && channels.gmail.accountName !== profile.email && (
+                    <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-sm font-medium text-red-800 mb-1">連携アカウントが一致していません</p>
+                      <p className="text-xs text-red-700">
+                        ログイン: <strong>{profile.email}</strong><br />
+                        Google連携: <strong>{channels.gmail.accountName}</strong>
+                      </p>
+                      <p className="text-xs text-red-600 mt-1.5">
+                        カレンダーイベントの主催者が {channels.gmail.accountName} になります。
+                        自分のアカウントで再連携してください。
+                      </p>
+                      <Button onClick={handleGmailAuth} variant="danger" size="sm" className="mt-2">
+                        {profile.email} で再連携する
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* 一致している場合は正常表示 */}
+                  {channels.gmail.accountName && profile.email && channels.gmail.accountName === profile.email && (
+                    <div className="mb-3 p-2 bg-green-50 border border-green-200 rounded-lg">
+                      <p className="text-xs text-green-700">
+                        連携中: <strong>{channels.gmail.accountName}</strong> — ログインアカウントと一致しています
+                      </p>
+                    </div>
+                  )}
+
                   <p className="text-xs font-medium text-slate-600 mb-2">Google連携で利用できる機能</p>
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded ${channels.gmail.connected ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-400'}`}>
