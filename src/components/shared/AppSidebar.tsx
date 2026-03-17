@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Inbox, Building2, Settings,
   ChevronLeft, ChevronRight, BookOpen, CheckSquare,
+  CircleCheck, CircleAlert, Circle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
@@ -19,10 +20,19 @@ const NAV_ITEMS = [
   { href: '/guide', label: 'ガイド', icon: BookOpen },
 ];
 
+// 認証状態の型
+interface AuthStatus {
+  loginEmail: string;
+  google: { connected: boolean; email: string; mismatch: boolean };
+  slack: { connected: boolean; name: string };
+  chatwork: { connected: boolean; name: string };
+}
+
 export default function AppSidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
 
   // 未読数をAPIから取得
   useEffect(() => {
@@ -31,7 +41,6 @@ export default function AppSidebar() {
         const res = await fetch('/api/inbox?limit=1');
         if (res.ok) {
           const data = await res.json();
-          // unreadCount がレスポンスに含まれていれば使用
           if (typeof data.unreadCount === 'number') {
             setUnreadCount(data.unreadCount);
           }
@@ -41,9 +50,49 @@ export default function AppSidebar() {
       }
     };
     fetchUnread();
-    // 30秒ごとにポーリング（受信即時性向上）
     const interval = setInterval(fetchUnread, 30000);
     return () => clearInterval(interval);
+  }, []);
+
+  // 認証状態を取得
+  useEffect(() => {
+    const fetchAuth = async () => {
+      try {
+        const [tokensRes, profileRes] = await Promise.all([
+          fetch('/api/settings/tokens'),
+          fetch('/api/settings/profile'),
+        ]);
+        const tokensData = await tokensRes.json();
+        const profileData = await profileRes.json();
+        const loginEmail = profileData.data?.email || '';
+        const status: AuthStatus = {
+          loginEmail,
+          google: { connected: false, email: '', mismatch: false },
+          slack: { connected: false, name: '' },
+          chatwork: { connected: false, name: '' },
+        };
+        if (tokensData.success && tokensData.data) {
+          for (const t of tokensData.data) {
+            if (t.service_name === 'gmail' && t.is_active) {
+              const email = t.token_data?.email || '';
+              status.google = {
+                connected: true,
+                email,
+                mismatch: !!(loginEmail && email && loginEmail !== email),
+              };
+            } else if (t.service_name === 'slack' && t.is_active) {
+              status.slack = { connected: true, name: t.token_data?.team_name || 'Slack' };
+            } else if (t.service_name === 'chatwork' && t.is_active) {
+              status.chatwork = { connected: true, name: t.token_data?.account_name || 'CW' };
+            }
+          }
+        }
+        setAuthStatus(status);
+      } catch {
+        // 取得失敗時は非表示
+      }
+    };
+    fetchAuth();
   }, []);
 
   return (
@@ -116,6 +165,92 @@ export default function AppSidebar() {
           })}
         </div>
       </nav>
+
+      {/* 認証状態カード */}
+      {authStatus && (
+        <div className={cn(
+          'border-t border-slate-100',
+          collapsed ? 'px-2 py-2' : 'px-3 py-2.5'
+        )}>
+          {collapsed ? (
+            // 折りたたみ時: アイコンのみ（不一致時は赤ドット）
+            <Link href="/settings" title="認証状態" className="flex flex-col items-center gap-1.5">
+              {authStatus.google.mismatch ? (
+                <CircleAlert className="w-4 h-4 text-red-500" />
+              ) : authStatus.google.connected ? (
+                <CircleCheck className="w-4 h-4 text-green-500" />
+              ) : (
+                <Circle className="w-4 h-4 text-slate-300" />
+              )}
+            </Link>
+          ) : (
+            // 展開時: 詳細カード
+            <Link href="/settings" className="block">
+              <div className={cn(
+                'rounded-lg p-2.5 text-xs transition-colors',
+                authStatus.google.mismatch
+                  ? 'bg-red-50 border border-red-200 hover:bg-red-100'
+                  : 'bg-slate-50 border border-slate-200 hover:bg-slate-100'
+              )}>
+                {/* ログインユーザー */}
+                <p className="text-[10px] text-slate-400 mb-1.5 truncate">
+                  {authStatus.loginEmail || 'ログイン中'}
+                </p>
+
+                {/* Google */}
+                <div className="flex items-center gap-1.5 mb-1">
+                  {authStatus.google.connected ? (
+                    authStatus.google.mismatch ? (
+                      <CircleAlert className="w-3 h-3 text-red-500 shrink-0" />
+                    ) : (
+                      <CircleCheck className="w-3 h-3 text-green-500 shrink-0" />
+                    )
+                  ) : (
+                    <Circle className="w-3 h-3 text-slate-300 shrink-0" />
+                  )}
+                  <span className={cn(
+                    'truncate',
+                    authStatus.google.mismatch ? 'text-red-700 font-medium' : 'text-slate-600'
+                  )}>
+                    {authStatus.google.connected
+                      ? `G: ${authStatus.google.email}`
+                      : 'Google 未接続'}
+                  </span>
+                </div>
+
+                {/* Google不一致警告 */}
+                {authStatus.google.mismatch && (
+                  <p className="text-[10px] text-red-600 mb-1.5 pl-[18px]">
+                    アカウント不一致
+                  </p>
+                )}
+
+                {/* Slack & Chatwork */}
+                <div className="flex items-center gap-1.5 mb-1">
+                  {authStatus.slack.connected ? (
+                    <CircleCheck className="w-3 h-3 text-green-500 shrink-0" />
+                  ) : (
+                    <Circle className="w-3 h-3 text-slate-300 shrink-0" />
+                  )}
+                  <span className="text-slate-600 truncate">
+                    {authStatus.slack.connected ? `S: ${authStatus.slack.name}` : 'Slack 未接続'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {authStatus.chatwork.connected ? (
+                    <CircleCheck className="w-3 h-3 text-green-500 shrink-0" />
+                  ) : (
+                    <Circle className="w-3 h-3 text-slate-300 shrink-0" />
+                  )}
+                  <span className="text-slate-600 truncate">
+                    {authStatus.chatwork.connected ? `CW: ${authStatus.chatwork.name}` : 'CW 未接続'}
+                  </span>
+                </div>
+              </div>
+            </Link>
+          )}
+        </div>
+      )}
 
       {/* 折りたたみボタン */}
       <div className="border-t border-slate-100 p-2.5">
