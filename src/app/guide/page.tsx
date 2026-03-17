@@ -904,7 +904,7 @@ function SettingsTab() {
   return (
     <div>
       <SectionCard title="設定画面の概要" icon={Settings}>
-        <p>設定画面には4つのタブがあります。チャネル接続・プロジェクト種別・プロフィール・通知設定です。</p>
+        <p>設定画面には3つのタブがあります。チャネル接続・プロフィール・通知設定です。</p>
       </SectionCard>
 
       <SectionCard title="チャネル接続" icon={MessageSquare}>
@@ -938,10 +938,6 @@ function SettingsTab() {
             </div>
           </div>
         </div>
-      </SectionCard>
-
-      <SectionCard title="プロジェクト種別" icon={Layers}>
-        <p>プロジェクトのテンプレートを管理できます。種別ごとにタスクテンプレートを設定しておくと、プロジェクト作成時に自動適用されます。</p>
       </SectionCard>
 
       <SectionCard title="プロフィール・AI設定" icon={Users}>

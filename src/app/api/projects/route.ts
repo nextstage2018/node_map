@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, status, organizationId, projectTypeId } = body;
+    const { name, description, status, organizationId } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -112,10 +112,6 @@ export async function POST(request: NextRequest) {
     if (organizationId) {
       insertData.organization_id = organizationId;
     }
-    // Phase 50: プロジェクト種別
-    if (projectTypeId) {
-      insertData.project_type_id = projectTypeId;
-    }
 
     const { data, error } = await supabase
       .from('projects')
@@ -131,55 +127,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Phase 50: プロジェクト種別が指定されている場合、テンプレートからタスクを自動生成
-    let generatedTasks: any[] = [];
-    if (projectTypeId && data?.id) {
-      try {
-        const { data: templates, error: tmplError } = await supabase
-          .from('task_templates')
-          .select('*')
-          .eq('project_type_id', projectTypeId)
-          .order('sort_order', { ascending: true });
-
-        if (!tmplError && templates && templates.length > 0) {
-          const now = new Date().toISOString();
-          const tasksToInsert = templates.map((tmpl: any) => ({
-            id: crypto.randomUUID(),
-            title: tmpl.title,
-            description: tmpl.description || '',
-            status: 'todo',
-            priority: 'medium',
-            phase: 'ideation',
-            task_type: 'personal',
-            task_category: 'routine',
-            template_id: tmpl.id,
-            project_id: data.id,
-            estimated_hours: tmpl.estimated_hours,
-            recurrence_type: tmpl.recurrence_type,
-            recurrence_day: tmpl.recurrence_day,
-            tags: [],
-            user_id: userId,
-            created_at: now,
-            updated_at: now,
-            ideation_at: now,
-          }));
-
-          const { data: insertedTasks, error: taskError } = await supabase
-            .from('tasks')
-            .insert(tasksToInsert)
-            .select();
-
-          if (taskError) {
-            console.error('[Projects API] タスク自動生成エラー:', taskError);
-          } else {
-            generatedTasks = insertedTasks || [];
-          }
-        }
-      } catch (e) {
-        console.error('[Projects API] テンプレートタスク生成エラー:', e);
-      }
-    }
-
     // organization name をフラット化
     const mapped = {
       ...data,
@@ -189,7 +136,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: mapped,
-      generatedTaskCount: generatedTasks.length,
     });
   } catch (error) {
     console.error('[Projects API] エラー:', error);

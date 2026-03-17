@@ -18,8 +18,6 @@ TRUNCATE TABLE task_conversations CASCADE;
 TRUNCATE TABLE task_members CASCADE;
 TRUNCATE TABLE task_external_resources CASCADE;
 TRUNCATE TABLE task_negotiations CASCADE;
-TRUNCATE TABLE task_templates CASCADE;
-
 -- 思考マップ・思考ログ
 TRUNCATE TABLE thought_edges CASCADE;
 TRUNCATE TABLE thought_task_nodes CASCADE;
@@ -114,9 +112,6 @@ TRUNCATE TABLE meeting_records CASCADE;
 -- 定期イベント
 TRUNCATE TABLE jobs CASCADE;
 TRUNCATE TABLE project_recurring_rules CASCADE;
-
--- プロジェクトタイプ
-TRUNCATE TABLE project_types CASCADE;
 
 -- ============================================
 -- Step 3: プロジェクト・メンバー関連

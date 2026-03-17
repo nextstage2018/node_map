@@ -19,18 +19,13 @@ interface ProjectMember {
   } | null;
 }
 
-interface ProjectTypeOption {
-  id: string;
-  name: string;
-}
-
 interface ProjectSidebarProps {
   projects: Project[];
   organizations: Organization[];
   selectedProjectId: string | null;
   isLoading: boolean;
   onSelectProject: (id: string | null) => void;
-  onCreateProject: (name: string, description: string, orgId: string, projectTypeId?: string) => Promise<void>;
+  onCreateProject: (name: string, description: string, orgId: string) => Promise<void>;
 }
 
 export default function ProjectSidebar({
@@ -45,26 +40,9 @@ export default function ProjectSidebar({
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [orgId, setOrgId] = useState('');
-  const [projectTypeId, setProjectTypeId] = useState('');
-  const [projectTypes, setProjectTypes] = useState<ProjectTypeOption[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const [driveFolderUrl, setDriveFolderUrl] = useState<string | null>(null);
-
-  // プロジェクト種別を取得
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch('/api/project-types');
-        const data = await res.json();
-        if (data.success) {
-          setProjectTypes((data.data || []).map((t: any) => ({ id: t.id, name: t.name })));
-        }
-      } catch {
-        // サイレント
-      }
-    })();
-  }, []);
 
   // 選択中プロジェクトのDriveフォルダを取得
   const loadDriveFolder = useCallback(async () => {
@@ -132,12 +110,11 @@ export default function ProjectSidebar({
 
   const handleCreate = async () => {
     if (!name.trim()) return;
-    await onCreateProject(name.trim(), desc.trim(), orgId, projectTypeId || undefined);
+    await onCreateProject(name.trim(), desc.trim(), orgId);
     setShowForm(false);
     setName('');
     setDesc('');
     setOrgId('');
-    setProjectTypeId('');
   };
 
   return (
@@ -182,23 +159,11 @@ export default function ProjectSidebar({
               <option key={org.id} value={org.id}>{org.name}</option>
             ))}
           </select>
-          {projectTypes.length > 0 && (
-            <select
-              value={projectTypeId}
-              onChange={(e) => setProjectTypeId(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2 bg-white"
-            >
-              <option value="">種別を選択（任意）</option>
-              {projectTypes.map((pt) => (
-                <option key={pt.id} value={pt.id}>{pt.name}</option>
-              ))}
-            </select>
-          )}
           <div className="flex gap-1.5">
             <Button onClick={handleCreate} variant="primary" size="sm" className="flex-1">
               作成
             </Button>
-            <Button onClick={() => { setShowForm(false); setName(''); setDesc(''); setOrgId(''); setProjectTypeId(''); }} variant="outline" size="sm">
+            <Button onClick={() => { setShowForm(false); setName(''); setDesc(''); setOrgId(''); }} variant="outline" size="sm">
               取消
             </Button>
           </div>

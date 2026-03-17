@@ -829,37 +829,9 @@ export interface Project {
   status: string;
   organizationId?: string;
   organizationName?: string;
-  projectTypeId?: string;          // Phase 50: プロジェクト種別
-  projectTypeName?: string;        // Phase 50: 種別名（表示用）
   userId: string;
   createdAt: string;
   updatedAt: string;
-}
-
-// ===== Phase 50: プロジェクト種別マスタ =====
-
-// プロジェクト種別（広告運用、Web制作 等）
-export interface ProjectType {
-  id: string;
-  name: string;
-  description?: string;
-  userId: string;
-  createdAt: string;
-  templates?: TaskTemplate[];      // 紐づくテンプレート一覧（UI表示用）
-}
-
-// 定型タスクテンプレート
-export interface TaskTemplate {
-  id: string;
-  projectTypeId: string;
-  title: string;
-  description?: string;
-  estimatedHours?: number;
-  recurrenceType?: RecurrenceType; // null=単発 / weekly / biweekly / monthly
-  recurrenceDay?: number;          // 曜日(0-6) or 日(1-31)
-  sortOrder: number;
-  userId: string;
-  createdAt: string;
 }
 
 // タスクフィルタ（Phase 50d: カンバンフィルタ用）

@@ -7,8 +7,6 @@ import ContextBar from '@/components/shared/ContextBar';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
-import ProjectTypeManager from '@/components/settings/ProjectTypeManager';
-
 // ========================================
 // 🔰 機能ガイドコンポーネント
 // ========================================
@@ -332,7 +330,6 @@ export default function SettingsPage() {
 
   const tabs = [
     { id: 'channels', label: 'チャンネル接続' },
-    { id: 'project-types', label: 'プロジェクト種別' },
     { id: 'profile', label: 'プロフィール' },
     { id: 'notifications', label: '通知設定' },
   ];
@@ -498,21 +495,6 @@ export default function SettingsPage() {
                   </li>
                 </ul>
               </Card>
-            </div>
-          )}
-
-          {/* ============================================ */}
-          {/* プロジェクト種別タブ */}
-          {/* ============================================ */}
-          {activeTab === 'project-types' && (
-            <div className="max-w-2xl">
-              <FeatureGuide>
-                <p className="font-medium mb-1">プロジェクト種別</p>
-                <p>プロジェクト作成時に種別を選択すると、事前定義されたタスクテンプレートが自動生成されます。
-                種別（親）にタスク（子）を登録する階層構造です。
-                タスクの説明欄に業務内容を記載すると、AI会話時にコンテキストとして活用されます。</p>
-              </FeatureGuide>
-              <ProjectTypeManager />
             </div>
           )}
 
