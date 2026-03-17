@@ -925,42 +925,6 @@ CREATE INDEX idx_inbox_sync_state_user_channel ON inbox_sync_state(user_id, chan
 
 ---
 
-### user_channel_subscriptions（ユーザーチャネル購読管理）
-
-**目的**: Phase 59: インボックスフィルタリング（全メッセージDL後に表示フィルタ）
-
-#### CREATE TABLE
-
-```sql
-CREATE TABLE user_channel_subscriptions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id TEXT NOT NULL,
-  service_name TEXT NOT NULL,
-  channel_identifier TEXT,
-  user_token TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
-
-#### インデックス
-
-```sql
-CREATE INDEX idx_user_channel_subscriptions_user_service ON user_channel_subscriptions(user_id, service_name);
-```
-
-#### 注意事項
-
-- service_name: 'email' / 'slack' / 'chatwork'
-- channel_identifier: Slack: CXXXXX / CW: room_id / Email: domain
-- **設計思想**:
-  - 購読登録 = インボックスで表示するチャネルの絞り込み
-  - 購読なし → 全チャネルのメッセージを表示
-  - 購読あり → 登録チャネルのメッセージのみ表示
-  - トークン有無で全メッセージDL対象を判定（Phase 59）
-
----
-
 ## 5. ナレッジ・思考マップ関連テーブル
 
 ### knowledge_master_entries（ナレッジマスタ：キーワード基盤）
@@ -2174,7 +2138,6 @@ users (Supabase auth)
   │  └─ thought_task_nodes (memo_id)
   ├─ inbox_messages [チャネル別に複数]
   ├─ inbox_sync_state (user_id)
-  ├─ user_channel_subscriptions (user_id)
   ├─ user_service_tokens (user_id)
   ├─ secretary_conversations (user_id)
   ├─ user_thinking_tendencies (user_id)

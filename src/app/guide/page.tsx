@@ -909,7 +909,7 @@ function SettingsTab() {
 
       <SectionCard title="チャネル接続" icon={MessageSquare}>
         <div className="space-y-2">
-          <p>以下のサービスと連携できます。「チャンネル接続」タブから接続してください。Google連携はOAuth認証で一括接続です。</p>
+          <p>以下のサービスと連携できます。「チャンネル接続」タブから接続してください。Google連携はOAuth認証で一括接続です。チャネルの紐づけはプロジェクト &gt; メンバータブで管理します。</p>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2 p-2 bg-blue-50 rounded border border-blue-100">
               <Calendar className="w-4 h-4 text-blue-500" />

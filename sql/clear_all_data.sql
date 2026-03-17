@@ -65,7 +65,6 @@ TRUNCATE TABLE inbox_messages CASCADE;
 TRUNCATE TABLE inbox_sync_state CASCADE;
 TRUNCATE TABLE message_reactions CASCADE;
 TRUNCATE TABLE unified_messages CASCADE;
-TRUNCATE TABLE user_channel_subscriptions CASCADE;
 
 -- v3.4 常設データ
 TRUNCATE TABLE open_issues CASCADE;

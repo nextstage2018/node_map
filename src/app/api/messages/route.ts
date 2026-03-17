@@ -20,7 +20,6 @@ export const dynamic = 'force-dynamic';
 // 購読チャネル + トークン + 同期状態を一括取得（DB問い合わせを最小化）
 // ========================================
 interface ChannelCapability {
-  subscriptions: Record<string, string[]>;
   canFetch: { gmail: boolean; slack: boolean; chatwork: boolean };
   syncStates: { email: SyncState; slack: SyncState; chatwork: SyncState };
 }
@@ -36,7 +35,6 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
 
   if (!supabase) {
     return {
-      subscriptions: { gmail: [], slack: [], chatwork: [] },
       canFetch: { gmail: false, slack: false, chatwork: false },
       syncStates: { email: defaultSyncState, slack: defaultSyncState, chatwork: defaultSyncState },
     };
@@ -50,13 +48,7 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
   const envChatwork = isEnvTokenOwner && !!process.env.CHATWORK_API_TOKEN;
 
   // 全DBクエリを並列実行（1回のawaitで全部取得）
-  const [subsResult, tokenResult, emailSyncResult, slackSyncResult, cwSyncResult] = await Promise.all([
-    // 購読チャネル
-    supabase
-      .from('user_channel_subscriptions')
-      .select('service_name, channel_id')
-      .eq('user_id', userId)
-      .eq('is_active', true),
+  const [tokenResult, emailSyncResult, slackSyncResult, cwSyncResult] = await Promise.all([
     // トークン（環境変数で全チャネル揃っていなければDBチェック）
     (!envGmail || !envSlack || !envChatwork)
       ? supabase
@@ -70,16 +62,6 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
     supabase.from('inbox_sync_state').select('last_sync_at, initial_sync_done').eq('channel', 'slack').single(),
     supabase.from('inbox_sync_state').select('last_sync_at, initial_sync_done').eq('channel', 'chatwork').single(),
   ]);
-
-  // 購読チャネル
-  const subscriptions: Record<string, string[]> = { gmail: [], slack: [], chatwork: [] };
-  if (subsResult.data) {
-    for (const sub of subsResult.data) {
-      if (subscriptions[sub.service_name]) {
-        subscriptions[sub.service_name].push(sub.channel_id);
-      }
-    }
-  }
 
   // トークン判定
   const dbTokenServices = new Set((tokenResult.data || []).map((t) => t.service_name));
@@ -106,7 +88,7 @@ async function getChannelCapabilities(userId: string): Promise<ChannelCapability
     },
   };
 
-  return { subscriptions, canFetch, syncStates };
+  return { canFetch, syncStates };
 }
 
 async function updateSyncTimestamp(channel: string): Promise<void> {
@@ -326,9 +308,8 @@ export async function GET(request: NextRequest) {
     // ========================================
     // 全チャネル情報を一括並列取得（購読+トークン+同期状態）
     // ========================================
-    const { subscriptions, canFetch, syncStates } = isDemo
+    const { canFetch, syncStates } = isDemo
       ? {
-          subscriptions: { gmail: [], slack: [], chatwork: [] } as Record<string, string[]>,
           canFetch: { gmail: true, slack: true, chatwork: true },
           syncStates: {
             email: { last_sync_at: null, initial_sync_done: false },

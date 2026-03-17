@@ -4,8 +4,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
-import ChannelSubscriptionModal from '@/components/settings/ChannelSubscriptionModal';
-
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 
@@ -63,13 +61,12 @@ const AI_RESPONSE_STYLES = [
 ];
 
 // チャンネル認証カード
-function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAuth, onRevoke, authLabel, onConfigureChannels, subscriptionCount }: {
-  channel: string; label: string; icon: string; isConnected: boolean; accountName: string; onAuth: () => void; onRevoke: () => void; authLabel?: string;
-  onConfigureChannels?: () => void; subscriptionCount?: number;
+function ChannelAuthCard({ label, icon, isConnected, accountName, onAuth, onRevoke, authLabel }: {
+  label: string; icon: string; isConnected: boolean; accountName: string; onAuth: () => void; onRevoke: () => void; authLabel?: string;
 }) {
   return (
     <Card variant="outlined" padding="md">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="text-2xl">{icon}</span>
           <div>
@@ -92,24 +89,6 @@ function ChannelAuthCard({ channel, label, icon, isConnected, accountName, onAut
           )}
         </div>
       </div>
-
-      {/* Phase 25: 接続済みサービスにチャネル設定ボタンを表示 */}
-      {isConnected && onConfigureChannels && (
-        <Button
-          onClick={onConfigureChannels}
-          variant="outline"
-          size="sm"
-          className="w-full justify-start"
-          icon="📋"
-        >
-          <span>取得対象チャネル設定</span>
-          {subscriptionCount !== undefined && subscriptionCount > 0 && (
-            <span className="ml-auto px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded-full">
-              {subscriptionCount}件
-            </span>
-          )}
-        </Button>
-      )}
     </Card>
   );
 }
@@ -120,20 +99,6 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showChatworkForm, setShowChatworkForm] = useState(false);
   const [chatworkFormData, setChatworkFormData] = useState<Record<string, string>>({});
-
-  // Phase 25: チャネル購読モーダル
-  const [channelModal, setChannelModal] = useState<{
-    isOpen: boolean;
-    service: 'gmail' | 'slack' | 'chatwork';
-    label: string;
-  }>({ isOpen: false, service: 'gmail', label: '' });
-
-  // Phase 25: 各サービスの購読数
-  const [subscriptionCounts, setSubscriptionCounts] = useState<Record<string, number>>({
-    gmail: 0,
-    slack: 0,
-    chatwork: 0,
-  });
 
   // チャンネル接続状態
   const [channels, setChannels] = useState<Record<string, { connected: boolean; accountName: string; hasCalendarScope?: boolean; hasDriveScope?: boolean }>>({
@@ -193,25 +158,6 @@ export default function SettingsPage() {
     }
   }, []);
 
-  // Phase 25: 購読数を読み込み
-  const loadSubscriptionCounts = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings/channels');
-      const data = await res.json();
-      if (data.success && data.data) {
-        const counts: Record<string, number> = { gmail: 0, slack: 0, chatwork: 0 };
-        for (const sub of data.data) {
-          if (sub.is_active && counts[sub.service_name] !== undefined) {
-            counts[sub.service_name]++;
-          }
-        }
-        setSubscriptionCounts(counts);
-      }
-    } catch (e) {
-      console.error('購読数読み込みエラー:', e);
-    }
-  }, []);
-
   // プロフィール読み込み
   const loadProfile = useCallback(async () => {
     try {
@@ -236,8 +182,7 @@ export default function SettingsPage() {
   useEffect(() => {
     loadTokens();
     loadProfile();
-    loadSubscriptionCounts();
-  }, [loadTokens, loadProfile, loadSubscriptionCounts]);
+  }, [loadTokens, loadProfile]);
 
   // OAuth認証コールバック結果チェック
   useEffect(() => {
@@ -329,9 +274,6 @@ export default function SettingsPage() {
       if (data.success) {
         setMessage({ type: 'success', text: '接続を解除しました' });
         loadTokens();
-        // Phase 25: 接続解除時に購読も削除
-        await fetch(`/api/settings/channels?service=${serviceName}`, { method: 'DELETE' });
-        loadSubscriptionCounts();
       } else {
         setMessage({ type: 'error', text: data.error || '解除に失敗しました' });
       }
@@ -340,11 +282,6 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  // Phase 25: チャネル設定モーダルを開く
-  const openChannelModal = (service: 'gmail' | 'slack' | 'chatwork', label: string) => {
-    setChannelModal({ isOpen: true, service, label });
   };
 
   // プロフィール保存
@@ -437,12 +374,11 @@ export default function SettingsPage() {
                 <p className="font-medium mb-1">チャンネル接続</p>
                 <p>Gmail・Slack・Chatworkを連携すると、各サービスのメッセージがインボックスに表示されます。
                 Google連携ではメール・カレンダー・Driveを一括で利用できます。
-                接続後、「取得対象チャネル設定」で表示するチャネルを絞り込めます（未設定の場合は全メッセージを表示）。</p>
+                チャネルの紐づけはプロジェクト &gt; メンバータブで管理します。</p>
               </FeatureGuide>
 
               {/* Google連携（OAuth） — Gmail / Calendar / Drive */}
               <ChannelAuthCard
-                channel="gmail"
                 label="Google連携"
                 icon="🔗"
                 isConnected={channels.gmail.connected}
@@ -450,8 +386,6 @@ export default function SettingsPage() {
                 onAuth={handleGmailAuth}
                 onRevoke={() => handleRevoke('gmail')}
                 authLabel="Googleアカウントで連携"
-                onConfigureChannels={() => openChannelModal('gmail', 'Gmail')}
-                subscriptionCount={subscriptionCounts.gmail}
               />
 
               {/* Google連携の機能一覧（接続済みの場合） */}
@@ -481,7 +415,6 @@ export default function SettingsPage() {
 
               {/* Slack（OAuth） */}
               <ChannelAuthCard
-                channel="slack"
                 label="Slack"
                 icon="💬"
                 isConnected={channels.slack.connected}
@@ -489,14 +422,11 @@ export default function SettingsPage() {
                 onAuth={handleSlackAuth}
                 onRevoke={() => handleRevoke('slack')}
                 authLabel="Slackワークスペースで連携"
-                onConfigureChannels={() => openChannelModal('slack', 'Slack')}
-                subscriptionCount={subscriptionCounts.slack}
               />
 
               {/* Chatwork（手動トークン入力） */}
               <div>
                 <ChannelAuthCard
-                  channel="chatwork"
                   label="Chatwork"
                   icon="🔵"
                   isConnected={channels.chatwork.connected}
@@ -504,8 +434,6 @@ export default function SettingsPage() {
                   onAuth={handleChatworkAuth}
                   onRevoke={() => handleRevoke('chatwork')}
                   authLabel="APIトークンで接続"
-                  onConfigureChannels={() => openChannelModal('chatwork', 'Chatwork')}
-                  subscriptionCount={subscriptionCounts.chatwork}
                 />
                 {showChatworkForm && !channels.chatwork.connected && (
                   <Card variant="flat" padding="md" className="mt-4 bg-slate-50 border border-slate-200">
@@ -566,7 +494,7 @@ export default function SettingsPage() {
                   </li>
                   <li className="flex gap-2">
                     <span className="shrink-0">•</span>
-                    <span>「取得対象チャネル設定」で表示するチャネルを絞り込めます（未設定＝全表示）</span>
+                    <span>チャネルの紐づけはプロジェクト &gt; メンバータブで管理します</span>
                   </li>
                 </ul>
               </Card>
@@ -737,18 +665,6 @@ export default function SettingsPage() {
 
         </div>
       </div>
-
-      {/* Phase 25: チャネル購読モーダル */}
-      <ChannelSubscriptionModal
-        isOpen={channelModal.isOpen}
-        onClose={() => setChannelModal({ ...channelModal, isOpen: false })}
-        serviceName={channelModal.service}
-        serviceLabel={channelModal.label}
-        onSaved={() => {
-          loadSubscriptionCounts();
-          setMessage({ type: 'success', text: '取得対象チャネルを更新しました' });
-        }}
-      />
 
     </AppLayout>
   );
