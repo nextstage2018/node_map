@@ -16,6 +16,7 @@ const SCOPES = [
   'im:read',
   'im:history',
   'users:read',
+  'users:read.email',
   'reactions:read',
   'reactions:write',
 ].join(',');
