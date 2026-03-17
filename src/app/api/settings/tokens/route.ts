@@ -177,7 +177,7 @@ export async function DELETE(request: NextRequest) {
 
 // ヘルパー: トークン値をマスクする（セキュリティ対策）
 // scope / email はマスクしない（フロントでスコープ確認に使用）
-const UNMASK_KEYS = ['email', 'scope', 'team_name', 'account_name', 'expiry'];
+const UNMASK_KEYS = ['email', 'scope', 'team_name', 'account_name', 'expiry', 'authed_user_name', 'authed_user_email'];
 function maskTokenData(tokenData: Record<string, any>): Record<string, any> {
   const masked: Record<string, any> = {};
   for (const [key, value] of Object.entries(tokenData)) {
