@@ -136,10 +136,22 @@ export async function GET(request: NextRequest) {
             totalProcessed++;
             console.log(`[SyncMeetingNotes] 会議メモ検出: "${event.summary}" → Docs: "${noteResult.docTitle}" (user: ${userId})`);
 
-            // 参加者メールからプロジェクトを自動判定
-            const projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
+            // プロジェクト自動判定（3段階フォールバック）
+            // ① カレンダーイベントのdescriptionからproject_idを抽出（定期イベント等で埋め込み済み）
+            // ② 参加者メールからcontact_channels → organization → projects
+            // ③ 最新プロジェクト（最終フォールバック）
+            let projectId = resolveProjectFromDescription(event.description);
+            if (projectId) {
+              console.log(`[SyncMeetingNotes] プロジェクト判定: description埋め込み → ${projectId}`);
+            } else {
+              projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
+              if (projectId) {
+                console.log(`[SyncMeetingNotes] プロジェクト判定: 参加者メール → ${projectId}`);
+              }
+            }
             if (!projectId) {
               console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" — スキップ`);
+              allSkipReasons.push({ user: userId, event: event.summary, reason: 'プロジェクト判定失敗（description・参加者メールともに不一致）' });
               userSkipped++;
               continue;
             }
@@ -240,7 +252,18 @@ export async function GET(request: NextRequest) {
 }
 
 // ========================================
-// プロジェクト自動判定（参加者メールから）
+// プロジェクト自動判定①: カレンダーイベントのdescriptionからproject_id抽出
+// 定期イベント（RecurringRulesManager）で作成された予定にはproject_idが埋め込まれている
+// ========================================
+function resolveProjectFromDescription(description?: string): string | null {
+  if (!description) return null;
+  // "project_id: UUID" パターンを検出
+  const match = description.match(/project_id:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+  return match ? match[1] : null;
+}
+
+// ========================================
+// プロジェクト自動判定②: 参加者メールから
 // ========================================
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveProjectFromAttendees(supabase: any, attendees: string[]): Promise<string | null> {
