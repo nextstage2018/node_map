@@ -44,8 +44,11 @@ async function saveContactEmail(contactId: string, email: string): Promise<boole
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ channel: 'email', address: email }),
     });
-    return res.ok;
-  } catch {
+    const data = await res.json();
+    console.log('[saveContactEmail]', contactId, email, res.status, data);
+    return res.ok && data.success !== false;
+  } catch (e) {
+    console.error('[saveContactEmail] error:', e);
     return false;
   }
 }
@@ -523,17 +526,16 @@ export default function RecurringRulesManager({ projectId }: Props) {
                             placeholder="email@example.com"
                             className="px-2 py-0.5 text-[11px] border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 w-48"
                             autoFocus
-                            onKeyDown={(e) => {
+                            onKeyDown={async (e) => {
                               if (e.key === 'Enter' && emailInput.includes('@')) {
-                                saveContactEmail(m.contact_id, emailInput).then(ok => {
-                                  if (ok) {
-                                    setMembers(prev => prev.map(pm =>
-                                      pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
-                                    ));
-                                    setEditingEmailId(null);
-                                    setEmailInput('');
-                                  }
-                                });
+                                const ok = await saveContactEmail(m.contact_id, emailInput);
+                                if (ok) {
+                                  setMembers(prev => prev.map(pm =>
+                                    pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
+                                  ));
+                                  setEditingEmailId(null);
+                                  setEmailInput('');
+                                }
                               }
                               if (e.key === 'Escape') {
                                 setEditingEmailId(null);
@@ -542,28 +544,31 @@ export default function RecurringRulesManager({ projectId }: Props) {
                             }}
                           />
                           <button
-                            onClick={() => {
+                            type="button"
+                            onClick={async () => {
                               if (emailInput.includes('@')) {
-                                saveContactEmail(m.contact_id, emailInput).then(ok => {
-                                  if (ok) {
-                                    setMembers(prev => prev.map(pm =>
-                                      pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
-                                    ));
-                                    setEditingEmailId(null);
-                                    setEmailInput('');
-                                  }
-                                });
+                                const ok = await saveContactEmail(m.contact_id, emailInput);
+                                if (ok) {
+                                  setMembers(prev => prev.map(pm =>
+                                    pm.contact_id === m.contact_id ? { ...pm, email: emailInput } : pm
+                                  ));
+                                  setEditingEmailId(null);
+                                  setEmailInput('');
+                                } else {
+                                  alert('メール保存に失敗しました。もう一度お試しください。');
+                                }
                               }
                             }}
-                            className="text-blue-600 hover:text-blue-800"
+                            className="px-2 py-0.5 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700"
                           >
-                            <Check className="w-3.5 h-3.5" />
+                            保存
                           </button>
                           <button
+                            type="button"
                             onClick={() => { setEditingEmailId(null); setEmailInput(''); }}
-                            className="text-slate-400 hover:text-slate-600"
+                            className="px-2 py-0.5 text-[11px] text-slate-500 rounded border border-slate-200 hover:bg-slate-50"
                           >
-                            <X className="w-3.5 h-3.5" />
+                            取消
                           </button>
                         </div>
                       ) : (
