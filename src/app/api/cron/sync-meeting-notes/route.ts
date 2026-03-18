@@ -1,8 +1,8 @@
-// v6.0 Cron: Gemini会議メモ自動取得
+// v6.0 Cron: Gemini会議メモ自動取得（v10.1: マルチユーザー対応）
 // スケジュール: 毎時 00分（1時間ごと）
-// Google Calendar の過去3時間の完了済みGoogle Meet イベントから
-// Gemini会議メモ（添付Google Docs）を検出し、meeting_records に自動登録
-// ※ 取り込み済みイベントはsource_file_idで重複チェック済み（スキップ）
+// Google連携済みの全ユーザーのカレンダーから過去3時間の完了済みGoogle Meetイベントを検出
+// Gemini会議メモ（添付Google Docs）を取得し、meeting_records に自動登録
+// ※ 取り込み済みイベントはsource_file_id（カレンダーイベントID）で重複チェック済み（スキップ）
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -34,11 +34,30 @@ export async function GET(request: NextRequest) {
     } = await import('@/services/gemini/meetingNoteFetcher.service');
     const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
 
-    // オーナーユーザーIDを取得（Cron = シングルユーザー前提）
-    const ownerId = process.env.ENV_TOKEN_OWNER_ID;
-    if (!ownerId) {
-      console.warn('[SyncMeetingNotes] ENV_TOKEN_OWNER_ID 未設定');
-      return NextResponse.json({ success: true, message: 'ENV_TOKEN_OWNER_ID未設定のためスキップ' });
+    // ========================================
+    // マルチユーザー: Google連携済みの全ユーザーを取得
+    // ========================================
+    const { data: tokens } = await supabase
+      .from('user_service_tokens')
+      .select('user_id, token_data')
+      .eq('service_name', 'gmail')
+      .eq('is_active', true);
+
+    if (!tokens || tokens.length === 0) {
+      console.log('[SyncMeetingNotes] Google連携済みユーザーなし');
+      return NextResponse.json({ success: true, message: 'Google連携済みユーザーなし', processed: 0 });
+    }
+
+    // カレンダースコープを持つユーザーのみフィルタ
+    const calendarUsers = tokens.filter((t) => {
+      const scope = (t.token_data as Record<string, string>)?.scope || '';
+      return scope.includes('calendar');
+    });
+
+    console.log(`[SyncMeetingNotes] 対象ユーザー: ${calendarUsers.length}人（全トークン: ${tokens.length}件）`);
+
+    if (calendarUsers.length === 0) {
+      return NextResponse.json({ success: true, message: 'カレンダースコープ付きユーザーなし', processed: 0 });
     }
 
     // 過去の取得範囲: URLパラメータ hours で上書き可能（デフォルト3時間）
@@ -50,151 +69,168 @@ export async function GET(request: NextRequest) {
     const timeMin = new Date(now.getTime() - lookbackHours * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString();
 
-    const events = await getEvents(ownerId, timeMin, timeMax, 'primary', 50);
-    console.log(`[SyncMeetingNotes] カレンダーイベント取得: ${events.length}件`);
+    // ========================================
+    // 全体統計
+    // ========================================
+    let totalProcessed = 0;
+    let totalCreated = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+    const allSkipReasons: { user: string; event: string; reason: string }[] = [];
+    const userResults: { userId: string; events: number; created: number; skipped: number; errors: number }[] = [];
 
-    // Google Meet イベントのみフィルタ（終了済みのもの）
-    const meetEvents = events.filter(e => {
-      if (!isGoogleMeetEvent(e)) return false;
-      // 終了時刻が現在より前（= 会議終了済み）
-      const endTime = new Date(e.end);
-      return endTime.getTime() < now.getTime();
-    });
+    // ========================================
+    // 各ユーザーのカレンダーをスキャン
+    // ========================================
+    for (const token of calendarUsers) {
+      const userId = token.user_id;
+      let userEvents = 0;
+      let userCreated = 0;
+      let userSkipped = 0;
+      let userErrors = 0;
 
-    console.log(`[SyncMeetingNotes] 終了済みMeetイベント: ${meetEvents.length}件`);
-
-    let processed = 0;
-    let skipped = 0;
-    let created = 0;
-    let errors = 0;
-    const skipReasons: { event: string; reason: string }[] = [];
-
-    for (const event of meetEvents) {
       try {
-        console.log(`[SyncMeetingNotes] 処理中: "${event.summary}" (id=${event.id}, attachments=${event.attachments?.length || 0})`);
+        const events = await getEvents(userId, timeMin, timeMax, 'primary', 50);
 
-        // 既にこのカレンダーイベントIDで取り込み済みかチェック
-        const { data: existing } = await supabase
-          .from('meeting_records')
-          .select('id')
-          .eq('source_type', 'gemini')
-          .eq('source_file_id', event.id) // source_file_id にカレンダーイベントIDを保存
-          .limit(1);
+        // Google Meet イベントのみフィルタ（終了済みのもの）
+        const meetEvents = events.filter(e => {
+          if (!isGoogleMeetEvent(e)) return false;
+          const endTime = new Date(e.end);
+          return endTime.getTime() < now.getTime();
+        });
 
-        if (existing && existing.length > 0) {
-          skipReasons.push({ event: event.summary, reason: `既にDB登録済み (record_id=${existing[0].id})` });
-          skipped++;
+        userEvents = meetEvents.length;
+        if (meetEvents.length === 0) {
+          userResults.push({ userId, events: 0, created: 0, skipped: 0, errors: 0 });
           continue;
         }
 
-        // 会議メモを取得
-        const noteResult = await fetchMeetingNoteFromEvent(ownerId, event);
-        if (!noteResult.found || !noteResult.textContent) {
-          const attachmentInfo = event.attachments?.map(a => `${a.title}(${a.mimeType})`).join(', ') || 'なし';
-          skipReasons.push({ event: event.summary, reason: `会議メモ未検出 (found=${noteResult.found}, hasText=${!!noteResult.textContent}, attachments=[${attachmentInfo}])` });
-          skipped++;
-          continue;
-        }
+        console.log(`[SyncMeetingNotes] ユーザー ${userId}: 終了済みMeetイベント ${meetEvents.length}件`);
 
-        processed++;
-        console.log(`[SyncMeetingNotes] 会議メモ検出: "${event.summary}" → Docs: "${noteResult.docTitle}"`);
-
-        // 参加者メールからプロジェクトを自動判定
-        const projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
-        if (!projectId) {
-          console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" — スキップ`);
-          skipped++;
-          continue;
-        }
-
-        // meeting_date を会議開始時刻から抽出（JST日付）
-        const meetingDate = new Date(noteResult.meetingStartTime).toISOString().split('T')[0];
-
-        // meeting_records に登録
-        const { data: newRecord, error: insertError } = await supabase
-          .from('meeting_records')
-          .insert({
-            project_id: projectId,
-            title: event.summary || noteResult.docTitle || '会議メモ',
-            content: noteResult.textContent,
-            meeting_date: meetingDate,
-            source_type: 'gemini',
-            source_file_id: event.id, // カレンダーイベントIDで重複防止
-            meeting_start_at: noteResult.meetingStartTime,
-            meeting_end_at: noteResult.meetingEndTime,
-            participants: noteResult.attendees,
-            metadata: {
-              gemini_doc_id: noteResult.docId,
-              gemini_doc_url: noteResult.docUrl,
-              gemini_doc_title: noteResult.docTitle,
-              calendar_event_id: event.id,
-              calendar_html_link: event.htmlLink,
-            },
-            user_id: ownerId,
-          })
-          .select('id')
-          .single();
-
-        if (insertError) {
-          console.error(`[SyncMeetingNotes] INSERT失敗:`, insertError);
-          errors++;
-          continue;
-        }
-
-        // Geminiパーサーで解析し、ai_summary を更新
-        if (newRecord) {
+        for (const event of meetEvents) {
           try {
-            const analysis = parseGeminiNotes(noteResult.textContent);
-            await supabase
+            // 既にこのカレンダーイベントIDで取り込み済みかチェック
+            // ※ 他ユーザー経由で既に取り込まれていてもスキップ（同一会議の重複防止）
+            const { data: existing } = await supabase
               .from('meeting_records')
-              .update({
-                ai_summary: analysis.summary || null,
-                processed: true,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', newRecord.id);
+              .select('id')
+              .eq('source_type', 'gemini')
+              .eq('source_file_id', event.id)
+              .limit(1);
 
-            // AI解析パイプラインを起動（ビジネスイベント・タスク提案・検討ツリー等）
-            // analyze APIを内部呼び出し
-            const analyzeUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL ? '' : 'http://localhost:3000'}/api/meeting-records/${newRecord.id}/analyze`;
-            try {
-              // Note: 本番ではVercel internal URL or fetch で呼び出し
-              // ここではanalyze APIのロジックを直接実行する方がベター
-              await triggerAnalysisPipeline(supabase, ownerId, newRecord.id, noteResult.textContent, projectId, event.summary, meetingDate);
-            } catch (pipelineError) {
-              // パイプライン失敗しても会議録自体は保存済みなので続行
-              console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
+            if (existing && existing.length > 0) {
+              allSkipReasons.push({ user: userId, event: event.summary, reason: `既にDB登録済み (record_id=${existing[0].id})` });
+              userSkipped++;
+              continue;
             }
-          } catch (parseError) {
-            console.error(`[SyncMeetingNotes] パース失敗:`, parseError);
+
+            // 会議メモを取得
+            const noteResult = await fetchMeetingNoteFromEvent(userId, event);
+            if (!noteResult.found || !noteResult.textContent) {
+              const attachmentInfo = event.attachments?.map(a => `${a.title}(${a.mimeType})`).join(', ') || 'なし';
+              allSkipReasons.push({ user: userId, event: event.summary, reason: `会議メモ未検出 (found=${noteResult.found}, hasText=${!!noteResult.textContent}, attachments=[${attachmentInfo}])` });
+              userSkipped++;
+              continue;
+            }
+
+            totalProcessed++;
+            console.log(`[SyncMeetingNotes] 会議メモ検出: "${event.summary}" → Docs: "${noteResult.docTitle}" (user: ${userId})`);
+
+            // 参加者メールからプロジェクトを自動判定
+            const projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
+            if (!projectId) {
+              console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" — スキップ`);
+              userSkipped++;
+              continue;
+            }
+
+            // meeting_date を会議開始時刻から抽出（JST日付）
+            const meetingDate = new Date(noteResult.meetingStartTime).toISOString().split('T')[0];
+
+            // meeting_records に登録（user_idは取り込んだユーザー）
+            const { data: newRecord, error: insertError } = await supabase
+              .from('meeting_records')
+              .insert({
+                project_id: projectId,
+                title: event.summary || noteResult.docTitle || '会議メモ',
+                content: noteResult.textContent,
+                meeting_date: meetingDate,
+                source_type: 'gemini',
+                source_file_id: event.id,
+                meeting_start_at: noteResult.meetingStartTime,
+                meeting_end_at: noteResult.meetingEndTime,
+                participants: noteResult.attendees,
+                metadata: {
+                  gemini_doc_id: noteResult.docId,
+                  gemini_doc_url: noteResult.docUrl,
+                  gemini_doc_title: noteResult.docTitle,
+                  calendar_event_id: event.id,
+                  calendar_html_link: event.htmlLink,
+                  synced_by_user_id: userId,
+                },
+                user_id: userId,
+              })
+              .select('id')
+              .single();
+
+            if (insertError) {
+              console.error(`[SyncMeetingNotes] INSERT失敗:`, insertError);
+              userErrors++;
+              continue;
+            }
+
+            // Geminiパーサーで解析し、ai_summary を更新
+            if (newRecord) {
+              try {
+                const analysis = parseGeminiNotes(noteResult.textContent);
+                await supabase
+                  .from('meeting_records')
+                  .update({
+                    ai_summary: analysis.summary || null,
+                    processed: true,
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', newRecord.id);
+
+                // AI解析パイプラインを起動
+                try {
+                  await triggerAnalysisPipeline(supabase, userId, newRecord.id, noteResult.textContent, projectId, event.summary, meetingDate);
+                } catch (pipelineError) {
+                  console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
+                }
+              } catch (parseError) {
+                console.error(`[SyncMeetingNotes] パース失敗:`, parseError);
+              }
+              userCreated++;
+            }
+          } catch (eventError) {
+            console.error(`[SyncMeetingNotes] イベント処理エラー: "${event.summary}" (user: ${userId})`, eventError);
+            userErrors++;
           }
-          created++;
         }
-      } catch (eventError) {
-        console.error(`[SyncMeetingNotes] イベント処理エラー: "${event.summary}"`, eventError);
-        errors++;
+      } catch (userError) {
+        console.error(`[SyncMeetingNotes] ユーザー ${userId} の処理エラー:`, userError);
+        userErrors++;
       }
+
+      totalCreated += userCreated;
+      totalSkipped += userSkipped;
+      totalErrors += userErrors;
+      userResults.push({ userId, events: userEvents, created: userCreated, skipped: userSkipped, errors: userErrors });
     }
 
-    console.log(`[SyncMeetingNotes] 完了: processed=${processed}, created=${created}, skipped=${skipped}, errors=${errors}`);
+    console.log(`[SyncMeetingNotes] 完了: users=${calendarUsers.length}, processed=${totalProcessed}, created=${totalCreated}, skipped=${totalSkipped}, errors=${totalErrors}`);
 
     return NextResponse.json({
       success: true,
       data: {
-        total_events: events.length,
-        meet_events: meetEvents.length,
-        meet_event_details: meetEvents.map(e => ({
-          summary: e.summary,
-          id: e.id,
-          start: e.start,
-          end: e.end,
-          attachments: e.attachments?.map(a => ({ title: a.title, mimeType: a.mimeType, fileId: a.fileId })) || [],
-        })),
-        processed,
-        created,
-        skipped,
-        skip_reasons: skipReasons,
-        errors,
+        users_scanned: calendarUsers.length,
+        total_processed: totalProcessed,
+        total_created: totalCreated,
+        total_skipped: totalSkipped,
+        total_errors: totalErrors,
+        user_results: userResults,
+        skip_reasons: allSkipReasons,
       },
     });
   } catch (error) {
