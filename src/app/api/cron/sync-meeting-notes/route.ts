@@ -1,7 +1,8 @@
 // v6.0 Cron: Gemini会議メモ自動取得
-// スケジュール: 毎日 07:00 UTC（= JST 16:00）
-// Google Calendar の過去24時間の完了済みGoogle Meet イベントから
+// スケジュール: 毎時 00分（1時間ごと）
+// Google Calendar の過去3時間の完了済みGoogle Meet イベントから
 // Gemini会議メモ（添付Google Docs）を検出し、meeting_records に自動登録
+// ※ 取り込み済みイベントはsource_file_idで重複チェック済み（スキップ）
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
@@ -40,10 +41,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'ENV_TOKEN_OWNER_ID未設定のためスキップ' });
     }
 
-    // 過去の取得範囲: URLパラメータ hours で上書き可能（デフォルト48時間）
+    // 過去の取得範囲: URLパラメータ hours で上書き可能（デフォルト3時間）
+    // 毎時間実行のため3時間で十分（Gemini Docs添付タイムラグをカバー）
     // テスト用: ?hours=96 で過去4日分を取得
     const hoursParam = request.nextUrl.searchParams.get('hours');
-    const lookbackHours = hoursParam ? parseInt(hoursParam, 10) : 48;
+    const lookbackHours = hoursParam ? parseInt(hoursParam, 10) : 3;
     const now = new Date();
     const timeMin = new Date(now.getTime() - lookbackHours * 60 * 60 * 1000).toISOString();
     const timeMax = new Date(now.getTime() + 1 * 60 * 60 * 1000).toISOString();

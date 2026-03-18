@@ -92,7 +92,7 @@
     },
     {
       "path": "/api/cron/sync-meeting-notes",
-      "schedule": "0 7 * * *"
+      "schedule": "0 * * * *"
     }
   ]
 }
