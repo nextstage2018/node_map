@@ -101,7 +101,31 @@ export async function POST(
       }
     }
 
-    console.log(`[Project Members Detect] ログインユーザーマップ: ${loggedInUserMap.size}人 (${[...loggedInUserMap.keys()].join(', ')})`);
+    // ★ v10.2: BOTアカウントのaccount_idも除外対象に追加
+    const botExcludeIds = new Set<string>();
+    const botToken = process.env.CHATWORK_BOT_API_TOKEN;
+    if (botToken) {
+      try {
+        const botRes = await fetch('https://api.chatwork.com/v2/me', {
+          headers: { 'X-ChatWorkToken': botToken },
+        });
+        if (botRes.ok) {
+          const botMe = await botRes.json();
+          botExcludeIds.add(String(botMe.account_id));
+          console.log(`[Project Members Detect] Chatwork BOT除外: ${botMe.account_id} (${botMe.name})`);
+        }
+      } catch (e) {
+        // BOTトークンなし or API失敗 → 無視
+      }
+    }
+    // Slack BOT ID も除外（環境変数から取得できない場合は token_data.bot_user_id を使用）
+    for (const token of (allTokens || [])) {
+      if (token.service_name === 'slack' && token.token_data?.bot_user_id) {
+        botExcludeIds.add(token.token_data.bot_user_id);
+      }
+    }
+
+    console.log(`[Project Members Detect] ログインユーザーマップ: ${loggedInUserMap.size}人, BOT除外: ${botExcludeIds.size}人`);
 
     // ============================================================
     // 送信者マップ構築
@@ -119,7 +143,8 @@ export async function POST(
           const members = await getChannelMembers(ch.channel_identifier, userId);
 
           for (const member of members) {
-            if (member.isBot) continue;
+            // ボット除外（Slack APIのis_bot + NodeMap BOT ID）
+            if (member.isBot || botExcludeIds.has(member.slackUserId)) continue;
 
             console.log(`[Project Members Detect] Slackメンバー: ${member.realName || member.name} (${member.slackUserId}), email: ${member.email || '(なし)'}, ログインユーザー: ${loggedInUserMap.has(member.slackUserId) ? '✓' : '✗'}`);
 
@@ -175,13 +200,13 @@ export async function POST(
       }
 
       for (const msg of messages) {
-        if (msg.from_address && !senderMap.has(msg.from_address)) {
-          senderMap.set(msg.from_address, {
-            address: msg.from_address,
-            name: msg.from_name || msg.from_address,
-            channel: ch.service_name,
-          });
-        }
+        // ★ v10.2: BOTアカウントのメッセージは除外
+        if (!msg.from_address || senderMap.has(msg.from_address) || botExcludeIds.has(msg.from_address)) continue;
+        senderMap.set(msg.from_address, {
+          address: msg.from_address,
+          name: msg.from_name || msg.from_address,
+          channel: ch.service_name,
+        });
       }
     }
 
