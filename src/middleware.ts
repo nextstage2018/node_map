@@ -39,9 +39,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // Cron内部呼び出し（x-cron-secret ヘッダー付き）はミドルウェア認証をスキップ
-  const cronSecret = request.headers.get('x-cron-secret');
-  if (cronSecret && pathname.startsWith('/api/') && cronSecret === process.env.CRON_SECRET) {
+  // Cron/内部呼び出し: x-cron-secret ヘッダー or URLパラメータ(cron_secret)で認証バイパス
+  const cronSecretHeader = request.headers.get('x-cron-secret');
+  const cronSecretParam = request.nextUrl.searchParams.get('cron_secret');
+  const cronSecretValue = cronSecretHeader || cronSecretParam;
+  const expectedSecret = process.env.CRON_SECRET;
+  if (cronSecretValue && expectedSecret && pathname.startsWith('/api/') && cronSecretValue === expectedSecret) {
     return NextResponse.next();
   }
 

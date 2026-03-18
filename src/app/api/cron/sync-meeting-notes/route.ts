@@ -194,14 +194,14 @@ export async function GET(request: NextRequest) {
             // Claude AI解析 → 検討ツリー生成 → チャネル通知を一括実行
             if (newRecord) {
               try {
-                const analyzeUrl = `https://node-map-eight.vercel.app/api/meeting-records/${newRecord.id}/analyze`;
-                console.log(`[SyncMeetingNotes] analyze API呼び出し: ${analyzeUrl}`);
+                const cronSecret = process.env.CRON_SECRET || '';
+                const analyzeUrl = `https://node-map-eight.vercel.app/api/meeting-records/${newRecord.id}/analyze?cron_secret=${encodeURIComponent(cronSecret)}`;
+                console.log(`[SyncMeetingNotes] analyze API呼び出し: recordId=${newRecord.id}`);
                 const analyzeRes = await fetch(analyzeUrl, {
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    'x-webhook-internal': 'true',
-                    'x-cron-secret': process.env.CRON_SECRET || '',
+                    'x-cron-secret': cronSecret,
                   },
                   body: JSON.stringify({ user_id: userId }),
                 });
