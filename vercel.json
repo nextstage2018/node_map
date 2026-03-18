@@ -3,6 +3,12 @@
     "src/app/api/drive/upload/route.ts": {
       "maxDuration": 60,
       "memory": 1024
+    },
+    "src/app/api/cron/sync-meeting-notes/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/meeting-records/[id]/analyze/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
