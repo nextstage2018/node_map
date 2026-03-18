@@ -50,6 +50,9 @@ interface ProjectMember {
     company_name: string | null;
     linked_user_id: string | null;
   };
+
+  // ★ v10.2: 紐づいている全チャネル（アイコン表示用）
+  channels?: { channel: string; address: string }[];
 }
 
 interface Contact {
@@ -738,6 +741,21 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
                             {roleBadge(m.role)}
                             {m.contact.company_name && (
                               <span className="text-[10px] text-slate-400">{m.contact.company_name}</span>
+                            )}
+                            {/* ★ v10.2: 紐づいているチャネルのアイコン表示 */}
+                            {m.channels && m.channels.length > 0 && (
+                              <div className="flex items-center gap-0.5 ml-1">
+                                {/* チャネル種別ごとに1アイコンだけ表示（重複排除） */}
+                                {[...new Set(m.channels.map(ch => ch.channel))].map(chType => (
+                                  <span key={chType} className="flex items-center" title={
+                                    chType === 'slack' ? 'Slack' : chType === 'chatwork' ? 'Chatwork' : chType === 'email' ? 'Email' : chType
+                                  }>
+                                    {chType === 'slack' && <Hash className="w-3 h-3 text-purple-400" />}
+                                    {chType === 'chatwork' && <MessageSquare className="w-3 h-3 text-green-400" />}
+                                    {chType === 'email' && <Mail className="w-3 h-3 text-blue-400" />}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                           </div>
                         </div>

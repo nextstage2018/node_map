@@ -172,16 +172,17 @@ export async function POST(
       }
     }
 
-    // 組織内の既存コンタクト名も収集（contact_channels未登録時の安全策）
+    // ★ v10.2: 名前照合をグローバルに拡大（組織限定→全コンタクト）
+    // 外部PJで検出された自社メンバーが重複作成されるのを防ぐ
     const knownNames = new Map<string, string>(); // name → contact_id
-    if (project.organization_id) {
-      const { data: orgContacts } = await supabase
+    {
+      const { data: allContacts } = await supabase
         .from('contact_persons')
         .select('id, name')
-        .eq('organization_id', project.organization_id);
+        .not('name', 'is', null);
 
-      if (orgContacts) {
-        for (const c of orgContacts) {
+      if (allContacts) {
+        for (const c of allContacts) {
           if (!knownNames.has(c.name)) {
             knownNames.set(c.name, c.id);
           }
@@ -265,13 +266,15 @@ export async function POST(
       if (!contactId) {
         const newId = `team_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const mainChannel = sender.channel === 'slack' ? 'slack' : sender.channel === 'chatwork' ? 'chatwork' : 'email';
+        // ★ v10.2: organization_id を自動セットしない（手動で設定してもらう）
+        // 外部PJで検出された自社メンバーが間違った組織に紐づくのを防ぐ
         const { error: createErr } = await supabase
           .from('contact_persons')
           .insert({
             id: newId,
             name: sender.name,
             owner_user_id: userId,
-            organization_id: project.organization_id || null,
+            organization_id: null,
             relationship_type: 'internal',
             main_channel: mainChannel,
             confirmed: false,

@@ -63,19 +63,28 @@ export async function GET(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    // 各メンバーのメールアドレスを contact_channels から取得
+    // 各メンバーのチャネル情報を contact_channels から取得
     const contactIds = (data || []).map(pm => pm.contact_id).filter(Boolean);
     let emailMap: Record<string, string> = {};
+    // ★ v10.2: 全チャネル情報を取得（メンバーカードにアイコン表示用）
+    const channelsMap: Record<string, { channel: string; address: string }[]> = {};
     if (contactIds.length > 0) {
-      const { data: channels } = await supabase
+      const { data: allChannels } = await supabase
         .from('contact_channels')
-        .select('contact_id, address')
-        .in('contact_id', contactIds)
-        .eq('channel', 'email');
-      if (channels) {
-        for (const ch of channels) {
+        .select('contact_id, channel, address')
+        .in('contact_id', contactIds);
+      if (allChannels) {
+        for (const ch of allChannels) {
           if (ch.contact_id && ch.address) {
-            emailMap[ch.contact_id] = ch.address;
+            // emailMap（既存互換）
+            if (ch.channel === 'email') {
+              emailMap[ch.contact_id] = ch.address;
+            }
+            // channelsMap（全チャネル）
+            if (!channelsMap[ch.contact_id]) {
+              channelsMap[ch.contact_id] = [];
+            }
+            channelsMap[ch.contact_id].push({ channel: ch.channel, address: ch.address });
           }
         }
       }
@@ -127,6 +136,8 @@ export async function GET(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       contact: (pm as any).contact_persons,
       email: emailMap[pm.contact_id] || null,
+      // ★ v10.2: 紐づいている全チャネル情報（アイコン表示用）
+      channels: channelsMap[pm.contact_id] || [],
     }));
 
     return NextResponse.json({ success: true, data: members });
