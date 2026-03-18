@@ -29,7 +29,6 @@ export async function GET(
       .from('projects')
       .select('id, organization_id')
       .eq('id', projectId)
-      .eq('user_id', userId)
       .single();
 
     if (!project) {
@@ -161,12 +160,11 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'contact_id は必須です' }, { status: 400 });
     }
 
-    // プロジェクトの所有確認
+    // プロジェクトの存在確認（user_idフィルタなし: PJは組織共有リソース）
     const { data: project } = await supabase
       .from('projects')
       .select('id, organization_id')
       .eq('id', projectId)
-      .eq('user_id', userId)
       .single();
 
     if (!project) {
@@ -269,8 +267,7 @@ export async function DELETE(
     let query = supabase
       .from('project_members')
       .delete()
-      .eq('project_id', projectId)
-      .eq('user_id', userId);
+      .eq('project_id', projectId);
 
     if (memberId) {
       query = query.eq('id', memberId);

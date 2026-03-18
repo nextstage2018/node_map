@@ -47,7 +47,6 @@ export async function PUT(
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('user_id', userId)
       .select()
       .single();
 
@@ -97,21 +96,18 @@ export async function DELETE(
     await supabase
       .from('business_events')
       .update({ project_id: null })
-      .eq('project_id', id)
-      .eq('user_id', userId);
+      .eq('project_id', id);
 
     // 関連するgroupsを削除
     await supabase
       .from('groups')
       .delete()
-      .eq('project_id', id)
-      .eq('user_id', userId);
+      .eq('project_id', id);
 
     const { error } = await supabase
       .from('projects')
       .delete()
-      .eq('id', id)
-      .eq('user_id', userId);
+      .eq('id', id);
 
     if (error) {
       console.error('[Projects API] 削除エラー:', error);

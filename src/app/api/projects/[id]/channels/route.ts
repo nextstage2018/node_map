@@ -23,12 +23,11 @@ export async function GET(
 
     const { id: projectId } = await params;
 
-    // プロジェクトの所有確認
+    // プロジェクトの存在確認（user_idフィルタなし: PJは組織共有リソース）
     const { data: project } = await supabase
       .from('projects')
       .select('id, organization_id')
       .eq('id', projectId)
-      .eq('user_id', userId)
       .single();
 
     if (!project) {
@@ -81,12 +80,11 @@ export async function POST(
       );
     }
 
-    // プロジェクトの所有確認
+    // プロジェクトの存在確認（user_idフィルタなし: PJは組織共有リソース）
     const { data: project } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
-      .eq('user_id', userId)
       .single();
 
     if (!project) {
@@ -152,8 +150,7 @@ export async function DELETE(
       .from('project_channels')
       .delete()
       .eq('id', channelDbId)
-      .eq('project_id', projectId)
-      .eq('user_id', userId);
+      .eq('project_id', projectId);
 
     if (error) {
       console.error('[Project Channels API] 削除エラー:', error);

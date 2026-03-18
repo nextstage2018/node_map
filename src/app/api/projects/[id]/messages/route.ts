@@ -25,12 +25,11 @@ export async function GET(
     const limit = parseInt(searchParams.get('limit') || '100', 10);
     const offset = parseInt(searchParams.get('offset') || '0', 10);
 
-    // プロジェクトの所有確認
+    // プロジェクトの存在確認（user_idフィルタなし: PJは組織共有リソース）
     const { data: project } = await supabase
       .from('projects')
       .select('id')
       .eq('id', projectId)
-      .eq('user_id', userId)
       .single();
 
     if (!project) {
