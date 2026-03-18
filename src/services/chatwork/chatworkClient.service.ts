@@ -19,6 +19,14 @@ function getToken(): string {
 }
 
 /**
+ * BOT用トークンを取得（環境変数）
+ * Webhook応答・通知・定期配信などBOTとして送信する場合に使用
+ */
+function getBotToken(): string {
+  return process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN || '';
+}
+
+/**
  * DBからユーザー個別のChatworkトークンを取得
  * 見つからない場合は環境変数にフォールバック
  */
@@ -59,11 +67,11 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/** 現在のリクエストで使うトークン（chatworkFetchWithToken用） */
-let _currentToken = '';
-
-async function chatworkFetch(endpoint: string, options?: RequestInit) {
-  const token = _currentToken || getToken();
+/**
+ * Chatwork APIリクエスト（トークン明示渡し）
+ * @param token 使用するAPIトークン
+ */
+async function chatworkFetchWithToken(endpoint: string, token: string, options?: RequestInit) {
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const res = await fetch(`${CHATWORK_API_BASE}${endpoint}`, {
@@ -114,12 +122,9 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
     return [];
   }
 
-  // chatworkFetch内で使うトークンを設定
-  _currentToken = token;
-
   try {
     // ルーム一覧を取得
-    const roomsRes = await chatworkFetch('/rooms');
+    const roomsRes = await chatworkFetchWithToken('/rooms', token);
     if (!roomsRes.ok) {
       console.error('[Chatwork] ルーム一覧取得失敗:', roomsRes.status, roomsRes.statusText);
       return [];
@@ -136,7 +141,7 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
     // Phase 39b: 自分のaccount_idを取得（送信メッセージ判定用）
     let myAccountId = '';
     try {
-      const meRes = await chatworkFetch('/me');
+      const meRes = await chatworkFetchWithToken('/me', token);
       if (meRes.ok) {
         const meData = await meRes.json();
         myAccountId = String(meData.account_id || '');
@@ -162,7 +167,7 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
         const unreadNum = room.unread_num || 0;
 
         // force=1: 最新100件取得。force=0だと未読のみ
-        const msgRes = await chatworkFetch(`/rooms/${room.room_id}/messages?force=1`);
+        const msgRes = await chatworkFetchWithToken(`/rooms/${room.room_id}/messages?force=1`, token);
 
         if (msgRes.status === 204) {
           // 204: メッセージなし（正常）
@@ -187,7 +192,7 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
         // ルームのファイル一覧を取得（エラーは無視）
         let roomFiles: Attachment[] = [];
         try {
-          roomFiles = await fetchRoomFiles(String(room.room_id));
+          roomFiles = await fetchRoomFiles(String(room.room_id), token);
         } catch { /* ignore */ }
 
         // Phase 25: 最新メッセージから未読数分が未読
@@ -246,13 +251,11 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
 
     console.log(`[Chatwork] 合計 ${messages.length}件のメッセージを取得`);
 
-    _currentToken = ''; // リセット
     return messages.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
   } catch (error) {
     console.error('[Chatwork] 全体エラー:', error);
-    _currentToken = ''; // リセット
     return [];
   }
 }
@@ -260,9 +263,9 @@ export async function fetchChatworkMessages(limit: number = 50, userId?: string)
 /**
  * Chatworkルームのファイル一覧を取得
  */
-async function fetchRoomFiles(roomId: string): Promise<Attachment[]> {
+async function fetchRoomFiles(roomId: string, token: string): Promise<Attachment[]> {
   try {
-    const res = await chatworkFetch(`/rooms/${roomId}/files`);
+    const res = await chatworkFetchWithToken(`/rooms/${roomId}/files`, token);
     if (!res.ok || res.status === 204) return [];
 
     const files = await res.json();
@@ -312,9 +315,11 @@ function guessMimeType(filename: string): string {
 /**
  * Chatwork特定ファイルのダウンロードURLを取得
  */
-export async function getChatworkFileDownloadUrl(roomId: string, fileId: string): Promise<string | null> {
+export async function getChatworkFileDownloadUrl(roomId: string, fileId: string, userId?: string): Promise<string | null> {
   try {
-    const res = await chatworkFetch(`/rooms/${roomId}/files/${fileId}?create_download_url=1`);
+    const token = userId ? await getTokenFromDB(userId) : getToken();
+    if (!token) return null;
+    const res = await chatworkFetchWithToken(`/rooms/${roomId}/files/${fileId}?create_download_url=1`, token);
     if (!res.ok) return null;
     const data = await res.json();
     return data.download_url || null;
@@ -325,12 +330,17 @@ export async function getChatworkFileDownloadUrl(roomId: string, fileId: string)
 
 /**
  * Chatworkメッセージを送信（返信）
+ * @param roomId ChatworkルームID
+ * @param body メッセージ本文
+ * @param userId 送信ユーザーID（指定時はユーザー個別トークンを使用、未指定時はBOTトークン）
  */
 export async function sendChatworkMessage(
   roomId: string,
-  body: string
+  body: string,
+  userId?: string
 ): Promise<boolean> {
-  const token = getToken();
+  // userId指定時はユーザー個別トークン、未指定時はBOT/環境変数トークン
+  const token = userId ? await getTokenFromDB(userId) : getBotToken();
 
   if (!token) {
     console.log('[デモモード] Chatwork送信:', { roomId, body });
@@ -338,11 +348,19 @@ export async function sendChatworkMessage(
   }
 
   try {
-    const res = await chatworkFetch(`/rooms/${roomId}/messages`, {
+    const res = await fetch(`${CHATWORK_API_BASE}/rooms/${roomId}/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'X-ChatWorkToken': token,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
       body: `body=${encodeURIComponent(body)}`,
     });
+
+    if (!res.ok) {
+      const errorBody = await res.text().catch(() => 'unknown');
+      console.error(`[Chatwork] 送信失敗 ${res.status}: ${errorBody} (userId: ${userId || 'BOT'})`);
+    }
 
     return res.ok;
   } catch (error) {

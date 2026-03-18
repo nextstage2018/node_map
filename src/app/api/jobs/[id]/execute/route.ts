@@ -161,7 +161,7 @@ export async function POST(
             case 'chatwork': {
               const chatworkRoomId = (metadata.chatworkRoomId as string) || '';
               if (!chatworkRoomId) throw new Error('ChatworkルームIDがありません');
-              sendSuccess = await sendChatworkMessage(chatworkRoomId, draftText);
+              sendSuccess = await sendChatworkMessage(chatworkRoomId, draftText, userId || undefined);
               executionLogs.push(`Chatwork送信: ルーム ${chatworkRoomId}`);
               break;
             }

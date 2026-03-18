@@ -90,10 +90,12 @@ export async function POST(request: NextRequest) {
           );
         }
         const cleanChannel = slackChannel.replace(/^#/, '');
-        // sendSlackMessage(channelId, text, threadTs?) => boolean
+        // sendSlackMessage(channelId, text, threadTs?, userId?) => boolean
         const slackSuccess = await sendSlackMessage(
           cleanChannel,
-          messageBody
+          messageBody,
+          undefined,
+          userId || undefined
         );
         if (!slackSuccess) {
           return NextResponse.json(
@@ -111,10 +113,11 @@ export async function POST(request: NextRequest) {
             { status: 400 }
           );
         }
-        // sendChatworkMessage(roomId, body) => boolean
+        // sendChatworkMessage(roomId, body, userId?) => boolean
         const cwSuccess = await sendChatworkMessage(
           chatworkRoomId,
-          messageBody
+          messageBody,
+          userId || undefined
         );
         if (!cwSuccess) {
           return NextResponse.json(

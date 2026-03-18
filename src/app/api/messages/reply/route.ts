@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
           }
           sendSuccess = await sendChatworkMessage(
             chatworkRoomId,
-            replyBody
+            replyBody,
+            userId || undefined
           );
         }
         break;
