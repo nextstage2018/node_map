@@ -32,7 +32,6 @@ export async function GET(request: NextRequest) {
       isGoogleMeetEvent,
       fetchMeetingNoteFromEvent,
     } = await import('@/services/gemini/meetingNoteFetcher.service');
-    const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
 
     // ========================================
     // マルチユーザー: Google連携済みの全ユーザーを取得
@@ -191,27 +190,29 @@ export async function GET(request: NextRequest) {
               continue;
             }
 
-            // Geminiパーサーで解析し、ai_summary を更新
+            // 統一パイプライン: analyze API を呼び出し
+            // Claude AI解析 → 検討ツリー生成 → チャネル通知を一括実行
             if (newRecord) {
               try {
-                const analysis = parseGeminiNotes(noteResult.textContent);
-                await supabase
-                  .from('meeting_records')
-                  .update({
-                    ai_summary: analysis.summary || null,
-                    processed: true,
-                    updated_at: new Date().toISOString(),
-                  })
-                  .eq('id', newRecord.id);
-
-                // AI解析パイプラインを起動
-                try {
-                  await triggerAnalysisPipeline(supabase, userId, newRecord.id, noteResult.textContent, projectId, event.summary, meetingDate);
-                } catch (pipelineError) {
-                  console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
+                const analyzeUrl = `https://node-map-eight.vercel.app/api/meeting-records/${newRecord.id}/analyze`;
+                console.log(`[SyncMeetingNotes] analyze API呼び出し: ${analyzeUrl}`);
+                const analyzeRes = await fetch(analyzeUrl, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-webhook-internal': 'true',
+                    'x-cron-secret': process.env.CRON_SECRET || '',
+                  },
+                  body: JSON.stringify({ user_id: userId }),
+                });
+                if (analyzeRes.ok) {
+                  const analyzeData = await analyzeRes.json();
+                  console.log(`[SyncMeetingNotes] analyze完了: topics=${analyzeData.data?.analysis?.topics?.length || 0}, actions=${analyzeData.data?.analysis?.action_items?.length || 0}`);
+                } else {
+                  console.error(`[SyncMeetingNotes] analyze APIエラー: ${analyzeRes.status} ${await analyzeRes.text().catch(() => '')}`);
                 }
-              } catch (parseError) {
-                console.error(`[SyncMeetingNotes] パース失敗:`, parseError);
+              } catch (pipelineError) {
+                console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
               }
               userCreated++;
             }
@@ -321,212 +322,3 @@ async function resolveProjectFromAttendees(supabase: any, attendees: string[]): 
   }
 }
 
-// ========================================
-// 解析パイプライン（Geminiパーサー → DB更新）
-// analyze/route.ts のロジックをインラインで実行
-// ========================================
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function triggerAnalysisPipeline(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  userId: string,
-  recordId: string,
-  content: string,
-  projectId: string,
-  title: string,
-  meetingDate: string,
-): Promise<void> {
-  const { parseGeminiNotes } = await import('@/services/gemini/geminiParser.service');
-  const { matchContactByName } = await import('@/services/businessLog/taskSuggestion.service');
-  const { ThoughtNodeService } = await import('@/services/nodemap/thoughtNode.service');
-  const { processAIOpenIssues } = await import('@/services/v34/openIssues.service');
-  const { processAIDecisions } = await import('@/services/v34/decisionLog.service');
-
-  const analysisResult = parseGeminiNotes(content);
-
-  // ai_summary 更新
-  await supabase
-    .from('meeting_records')
-    .update({
-      ai_summary: analysisResult.summary || null,
-      processed: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', recordId);
-
-  // ビジネスイベント自動登録
-  try {
-    const { data: existingEvent } = await supabase
-      .from('business_events')
-      .select('id')
-      .eq('meeting_record_id', recordId)
-      .limit(1)
-      .single();
-
-    if (!existingEvent) {
-      await supabase.from('business_events').insert({
-        user_id: userId,
-        project_id: projectId,
-        event_type: 'meeting',
-        title: `会議: ${title}`,
-        content: analysisResult.summary || title,
-        event_date: meetingDate,
-        meeting_record_id: recordId,
-        ai_generated: true,
-      });
-    }
-  } catch {
-    // ビジネスイベント失敗してもブロックしない
-  }
-
-  // ナレッジ抽出
-  try {
-    await ThoughtNodeService.extractAndLinkFromText({
-      text: content,
-      userId,
-      sourceType: 'meeting_record',
-      sourceId: recordId,
-      projectId,
-    });
-  } catch {
-    // 失敗してもブロックしない
-  }
-
-  // action_items → task_suggestions
-  if (analysisResult.action_items.length > 0) {
-    try {
-      const itemsWithContacts = await Promise.all(
-        analysisResult.action_items.map(async (item) => {
-          let assigneeContactId: string | null = null;
-          if (item.assignee) {
-            assigneeContactId = await matchContactByName(supabase, userId, item.assignee);
-          }
-          return {
-            title: item.title,
-            assignee: item.assignee || '',
-            assigneeContactId,
-            context: item.context || '',
-            due_date: item.due_date || null,
-            priority: item.priority || 'medium',
-            related_topics: item.related_topics || [],
-          };
-        })
-      );
-
-      await supabase.from('task_suggestions').insert({
-        user_id: userId,
-        meeting_record_id: recordId,
-        suggestions: {
-          meetingTitle: title,
-          meetingDate,
-          projectId,
-          items: itemsWithContacts,
-        },
-        status: 'pending',
-      });
-    } catch {
-      // 失敗してもブロックしない
-    }
-  }
-
-  // open_issues / decision_log
-  try {
-    if (analysisResult.new_open_issues.length > 0 || analysisResult.resolved_issues.length > 0) {
-      await processAIOpenIssues(
-        projectId,
-        userId,
-        recordId,
-        analysisResult.new_open_issues,
-        analysisResult.resolved_issues
-      );
-    }
-
-    if (analysisResult.new_decisions.length > 0) {
-      await processAIDecisions(
-        projectId,
-        userId,
-        recordId,
-        analysisResult.new_decisions
-      );
-    }
-  } catch {
-    // 失敗してもブロックしない
-  }
-
-  // 検討ツリー生成（topicsがある場合）
-  if (analysisResult.topics.length > 0) {
-    try {
-      const baseUrl = 'https://node-map-eight.vercel.app';
-      const generateUrl = `${baseUrl}/api/decision-trees/generate`;
-
-      const treeRes = await fetch(generateUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-webhook-internal': 'true',
-          'x-cron-secret': process.env.CRON_SECRET || '',
-        },
-        body: JSON.stringify({
-          project_id: projectId,
-          meeting_record_id: recordId,
-          topics: analysisResult.topics,
-          source_type: 'meeting',
-        }),
-      });
-
-      if (treeRes.ok) {
-        console.log(`[SyncMeetingNotes] 検討ツリー生成完了`);
-      } else {
-        console.error(`[SyncMeetingNotes] 検討ツリー生成エラー: ${treeRes.status}`);
-      }
-    } catch (treeError) {
-      console.error(`[SyncMeetingNotes] 検討ツリー生成例外:`, treeError);
-    }
-  }
-
-  // v7.0: チャネル自動投稿
-  try {
-    const { notifyMeetingSummaryToChannels } = await import(
-      '@/services/v70/meetingSummaryNotifier.service'
-    );
-
-    const actionItemsForNotify = analysisResult.action_items.map((item) => ({
-      title: item.title,
-      assignee: item.assignee || '',
-      assigneeContactId: null as string | null,
-      context: item.context || '',
-      due_date: item.due_date || null,
-      priority: item.priority || 'medium' as const,
-    }));
-
-    // 担当者名→contact_idのマッチング
-    for (const item of actionItemsForNotify) {
-      if (item.assignee) {
-        try {
-          const contactId = await matchContactByName(supabase, userId, item.assignee);
-          item.assigneeContactId = contactId;
-        } catch { /* 無視 */ }
-      }
-    }
-
-    const channelResult = await notifyMeetingSummaryToChannels({
-      projectId,
-      meetingTitle: title,
-      meetingDate,
-      meetingRecordId: recordId,
-      summary: analysisResult.summary || '',
-      decisions: analysisResult.new_decisions || [],
-      openIssues: analysisResult.new_open_issues || [],
-      actionItems: actionItemsForNotify,
-      userId,
-    });
-
-    if (channelResult.slackSent || channelResult.chatworkSent) {
-      console.log(`[SyncMeetingNotes] チャネル通知完了: slack=${channelResult.slackSent}, chatwork=${channelResult.chatworkSent}`);
-    }
-  } catch (notifyError) {
-    console.error(`[SyncMeetingNotes] チャネル通知エラー:`, notifyError);
-  }
-
-  console.log(`[SyncMeetingNotes] パイプライン完了: record=${recordId}, topics=${analysisResult.topics.length}, actions=${analysisResult.action_items.length}, issues=${analysisResult.new_open_issues.length}, decisions=${analysisResult.new_decisions.length}`);
-}

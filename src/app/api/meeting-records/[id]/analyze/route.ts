@@ -102,7 +102,23 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const userId = await getServerUserId();
+    // Cron/Webhook からの内部呼び出し対応: x-cron-secret ヘッダーで認証バイパス
+    const cronSecret = request.headers.get('x-cron-secret');
+    const isCronCall = cronSecret && cronSecret === process.env.CRON_SECRET;
+    let userId: string | null = null;
+
+    if (isCronCall) {
+      // Cron呼び出し: bodyからuser_idを取得
+      try {
+        const body = await request.clone().json();
+        userId = body.user_id || process.env.ENV_TOKEN_OWNER_ID || null;
+      } catch {
+        userId = process.env.ENV_TOKEN_OWNER_ID || null;
+      }
+    } else {
+      userId = await getServerUserId();
+    }
+
     if (!userId) {
       return NextResponse.json({ success: false, error: '認証が必要です' }, { status: 401 });
     }
