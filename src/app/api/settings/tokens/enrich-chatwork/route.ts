@@ -90,7 +90,6 @@ export async function POST() {
               contact_id: contact.id,
               channel: 'chatwork',
               address: accountId,
-              user_id: token.user_id,
             }).then(({ error: chErr }) => {
               if (chErr && chErr.code !== '23505') {
                 console.warn(`[Enrich Chatwork] contact_channels登録失敗:`, chErr.message);

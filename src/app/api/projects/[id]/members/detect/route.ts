@@ -274,7 +274,6 @@ export async function POST(
                 contact_id: existingContactId,
                 channel: 'email',
                 address: sender.email,
-                user_id: userId,
               }).then(({ error: emailErr }) => {
                 if (emailErr && emailErr.code !== '23505') {
                   console.warn('[Project Members Detect] 既存メンバーemail追加失敗:', emailErr.message);
@@ -304,7 +303,6 @@ export async function POST(
             contact_id: contactId,
             channel: mainChannel,
             address: address,
-            user_id: userId,
           }, { onConflict: 'contact_id,channel,address' }).then(({ error: chErr }) => {
             if (chErr) console.warn('[Project Members Detect] チャネル登録:', chErr.message);
           });
@@ -326,7 +324,6 @@ export async function POST(
             contact_id: nameMatchId,
             channel: mainChannel,
             address: address,
-            user_id: userId,
           }).then(({ error: chErr }) => {
             if (chErr && chErr.code !== '23505') {
               console.warn('[Project Members Detect] 名前マッチ チャネル登録失敗:', chErr.message);
@@ -358,7 +355,6 @@ export async function POST(
             contact_id: newId,
             channel: mainChannel,
             address: address,
-            user_id: userId,
           }).then(({ error: chErr }) => {
             if (chErr) {
               console.error('[Project Members Detect] contact_channels挿入失敗:', chErr.message, { newId, mainChannel, address });
@@ -386,7 +382,6 @@ export async function POST(
             contact_id: contactId,
             channel: 'email',
             address: sender.email,
-            user_id: userId,
           }).then(({ error: emailErr }) => {
             if (emailErr && emailErr.code !== '23505') {
               console.warn('[Project Members Detect] email追加失敗:', emailErr.message);
