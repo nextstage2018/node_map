@@ -100,13 +100,34 @@ export async function POST(request: NextRequest) {
 
     const now = new Date().toISOString();
 
+    // ★ v10.2: Chatworkトークン保存時に account_id を自動取得
+    let enrichedTokenData = { ...tokenData };
+    if (serviceName === 'chatwork' && tokenData.api_token && !tokenData.account_id) {
+      try {
+        const meRes = await fetch('https://api.chatwork.com/v2/me', {
+          headers: { 'X-ChatWorkToken': tokenData.api_token },
+        });
+        if (meRes.ok) {
+          const me = await meRes.json();
+          enrichedTokenData.account_id = String(me.account_id);
+          // account_name もAPIから正確なものに更新
+          if (me.name) enrichedTokenData.account_name = me.name;
+          console.log(`[Tokens] Chatwork account_id取得成功: ${me.account_id} (${me.name})`);
+        } else {
+          console.warn(`[Tokens] Chatwork /v2/me 失敗: HTTP ${meRes.status}`);
+        }
+      } catch (err) {
+        console.warn('[Tokens] Chatwork account_id取得失敗:', err);
+      }
+    }
+
     const { data, error } = await sb
       .from('user_service_tokens')
       .upsert(
         {
           user_id: userId,
           service_name: serviceName,
-          token_data: tokenData,
+          token_data: enrichedTokenData,
           is_active: true,
           connected_at: now,
           updated_at: now,
