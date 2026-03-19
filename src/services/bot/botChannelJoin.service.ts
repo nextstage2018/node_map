@@ -274,3 +274,89 @@ async function getUserChatworkToken(userId: string): Promise<string | null> {
 
   return data?.token_data?.api_token || null;
 }
+
+// ========================================
+// BOT参加状態チェック
+// ========================================
+
+export interface BotStatus {
+  inChannel: boolean;
+  botName?: string;
+  error?: string;
+}
+
+/**
+ * 指定チャネルにBOTが参加しているか確認
+ */
+export async function checkBotStatus(
+  serviceName: string,
+  channelIdentifier: string
+): Promise<BotStatus> {
+  if (serviceName === 'slack') {
+    return checkSlackBotStatus(channelIdentifier);
+  } else if (serviceName === 'chatwork') {
+    return checkChatworkBotStatus(channelIdentifier);
+  }
+  return { inChannel: false, error: '未対応のサービス' };
+}
+
+async function checkSlackBotStatus(channelId: string): Promise<BotStatus> {
+  try {
+    const botToken = process.env.SLACK_BOT_TOKEN;
+    if (!botToken) return { inChannel: false, error: 'BOTトークン未設定' };
+
+    const botUserId = await getSlackBotUserId();
+    if (!botUserId) return { inChannel: false, error: 'BOT ID不明' };
+
+    const res = await fetch(`${SLACK_API_BASE}/conversations.members?channel=${channelId}&limit=200`, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+
+    if (!res.ok) return { inChannel: false, error: `API ${res.status}` };
+
+    const data = await res.json();
+    if (!data.ok) {
+      // not_in_channel エラー = BOT未参加
+      if (data.error === 'not_in_channel') {
+        return { inChannel: false, botName: 'NodeMap BOT' };
+      }
+      return { inChannel: false, error: data.error };
+    }
+
+    const isMember = data.members?.includes(botUserId);
+    return { inChannel: isMember, botName: 'NodeMap BOT' };
+  } catch {
+    return { inChannel: false, error: 'チェック失敗' };
+  }
+}
+
+async function checkChatworkBotStatus(roomId: string): Promise<BotStatus> {
+  try {
+    const botToken = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
+    if (!botToken) return { inChannel: false, error: 'BOTトークン未設定' };
+
+    const botAccountId = await getChatworkBotAccountId();
+    if (!botAccountId) return { inChannel: false, error: 'BOT ID不明' };
+
+    // BOTトークンでルームメンバーを確認（BOT自身がメンバーならアクセス可能）
+    const res = await fetch(`${CHATWORK_API_BASE}/rooms/${roomId}/members`, {
+      headers: { 'X-ChatWorkToken': botToken },
+    });
+
+    if (!res.ok) {
+      // 403 = BOT未参加
+      if (res.status === 403) {
+        return { inChannel: false, botName: 'NodeMap BOT' };
+      }
+      return { inChannel: false, error: `API ${res.status}` };
+    }
+
+    const members = await res.json();
+    if (!Array.isArray(members)) return { inChannel: false, error: '不正なレスポンス' };
+
+    const isMember = members.some((m: { account_id: number }) => String(m.account_id) === botAccountId);
+    return { inChannel: isMember, botName: 'NodeMap BOT' };
+  } catch {
+    return { inChannel: false, error: 'チェック失敗' };
+  }
+}

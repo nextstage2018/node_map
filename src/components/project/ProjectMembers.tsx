@@ -24,6 +24,11 @@ interface ProjectChannel {
   channel_identifier: string;
   channel_label: string | null;
   created_at: string;
+  botStatus?: {
+    inChannel: boolean;
+    botName?: string;
+    error?: string;
+  } | null;
 }
 
 interface AvailableChannel {
@@ -617,6 +622,18 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
                 <div className="flex items-center gap-3">
                   <ServiceBadge service={ch.service_name} />
                   <span className="text-sm font-medium text-slate-700">{ch.channel_label || ch.channel_identifier}</span>
+                  {/* v10.3: BOT参加状態 */}
+                  {ch.botStatus && (
+                    ch.botStatus.inChannel ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-green-50 text-green-600 border border-green-200 rounded">
+                        🤖 BOT参加中
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium bg-red-50 text-red-500 border border-red-200 rounded">
+                        🤖 BOT未参加
+                      </span>
+                    )
+                  )}
                 </div>
                 <button onClick={() => removeProjectChannel(ch.id)}
                   className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="解除">

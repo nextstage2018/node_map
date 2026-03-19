@@ -3,7 +3,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
-import { ensureSlackBotInChannel, ensureChatworkBotInRoom } from '@/services/bot/botChannelJoin.service';
+import { ensureSlackBotInChannel, ensureChatworkBotInRoom, checkBotStatus } from '@/services/bot/botChannelJoin.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +48,23 @@ export async function GET(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data: data || [] });
+    // v10.3: 各チャネルのBOT参加状態を確認
+    const channels = data || [];
+    const channelsWithBotStatus = await Promise.all(
+      channels.map(async (ch) => {
+        if (ch.service_name === 'slack' || ch.service_name === 'chatwork') {
+          try {
+            const botStatus = await checkBotStatus(ch.service_name, ch.channel_identifier);
+            return { ...ch, botStatus };
+          } catch {
+            return { ...ch, botStatus: { inChannel: false, error: 'チェック失敗' } };
+          }
+        }
+        return { ...ch, botStatus: null };
+      })
+    );
+
+    return NextResponse.json({ success: true, data: channelsWithBotStatus });
   } catch (error) {
     console.error('[Project Channels API] エラー:', error);
     return NextResponse.json({ success: false, error: 'チャネルの取得に失敗しました' }, { status: 500 });
