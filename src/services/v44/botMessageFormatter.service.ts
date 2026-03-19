@@ -290,16 +290,16 @@ export async function generateAlerts(
 
   const { data: urgentMs } = await supabase
     .from('milestones')
-    .select('title, due_date')
+    .select('title, target_date')
     .eq('project_id', projectId)
     .in('status', ['pending', 'in_progress'])
-    .lte('due_date', twoDaysStr)
-    .gte('due_date', todayStr)
+    .lte('target_date', twoDaysStr)
+    .gte('target_date', todayStr)
     .limit(3);
 
   if (urgentMs && urgentMs.length > 0) {
     for (const ms of urgentMs) {
-      const d = new Date(ms.due_date);
+      const d = new Date(ms.target_date);
       const diffDays = Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
       alerts.push(`🚩 MS期限接近: ${ms.title}（残${diffDays}日）`);
     }

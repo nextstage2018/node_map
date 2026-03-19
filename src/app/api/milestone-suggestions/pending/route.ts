@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('milestones')
-      .select('id, project_id, title, description, success_criteria, due_date, status, auto_generated, source_meeting_record_id, created_at')
+      .select('id, project_id, title, description, success_criteria, target_date, status, auto_generated, source_meeting_record_id, created_at')
       .eq('project_id', projectId)
       .eq('auto_generated', true)
       .in('status', ['pending', 'in_progress'])

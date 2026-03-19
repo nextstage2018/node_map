@@ -29,7 +29,7 @@ interface AgendaData {
   milestones: {
     title: string;
     status: string;
-    due_date: string | null;
+    target_date: string | null;
     tasks: {
       title: string;
       status: string;
@@ -350,7 +350,7 @@ function buildPreMeetingAgendaContent(data: AgendaData): string {
   if (data.milestones.length > 0) {
     for (const ms of data.milestones) {
       const statusLabel = ms.status === 'achieved' ? '✅達成' : ms.status === 'missed' ? '❌未達' : ms.status === 'in_progress' ? '🔄進行中' : '⏳未開始';
-      const dueDateStr = ms.due_date ? `期限: ${ms.due_date}` : '';
+      const dueDateStr = ms.target_date ? `期限: ${ms.target_date}` : '';
       const doneTasks = ms.tasks.filter(t => t.status === 'done').length;
       const totalTasks = ms.tasks.length;
       lines.push(`  ${statusLabel} ${ms.title} (${doneTasks}/${totalTasks}完了) ${dueDateStr}`);
@@ -657,10 +657,10 @@ export async function collectAgendaData(
       // マイルストーン（pending/in_progress）
       supabase
         .from('milestones')
-        .select('id, title, status, due_date')
+        .select('id, title, status, target_date')
         .eq('project_id', projectId)
         .in('status', ['pending', 'in_progress'])
-        .order('due_date', { ascending: true })
+        .order('target_date', { ascending: true })
         .limit(5),
 
       // 前回の会議録（最新1件）
@@ -752,7 +752,7 @@ export async function collectAgendaData(
         return {
           title: ms.title,
           status: ms.status,
-          due_date: ms.due_date,
+          target_date: ms.target_date,
           tasks: taskDetails,
         };
       })

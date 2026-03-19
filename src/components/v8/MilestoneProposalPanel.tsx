@@ -58,7 +58,7 @@ export default function MilestoneProposalPanel({
     try {
       const body: Record<string, unknown> = {};
       if (editData.title) body.title = editData.title;
-      if (editData.due_date !== undefined) body.target_date = editData.due_date;
+      if (editData.target_date !== undefined) body.target_date = editData.target_date;
       if (editData.description !== undefined) body.description = editData.description;
       if (editData.success_criteria !== undefined) body.success_criteria = editData.success_criteria;
 
@@ -78,7 +78,7 @@ export default function MilestoneProposalPanel({
                   title: (editData.title ?? m.title),
                   description: (editData.description ?? m.description),
                   success_criteria: (editData.success_criteria ?? m.success_criteria),
-                  due_date: (editData.due_date ?? m.due_date),
+                  due_date: (editData.target_date ?? m.due_date),
                 }
               : m
           )
@@ -177,7 +177,7 @@ export default function MilestoneProposalPanel({
                           <label className="block text-[10px] text-slate-500 mb-0.5">期限</label>
                           <input
                             type="date"
-                            value={editData.due_date ?? milestone.due_date ?? ''}
+                            value={editData.target_date ?? milestone.target_date ?? ''}
                             onChange={(e) => setEditData({ ...editData, due_date: e.target.value })}
                             className="text-[11px] border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500"
                           />
@@ -205,9 +205,9 @@ export default function MilestoneProposalPanel({
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600">
                           AI自動登録
                         </span>
-                        {milestone.due_date && (
+                        {milestone.target_date && (
                           <span className="text-[10px] text-slate-400">
-                            期限: {new Date(milestone.due_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
+                            期限: {new Date(milestone.target_date).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' })}
                           </span>
                         )}
                         {milestone.status === 'in_progress' && (
@@ -257,7 +257,7 @@ export default function MilestoneProposalPanel({
                             setEditingId(milestone.id);
                             setEditData({
                               title: milestone.title,
-                              due_date: milestone.due_date,
+                              due_date: milestone.target_date,
                               description: milestone.description,
                               success_criteria: milestone.success_criteria,
                             });

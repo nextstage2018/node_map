@@ -246,10 +246,10 @@ async function findNearestMilestone(
   try {
     const { data: milestones } = await supabase
       .from('milestones')
-      .select('id, title, due_date')
+      .select('id, title, target_date')
       .eq('project_id', projectId)
       .in('status', ['pending', 'in_progress'])
-      .order('due_date', { ascending: true })
+      .order('target_date', { ascending: true })
       .limit(1);
 
     if (milestones && milestones.length > 0) {

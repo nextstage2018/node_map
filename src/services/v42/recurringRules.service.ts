@@ -372,7 +372,7 @@ export async function processAllRecurringRules(
               .select('id')
               .eq('project_id', rule.project_id)
               .in('status', ['pending', 'in_progress'])
-              .order('due_date', { ascending: true })
+              .order('target_date', { ascending: true })
               .limit(1)
               .maybeSingle();
 
