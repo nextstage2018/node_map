@@ -801,38 +801,55 @@ function OrganizationsTab() {
             </div>
           </div>
           <div>
-            <p className="font-medium text-slate-700 mb-1.5">情報照会（7種）</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-sm">
-              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
-                <span className="font-mono text-xs text-blue-600 shrink-0">課題は？</span>
-                <span className="text-slate-500">→ 未確定事項リスト</span>
+            <p className="font-medium text-slate-700 mb-1.5">メニューボタンの確認方法</p>
+            <p className="text-xs text-slate-600 mb-2">
+              <span className="font-mono bg-slate-100 px-1 rounded">@NodeMap メニュー</span> でボタン付きカードが表示されます。各ボタンを押すとスレッド内に返信が届きます。
+            </p>
+            <div className="space-y-1.5 text-sm">
+              <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">📌</span>
+                  <span className="font-medium text-slate-800">決定事項</span>
+                </div>
+                <p className="text-xs text-slate-500">参照: decision_log（status=active、直近14日間、最大10件）。実装ステータス付きで表示されます。データがなければ「決定事項はありません」と返答します。</p>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
-                <span className="font-mono text-xs text-blue-600 shrink-0">決定事項は？</span>
-                <span className="text-slate-500">→ 直近2週間の決定</span>
+              <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">✅</span>
+                  <span className="font-medium text-slate-800">タスク状況</span>
+                </div>
+                <p className="text-xs text-slate-500">参照: tasks（status=todo/in_progress、最大20件）。担当者別にグルーピングして表示。期限超過は赤で表示されます。データがなければ「進行中のタスクはありません」と返答します。</p>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
-                <span className="font-mono text-xs text-blue-600 shrink-0">タスク状況</span>
-                <span className="text-slate-500">→ 担当者別タスク一覧</span>
+              <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">📅</span>
+                  <span className="font-medium text-slate-800">次回アジェンダ</span>
+                </div>
+                <p className="text-xs text-slate-500">参照: meeting_agenda（meeting_date が今日以降の直近1件）。Cronで自動生成されたアジェンダ項目と想定時間を表示。未生成なら「アジェンダはありません」と返答します。</p>
               </div>
-              <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
-                <span className="font-mono text-xs text-blue-600 shrink-0">アジェンダ</span>
-                <span className="text-slate-500">→ 次回会議の議題</span>
+              <div className="p-2.5 bg-slate-50 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">📊</span>
+                  <span className="font-medium text-slate-800">今週のまとめ</span>
+                </div>
+                <p className="text-xs text-slate-500">参照: tasks（直近7日の完了タスク）+ decision_log（直近7日の新規決定）+ tasks（残タスク数）。完了タスク数・新規決定・残タスク数の3項目でサマリーを表示します。</p>
               </div>
+            </div>
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-sm">
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
-                <span className="font-mono text-xs text-blue-600 shrink-0">今週のまとめ</span>
-                <span className="text-slate-500">→ 週次サマリー</span>
+                <span className="font-mono text-xs text-blue-600 shrink-0">📋 未確定事項</span>
+                <span className="text-slate-500 text-xs">社内のみ</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">メニュー</span>
-                <span className="text-slate-500">→ ショートカットカード</span>
+                <span className="text-slate-500 text-xs">ボタンカード</span>
               </div>
               <div className="flex items-center gap-2 p-2 bg-slate-50 rounded border border-slate-200">
                 <span className="font-mono text-xs text-blue-600 shrink-0">ヘルプ</span>
-                <span className="text-slate-500">→ 使い方ガイド</span>
+                <span className="text-slate-500 text-xs">使い方ガイド</span>
               </div>
             </div>
-            <p className="text-xs text-slate-500 mt-1.5">すべての応答にプロジェクト名が表示され、実際のデータが読み込まれていることが確認できます。タスク状況は担当者ごとにグループ化されて表示されます。</p>
+            <p className="text-xs text-slate-500 mt-1.5">すべての応答にプロジェクト名が表示され、実際のデータが読み込まれていることが確認できます。</p>
           </div>
           <div>
             <p className="font-medium text-slate-700 mb-1.5">タスク作成</p>

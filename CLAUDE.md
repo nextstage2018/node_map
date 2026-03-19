@@ -58,6 +58,8 @@
 - **⚠️ トークンヘルスチェック（v10.4）**: `GET /api/settings/token-health` で全サービスのトークン有効性を実APIで検証。Google: Calendar API疎通 + refresh_token検証、Slack: auth.test、Chatwork: /v2/me。Cronは `check-token-health`（毎日07:00 JST）で全ユーザー一括チェック→internalチャネルに通知。UIは設定画面（TokenHealthPanel）+ ダッシュボード（TokenAlertBanner）+ サイドバー（設定アイコン赤ドット）
 - **⚠️ カンバンのクイック追加（v10.4）**: `due_date` ではなく `dueDate`（キャメルケース）で送信すること。`requesterContactId` で依頼者（作成者）を自動セット。`assigneeContactId` でフォーム選択の担当者を送信。QuickTaskFormの `myContactId` は非同期取得されるため `useEffect` で同期が必要
 - **⚠️ タスク詳細パネルの編集（v10.4）**: 依頼者・担当者・プロジェクトはドロップダウンで即時API保存。`TaskDetailPanel` に `projects`・`assignees`・`myContactId`・`onTaskUpdate` propsが必要
+- **⚠️ BOT/Webhook経由タスクの担当者自動セット（v10.4）**: `taskFromMessage.service.ts` で `assigned_contact_id` を自動セット。依頼者（送信者）のcontact_idを担当者にも設定し、取れない場合は `user_id → contact_persons.linked_user_id` 逆引きでフォールバック
+- **⚠️ BOTタスク編集モーダルに担当者追加（v10.4）**: `externalTaskSync.service.ts` の `openSlackEditModal` に担当者ドロップダウンを追加。プロジェクトメンバー＋「自分」から選択可能。`interactions/route.ts` の `nm_task_edit_submit` で `assigneeContactId` を抽出して `handleSlackEditSubmission` に渡す
 - **Vercel互換params**: `{ params }: { params: Promise<{ id: string }> }` — Promiseで受ける
 - **zshブラケット**: `git add "src/app/api/tasks/[id]/route.ts"` — 引用符で囲む
 - **knowledge_master_entries.id**: TEXT型、`me_auto_${Date.now()}_${random}` で手動生成

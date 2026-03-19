@@ -110,6 +110,10 @@
 | `src/app/tasks/page.tsx` | due_date→dueDate修正、handleQuickAddに担当者・依頼者パラメータ追加、社内メンバー取得、TaskDetailPanelにprops追加 |
 | `src/app/api/contacts/me/route.ts` | all_internal=trueで社内メンバー全員返却対応 |
 | `src/services/task/taskClient.service.ts` | createTaskにrequesterContactId対応、updateTaskにrequester_contact_id・projectId対応 |
+| `src/services/v4/taskFromMessage.service.ts` | BOT/Webhook経由タスク作成時にassigned_contact_idを自動セット（依頼者→linked_user_idフォールバック） |
+| `src/services/v45/externalTaskSync.service.ts` | openSlackEditModalに担当者ドロップダウン追加。handleSlackEditSubmissionにassigneeContactId対応 |
+| `src/app/api/webhooks/slack/interactions/route.ts` | nm_task_edit_submitでassigneeContactId抽出・handleSlackEditSubmissionに渡す |
+| `src/app/guide/page.tsx` | BOTメニュー各ボタンの参照データ・期待される応答を詳細記載に更新 |
 
 ---
 
