@@ -61,7 +61,12 @@ async function docsFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  return fetch(`${DOCS_API_BASE}${path}`, {
+  if (!accessToken) {
+    console.error('[ProjectLogDoc] docsFetch: accessToken が未設定です');
+    throw new Error('Google OAuth トークンが未設定です');
+  }
+
+  const res = await fetch(`${DOCS_API_BASE}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -69,6 +74,18 @@ async function docsFetch(
       ...(options.headers || {}),
     },
   });
+
+  // 403/401 エラー時に詳細ログを出力（デバッグ用）
+  if (res.status === 403) {
+    const errText = await res.clone().text().catch(() => '');
+    console.error(`[ProjectLogDoc] 403 Forbidden: ${path}`, errText.substring(0, 500));
+    console.error('[ProjectLogDoc] → Google Docs API がCloud Consoleで有効化されているか確認してください');
+    console.error('[ProjectLogDoc] → https://console.developers.google.com/apis/api/docs.googleapis.com/overview?project=849962099484');
+  } else if (res.status === 401) {
+    console.error(`[ProjectLogDoc] 401 Unauthorized: ${path} — トークンが無効または期限切れです`);
+  }
+
+  return res;
 }
 
 async function driveFetch(
@@ -76,7 +93,12 @@ async function driveFetch(
   path: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  return fetch(`${DRIVE_API_BASE}${path}`, {
+  if (!accessToken) {
+    console.error('[ProjectLogDoc] driveFetch: accessToken が未設定です');
+    throw new Error('Google OAuth トークンが未設定です');
+  }
+
+  const res = await fetch(`${DRIVE_API_BASE}${path}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -84,6 +106,15 @@ async function driveFetch(
       ...(options.headers || {}),
     },
   });
+
+  if (res.status === 403) {
+    const errText = await res.clone().text().catch(() => '');
+    console.error(`[ProjectLogDoc] Drive API 403 Forbidden: ${path}`, errText.substring(0, 500));
+  } else if (res.status === 401) {
+    console.error(`[ProjectLogDoc] Drive API 401 Unauthorized: ${path}`);
+  }
+
+  return res;
 }
 
 // ========================================
@@ -175,10 +206,34 @@ export async function getOrCreateProjectLogDoc(
   if (!project) return null;
 
   if (project.log_document_id && project.log_document_url) {
-    return {
-      documentId: project.log_document_id,
-      documentUrl: project.log_document_url,
-    };
+    // 書き込み権限があるか確認（別ユーザーが作成したDocの場合403になる）
+    try {
+      const accessToken = await getValidAccessToken(userId);
+      if (accessToken) {
+        const checkRes = await fetch(
+          `${DOCS_API_BASE}/documents/${project.log_document_id}`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        if (checkRes.ok) {
+          return {
+            documentId: project.log_document_id,
+            documentUrl: project.log_document_url,
+          };
+        }
+        // 403/404 → Docにアクセスできない → 再作成にフォールバック
+        console.warn(`[ProjectLogDoc] 既存Doc(${project.log_document_id})にアクセス不可(${checkRes.status})。再作成します`);
+      } else {
+        console.warn(`[ProjectLogDoc] userId=${userId} のGoogleトークン未取得。Doc書き込みスキップ`);
+        return null;
+      }
+    } catch (err) {
+      console.warn('[ProjectLogDoc] Doc権限チェックエラー:', err);
+      // チェック失敗時はそのまま返す（Docs API自体が無効化されている可能性）
+      return {
+        documentId: project.log_document_id,
+        documentUrl: project.log_document_url,
+      };
+    }
   }
 
   // プロジェクトフォルダを取得 or 自動作成
