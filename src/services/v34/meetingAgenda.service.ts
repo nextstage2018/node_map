@@ -9,7 +9,7 @@ import { getServerSupabase, getSupabase } from '@/lib/supabase';
 
 export interface AgendaItem {
   id: string;
-  type: 'open_issue' | 'decision_review' | 'task_progress' | 'task_completed' | 'custom';
+  type: 'open_issue' | 'decision_review' | 'task_todo' | 'task_progress' | 'task_completed' | 'custom';
   reference_id: string | null;
   title: string;
   description: string;
@@ -162,6 +162,51 @@ export async function generateAgenda(
           discussed: false,
           resolution_note: null,
           estimated_minutes: 5,
+        });
+      }
+    }
+
+    // 2.5. 承認済み未着手タスク（status='todo'）— 着手が必要なタスクの確認
+    const { data: todoTasks } = await supabase
+      .from('tasks')
+      .select('id, title, status, due_date, assigned_to, created_at, description')
+      .eq('project_id', projectId)
+      .eq('status', 'todo')
+      .order('due_date', { ascending: true, nullsFirst: false })
+      .limit(10);
+
+    if (todoTasks) {
+      for (const task of todoTasks) {
+        const isOverdue = task.due_date && new Date(task.due_date) < new Date();
+        const createdDate = new Date(task.created_at).toLocaleDateString('ja-JP');
+
+        const descParts: string[] = [];
+        if (isOverdue) {
+          descParts.push(`⚠️ 期限超過: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`);
+        } else if (task.due_date) {
+          descParts.push(`期限: ${new Date(task.due_date).toLocaleDateString('ja-JP')}`);
+        } else {
+          descParts.push('期限未設定');
+        }
+        descParts.push(`作成日: ${createdDate}`);
+        if (task.description) {
+          const descText = task.description.length > 150
+            ? task.description.substring(0, 150) + '...'
+            : task.description;
+          descParts.push(`概要: ${descText}`);
+        }
+
+        items.push({
+          id: crypto.randomUUID(),
+          type: 'task_todo',
+          reference_id: task.id,
+          title: `【未着手】${task.title}`,
+          description: descParts.join('\n'),
+          priority: isOverdue ? 'high' : 'medium',
+          assigned_contact_id: task.assigned_to || null,
+          discussed: false,
+          resolution_note: null,
+          estimated_minutes: 3,
         });
       }
     }
@@ -712,6 +757,7 @@ function formatAgendaForCalendarDescription(items: AgendaItem[]): string {
   const typeLabel: Record<string, string> = {
     open_issue: '未確定事項',
     decision_review: '決定確認',
+    task_todo: '未着手タスク',
     task_progress: 'タスク進捗',
     task_completed: '成果報告',
     custom: 'その他',

@@ -1,8 +1,9 @@
 // V2-E: 検討ツリー マインドマップビューコンポーネント
+// P1-1: 会議日付ごとにセクション分け + 折りたたみ表示
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { GitBranch, Loader2, RefreshCw, TreePine, Maximize2, Minimize2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { GitBranch, Loader2, RefreshCw, TreePine, Maximize2, Minimize2, Calendar, ChevronDown, ChevronRight } from 'lucide-react';
 import DecisionTreeNode, { type DecisionTreeNodeData } from './DecisionTreeNode';
 import NodeDetailPanel from './NodeDetailPanel';
 
@@ -28,6 +29,14 @@ interface DecisionTreeViewProps {
   refreshKey?: number;
 }
 
+// 会議ごとのノードグループ
+interface MeetingNodeGroup {
+  meetingId: string | null;
+  meetingTitle: string;
+  meetingDate: string;
+  nodes: DecisionTreeNodeData[];
+}
+
 export default function DecisionTreeView({ projectId, refreshKey = 0 }: DecisionTreeViewProps) {
   const [tree, setTree] = useState<DecisionTree | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,6 +47,8 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
   // v3.4: ノード別の未確定事項・決定ログ件数
   const [nodeIssueCounts, setNodeIssueCounts] = useState<Record<string, number>>({});
   const [nodeDecisionCounts, setNodeDecisionCounts] = useState<Record<string, number>>({});
+  // P1-1: セクション折りたたみ状態（キー: meetingId or 'no-meeting'）
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   const fetchTree = useCallback(async () => {
     setIsLoading(true);
@@ -121,6 +132,72 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     fetchV34Counts();
   }, [fetchTree, fetchMeetingRecords, fetchV34Counts, refreshKey]);
 
+  // P1-1: ノードを会議録ごとにグループ化（最新が上）
+  const meetingNodeGroups: MeetingNodeGroup[] = useMemo(() => {
+    if (!tree || tree.nodes.length === 0) return [];
+
+    // 会議録IDのマップを作成
+    const meetingMap = new Map<string, MeetingRecord>();
+    for (const mr of meetingRecords) {
+      meetingMap.set(mr.id, mr);
+    }
+
+    // ルートノード（topic）の source_meeting_id でグループ化
+    const groups = new Map<string, DecisionTreeNodeData[]>();
+
+    for (const rootNode of tree.nodes) {
+      const key = rootNode.source_meeting_id || '__no_meeting__';
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(rootNode);
+    }
+
+    // グループを会議日付の降順でソート（最新が上）
+    const result: MeetingNodeGroup[] = [];
+    for (const [key, nodes] of groups) {
+      if (key === '__no_meeting__') {
+        result.push({
+          meetingId: null,
+          meetingTitle: '手動追加・その他',
+          meetingDate: '',
+          nodes,
+        });
+      } else {
+        const mr = meetingMap.get(key);
+        result.push({
+          meetingId: key,
+          meetingTitle: mr?.title || '会議録',
+          meetingDate: mr?.meeting_date || '',
+          nodes,
+        });
+      }
+    }
+
+    // 日付降順ソート（最新が上、日付なしは最後）
+    result.sort((a, b) => {
+      if (!a.meetingDate && !b.meetingDate) return 0;
+      if (!a.meetingDate) return 1;
+      if (!b.meetingDate) return -1;
+      return b.meetingDate.localeCompare(a.meetingDate);
+    });
+
+    return result;
+  }, [tree, meetingRecords]);
+
+  // P1-1: 初回読み込み時、最新以外を折りたたむ
+  useEffect(() => {
+    if (meetingNodeGroups.length > 1) {
+      const toCollapse = new Set<string>();
+      // 最初のグループ（最新）以外を折りたたむ
+      for (let i = 1; i < meetingNodeGroups.length; i++) {
+        const key = meetingNodeGroups[i].meetingId || '__no_meeting__';
+        toCollapse.add(key);
+      }
+      setCollapsedSections(toCollapse);
+    }
+  }, [meetingNodeGroups.length]); // グループ数が変わったときだけ
+
   const handleNodeClick = (node: DecisionTreeNodeData) => {
     setSelectedNode(node);
   };
@@ -166,6 +243,27 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     }
   };
 
+  const toggleSection = (sectionKey: string) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(sectionKey)) {
+        next.delete(sectionKey);
+      } else {
+        next.add(sectionKey);
+      }
+      return next;
+    });
+  };
+
+  const expandAll = () => setCollapsedSections(new Set());
+  const collapseAll = () => {
+    const all = new Set<string>();
+    for (const g of meetingNodeGroups) {
+      all.add(g.meetingId || '__no_meeting__');
+    }
+    setCollapsedSections(all);
+  };
+
   // ステータス別のサマリーを計算
   const getStatusSummary = (nodes: DecisionTreeNodeData[]): Record<string, number> => {
     const summary: Record<string, number> = { active: 0, completed: 0, cancelled: 0, on_hold: 0 };
@@ -177,6 +275,30 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     };
     count(nodes);
     return summary;
+  };
+
+  // セクション内のノード数を計算（子含む）
+  const countAllNodes = (nodes: DecisionTreeNodeData[]): number => {
+    let c = 0;
+    const walk = (ns: DecisionTreeNodeData[]) => {
+      for (const n of ns) {
+        c++;
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(nodes);
+    return c;
+  };
+
+  // 日付をフォーマット
+  const formatDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' });
+    } catch {
+      return dateStr;
+    }
   };
 
   // ローディング
@@ -208,7 +330,8 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
     );
   }
 
-  const statusSummary = getStatusSummary(tree.nodes);
+  const allNodes = tree.nodes;
+  const statusSummary = getStatusSummary(allNodes);
   const totalNodes = Object.values(statusSummary).reduce((a, b) => a + b, 0);
 
   const containerClass = isFullscreen
@@ -222,7 +345,7 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
         <div className="flex items-center gap-2">
           <GitBranch className="w-4 h-4 text-blue-600" />
           <h3 className="text-sm font-bold text-slate-800">{tree.title}</h3>
-          <span className="text-[10px] text-slate-400">{totalNodes}ノード</span>
+          <span className="text-[10px] text-slate-400">{totalNodes}ノード・{meetingNodeGroups.length}回の会議</span>
         </div>
         <div className="flex items-center gap-3">
           {/* ステータスサマリー */}
@@ -252,6 +375,25 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
               </span>
             )}
           </div>
+          {/* 全開/全閉ボタン */}
+          {meetingNodeGroups.length > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={expandAll}
+                className="px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 rounded transition-colors"
+                title="すべて展開"
+              >
+                全開
+              </button>
+              <button
+                onClick={collapseAll}
+                className="px-1.5 py-0.5 text-[10px] text-slate-500 hover:bg-slate-100 rounded transition-colors"
+                title="すべて折りたたみ"
+              >
+                全閉
+              </button>
+            </div>
+          )}
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="p-1.5 hover:bg-slate-100 rounded transition-colors"
@@ -273,29 +415,99 @@ export default function DecisionTreeView({ projectId, refreshKey = 0 }: Decision
         </div>
       </div>
 
-      {/* マインドマップエリア */}
+      {/* メインエリア */}
       <div className="flex flex-1 min-h-0">
         <div
           className={`
             flex-1 border border-slate-200 rounded-lg bg-gradient-to-br from-slate-50 to-white
             overflow-auto relative
-            ${isFullscreen ? 'p-8' : 'p-5'}
+            ${isFullscreen ? 'p-6' : 'p-4'}
           `}
           style={{ minHeight: isFullscreen ? undefined : '300px' }}
         >
-          {/* マインドマップ: 議題ノードを縦に並べ、子を横に展開 */}
-          <div className="flex flex-col gap-4 min-w-max">
-            {tree.nodes.map((rootNode) => (
-              <DecisionTreeNode
-                key={rootNode.id}
-                node={rootNode}
-                depth={0}
-                onNodeClick={handleNodeClick}
-                selectedNodeId={selectedNode?.id || null}
-                nodeIssueCounts={nodeIssueCounts}
-                nodeDecisionCounts={nodeDecisionCounts}
-              />
-            ))}
+          {/* 会議日付ごとのセクション */}
+          <div className="flex flex-col gap-3">
+            {meetingNodeGroups.map((group, groupIdx) => {
+              const sectionKey = group.meetingId || '__no_meeting__';
+              const isCollapsed = collapsedSections.has(sectionKey);
+              const sectionNodeCount = countAllNodes(group.nodes);
+              const sectionStatus = getStatusSummary(group.nodes);
+              const isLatest = groupIdx === 0;
+
+              return (
+                <div
+                  key={sectionKey}
+                  className={`
+                    border rounded-lg overflow-hidden transition-colors
+                    ${isLatest ? 'border-blue-200 bg-blue-50/30' : 'border-slate-200 bg-white'}
+                  `}
+                >
+                  {/* セクションヘッダー（クリックで折りたたみ） */}
+                  <button
+                    onClick={() => toggleSection(sectionKey)}
+                    className={`
+                      w-full flex items-center gap-2 px-3 py-2 text-left
+                      hover:bg-slate-50 transition-colors
+                      ${isLatest ? 'hover:bg-blue-50' : ''}
+                    `}
+                  >
+                    {isCollapsed ? (
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    )}
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                    {group.meetingDate && (
+                      <span className="text-xs font-medium text-slate-600">
+                        {formatDate(group.meetingDate)}
+                      </span>
+                    )}
+                    <span className={`text-xs truncate max-w-[300px] ${isLatest ? 'font-semibold text-blue-700' : 'text-slate-700'}`}>
+                      {group.meetingTitle}
+                    </span>
+                    {isLatest && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 font-medium flex-shrink-0">
+                        最新
+                      </span>
+                    )}
+                    <span className="text-[10px] text-slate-400 flex-shrink-0 ml-auto">
+                      {sectionNodeCount}ノード
+                    </span>
+                    {/* ミニステータス */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {sectionStatus.active > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-blue-400" title={`進行中 ${sectionStatus.active}`} />
+                      )}
+                      {sectionStatus.completed > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-green-400" title={`完了 ${sectionStatus.completed}`} />
+                      )}
+                      {sectionStatus.on_hold > 0 && (
+                        <span className="w-2 h-2 rounded-full bg-amber-400" title={`保留 ${sectionStatus.on_hold}`} />
+                      )}
+                    </div>
+                  </button>
+
+                  {/* セクション内容（折りたたみ対象） */}
+                  {!isCollapsed && (
+                    <div className="px-3 pb-3 pt-1">
+                      <div className="flex flex-col gap-3 min-w-max">
+                        {group.nodes.map((rootNode) => (
+                          <DecisionTreeNode
+                            key={rootNode.id}
+                            node={rootNode}
+                            depth={0}
+                            onNodeClick={handleNodeClick}
+                            selectedNodeId={selectedNode?.id || null}
+                            nodeIssueCounts={nodeIssueCounts}
+                            nodeDecisionCounts={nodeDecisionCounts}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
