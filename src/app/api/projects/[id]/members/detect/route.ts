@@ -101,21 +101,24 @@ export async function POST(
       }
     }
 
-    // ★ v10.2: BOTアカウントのaccount_idも除外対象に追加
+    // ★ v10.2→v10.3強化: BOTアカウントのaccount_idも除外対象に追加
     const botExcludeIds = new Set<string>();
-    const botToken = process.env.CHATWORK_BOT_API_TOKEN;
-    if (botToken) {
+    // Chatwork BOT除外: BOTトークンと個人トークン両方で確認
+    const chatworkBotToken = process.env.CHATWORK_BOT_API_TOKEN;
+    const chatworkFallbackToken = process.env.CHATWORK_API_TOKEN;
+    for (const token of [chatworkBotToken, chatworkFallbackToken].filter(Boolean)) {
+      if (!token) continue;
       try {
         const botRes = await fetch('https://api.chatwork.com/v2/me', {
-          headers: { 'X-ChatWorkToken': botToken },
+          headers: { 'X-ChatWorkToken': token },
         });
         if (botRes.ok) {
           const botMe = await botRes.json();
           botExcludeIds.add(String(botMe.account_id));
-          console.log(`[Project Members Detect] Chatwork BOT除外: ${botMe.account_id} (${botMe.name})`);
+          console.log(`[Project Members Detect] Chatwork BOT/環境変数除外: ${botMe.account_id} (${botMe.name})`);
         }
-      } catch (e) {
-        // BOTトークンなし or API失敗 → 無視
+      } catch {
+        // API失敗 → 無視
       }
     }
     // Slack BOT ID も除外（環境変数から取得できない場合は token_data.bot_user_id を使用）
@@ -280,6 +283,18 @@ export async function POST(
     let addedCount = 0;
 
     for (const [address, sender] of senderMap) {
+      // ★ v10.3: BOTアカウントの最終チェック（senderMapに紛れ込んだ場合の防御）
+      if (botExcludeIds.has(address)) {
+        console.log(`[Project Members Detect] BOT除外（追加ループ）: ${sender.name} (${address})`);
+        continue;
+      }
+      // 名前ベースのBOT除外（「NodeMap」「あなた」等）
+      const nameLower = (sender.name || '').toLowerCase();
+      if (nameLower === 'nodemap' || nameLower === 'nodemap bot' || sender.name === 'あなた') {
+        console.log(`[Project Members Detect] BOT名除外: ${sender.name} (${address})`);
+        continue;
+      }
+
       // ★ 重複チェック1: アドレスが既存メンバーに紐づいている
       if (knownAddresses.has(address)) {
         // 既存メンバーでもメールアドレスがあれば contact_channels(email) に追加
