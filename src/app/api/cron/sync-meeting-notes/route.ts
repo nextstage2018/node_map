@@ -187,7 +187,10 @@ export async function GET(request: NextRequest) {
             }
 
             // meeting_date を会議開始時刻から抽出（JST日付）
-            const meetingDate = new Date(noteResult.meetingStartTime).toISOString().split('T')[0];
+            const meetingStartDate = new Date(noteResult.meetingStartTime);
+            const jstMs = meetingStartDate.getTime() + 9 * 60 * 60 * 1000;
+            const jstDate = new Date(jstMs);
+            const meetingDate = `${jstDate.getUTCFullYear()}-${String(jstDate.getUTCMonth() + 1).padStart(2, '0')}-${String(jstDate.getUTCDate()).padStart(2, '0')}`;
 
             // meeting_records に登録（user_idは取り込んだユーザー）
             const { data: newRecord, error: insertError } = await supabase
