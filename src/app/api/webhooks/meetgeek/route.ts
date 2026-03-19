@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import crypto from 'crypto';
 import * as DriveService from '@/services/drive/driveClient.service';
+import { getTodayJST, toJSTDateString } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -462,7 +463,7 @@ async function _POST_disabled(request: NextRequest) {
     const endUtc = meetingDetail?.timestamp_end_utc || meetingMeta?.timestamp_end_utc;
     const meetingDate = startUtc
       ? startUtc.split('T')[0]
-      : new Date().toISOString().split('T')[0];
+      : getTodayJST();
 
     // トランスクリプト整形
     const transcriptText = formatTranscript(sentences);

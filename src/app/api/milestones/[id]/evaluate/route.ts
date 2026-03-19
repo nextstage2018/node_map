@@ -6,6 +6,7 @@ import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 import { getLearningPointsWithIds, incrementAppliedCount } from '@/lib/services/evaluationLearning.service';
+import { getTodayJST } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -190,7 +191,7 @@ ${thoughtLogSummary}
 
     if (evaluationResult.achievement_level === 'achieved') {
       statusUpdate.status = 'achieved';
-      statusUpdate.achieved_date = new Date().toISOString().split('T')[0];
+      statusUpdate.achieved_date = getTodayJST();
     } else if (evaluationResult.achievement_level === 'missed') {
       statusUpdate.status = 'missed';
     }

@@ -3,6 +3,7 @@
 // PDFの中身は読まない（軽量：ファイル名+メール文脈だけで判定）
 
 import Anthropic from '@anthropic-ai/sdk';
+import { getTodayJST, toJSTDateString } from '@/lib/dateUtils';
 
 // ========================================
 // 型定義
@@ -194,8 +195,8 @@ function buildFallbackResult(input: ClassificationInput): ClassificationResult {
 
   // 日付部分
   const dateStr = input.messageDate
-    ? new Date(input.messageDate).toISOString().split('T')[0]
-    : new Date().toISOString().split('T')[0];
+    ? toJSTDateString(new Date(input.messageDate))
+    : getTodayJST();
 
   const suggestedName = `${dateStr}_${documentType}_${baseName}${ext}`;
 

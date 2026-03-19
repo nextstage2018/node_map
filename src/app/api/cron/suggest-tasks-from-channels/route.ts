@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 import { resolveProjectFromChannel } from '@/services/inbox/channelProjectLink.service';
 import { extractMentions } from '@/services/v4/taskSuggestionDetector.service';
+import { getTodayJST, addDaysJST, getThisWeekFridayJST, getJSTNow } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -30,26 +31,17 @@ function isActionableMessage(body: string): boolean {
 }
 
 function extractDeadline(text: string): string | null {
-  const today = new Date();
-
   if (text.includes('今日') || text.includes('本日')) {
-    return today.toISOString().split('T')[0];
+    return getTodayJST();
   }
   if (text.includes('明日')) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return addDaysJST(1);
   }
   if (text.includes('今週中') || text.includes('今週末')) {
-    const d = new Date(today);
-    const dayOfWeek = d.getDay();
-    d.setDate(d.getDate() + (5 - dayOfWeek)); // 金曜日
-    return d.toISOString().split('T')[0];
+    return getThisWeekFridayJST();
   }
   if (text.includes('来週')) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().split('T')[0];
+    return addDaysJST(7);
   }
 
   // YYYY-MM-DD or MM/DD パターン
@@ -61,7 +53,8 @@ function extractDeadline(text: string): string | null {
   if (shortMatch) {
     const m = shortMatch[1].padStart(2, '0');
     const d = shortMatch[2].padStart(2, '0');
-    return `${today.getFullYear()}-${m}-${d}`;
+    const jstNow = getJSTNow();
+    return `${jstNow.getUTCFullYear()}-${m}-${d}`;
   }
 
   return null;
@@ -221,7 +214,7 @@ export async function GET(request: NextRequest) {
           user_id: ownerUserId,
           suggestions: {
             meetingTitle: `チャネルメッセージ提案 (${new Date().toLocaleDateString('ja-JP')})`,
-            meetingDate: new Date().toISOString().split('T')[0],
+            meetingDate: getTodayJST(),
             projectId,
             // v4.0: 依頼者・担当候補情報
             requester_address: group.requester_address,

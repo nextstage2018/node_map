@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ThinkingTendencyService } from '@/services/analytics/thinkingTendency.service';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getTodayJST } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
-
-function getISODateStr(d: Date): string {
-  return d.toISOString().split('T')[0];
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,7 +26,7 @@ export async function GET(request: NextRequest) {
     const userIds = [...new Set(users.map((u: any) => u.user_id))];
     let successCount = 0;
     let failCount = 0;
-    const today = getISODateStr(new Date());
+    const today = getTodayJST();
 
     for (const userId of userIds) {
       try {

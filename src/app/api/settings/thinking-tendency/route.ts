@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import { ThinkingTendencyService } from '@/services/analytics/thinkingTendency.service';
+import { getTodayJST } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,7 @@ export async function POST() {
 
     const analysis = await ThinkingTendencyService.analyzeUser(userId);
     const isOwner = userId === (process.env.ENV_TOKEN_OWNER_ID || '');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayJST();
 
     await sb.from('user_thinking_tendencies').upsert({
       user_id: userId,
@@ -80,7 +81,7 @@ export async function PUT(request: NextRequest) {
     const sb = getServerSupabase() || getSupabase();
     if (!sb) return NextResponse.json({ error: 'DB not available' }, { status: 500 });
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayJST();
     await sb.from('user_thinking_tendencies').upsert({
       user_id: userId,
       analysis_date: today,

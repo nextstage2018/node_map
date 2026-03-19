@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
+import { getTodayJST, getJSTNow, toJSTDateString } from '@/lib/dateUtils';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,8 +52,8 @@ export async function GET(request: NextRequest) {
     }
 
     // フィルター適用
-    const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    const now = getJSTNow();
+    const today = getTodayJST();
 
     if (filter === 'today') {
       query = query.or(`due_date.eq.${today},and(scheduled_start.lte.${now.toISOString()},scheduled_end.gte.${now.toISOString()})`);
@@ -62,8 +63,8 @@ export async function GET(request: NextRequest) {
       monday.setDate(now.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      const mondayStr = monday.toISOString().split('T')[0];
-      const sundayStr = sunday.toISOString().split('T')[0];
+      const mondayStr = toJSTDateString(monday);
+      const sundayStr = toJSTDateString(sunday);
       query = query.gte('due_date', mondayStr).lte('due_date', sundayStr);
     } else if (filter === 'overdue') {
       query = query.lt('due_date', today).neq('status', 'done');

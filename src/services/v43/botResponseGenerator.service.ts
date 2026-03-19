@@ -3,6 +3,7 @@
 // トーン: 当たり障りない（丁寧すぎず、カジュアルすぎず）統一表現
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getTodayJST } from '@/lib/dateUtils';
 import type { BotIntent } from './botIntentClassifier.service';
 
 // ========================================
@@ -330,7 +331,7 @@ async function generateTasksResponse(supabase: any, projectId: string, projectNa
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function generateAgendaResponse(supabase: any, projectId: string, projectName: string): Promise<BotResponse> {
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getTodayJST();
 
   const { data: agenda } = await supabase
     .from('meeting_agenda')

@@ -2,6 +2,7 @@
 // relationship_type で配信内容を分岐
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getTodayJST, addDaysJST } from '@/lib/dateUtils';
 
 // ========================================
 // 型定義
@@ -139,10 +140,8 @@ export async function generateWeeklyBriefing(
   }
 
   // 3. 今週の会議予定（簡易版: meeting_agendaから）
-  const thisWeekEnd = new Date();
-  thisWeekEnd.setDate(thisWeekEnd.getDate() + 5);
-  const todayStr = new Date().toISOString().split('T')[0];
-  const weekEndStr = thisWeekEnd.toISOString().split('T')[0];
+  const todayStr = getTodayJST();
+  const weekEndStr = addDaysJST(5);
 
   const { data: agendas } = await supabase
     .from('meeting_agenda')
@@ -248,7 +247,7 @@ export async function generateAlerts(
 
   const alerts: string[] = [];
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = getTodayJST();
 
   // 1. stale未確定事項（internalのみ）
   if (relType === 'internal') {
@@ -284,9 +283,7 @@ export async function generateAlerts(
   }
 
   // 3. MS期限接近（2日以内）
-  const twoDaysLater = new Date(today);
-  twoDaysLater.setDate(twoDaysLater.getDate() + 2);
-  const twoDaysStr = twoDaysLater.toISOString().split('T')[0];
+  const twoDaysStr = addDaysJST(2);
 
   const { data: urgentMs } = await supabase
     .from('milestones')

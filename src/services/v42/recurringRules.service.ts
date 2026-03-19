@@ -2,6 +2,7 @@
 // meeting / task / job の繰り返し自動生成を管理
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { toJSTDateString } from '@/lib/dateUtils';
 
 // ========================================
 // 型定義
@@ -354,8 +355,8 @@ export async function processAllRecurringRules(
         // 既に同日に生成済みかチェック（last_generated_atで判定）
         if (rule.last_generated_at) {
           const lastGen = new Date(rule.last_generated_at);
-          const nextDateStr = nextDate.toISOString().split('T')[0];
-          const lastGenStr = lastGen.toISOString().split('T')[0];
+          const nextDateStr = toJSTDateString(nextDate);
+          const lastGenStr = toJSTDateString(lastGen);
           // 同じ次回日に対して既に生成済みなら skip
           if (lastGenStr >= nextDateStr) {
             stats.skipped++;
@@ -366,7 +367,7 @@ export async function processAllRecurringRules(
         // 新しい occurrence_count
         const newCount = (rule.occurrence_count || 0) + 1;
         const generatedTitle = `第${newCount}回 ${rule.title}`;
-        const dueDateStr = nextDate.toISOString().split('T')[0];
+        const dueDateStr = toJSTDateString(nextDate);
 
         switch (rule.type) {
           case 'task': {

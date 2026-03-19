@@ -2,6 +2,7 @@
 // タスク完了時にMSの進捗率を再計算し、全タスク完了ならMSをachievedに自動更新
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getTodayJST } from '@/lib/dateUtils';
 
 /**
  * タスク完了時にマイルストーンの進捗を再計算・自動更新
@@ -65,7 +66,7 @@ export async function updateMilestoneProgress(
         updated_at: new Date().toISOString(),
       };
       if (newStatus === 'achieved') {
-        updateData.achieved_date = new Date().toISOString().split('T')[0];
+        updateData.achieved_date = getTodayJST();
       }
 
       await supabase
@@ -93,7 +94,7 @@ export async function checkOverdueMilestones(): Promise<number> {
   if (!supabase) return 0;
 
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayJST();
 
     // 期限超過 + pending/in_progress のMSを取得
     const { data: overdueMilestones, error } = await supabase

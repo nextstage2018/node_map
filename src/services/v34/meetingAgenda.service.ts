@@ -2,6 +2,7 @@
 // open_issues + decision_log + tasks + completed_tasks(v4.0) から次回アジェンダを自動生成
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getJSTNow } from '@/lib/dateUtils';
 
 // ========================================
 // 型定義
@@ -789,10 +790,7 @@ function formatAgendaForCalendarDescription(items: AgendaItem[]): string {
  * Vercel(UTC)環境でも正しくJST日付を返す
  */
 function getNextBusinessDayJST(): string {
-  // UTC nowをJSTに変換
-  const now = new Date();
-  const jstMs = now.getTime() + 9 * 60 * 60 * 1000;
-  const jstNow = new Date(jstMs);
+  const jstNow = getJSTNow();
 
   // JSTの翌日から開始
   jstNow.setUTCDate(jstNow.getUTCDate() + 1);
@@ -802,7 +800,6 @@ function getNextBusinessDayJST(): string {
     jstNow.setUTCDate(jstNow.getUTCDate() + 1);
   }
 
-  // YYYY-MM-DD形式で返す（UTC日付部分 = JST日付）
   const y = jstNow.getUTCFullYear();
   const m = String(jstNow.getUTCMonth() + 1).padStart(2, '0');
   const d = String(jstNow.getUTCDate()).padStart(2, '0');

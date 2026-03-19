@@ -3,6 +3,7 @@
  */
 
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
+import { getTodayJST, addDaysJST, toJSTDateString, getJSTNow, getThisWeekFridayJST } from '@/lib/dateUtils';
 
 export interface CreatedTaskResult {
   id: string;
@@ -32,9 +33,9 @@ async function extractTaskFromMessage(
   // シンプル抽出（Vercel環境でのAI API接続問題を回避）
   const text = messageText.trim();
 
-  // 期限キーワードから日付を推定
+  // 期限キーワードから日付を推定（JST基準）
   let dueDate: string | null = null;
-  const today = new Date();
+  const jstNow = getJSTNow();
 
   // 具体的な日付パターン: 3/15, 3月15日, 2026/3/15 など
   const specificDateMatch = text.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/) ||
@@ -47,43 +48,33 @@ async function extractTaskFromMessage(
       const year = parseInt(specificDateMatch[1]);
       const month = parseInt(specificDateMatch[2]) - 1;
       const day = parseInt(specificDateMatch[3]);
-      dueDate = new Date(year, month, day).toISOString().split('T')[0];
+      dueDate = toJSTDateString(new Date(year, month, day));
     } else {
       // MM/DD or M月D日
       const month = parseInt(specificDateMatch[1]) - 1;
       const day = parseInt(specificDateMatch[2]);
-      const targetDate = new Date(today.getFullYear(), month, day);
+      const targetDate = new Date(jstNow.getUTCFullYear(), month, day);
       // 過去日なら来年
-      if (targetDate < today) {
+      if (targetDate < new Date()) {
         targetDate.setFullYear(targetDate.getFullYear() + 1);
       }
-      dueDate = targetDate.toISOString().split('T')[0];
+      dueDate = toJSTDateString(targetDate);
     }
   } else if (text.includes('今日') || text.includes('本日')) {
-    dueDate = today.toISOString().split('T')[0];
+    dueDate = getTodayJST();
   } else if (text.includes('明後日') || text.includes('あさって')) {
-    const dayAfterTomorrow = new Date(today);
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-    dueDate = dayAfterTomorrow.toISOString().split('T')[0];
+    dueDate = addDaysJST(2);
   } else if (text.includes('明日')) {
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    dueDate = tomorrow.toISOString().split('T')[0];
+    dueDate = addDaysJST(1);
   } else if (text.includes('今週') || text.includes('週末')) {
-    const friday = new Date(today);
-    friday.setDate(friday.getDate() + (5 - friday.getDay() + 7) % 7);
-    dueDate = friday.toISOString().split('T')[0];
+    dueDate = getThisWeekFridayJST();
   } else if (text.includes('来週')) {
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    dueDate = nextWeek.toISOString().split('T')[0];
+    dueDate = addDaysJST(7);
   } else {
     // N日後、N日以内 パターン
     const daysLaterMatch = text.match(/(\d+)日[後以内にまで]/);
     if (daysLaterMatch) {
-      const daysLater = new Date(today);
-      daysLater.setDate(daysLater.getDate() + parseInt(daysLaterMatch[1]));
-      dueDate = daysLater.toISOString().split('T')[0];
+      dueDate = addDaysJST(parseInt(daysLaterMatch[1]));
     }
   }
 

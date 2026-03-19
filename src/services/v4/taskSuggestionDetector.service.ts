@@ -4,6 +4,7 @@
 import { getServerSupabase, getSupabase } from '@/lib/supabase';
 import { resolveProjectFromChannel } from '@/services/inbox/channelProjectLink.service';
 import { shouldSuppressSuggestion } from '@/services/v4/suggestionLearning.service';
+import { getTodayJST, addDaysJST, getThisWeekFridayJST } from '@/lib/dateUtils';
 
 // タスク提案キーワード（依頼・指示系のメッセージを検出）
 const TASK_KEYWORDS = [
@@ -52,21 +53,17 @@ export function isActionableMessage(text: string): boolean {
 }
 
 function extractDeadline(text: string): string | null {
-  const today = new Date();
   if (text.includes('今日') || text.includes('本日')) {
-    return today.toISOString().split('T')[0];
+    return getTodayJST();
   }
   if (text.includes('明日')) {
-    const d = new Date(today); d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return addDaysJST(1);
   }
   if (text.includes('今週中') || text.includes('今週末')) {
-    const d = new Date(today); d.setDate(d.getDate() + (5 - d.getDay()));
-    return d.toISOString().split('T')[0];
+    return getThisWeekFridayJST();
   }
   if (text.includes('来週')) {
-    const d = new Date(today); d.setDate(d.getDate() + 7);
-    return d.toISOString().split('T')[0];
+    return addDaysJST(7);
   }
   const dateMatch = text.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
   if (dateMatch) {
@@ -153,7 +150,7 @@ export async function suggestTaskFromMessage(params: {
       user_id: ownerUserId,
       suggestions: {
         meetingTitle: `${sourceName}からの提案`,
-        meetingDate: new Date().toISOString().split('T')[0],
+        meetingDate: getTodayJST(),
         projectId: projectResult.projectId,
         // v4.0: 依頼者・担当候補情報
         requester_address: senderAddress || '',

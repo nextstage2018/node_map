@@ -2,6 +2,8 @@
 // Google Meet「メモを取る」機能が生成する構造化テキストを
 // NodeMapのAnalysisResult形式に変換する（AI不要、テキストパースのみ）
 
+import { toJSTDateString } from '@/lib/dateUtils';
+
 export interface AnalysisTopic {
   title: string;
   options: string[];
@@ -718,7 +720,7 @@ function extractDueDate(text: string): string | null {
     const diff = (targetDay - now.getDay() + 7) % 7 || 7;
     const target = new Date(now);
     target.setDate(target.getDate() + diff);
-    return target.toISOString().split('T')[0];
+    return toJSTDateString(target);
   }
 
   // N日後、N日以内
@@ -726,14 +728,14 @@ function extractDueDate(text: string): string | null {
   if (daysMatch) {
     const target = new Date(now);
     target.setDate(target.getDate() + parseInt(daysMatch[1]));
-    return target.toISOString().split('T')[0];
+    return toJSTDateString(target);
   }
 
   // 1週間後、来週
   if (text.includes('1週間後') || text.includes('来週')) {
     const target = new Date(now);
     target.setDate(target.getDate() + 7);
-    return target.toISOString().split('T')[0];
+    return toJSTDateString(target);
   }
 
   return null;
