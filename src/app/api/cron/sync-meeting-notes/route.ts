@@ -135,22 +135,43 @@ export async function GET(request: NextRequest) {
             totalProcessed++;
             console.log(`[SyncMeetingNotes] 会議メモ検出: "${event.summary}" → Docs: "${noteResult.docTitle}" (user: ${userId})`);
 
-            // プロジェクト自動判定（3段階フォールバック）
+            // プロジェクト自動判定（4段階フォールバック）
             // ① カレンダーイベントのdescriptionからproject_idを抽出（定期イベント等で埋め込み済み）
-            // ② 参加者メールからcontact_channels → organization → projects
-            // ③ 最新プロジェクト（最終フォールバック）
+            // ②  [NM-Meeting] タイトルからproject_recurring_rulesを逆引き
+            // ③ 参加者メールからcontact_channels → organization → projects
+            // ④ 最新プロジェクト（最終フォールバック）
             let projectId = resolveProjectFromDescription(event.description);
             if (projectId) {
               console.log(`[SyncMeetingNotes] プロジェクト判定: description埋め込み → ${projectId}`);
-            } else {
+            }
+
+            // ② [NM-Meeting] タイトルからrecurring_rulesを逆引き
+            if (!projectId && event.summary) {
+              projectId = await resolveProjectFromRecurringRules(supabase, event.summary);
+              if (projectId) {
+                console.log(`[SyncMeetingNotes] プロジェクト判定: recurring_rules逆引き → ${projectId}`);
+              }
+            }
+
+            // ③ 参加者メールから
+            if (!projectId) {
               projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
               if (projectId) {
                 console.log(`[SyncMeetingNotes] プロジェクト判定: 参加者メール → ${projectId}`);
               }
             }
+
+            // ④ 最終フォールバック: 最新プロジェクト
             if (!projectId) {
-              console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" — スキップ`);
-              allSkipReasons.push({ user: userId, event: event.summary, reason: 'プロジェクト判定失敗（description・参加者メールともに不一致）' });
+              projectId = await resolveLatestProject(supabase);
+              if (projectId) {
+                console.log(`[SyncMeetingNotes] プロジェクト判定: 最新PJフォールバック → ${projectId}`);
+              }
+            }
+
+            if (!projectId) {
+              console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" (desc=${event.description?.substring(0, 100) || 'なし'}, attendees=${noteResult.attendees?.length || 0}人) — スキップ`);
+              allSkipReasons.push({ user: userId, event: event.summary, reason: 'プロジェクト判定失敗（全4経路で不一致）' });
               userSkipped++;
               continue;
             }
@@ -264,7 +285,41 @@ function resolveProjectFromDescription(description?: string): string | null {
 }
 
 // ========================================
-// プロジェクト自動判定②: 参加者メールから
+// プロジェクト自動判定②: [NM-Meeting] タイトルからrecurring_rulesを逆引き
+// ========================================
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveProjectFromRecurringRules(supabase: any, eventSummary: string): Promise<string | null> {
+  try {
+    // [NM-Meeting] プレフィックスを除去してタイトルを取得
+    const titleMatch = eventSummary.match(/\[NM-Meeting\]\s*(.+)/);
+    if (!titleMatch) return null;
+    const ruleTitle = titleMatch[1].trim();
+
+    // recurring_rules から部分一致で検索（タイトルに日付等が付く場合があるため）
+    const { data: rules } = await supabase
+      .from('project_recurring_rules')
+      .select('project_id, title')
+      .eq('type', 'meeting')
+      .eq('enabled', true);
+
+    if (!rules || rules.length === 0) return null;
+
+    // タイトルの前方一致 or 含有でマッチ
+    for (const rule of rules) {
+      if (ruleTitle.startsWith(rule.title) || rule.title.startsWith(ruleTitle) || ruleTitle.includes(rule.title)) {
+        return rule.project_id;
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[SyncMeetingNotes] recurring_rules逆引きエラー:', error);
+    return null;
+  }
+}
+
+// ========================================
+// プロジェクト自動判定③: 参加者メールから
 // ========================================
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveProjectFromAttendees(supabase: any, attendees: string[]): Promise<string | null> {
@@ -307,17 +362,29 @@ async function resolveProjectFromAttendees(supabase: any, attendees: string[]): 
       }
     }
 
-    // フォールバック: 最新のアクティブプロジェクト
+    return null;
+  } catch (error) {
+    console.error('[SyncMeetingNotes] 参加者メール判定エラー:', error);
+    return null;
+  }
+}
+
+// ========================================
+// プロジェクト自動判定④: 最終フォールバック（最新プロジェクト）
+// ========================================
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveLatestProject(supabase: any): Promise<string | null> {
+  try {
     const { data: latestProject } = await supabase
       .from('projects')
       .select('id')
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
 
     return latestProject?.id || null;
   } catch (error) {
-    console.error('[SyncMeetingNotes] プロジェクト判定エラー:', error);
+    console.error('[SyncMeetingNotes] 最新PJフォールバックエラー:', error);
     return null;
   }
 }

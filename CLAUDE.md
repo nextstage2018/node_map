@@ -431,12 +431,12 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 - ハイライト（アクションアイテム等）
 - **録画リンクは保存しない**（4時間期限付き → `GET /api/meeting-records/[id]/recording` でオンデマンド取得）
 
-**プロジェクト自動判定**: Cron/Webhook受信時、以下の優先順位でプロジェクトを自動判定:
+**プロジェクト自動判定**: sync-meeting-notes Cronで以下の優先順位でプロジェクトを自動判定:
 0. カレンダーイベントのdescriptionから `project_id:` を抽出（定期イベント作成時に埋め込み済み。最も確実）
-1. 参加者メール → `contact_channels` → `contact_persons` → 所属`organization` → `projects`
-2. 参加者名 → `contact_persons` → 所属`organization` → `projects`
-3. 同日の`business_events`（会議）とサマリー照合
-4. フォールバック: 最新プロジェクト
+1. `[NM-Meeting]` タイトルから `project_recurring_rules` を逆引き（タイトル前方一致/含有マッチ）
+2. 参加者メール → `contact_channels` → `contact_persons` → 所属`organization` → `projects`
+3. フォールバック: 最新プロジェクト（`.maybeSingle()` で安全取得）
+- **⚠️ 参加者が空でもフォールバックは必ず実行**: `resolveProjectFromAttendees` の早期returnで止まらないよう、フォールバックを独立関数 `resolveLatestProject` に分離
 
 **AIの2つの性格**:
 - **壁打ちパートナー**（#2 タスクAI）: Shinji Method、協力的、発散も許容
