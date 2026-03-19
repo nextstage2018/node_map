@@ -568,7 +568,7 @@ export default function TasksPage() {
                 onDragEnd={handleDragEnd}
               >
                 <div className="flex-1 overflow-x-auto px-4 py-4">
-                  <div className="flex gap-4 h-full min-w-max">
+                  <div className="flex gap-4 h-full">
                     {/* 着手前 */}
                     <TaskStageColumn
                       stageId="todo"

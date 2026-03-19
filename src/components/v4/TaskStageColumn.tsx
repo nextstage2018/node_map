@@ -69,18 +69,24 @@ export default function TaskStageColumn({
 
   return (
     <div className={cn(
-      'flex flex-col min-w-[280px] w-[300px] shrink-0',
+      'flex flex-col min-w-[280px] flex-1',
       stageId === 'ai_proposal' && 'bg-indigo-50/30 rounded-xl'
     )}>
       {/* カラムヘッダー */}
-      <div className="flex items-center gap-2 px-3 py-3 mb-1">
+      <div className="flex items-center gap-2 px-3 py-3">
         <div className={cn('w-2.5 h-2.5 rounded-full', config.dotColor)} />
         <h3 className="text-sm font-bold text-slate-700">{config.label}</h3>
         <span className="text-xs text-slate-400 bg-slate-100 rounded-full px-2 py-0.5 font-medium">
           {count}
         </span>
-        {headerExtra}
       </div>
+
+      {/* ヘッダー追加コンテンツ（QuickTaskForm等） */}
+      {headerExtra && (
+        <div className="px-2 pb-2">
+          {headerExtra}
+        </div>
+      )}
 
       {/* ドロップゾーン */}
       <div
