@@ -233,9 +233,23 @@ async function createEventWithExtendedProps(
     eventBody.recurrence = recurrence;
   }
 
+  // 会議タイプの場合はGoogle Meetを自動ONにする
+  // Gemini会議メモの自動取得にはGoogle Meet ONが必須
+  const isMeeting = sourceType === 'meeting';
+  if (isMeeting) {
+    eventBody.conferenceData = {
+      createRequest: {
+        requestId: `nm-meet-${sourceId}-${Date.now()}`,
+        conferenceSolutionKey: { type: 'hangoutsMeet' },
+      },
+    };
+  }
+
   try {
+    // conferenceDataVersion=1 が必要（Google Meet自動生成のため）
+    const queryParam = isMeeting ? '?conferenceDataVersion=1' : '';
     const res = await fetch(
-      `https://www.googleapis.com/calendar/v3/calendars/primary/events`,
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events${queryParam}`,
       {
         method: 'POST',
         headers: {
