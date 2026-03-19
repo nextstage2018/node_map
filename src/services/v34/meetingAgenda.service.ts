@@ -532,8 +532,11 @@ export async function generateAgendasForAllProjects(
 }
 
 /**
- * v4.1: アジェンダをカレンダーイベントの備考(description)に注入
- * 該当日のNM-Meeting予定を検索し、descriptionを更新
+ * v4.1→v10.3改修: アジェンダをカレンダーイベントの備考(description)に注入
+ * 3段階でカレンダーイベントを検索:
+ *   1. meeting_records.calendar_event_id（既存。会議録に紐づくイベント）
+ *   2. project_recurring_rules.metadata.calendar_event_id（定期イベント）
+ *   3. Google Calendar API直接検索（[NM-Meeting] or project_id: でマッチ）
  */
 async function injectAgendaToCalendarEvents(
   projectId: string,
@@ -544,38 +547,160 @@ async function injectAgendaToCalendarEvents(
   const supabase = getServerSupabase() || getSupabase();
   if (!supabase) return 0;
 
-  // 該当日の会議録を取得（calendar_event_id が設定されているもの）
-  const dayStart = `${meetingDate}T00:00:00`;
-  const dayEnd = `${meetingDate}T23:59:59`;
+  const agendaText = formatAgendaForCalendarDescription(items);
+  if (!agendaText) return 0;
 
-  const { data: meetings } = await supabase
-    .from('meeting_records')
-    .select('id, calendar_event_id')
-    .eq('project_id', projectId)
-    .not('calendar_event_id', 'is', null)
-    .gte('meeting_start_at', dayStart)
-    .lte('meeting_start_at', dayEnd);
+  const { updateCalendarEvent } = await import('@/services/calendar/calendarSync.service');
+  const updatedEventIds = new Set<string>(); // 重複更新防止
 
-  if (!meetings || meetings.length === 0) return 0;
+  // --- 経路1: meeting_records.calendar_event_id ---
+  try {
+    const dayStart = `${meetingDate}T00:00:00+09:00`;
+    const dayEnd = `${meetingDate}T23:59:59+09:00`;
 
-  const description = formatAgendaForCalendarDescription(items);
-  let updated = 0;
+    const { data: meetings } = await supabase
+      .from('meeting_records')
+      .select('id, calendar_event_id')
+      .eq('project_id', projectId)
+      .not('calendar_event_id', 'is', null)
+      .gte('meeting_start_at', dayStart)
+      .lte('meeting_start_at', dayEnd);
 
-  for (const meeting of meetings) {
-    if (!meeting.calendar_event_id) continue;
+    if (meetings) {
+      for (const meeting of meetings) {
+        if (meeting.calendar_event_id && !updatedEventIds.has(meeting.calendar_event_id)) {
+          const result = await updateCalendarEvent(meeting.calendar_event_id, userId, {
+            description: agendaText,
+          });
+          if (result.success) {
+            updatedEventIds.add(meeting.calendar_event_id);
+            console.log(`[Agenda→Calendar] 経路1(meeting_records): ${meeting.calendar_event_id}`);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Agenda→Calendar] 経路1エラー:', err);
+  }
 
+  // --- 経路2: project_recurring_rules（定期イベント）のカレンダーID ---
+  try {
+    const { data: rules } = await supabase
+      .from('project_recurring_rules')
+      .select('id, title, metadata')
+      .eq('project_id', projectId)
+      .eq('type', 'meeting')
+      .eq('enabled', true);
+
+    if (rules) {
+      for (const rule of rules) {
+        const calEventId = rule.metadata?.calendar_event_id;
+        if (calEventId && !updatedEventIds.has(calEventId)) {
+          // 繰り返しイベントの場合、特定日のインスタンスIDを使用
+          // Google CalendarのRRULEイベントは元IDで更新するとシリーズ全体が変わるため
+          // 特定日インスタンスを取得して更新
+          try {
+            const instanceId = await getRecurringEventInstanceId(userId, calEventId, meetingDate);
+            const targetId = instanceId || calEventId;
+
+            if (!updatedEventIds.has(targetId)) {
+              const result = await updateCalendarEvent(targetId, userId, {
+                description: agendaText,
+              });
+              if (result.success) {
+                updatedEventIds.add(targetId);
+                console.log(`[Agenda→Calendar] 経路2(recurring_rules): ${targetId} (rule: ${rule.title})`);
+              }
+            }
+          } catch {
+            // インスタンス取得失敗は無視
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Agenda→Calendar] 経路2エラー:', err);
+  }
+
+  // --- 経路3: Google Calendar API直接検索（フォールバック） ---
+  if (updatedEventIds.size === 0) {
     try {
-      const { updateCalendarEvent } = await import('@/services/calendar/calendarSync.service');
-      const result = await updateCalendarEvent(meeting.calendar_event_id, userId, {
-        description,
-      });
-      if (result.success) updated++;
-    } catch {
-      // 個別失敗は無視
+      const { getEvents } = await import('@/services/calendar/calendarClient.service');
+      const dayStart = `${meetingDate}T00:00:00+09:00`;
+      const dayEnd = `${meetingDate}T23:59:59+09:00`;
+      const events = await getEvents(userId, dayStart, dayEnd);
+
+      // プロジェクト名を取得
+      const { data: project } = await supabase
+        .from('projects')
+        .select('name')
+        .eq('id', projectId)
+        .maybeSingle();
+
+      const projectName = project?.name || '';
+
+      for (const event of events) {
+        if (!event.id || updatedEventIds.has(event.id)) continue;
+
+        // マッチ条件: [NM-Meeting]プレフィックス or descriptionにproject_id:含む
+        const summary = event.summary || '';
+        const desc = event.description || '';
+        const isNmMeeting = summary.includes('[NM-Meeting]');
+        const hasProjectId = desc.includes(`project_id: ${projectId}`);
+        const hasProjectName = projectName && summary.includes(projectName);
+
+        if (isNmMeeting || hasProjectId || hasProjectName) {
+          const result = await updateCalendarEvent(event.id, userId, {
+            description: agendaText,
+          });
+          if (result.success) {
+            updatedEventIds.add(event.id);
+            console.log(`[Agenda→Calendar] 経路3(Calendar検索): ${event.id} (${summary})`);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[Agenda→Calendar] 経路3エラー:', err);
     }
   }
 
-  return updated;
+  return updatedEventIds.size;
+}
+
+/**
+ * 繰り返しカレンダーイベントの特定日インスタンスIDを取得
+ * Google Calendar APIのinstancesエンドポイントを使用
+ */
+async function getRecurringEventInstanceId(
+  userId: string,
+  recurringEventId: string,
+  targetDate: string
+): Promise<string | null> {
+  try {
+    const { getValidAccessToken } = await import('@/services/calendar/calendarClient.service');
+    const accessToken = await getValidAccessToken(userId);
+    if (!accessToken) return null;
+
+    const timeMin = `${targetDate}T00:00:00+09:00`;
+    const timeMax = `${targetDate}T23:59:59+09:00`;
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(recurringEventId)}/instances?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&maxResults=1`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    if (data.items && data.items.length > 0) {
+      return data.items[0].id;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -66,7 +66,8 @@
 
 | # | 課題 | 詳細 |
 |---|---|---|
-| 3 | **トークン期限切れ通知** | Google refresh_tokenの無効化やChatworkトークン再発行時、ユーザーに通知されない。ダッシュボードに接続ステータス表示を検討 |
+| 1 | **Chatwork BOTのルーム招待** | BOTアカウントが対象ルームに未参加のため403エラー。Chatwork管理画面でBOTを各プロジェクトルームに招待する手動操作が必要（コード修正不要） |
+| 2 | **トークン期限切れ通知** | Google refresh_tokenの無効化やChatworkトークン再発行時、ユーザーに通知されない。ダッシュボードに接続ステータス表示を検討 |
 
 ---
 
@@ -78,4 +79,5 @@
 | `src/app/api/messages/send/route.ts` | Slack/Chatwork送信にuserId渡し |
 | `src/app/api/messages/reply/route.ts` | Chatwork送信にuserId渡し |
 | `src/app/api/jobs/[id]/execute/route.ts` | Chatwork送信にuserId渡し |
-| `CLAUDE.md` | v10.3セクション追加、残課題更新、トークン分離注記追加 |
+| `src/services/v34/meetingAgenda.service.ts` | injectAgendaToCalendarEvents 3経路検索に改修 + getRecurringEventInstanceId 新設 |
+| `CLAUDE.md` | v10.3セクション追加、残課題更新 |
