@@ -1,11 +1,12 @@
 // ログインユーザー自身のcontact_persons取得API
-import { NextResponse } from 'next/server';
+// v10.4: all_internal=true で社内メンバー全員も返す
+import { NextRequest, NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { getServerSupabase, getSupabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const userId = await getServerUserId();
     if (!userId) {
@@ -39,6 +40,23 @@ export async function GET() {
         return NextResponse.json({ success: true, data: fallback });
       }
       return NextResponse.json({ success: false, error: 'コンタクトが見つかりません' }, { status: 404 });
+    }
+
+    // v10.4: all_internal=true の場合、linked_user_idを持つ社内メンバー全員を追加で返す
+    const allInternal = request.nextUrl.searchParams.get('all_internal');
+    if (allInternal === 'true') {
+      const { data: internalMembers } = await supabase
+        .from('contact_persons')
+        .select('id, name')
+        .not('linked_user_id', 'is', null)
+        .eq('relationship_type', 'internal')
+        .order('name');
+
+      return NextResponse.json({
+        success: true,
+        data,
+        internalMembers: internalMembers || [],
+      });
     }
 
     return NextResponse.json({ success: true, data });

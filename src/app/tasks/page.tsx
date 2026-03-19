@@ -215,7 +215,24 @@ export default function TasksPage() {
       };
       fetchMembers();
     } else {
-      setProjectMembers([]);
+      // 「すべてのプロジェクト」時: 社内メンバー（linked_user_idあり）を取得
+      const fetchInternalMembers = async () => {
+        try {
+          const res = await fetch('/api/contacts/me?all_internal=true');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.internalMembers) {
+              setProjectMembers(data.internalMembers.map((m: { id: string; name: string }) => ({
+                contact_id: m.id,
+                name: m.name,
+              })));
+            }
+          }
+        } catch {
+          setProjectMembers([]);
+        }
+      };
+      fetchInternalMembers();
     }
   }, [selectedProjectId]);
 
@@ -359,7 +376,7 @@ export default function TasksPage() {
 
   // クイック追加
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
-  const handleQuickAdd = async (title: string, dueDate?: string) => {
+  const handleQuickAdd = async (title: string, dueDate?: string, assigneeContactId?: string) => {
     setQuickAddError(null);
     try {
       const res = await fetch('/api/tasks', {
@@ -367,11 +384,12 @@ export default function TasksPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
-          due_date: dueDate,
+          dueDate,
           status: 'todo',
           priority: 'medium',
           phase: 'ideation',
           projectId: selectedProjectId !== 'all' ? selectedProjectId : undefined,
+          assigneeContactId: assigneeContactId || undefined,
         }),
       });
       if (res.ok) {
@@ -558,7 +576,11 @@ export default function TasksPage() {
                       count={todoTasks.length}
                       headerExtra={
                         <div>
-                          <QuickTaskForm onSubmit={handleQuickAdd} />
+                          <QuickTaskForm
+                            onSubmit={handleQuickAdd}
+                            myContactId={myContactId}
+                            assignees={assignees}
+                          />
                           {quickAddError && (
                             <div className="mt-1 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
                               {quickAddError}
