@@ -56,6 +56,8 @@
 - **⚠️ contact_persons.main_channel の制約**: CHECK制約あり。許可値は `'email'`, `'slack'`, `'chatwork'` の3つのみ
 - **⚠️ business_events.content**: カラム名は `content`。`description` ではない
 - **⚠️ トークンヘルスチェック（v10.4）**: `GET /api/settings/token-health` で全サービスのトークン有効性を実APIで検証。Google: Calendar API疎通 + refresh_token検証、Slack: auth.test、Chatwork: /v2/me。Cronは `check-token-health`（毎日07:00 JST）で全ユーザー一括チェック→internalチャネルに通知。UIは設定画面（TokenHealthPanel）+ ダッシュボード（TokenAlertBanner）+ サイドバー（設定アイコン赤ドット）
+- **⚠️ カンバンのクイック追加（v10.4）**: `due_date` ではなく `dueDate`（キャメルケース）で送信すること。`requesterContactId` で依頼者（作成者）を自動セット。`assigneeContactId` でフォーム選択の担当者を送信。QuickTaskFormの `myContactId` は非同期取得されるため `useEffect` で同期が必要
+- **⚠️ タスク詳細パネルの編集（v10.4）**: 依頼者・担当者・プロジェクトはドロップダウンで即時API保存。`TaskDetailPanel` に `projects`・`assignees`・`myContactId`・`onTaskUpdate` propsが必要
 - **Vercel互換params**: `{ params }: { params: Promise<{ id: string }> }` — Promiseで受ける
 - **zshブラケット**: `git add "src/app/api/tasks/[id]/route.ts"` — 引用符で囲む
 - **knowledge_master_entries.id**: TEXT型、`me_auto_${Date.now()}_${random}` で手動生成

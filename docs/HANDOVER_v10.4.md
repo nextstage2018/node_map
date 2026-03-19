@@ -46,6 +46,42 @@
 | Slack | `POST auth.test` | ok=true → healthy、token_revoked等 → expired |
 | Chatwork | `GET /v2/me` | 200=OK、401=expired、429=healthy（レート制限） |
 
+### カンバンボード タスク作成・編集改善
+
+#### 修正1: 日付が保存されない問題
+
+**原因**: `handleQuickAdd`で`due_date`（スネークケース）として送信していたが、`CreateTaskRequest`のフィールド名は`dueDate`（キャメルケース）。サーバー側は`req.dueDate`を参照するため無視されていた。
+**対策**: `due_date` → `dueDate` に修正。
+
+#### 修正2: タスク作成フォームに担当者選択追加
+
+- `QuickTaskForm`に担当者ドロップダウンを追加
+- デフォルト値はログインユーザー自身（`myContactId`）
+- 社内メンバー一覧から選択可能。「未割り当て」も選択可
+- `myContactId`が非同期取得されるため、`useEffect`で同期 + `finalAssigneeId`フォールバック
+
+#### 修正3: 担当者フィルタに社内メンバー個別選択追加
+
+- 「すべてのプロジェクト」選択時: `/api/contacts/me?all_internal=true`で`linked_user_id`を持つ社内メンバー全員を取得
+- プロジェクト選択時: 従来通り`/api/projects/[id]/members`から取得
+- フィルタドロップダウン: 自分 / 全員 / 各メンバー名 / 未割り当て
+
+#### 修正4: タスク詳細パネルで依頼者・担当者・プロジェクト編集可能
+
+- 依頼者・担当者: ドロップダウンで社内メンバーから選択（即時API保存）
+- プロジェクト: ドロップダウンでプロジェクト一覧から選択（即時API保存）
+- 期限: 既存の日付ピッカーで編集可能（変更なし）
+
+#### 修正5: タスク作成時に依頼者を自動セット
+
+- カンバンのクイック追加時、`requesterContactId: myContactId`を自動送信
+- `TaskService.createTask`で`requester_contact_id`にマッピングして保存
+
+#### カンバンUI改善
+
+- 列幅: `w-[300px]`固定 → `flex-1`で画面幅に均等に広がるように
+- カード高さ: `headerExtra`をヘッダー行から分離し、全列のカード開始位置を揃えた
+
 ---
 
 ## 新規ファイル
@@ -68,6 +104,12 @@
 | `src/components/shared/AppSidebar.tsx` | hasTokenIssue state追加 + 設定アイコンに赤ドットバッジ + ヘルスチェックfetch |
 | `vercel.json` | check-token-health Cronスケジュール追加（毎日 22:00 UTC） |
 | `CLAUDE.md` | v10.4セクション追加、残課題更新、Cron一覧更新、開発フェーズ更新 |
+| `src/components/v4/QuickTaskForm.tsx` | 担当者ドロップダウン追加。myContactIdデフォルト+useEffect同期 |
+| `src/components/v4/TaskStageColumn.tsx` | 列幅flex-1化 + headerExtraをヘッダー行から分離 |
+| `src/components/v4/TaskDetailPanel.tsx` | 依頼者・担当者・PJをドロップダウン編集可能に。props追加（projects/assignees/myContactId/onTaskUpdate） |
+| `src/app/tasks/page.tsx` | due_date→dueDate修正、handleQuickAddに担当者・依頼者パラメータ追加、社内メンバー取得、TaskDetailPanelにprops追加 |
+| `src/app/api/contacts/me/route.ts` | all_internal=trueで社内メンバー全員返却対応 |
+| `src/services/task/taskClient.service.ts` | createTaskにrequesterContactId対応、updateTaskにrequester_contact_id・projectId対応 |
 
 ---
 
