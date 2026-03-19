@@ -12,6 +12,7 @@ import {
   RefreshCw, Plus, Trash2, Edit2, X, Check,
   ToggleLeft, ToggleRight, Users, FileText, Calendar,
   Video, Briefcase, ChevronDown, ChevronRight, Clock,
+  FolderOpen, Palette,
 } from 'lucide-react';
 
 interface RecurringRule {
@@ -27,6 +28,17 @@ interface RecurringRule {
   enabled: boolean;
   occurrence_count: number;
   last_generated_at: string | null;
+  created_at: string;
+  meeting_group_id: string | null;
+}
+
+interface MeetingGroup {
+  id: string;
+  project_id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  sort_order: number;
   created_at: string;
 }
 
@@ -114,12 +126,33 @@ const DAYS_OF_WEEK = [
 const HOURS = Array.from({ length: 14 }, (_, i) => i + 7); // 7:00 ~ 20:00
 const MINUTES = [0, 15, 30, 45];
 
+const GROUP_COLORS: { value: string; label: string; bg: string; border: string; text: string }[] = [
+  { value: 'blue', label: '青', bg: 'bg-blue-50', border: 'border-blue-300', text: 'text-blue-700' },
+  { value: 'green', label: '緑', bg: 'bg-green-50', border: 'border-green-300', text: 'text-green-700' },
+  { value: 'purple', label: '紫', bg: 'bg-purple-50', border: 'border-purple-300', text: 'text-purple-700' },
+  { value: 'amber', label: '橙', bg: 'bg-amber-50', border: 'border-amber-300', text: 'text-amber-700' },
+  { value: 'rose', label: '赤', bg: 'bg-rose-50', border: 'border-rose-300', text: 'text-rose-700' },
+];
+
+function getGroupColorClasses(color: string) {
+  return GROUP_COLORS.find(c => c.value === color) || GROUP_COLORS[0];
+}
+
 export default function RecurringRulesManager({ projectId }: Props) {
   const [rules, setRules] = useState<RecurringRule[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [members, setMembers] = useState<ProjectMember[]>([]);
+
+  // 会議グループ関連
+  const [meetingGroups, setMeetingGroups] = useState<MeetingGroup[]>([]);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [groupName, setGroupName] = useState('');
+  const [groupDescription, setGroupDescription] = useState('');
+  const [groupColor, setGroupColor] = useState('blue');
+  const [isGroupSaving, setIsGroupSaving] = useState(false);
 
   // フォーム状態
   const [formType, setFormType] = useState<EventType>('meeting');
@@ -133,6 +166,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
   const [formParticipants, setFormParticipants] = useState<string[]>([]); // contact_ids
   const [formMeetingNotes, setFormMeetingNotes] = useState(true); // 議事録読み取り
   const [formCalendarSync, setFormCalendarSync] = useState(true);
+  const [formMeetingGroupId, setFormMeetingGroupId] = useState<string | null>(null); // 会議グループ
   const [isSaving, setIsSaving] = useState(false);
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null); // メール入力中のcontact_id
   const [emailInput, setEmailInput] = useState('');
@@ -145,6 +179,14 @@ export default function RecurringRulesManager({ projectId }: Props) {
       if (data.success) setRules(data.data || []);
     } catch { /* */ }
     setIsLoading(false);
+  }, [projectId]);
+
+  const fetchMeetingGroups = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/meeting-groups`);
+      const data = await res.json();
+      if (data.success) setMeetingGroups(data.data || []);
+    } catch { /* */ }
   }, [projectId]);
 
   const fetchMembers = useCallback(async () => {
@@ -167,6 +209,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
   }, [projectId]);
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
+  useEffect(() => { fetchMeetingGroups(); }, [fetchMeetingGroups]);
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
   // RRULE生成
@@ -216,6 +259,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
     setFormParticipants([]);
     setFormMeetingNotes(true);
     setFormCalendarSync(true);
+    setFormMeetingGroupId(null);
     setEditingId(null);
     setShowForm(false);
   };
@@ -249,6 +293,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
             calendar_sync: calendarSync,
             auto_create: true,
             metadata,
+            meeting_group_id: formMeetingGroupId || null,
           }),
         });
       } else {
@@ -263,6 +308,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
             calendar_sync: calendarSync,
             auto_create: true,
             metadata,
+            meeting_group_id: formMeetingGroupId || null,
           }),
         });
       }
@@ -303,6 +349,7 @@ export default function RecurringRulesManager({ projectId }: Props) {
     setFormParticipants((meta?.participants as string[]) || []);
     setFormMeetingNotes((meta?.meeting_notes_enabled as boolean) ?? true);
     setFormCalendarSync(rule.calendar_sync);
+    setFormMeetingGroupId(rule.meeting_group_id || null);
     setShowForm(true);
   };
 
@@ -318,8 +365,178 @@ export default function RecurringRulesManager({ projectId }: Props) {
     );
   };
 
+  // 会議グループ CRUD ハンドラ
+  const resetGroupForm = () => {
+    setGroupName('');
+    setGroupDescription('');
+    setGroupColor('blue');
+    setEditingGroupId(null);
+    setShowGroupForm(false);
+  };
+
+  const handleSaveGroup = async () => {
+    if (!groupName.trim()) return;
+    setIsGroupSaving(true);
+    try {
+      if (editingGroupId) {
+        await fetch(`/api/projects/${projectId}/meeting-groups/${editingGroupId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: groupName.trim(), description: groupDescription || null, color: groupColor }),
+        });
+      } else {
+        await fetch(`/api/projects/${projectId}/meeting-groups`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: groupName.trim(), description: groupDescription || null, color: groupColor }),
+        });
+      }
+      resetGroupForm();
+      fetchMeetingGroups();
+    } catch { /* */ }
+    setIsGroupSaving(false);
+  };
+
+  const handleDeleteGroup = async (gid: string) => {
+    if (!confirm('この会議グループを削除しますか？\n（配下の定期イベント・会議録はグループ未割当に戻ります）')) return;
+    try {
+      await fetch(`/api/projects/${projectId}/meeting-groups/${gid}`, { method: 'DELETE' });
+      fetchMeetingGroups();
+    } catch { /* */ }
+  };
+
+  const startEditGroup = (g: MeetingGroup) => {
+    setEditingGroupId(g.id);
+    setGroupName(g.name);
+    setGroupDescription(g.description || '');
+    setGroupColor(g.color);
+    setShowGroupForm(true);
+  };
+
   return (
     <div className="mt-6 border-t border-slate-200 pt-4">
+
+      {/* ===== 会議グループ管理 ===== */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
+            <FolderOpen className="w-3.5 h-3.5" />
+            会議グループ
+          </h3>
+          <button
+            onClick={() => { resetGroupForm(); setShowGroupForm(true); }}
+            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+          >
+            <Plus className="w-3 h-3" />
+            追加
+          </button>
+        </div>
+
+        {/* グループ作成/編集フォーム */}
+        {showGroupForm && (
+          <div className="mb-3 p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+            <h4 className="text-xs font-bold text-slate-700 mb-2">
+              {editingGroupId ? 'グループを編集' : 'グループを作成'}
+            </h4>
+            <div className="mb-3">
+              <label className="block text-[10px] font-medium text-slate-500 mb-1">グループ名</label>
+              <input
+                type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)}
+                placeholder="例: 戦略MTG"
+                autoFocus
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-[10px] font-medium text-slate-500 mb-1">説明（任意）</label>
+              <input
+                type="text" value={groupDescription} onChange={(e) => setGroupDescription(e.target.value)}
+                placeholder="このグループの説明"
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="mb-3">
+              <label className="block text-[10px] font-medium text-slate-500 mb-1">
+                <Palette className="w-3 h-3 inline mr-0.5" />
+                色
+              </label>
+              <div className="flex gap-1.5">
+                {GROUP_COLORS.map(c => (
+                  <button
+                    key={c.value}
+                    onClick={() => setGroupColor(c.value)}
+                    className={`px-3 py-1 text-xs rounded-lg border transition-colors ${
+                      groupColor === c.value
+                        ? `${c.bg} ${c.border} ${c.text} font-medium`
+                        : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'
+                    }`}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button onClick={resetGroupForm} className="px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                キャンセル
+              </button>
+              <button
+                onClick={handleSaveGroup}
+                disabled={isGroupSaving || !groupName.trim()}
+                className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isGroupSaving ? '保存中...' : editingGroupId ? '更新' : '作成'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* グループ一覧 */}
+        {meetingGroups.length === 0 && !showGroupForm ? (
+          <p className="text-[10px] text-slate-400 italic">
+            グループ未設定（定期イベントはPJ全体で共有されます）
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {meetingGroups.map(g => {
+              const cc = getGroupColorClasses(g.color);
+              const groupRules = rules.filter(r => r.meeting_group_id === g.id);
+              return (
+                <div
+                  key={g.id}
+                  className={`flex items-center gap-2 px-3 py-2 border rounded-lg ${cc.bg} ${cc.border}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-medium ${cc.text}`}>{g.name}</p>
+                    {g.description && (
+                      <p className="text-[10px] text-slate-400 truncate">{g.description}</p>
+                    )}
+                    {groupRules.length > 0 && (
+                      <p className="text-[10px] text-slate-400">{groupRules.length}件の定期イベント</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button
+                      onClick={() => startEditGroup(g)}
+                      className="p-1 text-slate-400 hover:text-blue-600 transition-colors"
+                    >
+                      <Edit2 className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGroup(g.id)}
+                      className="p-1 text-slate-400 hover:text-red-600 transition-colors"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ===== 定期イベント ===== */}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
           <RefreshCw className="w-3.5 h-3.5" />
@@ -382,6 +599,27 @@ export default function RecurringRulesManager({ projectId }: Props) {
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {/* Step 2.5: 会議グループ（MTGのみ） */}
+          {formType === 'meeting' && meetingGroups.length > 0 && (
+            <div className="mb-4">
+              <label className="block text-[10px] font-medium text-slate-500 mb-1">
+                <FolderOpen className="w-3 h-3 inline mr-0.5" />
+                会議グループ
+              </label>
+              <select
+                value={formMeetingGroupId || ''}
+                onChange={(e) => setFormMeetingGroupId(e.target.value || null)}
+                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">未割当（PJ全体）</option>
+                {meetingGroups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 mt-0.5">同じグループの定期イベントは検討ツリー・アジェンダを共有します</p>
+            </div>
+          )}
 
           {/* Step 3: 頻度 */}
           <div className="mb-4">
@@ -712,6 +950,16 @@ export default function RecurringRulesManager({ projectId }: Props) {
                           <Calendar className="w-2.5 h-2.5" />
                         </span>
                       )}
+                      {rule.meeting_group_id && (() => {
+                        const group = meetingGroups.find(g => g.id === rule.meeting_group_id);
+                        if (!group) return null;
+                        const cc = getGroupColorClasses(group.color);
+                        return (
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${cc.bg} ${cc.border} ${cc.text} border`}>
+                            {group.name}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
 

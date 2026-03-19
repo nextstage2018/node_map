@@ -20,10 +20,10 @@ export async function PUT(
     const { ruleId } = await params;
     const body = await request.json();
 
-    const { title, rrule, lead_days, calendar_sync, auto_create, metadata, enabled } = body;
+    const { title, rrule, lead_days, calendar_sync, auto_create, metadata, enabled, meeting_group_id } = body;
 
     const { updateRecurringRule } = await import('@/services/v42/recurringRules.service');
-    const rule = await updateRecurringRule(ruleId, {
+    const updateInput: Record<string, unknown> = {
       title,
       rrule,
       lead_days,
@@ -31,7 +31,12 @@ export async function PUT(
       auto_create,
       metadata,
       enabled,
-    });
+    };
+    // meeting_group_id が明示的に渡された場合のみ更新（undefinedの場合はスキップ）
+    if (meeting_group_id !== undefined) {
+      updateInput.meeting_group_id = meeting_group_id || null;
+    }
+    const rule = await updateRecurringRule(ruleId, updateInput);
 
     if (!rule) {
       return NextResponse.json({ error: '更新に失敗しました' }, { status: 400 });

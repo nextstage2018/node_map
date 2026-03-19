@@ -20,6 +20,7 @@ export interface RecurringRule {
   enabled: boolean;
   occurrence_count: number;
   last_generated_at: string | null;
+  meeting_group_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +34,7 @@ export interface CreateRecurringRuleInput {
   calendar_sync?: boolean;
   auto_create?: boolean;
   metadata?: Record<string, unknown>;
+  meeting_group_id?: string | null;
 }
 
 export interface UpdateRecurringRuleInput {
@@ -43,6 +45,7 @@ export interface UpdateRecurringRuleInput {
   auto_create?: boolean;
   metadata?: Record<string, unknown>;
   enabled?: boolean;
+  meeting_group_id?: string | null;
 }
 
 // ========================================
@@ -244,6 +247,7 @@ export async function createRecurringRule(
       calendar_sync: input.calendar_sync ?? false,
       auto_create: input.auto_create ?? true,
       metadata: input.metadata ?? {},
+      meeting_group_id: input.meeting_group_id || null,
     })
     .select()
     .single();

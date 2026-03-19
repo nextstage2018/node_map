@@ -287,6 +287,7 @@ AI解析の改修イメージ:
 | `meeting_agenda` | 会議アジェンダ | UUID | project_id必須。items JSONB配列。**status CHECK: draft/confirmed/completed**。UNIQUE(project_id, meeting_date)。自動生成→確認→完了のライフサイクル |
 | `boss_feedback_learnings` | 上長フィードバック学習 | UUID | project_id必須。会議録AI解析で上長の指摘事項を自動抽出。タスクAI会話に注入して判断基準の差を縮める |
 | `milestone_suggestions` | MS提案 | UUID | v8.0: 会議録AI解析から自動抽出→自動承認→milestones即登録。検討ツリータブで編集/削除のみ |
+| `meeting_groups` | 会議グループ | UUID | P2-3: project_id必須。1PJ内で趣旨別に会議をグループ化。color: blue/green/purple/amber/rose。sort_orderで表示順 |
 
 ---
 
@@ -1027,6 +1028,7 @@ v10.2 メンバー管理強化（ログインユーザー優先マッチ・Chatw
 v10.3 トークン分離・BOT自動参加・アジェンダ注入改修 ← 実装済み
 v10.4 トークン期限切れ通知（ヘルスチェックAPI + UI + Cron通知） ← 実装済み
 v10.5 BOT担当者修正・milestones.target_date修正・会議メモPJ判定強化・Meet自動ON ← 実装済み
+P2-3 会議グループ化（Phase 1: テーブル+API+UI） ← 実装済み
 ```
 
 ---
@@ -1659,6 +1661,55 @@ Phase 4: アジェンダ強化
 - **⚠️ 会議イベントのGoogle Meet自動ON（v10.5）**: `calendarSync.service.ts` の `createEventWithExtendedProps` で `sourceType='meeting'` の場合に `conferenceData.createRequest` を付与。`conferenceDataVersion=1` パラメータも必要。タスク・定期作業にはMeetを付与しない
 - **⚠️ milestones テーブルの期限カラム名は `target_date`**: `due_date` ではない。6ファイルで修正済み（v10.5）。tasksテーブルの `due_date` とは異なるので注意
 - **⚠️ sync-meeting-notes の4段階PJ判定（v10.5）**: ① description埋め込み → ② recurring_rules逆引き（[NM-Meeting]タイトルマッチ） → ③ 参加者メール → ④ 最新PJフォールバック。参加者が空でもフォールバックは必ず実行（`resolveLatestProject` 独立関数化）
+
+---
+
+## P2-3 会議グループ化（Phase 1 実装済み）
+
+### 概要
+
+1PJ内で異なる趣旨の会議をグループ化し、検討ツリー・アジェンダをグループ別に分離可能にする。
+
+### 新テーブル: meeting_groups
+
+| カラム | 型 | 用途 |
+|---|---|---|
+| id | UUID | PK |
+| project_id | UUID | FK projects |
+| name | TEXT | グループ名 |
+| description | TEXT | 説明 |
+| color | TEXT | UI表示色（blue/green/purple/amber/rose） |
+| sort_order | INTEGER | 表示順 |
+
+### 既存テーブルへのカラム追加
+
+- `project_recurring_rules.meeting_group_id` — 定期イベントをグループに割り当て
+- `meeting_records.meeting_group_id` — 会議録をグループに自動紐づけ
+- `decision_trees.meeting_group_id` — グループ別の検討ツリー
+- `meeting_agenda.meeting_group_id` — グループ別のアジェンダ。UNIQUE制約変更: `(project_id, meeting_date, meeting_group_id)` NULLS NOT DISTINCT
+
+### API
+
+| エンドポイント | 用途 |
+|---|---|
+| `GET /api/projects/[id]/meeting-groups` | グループ一覧取得 |
+| `POST /api/projects/[id]/meeting-groups` | グループ作成 |
+| `PUT /api/projects/[id]/meeting-groups/[gid]` | グループ更新 |
+| `DELETE /api/projects/[id]/meeting-groups/[gid]` | グループ削除 |
+
+### ⚠️ 注意事項
+
+- **meeting_group_id = NULL は従来通りの動作**: グループ未設定でも全機能が正常動作（後方互換）
+- **meeting_agenda のUNIQUE制約変更**: `NULLS NOT DISTINCT` が必要（PostgreSQL 15+）。Supabase は対応済み
+- **グループ削除時**: 配下の records/rules/trees/agendas の `meeting_group_id` は ON DELETE SET NULL で NULL にフォールバック
+- **RecurringRulesManager にグループ管理UI追加**: グループCRUD + ルール作成/編集時のグループ選択ドロップダウン
+- **SQLマイグレーション必須**: `sql/p2-3_meeting_groups.sql` を Supabase で実行してからデプロイ
+
+### Phase 2以降の予定
+
+- Phase 2: 検討ツリー分離（analyze/route.ts ステップ11修正 + DecisionTreeViewグループ切替UI）
+- Phase 3: アジェンダ分離（meetingAgenda.service.ts グループ対応）
+- Phase 4: BOT・通知連携
 
 ---
 

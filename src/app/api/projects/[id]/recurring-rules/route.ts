@@ -42,7 +42,7 @@ export async function POST(
     const { id: projectId } = await params;
     const body = await request.json();
 
-    const { type, title, rrule, lead_days, calendar_sync, auto_create, metadata } = body;
+    const { type, title, rrule, lead_days, calendar_sync, auto_create, metadata, meeting_group_id } = body;
 
     if (!type || !['meeting', 'task', 'job'].includes(type)) {
       return NextResponse.json({ error: '無効なtype（meeting/task/jobのいずれか）' }, { status: 400 });
@@ -64,6 +64,7 @@ export async function POST(
       calendar_sync,
       auto_create,
       metadata,
+      meeting_group_id: meeting_group_id || null,
     });
 
     if (!rule) {

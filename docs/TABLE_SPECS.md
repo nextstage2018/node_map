@@ -1877,11 +1877,56 @@ CREATE INDEX idx_meeting_agenda_user_upcoming ON meeting_agenda(user_id, meeting
 ```
 
 #### 注意事項
-- **UNIQUE**: 1プロジェクト1日1アジェンダ
+- **UNIQUE**: `(project_id, meeting_date, meeting_group_id)` NULLS NOT DISTINCT。グループ別に1日1アジェンダ。meeting_group_id=NULLの場合は従来通り1PJ1日1アジェンダ
+- **meeting_group_id** [P2-3]: 会議グループへの紐づけ（NULL=未割当）
 - **status**: `draft`=自動生成直後、`confirmed`=ユーザー確認済み、`completed`=会議実施後
 - **linked_meeting_record_id**: 会議実施後にmeeting_recordsと紐づけ
 - **items**: JSONB配列（Phase 3で個別追跡が必要になれば別テーブルに分離検討）
 - **自動生成**: Cronで open_issues(優先度順) + decision_log(最新) + tasks(進行中) からアジェンダ項目を構成
+
+---
+
+### meeting_groups（会議グループ）[P2-3]
+
+**目的**: 1PJ内で異なる趣旨の会議をグループ化。検討ツリー・アジェンダをグループ別に分離可能にする。
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE meeting_groups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,                     -- グループ名（例: 「戦略MTG」「制作進行MTG」）
+  description TEXT,                       -- グループの説明
+  color TEXT DEFAULT 'blue',              -- UI表示色（blue/green/purple/amber/rose）
+  sort_order INTEGER NOT NULL DEFAULT 0,  -- 表示順
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_meeting_groups_project ON meeting_groups(project_id);
+```
+
+#### 注意事項
+
+- **meeting_group_id = NULL** の場合は従来通りPJ単位で動作（後方互換）
+- **1 recurring_rule は 1 グループのみ**: N:1 の関係
+- グループ削除時、配下の records / rules / trees / agendas の meeting_group_id は NULL にフォールバック（ON DELETE SET NULL）
+- **color**: UI表示色。許可値: `blue`, `green`, `purple`, `amber`, `rose`
+- **sort_order**: 表示順（昇順）
+
+#### 参照元カラム（既存テーブルへの追加）
+
+| テーブル | 追加カラム | 用途 |
+|---|---|---|
+| `project_recurring_rules` | `meeting_group_id UUID REFERENCES meeting_groups(id) ON DELETE SET NULL` | 定期イベントをグループに割り当て |
+| `meeting_records` | `meeting_group_id UUID REFERENCES meeting_groups(id) ON DELETE SET NULL` | 会議録をグループに自動紐づけ |
+| `decision_trees` | `meeting_group_id UUID REFERENCES meeting_groups(id) ON DELETE SET NULL` | グループ別の検討ツリー |
+| `meeting_agenda` | `meeting_group_id UUID REFERENCES meeting_groups(id) ON DELETE SET NULL` | グループ別のアジェンダ。UNIQUE制約変更: `(project_id, meeting_date, meeting_group_id)` NULLS NOT DISTINCT |
 
 ---
 
@@ -1932,6 +1977,7 @@ CREATE INDEX idx_recurring_rules_enabled ON project_recurring_rules(enabled) WHE
   - `calendar_event_id` (string): Google CalendarイベントID（作成後に自動保存。削除時に使用）
 - **カレンダー連携**: ルール作成時にGoogleカレンダーへ即時登録。ネイティブRRULEで繰り返し予定。descriptionにrule_id/project_id/NodeMapリンクを記載。参加者はcontact_channelsからメール解決→attendeesに渡す
 - **meeting_records.recurring_rule_id**: Gemini会議メモ照合でマッチしたルールを紐づけ
+- **meeting_group_id** [P2-3]: 会議グループへの紐づけ（NULL=未割当）。`REFERENCES meeting_groups(id) ON DELETE SET NULL`
 
 ---
 
@@ -2046,4 +2092,4 @@ users (Supabase auth)
 ---
 
 **This document serves as the single source of truth for NodeMap database schema.**
-Last updated: 2026-03-10 (v3.4 Phase 1)
+Last updated: 2026-03-19 (P2-3 Phase 1: meeting_groups追加)
