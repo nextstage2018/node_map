@@ -1,7 +1,9 @@
 // Phase 40c: プロジェクト ↔ チャネル紐づけ API（GET / POST / DELETE）
+// v10.3: チャネル追加時にBOT自動参加
 import { NextResponse, NextRequest } from 'next/server';
 import { createServerClient, isSupabaseConfigured } from '@/lib/supabase';
 import { getServerUserId } from '@/lib/serverAuth';
+import { ensureSlackBotInChannel, ensureChatworkBotInRoom } from '@/services/bot/botChannelJoin.service';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,7 +117,35 @@ export async function POST(
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, data });
+    // v10.3: BOT自動参加（チャネル追加成功後に実行。失敗してもチャネル追加自体はブロックしない）
+    let botJoinResult = null;
+    try {
+      if (serviceName === 'slack') {
+        botJoinResult = await ensureSlackBotInChannel(channelIdentifier, userId);
+      } else if (serviceName === 'chatwork') {
+        botJoinResult = await ensureChatworkBotInRoom(channelIdentifier, userId);
+      }
+
+      if (botJoinResult) {
+        if (botJoinResult.success && !botJoinResult.alreadyMember) {
+          console.log(`[Project Channels API] BOT自動参加成功: ${serviceName} ${channelIdentifier}`);
+        } else if (!botJoinResult.success) {
+          console.warn(`[Project Channels API] BOT自動参加失敗: ${botJoinResult.error}`);
+        }
+      }
+    } catch (botErr) {
+      console.warn('[Project Channels API] BOT自動参加で例外:', botErr);
+    }
+
+    return NextResponse.json({
+      success: true,
+      data,
+      botJoin: botJoinResult ? {
+        success: botJoinResult.success,
+        alreadyMember: botJoinResult.alreadyMember,
+        error: botJoinResult.error || null,
+      } : null,
+    });
   } catch (error) {
     console.error('[Project Channels API] エラー:', error);
     return NextResponse.json({ success: false, error: 'チャネルの追加に失敗しました' }, { status: 500 });

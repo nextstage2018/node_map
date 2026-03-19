@@ -55,19 +55,12 @@
 
 ## 残課題（優先度順）
 
-### 中優先度
-
-| # | 課題 | 詳細 |
-|---|---|---|
-| 1 | **カレンダーイベントへのアジェンダ自動注入（Phase 4）** | プロジェクトログDocへの書き込みは実装済み。Google CalendarイベントのdescriptionフィールドへのCron自動注入が未実装。`generate-meeting-agendas` Cronの拡張 + Calendar API `events.patch` が必要 |
-| 2 | **Chatwork BOTのルーム招待** | BOTアカウントが対象ルームに未参加のため403エラー。Chatwork管理画面でBOTを各プロジェクトルームに招待する手動操作が必要（コード修正不要） |
-
 ### 低優先度
 
 | # | 課題 | 詳細 |
 |---|---|---|
-| 1 | **Chatwork BOTのルーム招待** | BOTアカウントが対象ルームに未参加のため403エラー。Chatwork管理画面でBOTを各プロジェクトルームに招待する手動操作が必要（コード修正不要） |
-| 2 | **トークン期限切れ通知** | Google refresh_tokenの無効化やChatworkトークン再発行時、ユーザーに通知されない。ダッシュボードに接続ステータス表示を検討 |
+| 1 | **トークン期限切れ通知** | Google refresh_tokenの無効化やChatworkトークン再発行時、ユーザーに通知されない。ダッシュボードに接続ステータス表示を検討 |
+| 2 | **既存プロジェクトのBOT参加状況確認** | v10.3のBOT自動参加は新規チャネル追加時のみ。既存プロジェクトのチャネルでBOT未参加のものは手動でBOT招待が必要 |
 
 ---
 
@@ -80,4 +73,6 @@
 | `src/app/api/messages/reply/route.ts` | Chatwork送信にuserId渡し |
 | `src/app/api/jobs/[id]/execute/route.ts` | Chatwork送信にuserId渡し |
 | `src/services/v34/meetingAgenda.service.ts` | injectAgendaToCalendarEvents 3経路検索に改修 + getRecurringEventInstanceId 新設 |
+| `src/services/bot/botChannelJoin.service.ts` | 新規: BOTチャネル自動参加サービス（Slack + Chatwork） |
+| `src/app/api/projects/[id]/channels/route.ts` | POST後にBOT自動参加を実行。レスポンスにbotJoin結果を含む |
 | `CLAUDE.md` | v10.3セクション追加、残課題更新 |
