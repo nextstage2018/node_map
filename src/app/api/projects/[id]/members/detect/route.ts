@@ -103,19 +103,18 @@ export async function POST(
 
     // ★ v10.2→v10.3強化: BOTアカウントのaccount_idも除外対象に追加
     const botExcludeIds = new Set<string>();
-    // Chatwork BOT除外: BOTトークンと個人トークン両方で確認
+    // Chatwork BOT除外: CHATWORK_BOT_API_TOKEN のみ使用
+    // ※ CHATWORK_API_TOKEN は個人トークンの可能性があるため除外対象にしない
     const chatworkBotToken = process.env.CHATWORK_BOT_API_TOKEN;
-    const chatworkFallbackToken = process.env.CHATWORK_API_TOKEN;
-    for (const token of [chatworkBotToken, chatworkFallbackToken].filter(Boolean)) {
-      if (!token) continue;
+    if (chatworkBotToken) {
       try {
         const botRes = await fetch('https://api.chatwork.com/v2/me', {
-          headers: { 'X-ChatWorkToken': token },
+          headers: { 'X-ChatWorkToken': chatworkBotToken },
         });
         if (botRes.ok) {
           const botMe = await botRes.json();
           botExcludeIds.add(String(botMe.account_id));
-          console.log(`[Project Members Detect] Chatwork BOT/環境変数除外: ${botMe.account_id} (${botMe.name})`);
+          console.log(`[Project Members Detect] Chatwork BOT除外: ${botMe.account_id} (${botMe.name})`);
         }
       } catch {
         // API失敗 → 無視
