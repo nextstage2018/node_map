@@ -490,9 +490,8 @@ export async function generateAgendasForAllProjects(
       return stats;
     }
 
-    // 翌営業日を計算
-    const nextBusinessDay = getNextBusinessDay();
-    const meetingDate = nextBusinessDay.toISOString().split('T')[0];
+    // 翌営業日を計算（JST基準）
+    const meetingDate = getNextBusinessDayJST();
 
     for (const project of projects) {
       try {
@@ -785,12 +784,33 @@ function formatAgendaForCalendarDescription(items: AgendaItem[]): string {
 /**
  * 翌営業日を取得（土日スキップ）
  */
-function getNextBusinessDay(): Date {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
+/**
+ * 翌営業日をJST基準で算出し、YYYY-MM-DD文字列を返す
+ * Vercel(UTC)環境でも正しくJST日付を返す
+ */
+function getNextBusinessDayJST(): string {
+  // UTC nowをJSTに変換
+  const now = new Date();
+  const jstMs = now.getTime() + 9 * 60 * 60 * 1000;
+  const jstNow = new Date(jstMs);
+
+  // JSTの翌日から開始
+  jstNow.setUTCDate(jstNow.getUTCDate() + 1);
+
   // 土曜→月曜、日曜→月曜
-  while (date.getDay() === 0 || date.getDay() === 6) {
-    date.setDate(date.getDate() + 1);
+  while (jstNow.getUTCDay() === 0 || jstNow.getUTCDay() === 6) {
+    jstNow.setUTCDate(jstNow.getUTCDate() + 1);
   }
-  return date;
+
+  // YYYY-MM-DD形式で返す（UTC日付部分 = JST日付）
+  const y = jstNow.getUTCFullYear();
+  const m = String(jstNow.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(jstNow.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// 後方互換: 旧関数名を維持（呼び出し元がある場合）
+function getNextBusinessDay(): Date {
+  const dateStr = getNextBusinessDayJST();
+  return new Date(dateStr + 'T00:00:00+09:00');
 }

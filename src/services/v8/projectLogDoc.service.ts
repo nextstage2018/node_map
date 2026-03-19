@@ -298,6 +298,17 @@ export async function insertPreMeetingAgenda(
   if (!accessToken) return false;
 
   try {
+    // 重複チェック: 同日セクションが既に存在するか確認
+    const docRes = await docsFetch(accessToken, `/documents/${documentId}`);
+    if (docRes.ok) {
+      const doc = await docRes.json();
+      const dateMarker = `━━ ${data.meetingDate}`;
+      if (findTextPosition(doc, dateMarker) !== -1) {
+        console.log(`[ProjectLogDoc] 事前アジェンダ既存のためスキップ: ${data.meetingDate}`);
+        return true; // 既に存在するので成功扱い
+      }
+    }
+
     const content = buildPreMeetingAgendaContent(data);
     await batchUpdateDoc(accessToken, documentId, content);
     console.log(`[ProjectLogDoc] 事前アジェンダ挿入: ${data.meetingDate}`);
@@ -331,19 +342,57 @@ export async function appendPostMeetingResults(
 
     // 該当日のセクションマーカーを検索
     const dateMarker = `━━ ${data.meetingDate}`;
-    let insertIndex = findTextPosition(doc, dateMarker);
+    const insertIndex = findTextPosition(doc, dateMarker);
 
     if (insertIndex === -1) {
       // 事前アジェンダが未生成の場合、先頭に新セクションごと挿入
       const content = buildFullMeetingSection(data);
       await batchUpdateDoc(accessToken, documentId, content);
     } else {
-      // 事前アジェンダセクションの末尾（次のセパレータ前）に追記
+      // 同日セクション内の既存「AI解析結果」を検出
       const nextSeparator = findTextPosition(doc, '────────────────', insertIndex + dateMarker.length);
-      const appendAt = nextSeparator > 0 ? nextSeparator : getDocEndIndex(doc);
+      const sectionEnd = nextSeparator > 0 ? nextSeparator : getDocEndIndex(doc);
 
-      const content = buildPostMeetingContent(data);
-      await insertTextAtPosition(accessToken, documentId, appendAt, content);
+      // 既存のAI解析結果があれば削除してから挿入（重複防止）
+      const existingAiMarker = findTextPosition(doc, '▶ AI解析結果', insertIndex + dateMarker.length);
+      if (existingAiMarker !== -1 && existingAiMarker < sectionEnd) {
+        // 既存AI解析結果を削除（AI解析マーカーからセパレータまで）
+        try {
+          const deleteRequests = [
+            {
+              deleteContentRange: {
+                range: {
+                  startIndex: existingAiMarker,
+                  endIndex: sectionEnd,
+                },
+              },
+            },
+          ];
+          await docsFetch(accessToken, `/documents/${documentId}:batchUpdate`, {
+            method: 'POST',
+            body: JSON.stringify({ requests: deleteRequests }),
+          });
+
+          // 削除後にドキュメントを再読み込みして正しい位置を取得
+          const docRes2 = await docsFetch(accessToken, `/documents/${documentId}`);
+          if (docRes2.ok) {
+            const doc2 = await docRes2.json();
+            const newSeparator = findTextPosition(doc2, '────────────────', insertIndex);
+            const appendAt = newSeparator > 0 ? newSeparator : getDocEndIndex(doc2);
+            const content = buildPostMeetingContent(data);
+            await insertTextAtPosition(accessToken, documentId, appendAt, content);
+          }
+        } catch (delErr) {
+          console.warn('[ProjectLogDoc] 既存AI解析結果の削除失敗、上書き追記:', delErr);
+          // フォールバック: そのまま末尾に追記
+          const content = buildPostMeetingContent(data);
+          await insertTextAtPosition(accessToken, documentId, sectionEnd, content);
+        }
+      } else {
+        // AI解析結果がまだない場合、セパレータ前に追記
+        const content = buildPostMeetingContent(data);
+        await insertTextAtPosition(accessToken, documentId, sectionEnd, content);
+      }
     }
 
     console.log(`[ProjectLogDoc] 会議後結果追記: ${data.meetingDate}`);
@@ -380,7 +429,7 @@ function buildPreMeetingAgendaContent(data: AgendaData): string {
   lines.push('【意思決定ログ】');
   if (data.decisions.length > 0) {
     for (const dec of data.decisions) {
-      lines.push(`  ☐ ${dec.title}: ${dec.decision_content}（${dec.created_at.slice(0, 10)}）`);
+      lines.push(`  □ ${dec.title}: ${dec.decision_content}（${dec.created_at.slice(0, 10)}）`);
     }
   } else {
     lines.push('  （なし）');
@@ -392,7 +441,7 @@ function buildPreMeetingAgendaContent(data: AgendaData): string {
   if (data.openIssues.length > 0) {
     for (const issue of data.openIssues) {
       const priorityIcon = issue.priority_level === 'critical' ? '🔴' : issue.priority_level === 'high' ? '🟠' : '⚪';
-      lines.push(`  ☐ ${priorityIcon} ${issue.title}（${issue.days_stagnant}日経過）`);
+      lines.push(`  □ ${priorityIcon} ${issue.title}（${issue.days_stagnant}日経過）`);
       if (issue.description) lines.push(`    → ${issue.description}`);
     }
   } else {
@@ -538,7 +587,69 @@ function buildFullMeetingSection(data: PostMeetingData): string {
 // ========================================
 
 /**
- * ドキュメントの先頭（タイトルの次）にテキストを挿入
+ * 挿入テキストに対する書式リクエストを生成
+ * insertIndex: テキスト挿入開始位置、text: 挿入テキスト全体
+ */
+function buildFormattingRequests(insertIndex: number, text: string): Array<Record<string, unknown>> {
+  const requests: Array<Record<string, unknown>> = [];
+  const lines = text.split('\n');
+  let currentIndex = insertIndex;
+
+  for (const line of lines) {
+    const lineLen = line.length;
+    if (lineLen > 0) {
+      // 日付ヘッダー: ━━ で始まる行 → 14pt 太字
+      if (line.startsWith('━━ ')) {
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
+            textStyle: { bold: true, fontSize: { magnitude: 14, unit: 'PT' } },
+            fields: 'bold,fontSize',
+          },
+        });
+      }
+      // セクション見出し: ▶ で始まる行 → 12pt 太字
+      else if (line.startsWith('▶ ')) {
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
+            textStyle: { bold: true, fontSize: { magnitude: 12, unit: 'PT' } },
+            fields: 'bold,fontSize',
+          },
+        });
+      }
+      // カテゴリ見出し: 【...】で始まる行 → 太字
+      else if (line.trimStart().startsWith('【')) {
+        const trimOffset = line.length - line.trimStart().length;
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: currentIndex + trimOffset, endIndex: currentIndex + lineLen },
+            textStyle: { bold: true },
+            fields: 'bold',
+          },
+        });
+      }
+      // セパレータ: ──── → グレー色
+      else if (line.startsWith('────')) {
+        requests.push({
+          updateTextStyle: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
+            textStyle: {
+              foregroundColor: { color: { rgbColor: { red: 0.6, green: 0.6, blue: 0.6 } } },
+            },
+            fields: 'foregroundColor',
+          },
+        });
+      }
+    }
+    currentIndex += lineLen + 1; // +1 for \n
+  }
+
+  return requests;
+}
+
+/**
+ * ドキュメントの先頭（タイトルの次）にテキストを挿入 + 書式適用
  */
 async function batchUpdateDoc(
   accessToken: string,
@@ -571,7 +682,7 @@ async function batchUpdateDoc(
     }
 
     // テキスト挿入リクエスト
-    const requests = [
+    const requests: Array<Record<string, unknown>> = [
       {
         insertText: {
           location: { index: insertIndex },
@@ -579,6 +690,10 @@ async function batchUpdateDoc(
         },
       },
     ];
+
+    // 書式設定リクエストを追加
+    const formattingRequests = buildFormattingRequests(insertIndex, text);
+    requests.push(...formattingRequests);
 
     const updateRes = await docsFetch(accessToken, `/documents/${documentId}:batchUpdate`, {
       method: 'POST',
@@ -608,7 +723,7 @@ async function insertTextAtPosition(
   text: string
 ): Promise<boolean> {
   try {
-    const requests = [
+    const requests: Array<Record<string, unknown>> = [
       {
         insertText: {
           location: { index },
@@ -616,6 +731,10 @@ async function insertTextAtPosition(
         },
       },
     ];
+
+    // 書式設定リクエストを追加
+    const formattingRequests = buildFormattingRequests(index, text);
+    requests.push(...formattingRequests);
 
     const updateRes = await docsFetch(accessToken, `/documents/${documentId}:batchUpdate`, {
       method: 'POST',
