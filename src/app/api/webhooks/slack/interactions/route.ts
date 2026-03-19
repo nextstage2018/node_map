@@ -209,6 +209,7 @@ export async function POST(request: NextRequest) {
 
         // フォーム値を抽出
         const title = values.task_title_block?.task_title?.value || '';
+        const assigneeContactId = values.task_assignee_block?.task_assignee?.selected_option?.value || null;
         const dueDate = values.task_due_date_block?.task_due_date?.selected_date || null;
         const description = values.task_description_block?.task_description?.value || null;
 
@@ -221,6 +222,7 @@ export async function POST(request: NextRequest) {
           title,
           dueDate,
           description,
+          assigneeContactId,
           channel_id: '', // view_submissionではchannel_idがないため、service内で取得
           message_ts: '',
         });

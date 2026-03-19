@@ -300,7 +300,24 @@ export async function createTaskFromMessage(params: {
     // 4. 依頼者を解決
     const requester = await resolveRequester(serviceName, senderIdentifier, supabase);
 
-    // 5. タスクを作成
+    // 5. 担当者を解決（自動セット: 作成者自身）
+    let assigneeContactId: string | null = requester?.contactId || null;
+    if (!assigneeContactId && userId) {
+      // user_id → contact_persons.linked_user_id 逆引きで作成者自身を自動セット
+      try {
+        const { data: selfContact } = await supabase
+          .from('contact_persons')
+          .select('id')
+          .eq('linked_user_id', userId)
+          .limit(1)
+          .maybeSingle();
+        if (selfContact?.id) {
+          assigneeContactId = selfContact.id;
+        }
+      } catch { /* フォールバック: null */ }
+    }
+
+    // 6. タスクを作成
     const taskId = crypto.randomUUID();
     const { error } = await supabase.from('tasks').insert({
       id: taskId,
@@ -316,6 +333,7 @@ export async function createTaskFromMessage(params: {
       source_message_id: messageId,
       source_channel_id: channelId,
       requester_contact_id: requester?.contactId || null,
+      assigned_contact_id: assigneeContactId,
       phase: 'ideation',
     });
 
@@ -324,7 +342,7 @@ export async function createTaskFromMessage(params: {
       return null;
     }
 
-    // 6. ビジネスイベント追加
+    // 7. ビジネスイベント追加
     if (project) {
       try {
         await supabase.from('business_events').insert({
@@ -340,7 +358,7 @@ export async function createTaskFromMessage(params: {
       }
     }
 
-    // 7. v4.5: 外部タスク同期（Slack Block Kit カード / Chatworkネイティブタスク）
+    // 8. v4.5: 外部タスク同期（Slack Block Kit カード / Chatworkネイティブタスク）
     try {
       const { syncTaskToExternal } = await import('@/services/v45/externalTaskSync.service');
       await syncTaskToExternal({

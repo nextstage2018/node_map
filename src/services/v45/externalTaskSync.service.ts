@@ -589,10 +589,10 @@ export async function openSlackEditModal(payload: {
     const supabase = getServerSupabase() || getSupabase();
     if (!supabase) return { ok: false };
 
-    // タスク情報を取得
+    // タスク情報を取得（担当者・プロジェクト含む）
     const { data: task } = await supabase
       .from('tasks')
-      .select('id, title, due_date, description')
+      .select('id, title, due_date, description, assigned_contact_id, project_id')
       .eq('id', taskId)
       .single();
 
@@ -600,6 +600,115 @@ export async function openSlackEditModal(payload: {
 
     const token = await getSlackBotToken(process.env.ENV_TOKEN_OWNER_ID || '');
     if (!token) return { ok: false };
+
+    // プロジェクトメンバーを取得（担当者ドロップダウン用）
+    const memberOptions: { text: { type: 'plain_text'; text: string }; value: string }[] = [];
+
+    if (task.project_id) {
+      const { data: members } = await supabase
+        .from('project_members')
+        .select('contact_id, contact_persons!inner(id, name)')
+        .eq('project_id', task.project_id);
+
+      if (members) {
+        for (const m of members) {
+          const cp = m.contact_persons as unknown as { id: string; name: string } | null;
+          if (cp?.name) {
+            memberOptions.push({
+              text: { type: 'plain_text' as const, text: cp.name },
+              value: cp.id,
+            });
+          }
+        }
+      }
+    }
+
+    // 「自分」をリストに追加
+    const ownerUserId = process.env.ENV_TOKEN_OWNER_ID || '';
+    if (ownerUserId) {
+      const { data: myContact } = await supabase
+        .from('contact_persons')
+        .select('id, name')
+        .eq('linked_user_id', ownerUserId)
+        .limit(1)
+        .maybeSingle();
+
+      if (myContact && !memberOptions.find(o => o.value === myContact.id)) {
+        memberOptions.unshift({
+          text: { type: 'plain_text' as const, text: `${myContact.name}（自分）` },
+          value: myContact.id,
+        });
+      }
+    }
+
+    // モーダルのブロック定義
+    const blocks: Record<string, unknown>[] = [
+      {
+        type: 'input',
+        block_id: 'task_title_block',
+        label: { type: 'plain_text', text: '内容' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'task_title',
+          initial_value: task.title || '',
+          max_length: 100,
+        },
+      },
+    ];
+
+    // 担当者ドロップダウン（メンバーがいる場合のみ）
+    if (memberOptions.length > 0) {
+      const assigneeBlock: Record<string, unknown> = {
+        type: 'input',
+        block_id: 'task_assignee_block',
+        label: { type: 'plain_text', text: '担当者' },
+        optional: true,
+        element: {
+          type: 'static_select',
+          action_id: 'task_assignee',
+          placeholder: { type: 'plain_text', text: '担当者を選択' },
+          options: memberOptions,
+        },
+      };
+
+      // 現在の担当者がメンバーリストにいれば初期選択
+      if (task.assigned_contact_id) {
+        const currentOption = memberOptions.find(o => o.value === task.assigned_contact_id);
+        if (currentOption) {
+          (assigneeBlock.element as Record<string, unknown>).initial_option = currentOption;
+        }
+      }
+
+      blocks.push(assigneeBlock);
+    }
+
+    blocks.push(
+      {
+        type: 'input',
+        block_id: 'task_due_date_block',
+        label: { type: 'plain_text', text: '期限' },
+        optional: true,
+        element: {
+          type: 'datepicker',
+          action_id: 'task_due_date',
+          initial_date: task.due_date || undefined,
+          placeholder: { type: 'plain_text', text: '期限を選択' },
+        },
+      },
+      {
+        type: 'input',
+        block_id: 'task_description_block',
+        label: { type: 'plain_text', text: '詳細' },
+        optional: true,
+        element: {
+          type: 'plain_text_input',
+          action_id: 'task_description',
+          multiline: true,
+          initial_value: task.description || '',
+          max_length: 500,
+        },
+      },
+    );
 
     // モーダルのビュー定義
     const view: Record<string, unknown> = {
@@ -609,44 +718,7 @@ export async function openSlackEditModal(payload: {
       title: { type: 'plain_text', text: 'タスクを編集する' },
       submit: { type: 'plain_text', text: 'OK！' },
       close: { type: 'plain_text', text: 'やめとく' },
-      blocks: [
-        {
-          type: 'input',
-          block_id: 'task_title_block',
-          label: { type: 'plain_text', text: '内容' },
-          element: {
-            type: 'plain_text_input',
-            action_id: 'task_title',
-            initial_value: task.title || '',
-            max_length: 100,
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'task_due_date_block',
-          label: { type: 'plain_text', text: '期限' },
-          optional: true,
-          element: {
-            type: 'datepicker',
-            action_id: 'task_due_date',
-            initial_date: task.due_date || undefined,
-            placeholder: { type: 'plain_text', text: '期限を選択' },
-          },
-        },
-        {
-          type: 'input',
-          block_id: 'task_description_block',
-          label: { type: 'plain_text', text: '詳細' },
-          optional: true,
-          element: {
-            type: 'plain_text_input',
-            action_id: 'task_description',
-            multiline: true,
-            initial_value: task.description || '',
-            max_length: 500,
-          },
-        },
-      ],
+      blocks,
     };
 
     const res = await fetch('https://slack.com/api/views.open', {
@@ -680,10 +752,11 @@ export async function handleSlackEditSubmission(payload: {
   title: string;
   dueDate: string | null;
   description: string | null;
+  assigneeContactId?: string | null;
   channel_id: string;
   message_ts: string;
 }): Promise<{ ok: boolean }> {
-  const { taskId, title, dueDate, description } = payload;
+  const { taskId, title, dueDate, description, assigneeContactId } = payload;
 
   try {
     const supabase = getServerSupabase() || getSupabase();
@@ -696,6 +769,7 @@ export async function handleSlackEditSubmission(payload: {
     };
     if (dueDate !== undefined) updates.due_date = dueDate;
     if (description !== undefined) updates.description = description;
+    if (assigneeContactId !== undefined) updates.assigned_contact_id = assigneeContactId;
 
     const { error } = await supabase
       .from('tasks')
