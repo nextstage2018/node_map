@@ -114,6 +114,13 @@
 | `src/services/v45/externalTaskSync.service.ts` | openSlackEditModalに担当者ドロップダウン追加。handleSlackEditSubmissionにassigneeContactId対応 |
 | `src/app/api/webhooks/slack/interactions/route.ts` | nm_task_edit_submitでassigneeContactId抽出・handleSlackEditSubmissionに渡す |
 | `src/app/guide/page.tsx` | BOTメニュー各ボタンの参照データ・期待される応答を詳細記載に更新 |
+| `src/app/api/milestone-suggestions/pending/route.ts` | milestones.due_date → target_date修正 |
+| `src/components/v8/MilestoneProposalPanel.tsx` | milestones.due_date → target_date修正（UI） |
+| `src/services/v8/projectLogDoc.service.ts` | milestones.due_date → target_date修正（型定義・クエリ・参照） |
+| `src/services/v44/botMessageFormatter.service.ts` | milestones.due_date → target_date修正（アラート配信） |
+| `src/services/v42/recurringRules.service.ts` | milestones.due_date → target_date修正（直近MS取得） |
+| `src/app/api/cron/sync-meeting-notes/route.ts` | PJ判定を4段階フォールバックに強化。recurring_rules逆引き追加。resolveLatestProject独立化 |
+| `src/services/calendar/calendarSync.service.ts` | 会議イベント作成時にGoogle Meet自動ON（conferenceData付与） |
 
 ---
 
@@ -122,6 +129,8 @@
 | # | 課題 | 詳細 | 優先度 |
 |---|---|---|---|
 | 1 | 既存プロジェクトのBOT参加状況確認 | v10.3のBOT自動参加は新規チャネル追加時のみ。既存PJのチャネルはメンバータブを開けばBOT参加状態が表示される。未参加ならチャネル削除→再追加でBOT自動招待される | 低 |
+| 2 | ProjectLogDoc 403 PERMISSION_DENIED | PJ「広告運用コンサルティング」のプロジェクトログDocへの書き込みで403。Docの共有設定確認 or トークンスコープ（drive.file vs drive）の確認が必要 | 中 |
+| 3 | CalendarSync 予定更新失敗 404 | アジェンダCronからのカレンダー予定更新で404。定期イベントのcalendar_event_idが古い可能性。削除→再作成で解消する可能性あり | 低 |
 
 ---
 
@@ -131,4 +140,7 @@
 - **Chatwork 429はhealthyとみなす**: レート制限時はトークン自体は有効なのでhealthy扱い
 - **通知先チャネル**: internalプロジェクトのSlack/Chatworkチャネルを自動検出。internal PJがない場合は通知されない
 - **ダッシュボードバナーのdismiss**: セッション単位（React stateのみ）。ページリロードで再表示される
-- **テーブル変更なし**: v10.4はDB変更不要。全てアプリケーション層の実装のみ
+- **テーブル変更なし**: v10.4/v10.5はDB変更不要。全てアプリケーション層の実装のみ
+- **milestones.target_date**: テーブル上のカラム名は `target_date`。コード上で `due_date` と書くとエラー（42703）。tasksテーブルは `due_date` で正しい
+- **会議イベントのMeet自動ON**: 新規作成分のみ。既存の定期イベントには影響なし。既存を更新するには定期イベントを削除→再作成
+- **sync-meeting-notes PJ判定**: 4段階フォールバック。①description→②recurring_rules→③参加者メール→④最新PJ。参加者が空でも④は必ず実行
