@@ -296,6 +296,10 @@ export class TaskService {
       // v5.0: 期限・作成元
       if (req.dueDate) insertData.due_date = req.dueDate;
       if (req.sourceType) insertData.source_type = req.sourceType;
+      // v10.4: 依頼者（作成者自身を自動セット）
+      if ((req as any).requesterContactId) {
+        insertData.requester_contact_id = (req as any).requesterContactId;
+      }
 
       const { data, error } = await sb
         .from('tasks')

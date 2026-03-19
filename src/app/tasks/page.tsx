@@ -390,6 +390,7 @@ export default function TasksPage() {
           phase: 'ideation',
           projectId: selectedProjectId !== 'all' ? selectedProjectId : undefined,
           assigneeContactId: assigneeContactId || undefined,
+          requesterContactId: myContactId || undefined,
         }),
       });
       if (res.ok) {
