@@ -1,4 +1,4 @@
-// Phase 25 + Phase 60: 設定画面 — 機能説明 + Google連携名称 + プロフィール拡充
+// Phase 25 + Phase 60 + v10.4: 設定画面 — 機能説明 + Google連携名称 + プロフィール拡充 + トークンヘルスチェック
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -6,6 +6,150 @@ import AppLayout from '@/components/shared/AppLayout';
 import ContextBar from '@/components/shared/ContextBar';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+
+// v10.4: ヘルスチェック型定義
+interface ServiceHealth {
+  service: 'google' | 'slack' | 'chatwork';
+  status: 'healthy' | 'expiring_soon' | 'expired' | 'invalid' | 'not_connected' | 'error';
+  message: string;
+  lastChecked: string;
+  details?: {
+    email?: string;
+    teamName?: string;
+    accountName?: string;
+    expiresAt?: string | null;
+    scopes?: string[];
+    hasCalendarScope?: boolean;
+    hasDriveScope?: boolean;
+  };
+}
+
+interface TokenHealthData {
+  services: ServiceHealth[];
+  hasIssues: boolean;
+  checkedAt: string;
+}
+
+// v10.4: ステータスアイコンとカラーのマッピング
+function getStatusDisplay(status: ServiceHealth['status']): { icon: string; color: string; bgColor: string; label: string } {
+  switch (status) {
+    case 'healthy':
+      return { icon: '✓', color: 'text-green-700', bgColor: 'bg-green-50 border-green-200', label: '正常' };
+    case 'expiring_soon':
+      return { icon: '⚠', color: 'text-amber-700', bgColor: 'bg-amber-50 border-amber-200', label: '期限切れ間近' };
+    case 'expired':
+      return { icon: '✕', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', label: '期限切れ' };
+    case 'invalid':
+      return { icon: '✕', color: 'text-red-700', bgColor: 'bg-red-50 border-red-200', label: '無効' };
+    case 'not_connected':
+      return { icon: '−', color: 'text-slate-400', bgColor: 'bg-slate-50 border-slate-200', label: '未接続' };
+    case 'error':
+      return { icon: '!', color: 'text-orange-700', bgColor: 'bg-orange-50 border-orange-200', label: 'エラー' };
+  }
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  google: 'Google',
+  slack: 'Slack',
+  chatwork: 'Chatwork',
+};
+
+// v10.4: トークンヘルスチェックパネル
+function TokenHealthPanel() {
+  const [health, setHealth] = useState<TokenHealthData | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [lastCheckedLabel, setLastCheckedLabel] = useState('');
+
+  const runHealthCheck = useCallback(async () => {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/settings/token-health');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setHealth(data.data);
+        setLastCheckedLabel(new Date().toLocaleTimeString('ja-JP'));
+      }
+    } catch (e) {
+      console.error('ヘルスチェックエラー:', e);
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  // マウント時に自動チェック
+  useEffect(() => {
+    runHealthCheck();
+  }, [runHealthCheck]);
+
+  if (!health && !checking) return null;
+
+  return (
+    <Card variant="flat" padding="md" className="mb-6 border border-slate-200">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-medium text-slate-900">接続ステータス</h3>
+        <div className="flex items-center gap-2">
+          {lastCheckedLabel && (
+            <span className="text-xs text-slate-400">最終チェック: {lastCheckedLabel}</span>
+          )}
+          <button
+            onClick={runHealthCheck}
+            disabled={checking}
+            className="text-xs text-blue-600 hover:text-blue-800 disabled:text-slate-400 transition-colors"
+          >
+            {checking ? 'チェック中...' : '再チェック'}
+          </button>
+        </div>
+      </div>
+
+      {checking && !health ? (
+        <div className="flex items-center gap-2 py-3">
+          <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-slate-500">接続状態を確認中...</span>
+        </div>
+      ) : health ? (
+        <div className="space-y-2">
+          {health.services.map((svc) => {
+            const display = getStatusDisplay(svc.status);
+            return (
+              <div
+                key={svc.service}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg border ${display.bgColor}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${display.color}`}>{display.icon}</span>
+                  <span className="text-sm font-medium text-slate-800">
+                    {SERVICE_LABELS[svc.service]}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs ${display.color}`}>{svc.message}</span>
+                  {(svc.status === 'expired' || svc.status === 'invalid') && svc.service === 'google' && (
+                    <a href="/api/auth/gmail" className="text-xs text-red-600 underline hover:text-red-800 ml-1">
+                      再認証
+                    </a>
+                  )}
+                  {(svc.status === 'expired' || svc.status === 'invalid') && svc.service === 'slack' && (
+                    <a href="/api/auth/slack" className="text-xs text-red-600 underline hover:text-red-800 ml-1">
+                      再認証
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {health.hasIssues && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-xs text-red-700">
+                一部のサービスで接続に問題があります。「再認証」リンクから再接続してください。
+              </p>
+            </div>
+          )}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
 
 // ========================================
 // 🔰 機能ガイドコンポーネント
@@ -377,6 +521,9 @@ export default function SettingsPage() {
                 Google連携ではメール・カレンダー・Driveを一括で利用できます。
                 チャネルの紐づけはプロジェクト &gt; メンバータブで管理します。</p>
               </FeatureGuide>
+
+              {/* v10.4: トークンヘルスチェックパネル */}
+              <TokenHealthPanel />
 
               {/* Google連携（OAuth） — Gmail / Calendar / Drive */}
               <ChannelAuthCard

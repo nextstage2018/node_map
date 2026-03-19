@@ -1,15 +1,19 @@
-// v9.0: 秘書ダッシュボード — 3カード構成
+// v9.0 + v10.4: 秘書ダッシュボード — 3カード構成 + トークンアラート
 // インボックス返信 / カレンダー / タスクリマインダー
 'use client';
 
 import InboxReplyCard from './InboxReplyCard';
 import CalendarWidget from './CalendarWidget';
 import TaskReminderCard from './TaskReminderCard';
+import TokenAlertBanner from './TokenAlertBanner';
 
 export default function SecretaryDashboard() {
   return (
     <div className="h-full overflow-y-auto bg-nm-bg">
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* v10.4: トークン期限切れ警告バナー（問題がある場合のみ表示） */}
+        <TokenAlertBanner />
+
         {/* ヘッダー */}
         <div className="mb-6">
           <h1 className="text-lg font-semibold text-nm-text">ダッシュボード</h1>

@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
-  { href: '/settings', label: '設定', icon: Settings },
+  { href: '/settings', label: '設定', icon: Settings, hasTokenAlert: true },
   { href: '/guide', label: 'ガイド', icon: BookOpen },
 ];
 
@@ -33,6 +33,7 @@ export default function AppSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null);
+  const [hasTokenIssue, setHasTokenIssue] = useState(false);
 
   // 未読数をAPIから取得
   useEffect(() => {
@@ -95,6 +96,20 @@ export default function AppSidebar() {
       }
     };
     fetchAuth();
+
+    // v10.4: トークンヘルスチェック（バックグラウンド）
+    const checkTokenHealth = async () => {
+      try {
+        const res = await fetch('/api/settings/token-health');
+        const data = await res.json();
+        if (data.success && data.data) {
+          setHasTokenIssue(data.data.hasIssues === true);
+        }
+      } catch {
+        // サイレントフェイル
+      }
+    };
+    checkTokenHealth();
   }, []);
 
   return (
@@ -160,6 +175,14 @@ export default function AppSidebar() {
                     <span className="min-w-[20px] h-5 flex items-center justify-center rounded-full bg-blue-600 text-white text-[11px] font-bold px-1.5">
                       {unreadCount > 99 ? '99+' : unreadCount}
                     </span>
+                  )
+                )}
+                {/* v10.4: トークン問題バッジ（設定アイコン） */}
+                {'hasTokenAlert' in item && item.hasTokenAlert && hasTokenIssue && (
+                  collapsed ? (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 ring-2 ring-white" />
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" title="トークンに問題があります" />
                   )
                 )}
               </Link>
