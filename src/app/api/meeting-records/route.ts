@@ -20,16 +20,23 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get('project_id');
+    const recurringRuleId = searchParams.get('recurring_rule_id');
 
     if (!projectId) {
       return NextResponse.json({ success: false, error: 'project_id は必須です' }, { status: 400 });
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('meeting_records')
       .select('*')
-      .eq('project_id', projectId)
-      .order('meeting_date', { ascending: false });
+      .eq('project_id', projectId);
+
+    // recurring_rule_id フィルタ（定期イベントの会議履歴用）
+    if (recurringRuleId) {
+      query = query.eq('recurring_rule_id', recurringRuleId);
+    }
+
+    const { data, error } = await query.order('meeting_date', { ascending: false });
 
     if (error) {
       console.error('[MeetingRecords API] 一覧取得エラー:', error);

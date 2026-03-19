@@ -146,10 +146,20 @@ export async function GET(request: NextRequest) {
             }
 
             // ② [NM-Meeting] タイトルからrecurring_rulesを逆引き
+            let matchedRecurringRuleId: string | null = null;
             if (!projectId && event.summary) {
-              projectId = await resolveProjectFromRecurringRules(supabase, event.summary);
-              if (projectId) {
-                console.log(`[SyncMeetingNotes] プロジェクト判定: recurring_rules逆引き → ${projectId}`);
+              const ruleMatch = await resolveProjectFromRecurringRules(supabase, event.summary);
+              if (ruleMatch) {
+                projectId = ruleMatch.projectId;
+                matchedRecurringRuleId = ruleMatch.ruleId;
+                console.log(`[SyncMeetingNotes] プロジェクト判定: recurring_rules逆引き → PJ ${projectId}, rule ${matchedRecurringRuleId}`);
+              }
+            }
+            // ①のdescription埋め込み経由でもrecurring_rule_idを解決
+            if (projectId && !matchedRecurringRuleId && event.summary) {
+              const ruleMatch = await resolveProjectFromRecurringRules(supabase, event.summary);
+              if (ruleMatch && ruleMatch.projectId === projectId) {
+                matchedRecurringRuleId = ruleMatch.ruleId;
               }
             }
 
@@ -192,6 +202,7 @@ export async function GET(request: NextRequest) {
                 meeting_start_at: noteResult.meetingStartTime,
                 meeting_end_at: noteResult.meetingEndTime,
                 participants: noteResult.attendees,
+                recurring_rule_id: matchedRecurringRuleId || null,
                 metadata: {
                   gemini_doc_id: noteResult.docId,
                   gemini_doc_url: noteResult.docUrl,
@@ -288,7 +299,7 @@ function resolveProjectFromDescription(description?: string): string | null {
 // プロジェクト自動判定②: [NM-Meeting] タイトルからrecurring_rulesを逆引き
 // ========================================
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function resolveProjectFromRecurringRules(supabase: any, eventSummary: string): Promise<string | null> {
+async function resolveProjectFromRecurringRules(supabase: any, eventSummary: string): Promise<{ projectId: string; ruleId: string } | null> {
   try {
     // [NM-Meeting] プレフィックスを除去してタイトルを取得
     const titleMatch = eventSummary.match(/\[NM-Meeting\]\s*(.+)/);
@@ -298,7 +309,7 @@ async function resolveProjectFromRecurringRules(supabase: any, eventSummary: str
     // recurring_rules から部分一致で検索（タイトルに日付等が付く場合があるため）
     const { data: rules } = await supabase
       .from('project_recurring_rules')
-      .select('project_id, title')
+      .select('id, project_id, title')
       .eq('type', 'meeting')
       .eq('enabled', true);
 
@@ -307,7 +318,7 @@ async function resolveProjectFromRecurringRules(supabase: any, eventSummary: str
     // タイトルの前方一致 or 含有でマッチ
     for (const rule of rules) {
       if (ruleTitle.startsWith(rule.title) || rule.title.startsWith(ruleTitle) || ruleTitle.includes(rule.title)) {
-        return rule.project_id;
+        return { projectId: rule.project_id, ruleId: rule.id };
       }
     }
 

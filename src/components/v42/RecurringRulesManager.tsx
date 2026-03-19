@@ -11,7 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   RefreshCw, Plus, Trash2, Edit2, X, Check,
   ToggleLeft, ToggleRight, Users, FileText, Calendar,
-  Video, Briefcase,
+  Video, Briefcase, ChevronDown, ChevronRight, Clock,
 } from 'lucide-react';
 
 interface RecurringRule {
@@ -738,9 +738,120 @@ export default function RecurringRulesManager({ projectId }: Props) {
                     </button>
                   </div>
                 </div>
+
+                {/* 会議履歴セクション（MTGのみ） */}
+                {isMeeting && (
+                  <MeetingHistorySection ruleId={rule.id} projectId={projectId} />
+                )}
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========================================
+// 会議履歴サブコンポーネント
+// recurring_rule_id で紐づく会議録を一覧表示
+// ========================================
+interface MeetingHistoryRecord {
+  id: string;
+  title: string;
+  meeting_date: string;
+  ai_summary: string | null;
+  processed: boolean;
+}
+
+function MeetingHistorySection({ ruleId, projectId }: { ruleId: string; projectId: string }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [records, setRecords] = useState<MeetingHistoryRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
+
+  const fetchHistory = useCallback(async () => {
+    if (hasFetched) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/meeting-records?project_id=${projectId}&recurring_rule_id=${ruleId}`);
+      const data = await res.json();
+      if (data.success) {
+        setRecords(data.data || []);
+      }
+    } catch (err) {
+      console.error('[MeetingHistory] 取得エラー:', err);
+    } finally {
+      setIsLoading(false);
+      setHasFetched(true);
+    }
+  }, [projectId, ruleId, hasFetched]);
+
+  const handleToggle = () => {
+    if (!isOpen && !hasFetched) {
+      fetchHistory();
+    }
+    setIsOpen(!isOpen);
+  };
+
+  const formatDate = (dateStr: string): string => {
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', weekday: 'short' });
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+      <button
+        onClick={handleToggle}
+        className="flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-600 transition-colors w-full text-left"
+      >
+        {isOpen ? (
+          <ChevronDown className="w-3 h-3" />
+        ) : (
+          <ChevronRight className="w-3 h-3" />
+        )}
+        <Clock className="w-3 h-3" />
+        <span>会議履歴</span>
+        {hasFetched && <span className="text-slate-300">({records.length}回)</span>}
+      </button>
+
+      {isOpen && (
+        <div className="mt-1.5 ml-4">
+          {isLoading ? (
+            <p className="text-[10px] text-slate-300 py-1">読み込み中...</p>
+          ) : records.length === 0 ? (
+            <p className="text-[10px] text-slate-300 py-1">まだ会議履歴がありません</p>
+          ) : (
+            <div className="space-y-1">
+              {records.map((rec, idx) => (
+                <div
+                  key={rec.id}
+                  className="flex items-start gap-2 text-[10px] py-1 border-b border-slate-50 last:border-b-0"
+                >
+                  <span className="text-slate-400 font-medium shrink-0 w-5 text-right">
+                    #{records.length - idx}
+                  </span>
+                  <span className="text-slate-500 shrink-0">
+                    {formatDate(rec.meeting_date)}
+                  </span>
+                  <span className="text-slate-600 truncate flex-1">
+                    {rec.ai_summary
+                      ? rec.ai_summary.substring(0, 80) + (rec.ai_summary.length > 80 ? '...' : '')
+                      : rec.title}
+                  </span>
+                  {rec.processed && (
+                    <span className="text-green-400 shrink-0" title="AI解析済み">
+                      <Check className="w-3 h-3" />
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
