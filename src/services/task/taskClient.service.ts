@@ -378,6 +378,14 @@ export class TaskService {
         updateData.assignee_contact_id = req.assigneeContactId;
         delete updateData.assigneeContactId;
       }
+      // v10.4: 依頼者・プロジェクトの更新対応
+      if ((req as any).requester_contact_id !== undefined) {
+        updateData.requester_contact_id = (req as any).requester_contact_id;
+      }
+      if ((req as any).projectId !== undefined) {
+        updateData.project_id = (req as any).projectId;
+        delete updateData.projectId;
+      }
 
       // Set completedAt if marking as done
       if (req.status === 'done') {

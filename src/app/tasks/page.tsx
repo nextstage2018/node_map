@@ -784,6 +784,10 @@ export default function TasksPage() {
                 t.id === taskId ? { ...t, status: newStatus } : t
               ));
             }}
+            projects={projects}
+            assignees={assignees}
+            myContactId={myContactId}
+            onTaskUpdate={fetchTasks}
           />
         )}
       </div>

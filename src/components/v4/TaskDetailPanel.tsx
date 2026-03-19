@@ -65,10 +65,24 @@ interface TaskDetail {
   documents: Document[];
 }
 
+interface ProjectOption {
+  id: string;
+  name: string;
+}
+
+interface AssigneeOption {
+  id: string;
+  name: string;
+}
+
 interface TaskDetailPanelProps {
   taskId: string;
   onClose: () => void;
   onStatusChange?: (taskId: string, newStatus: string) => void;
+  projects?: ProjectOption[];
+  assignees?: AssigneeOption[];
+  myContactId?: string | null;
+  onTaskUpdate?: () => void;
 }
 
 const STATUS_OPTIONS: Array<{ value: string; label: string; color: string }> = [
@@ -88,7 +102,7 @@ function getSourceIcon(sourceType?: string) {
   return <User className="w-3.5 h-3.5 text-slate-400" />;
 }
 
-export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: TaskDetailPanelProps) {
+export default function TaskDetailPanel({ taskId, onClose, onStatusChange, projects = [], assignees = [], myContactId, onTaskUpdate }: TaskDetailPanelProps) {
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
@@ -204,6 +218,62 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
       setTask(prev => prev ? { ...prev, due_date: value || undefined } : prev);
     } catch (error) {
       console.error('期限更新エラー:', error);
+    }
+  };
+
+  // 担当者変更
+  const handleSaveAssignee = async (contactId: string) => {
+    if (!task) return;
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigneeContactId: contactId || null }),
+      });
+      const name = contactId
+        ? (assignees.find(a => a.id === contactId)?.name || '不明')
+        : undefined;
+      setTask(prev => prev ? { ...prev, assigned_contact_id: contactId || undefined, assignee_name: name } : prev);
+      onTaskUpdate?.();
+    } catch (error) {
+      console.error('担当者更新エラー:', error);
+    }
+  };
+
+  // 依頼者変更
+  const handleSaveRequester = async (contactId: string) => {
+    if (!task) return;
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requester_contact_id: contactId || null }),
+      });
+      const name = contactId
+        ? (assignees.find(a => a.id === contactId)?.name || '不明')
+        : undefined;
+      setTask(prev => prev ? { ...prev, requester_contact_id: contactId || undefined, requester_name: name } : prev);
+    } catch (error) {
+      console.error('依頼者更新エラー:', error);
+    }
+  };
+
+  // プロジェクト変更
+  const handleSaveProject = async (projectId: string) => {
+    if (!task) return;
+    try {
+      await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId: projectId || null }),
+      });
+      const name = projectId
+        ? (projects.find(p => p.id === projectId)?.name || '不明')
+        : undefined;
+      setTask(prev => prev ? { ...prev, project_id: projectId || undefined, project_name: name } : prev);
+      onTaskUpdate?.();
+    } catch (error) {
+      console.error('プロジェクト更新エラー:', error);
     }
   };
 
@@ -437,25 +507,51 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                     </div>
                   </div>
 
-                  {/* 依頼者（v4.0） */}
+                  {/* 依頼者（編集可能） */}
                   <div className="flex items-center">
                     <span className="w-20 text-xs text-slate-400 shrink-0">依頼者</span>
                     <div className="flex items-center gap-1.5">
                       <UserCheck className="w-3.5 h-3.5 text-indigo-400" />
-                      <span className="text-sm text-nm-text">
-                        {task.requester_name || '未設定'}
-                      </span>
+                      {assignees.length > 0 ? (
+                        <select
+                          value={task.requester_contact_id || ''}
+                          onChange={(e) => handleSaveRequester(e.target.value)}
+                          className="text-sm text-nm-text bg-transparent border-0 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors"
+                        >
+                          <option value="">未設定</option>
+                          {assignees.map(a => (
+                            <option key={a.id} value={a.id}>
+                              {a.id === myContactId ? `${a.name}（自分）` : a.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-sm text-nm-text">{task.requester_name || '未設定'}</span>
+                      )}
                     </div>
                   </div>
 
-                  {/* 担当 */}
+                  {/* 担当（編集可能） */}
                   <div className="flex items-center">
                     <span className="w-20 text-xs text-slate-400 shrink-0">担当</span>
                     <div className="flex items-center gap-1.5">
                       <User className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-sm text-nm-text">
-                        {task.assignee_name || '自分'}
-                      </span>
+                      {assignees.length > 0 ? (
+                        <select
+                          value={task.assigned_contact_id || ''}
+                          onChange={(e) => handleSaveAssignee(e.target.value)}
+                          className="text-sm text-nm-text bg-transparent border-0 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors"
+                        >
+                          <option value="">未割り当て</option>
+                          {assignees.map(a => (
+                            <option key={a.id} value={a.id}>
+                              {a.id === myContactId ? `${a.name}（自分）` : a.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-sm text-nm-text">{task.assignee_name || '自分'}</span>
+                      )}
                     </div>
                   </div>
 
@@ -476,14 +572,25 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange }: Tas
                     </div>
                   )}
 
-                  {/* プロジェクト */}
+                  {/* プロジェクト（編集可能） */}
                   <div className="flex items-center">
                     <span className="w-20 text-xs text-slate-400 shrink-0">プロジェクト</span>
                     <div className="flex items-center gap-1.5">
                       <FolderOpen className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-sm text-nm-text">
-                        {task.project_name || '未設定'}
-                      </span>
+                      {projects.length > 0 ? (
+                        <select
+                          value={task.project_id || ''}
+                          onChange={(e) => handleSaveProject(e.target.value)}
+                          className="text-sm text-nm-text bg-transparent border-0 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors max-w-[280px]"
+                        >
+                          <option value="">未設定</option>
+                          {projects.map(p => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-sm text-nm-text">{task.project_name || '未設定'}</span>
+                      )}
                     </div>
                   </div>
                 </div>

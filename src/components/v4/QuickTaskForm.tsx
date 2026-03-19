@@ -1,7 +1,7 @@
 // v4.0 + v10.4: クイックタスク追加フォーム（担当者選択付き）
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, X, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -20,8 +20,15 @@ export default function QuickTaskForm({ onSubmit, myContactId, assignees = [] }:
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [assigneeId, setAssigneeId] = useState<string>(myContactId || '');
+  const [assigneeId, setAssigneeId] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // myContactIdが後から取得された場合にデフォルト値を同期
+  useEffect(() => {
+    if (myContactId && !assigneeId) {
+      setAssigneeId(myContactId);
+    }
+  }, [myContactId, assigneeId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,10 +36,12 @@ export default function QuickTaskForm({ onSubmit, myContactId, assignees = [] }:
 
     setIsSubmitting(true);
     try {
+      // 担当者: 選択値があればそのまま、なければmyContactIdをフォールバック
+      const finalAssigneeId = assigneeId || myContactId || undefined;
       await onSubmit(
         title.trim(),
         dueDate || undefined,
-        assigneeId || undefined,
+        finalAssigneeId,
       );
       setTitle('');
       setDueDate('');
