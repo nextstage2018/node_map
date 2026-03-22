@@ -108,18 +108,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 担当者名を付与（プロジェクト指定時 or show_all時）
+    // 担当者名を付与（常に解決 — プロジェクト未指定の「自分」表示でも必要）
     let contactMap: Record<string, string> = {};
-    if (projectId || showAll) {
-      const contactIds = [...new Set(tasks.filter(t => t.assigned_contact_id).map(t => t.assigned_contact_id))];
-      if (contactIds.length > 0) {
-        const { data: contacts } = await supabase
-          .from('contact_persons')
-          .select('id, name')
-          .in('id', contactIds);
-        if (contacts) {
-          contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
-        }
+    const contactIds = [...new Set(tasks.filter(t => t.assigned_contact_id).map(t => t.assigned_contact_id))];
+    if (contactIds.length > 0) {
+      const { data: contacts } = await supabase
+        .from('contact_persons')
+        .select('id, name')
+        .in('id', contactIds);
+      if (contacts) {
+        contactMap = Object.fromEntries(contacts.map(c => [c.id, c.name]));
       }
     }
 
