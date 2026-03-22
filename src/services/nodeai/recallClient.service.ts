@@ -78,7 +78,7 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
     recording_config: {
       transcript: {
         provider: {
-          deepgram: {
+          deepgram_streaming: {
             language: 'ja',
             model: 'nova-2',
           },
