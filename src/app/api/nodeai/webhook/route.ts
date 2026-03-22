@@ -153,13 +153,11 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ ok: true, reason: 'echo_prevention' });
     }
 
-    // 質問テキストを抽出
-    const question = extractQuestion(fullText);
-    if (!question) {
-      return NextResponse.json({ ok: true, reason: 'empty_question' });
-    }
+    // 質問テキストを抽出（空の場合はデフォルト質問を使用）
+    const extractedQuestion = extractQuestion(fullText);
+    const question = extractedQuestion || '現在のプロジェクトの状況を簡潔に教えてください';
 
-    console.log(`[NodeAI] Trigger detected: "${question}" by ${speakerName}`);
+    console.log(`[NodeAI] Trigger detected: "${question}" by ${speakerName} (extracted: "${extractedQuestion || '(empty → default)'}")`);
 
     // プロジェクトIDが必要
     if (!session.projectId) {

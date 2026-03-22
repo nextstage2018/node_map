@@ -3,6 +3,7 @@
 
 const RECALL_API_BASE = 'https://ap-northeast-1.recall.ai/api/v1';
 const RECALL_API_KEY = process.env.RECALL_API_KEY || '';
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || '';
 
 // WebhookのベースURL
 const WEBHOOK_BASE_URL = process.env.NEXT_PUBLIC_APP_URL
@@ -81,6 +82,7 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
           deepgram_streaming: {
             language: 'ja',
             model: 'nova-2',
+            ...(DEEPGRAM_API_KEY ? { api_key: DEEPGRAM_API_KEY } : {}),
           },
         },
       },
