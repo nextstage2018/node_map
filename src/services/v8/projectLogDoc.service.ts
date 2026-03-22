@@ -429,25 +429,27 @@ function buildPreMeetingAgendaContent(data: AgendaData): string {
   lines.push('【意思決定ログ】');
   if (data.decisions.length > 0) {
     for (const dec of data.decisions) {
-      lines.push(`  □ ${dec.title}: ${dec.decision_content}（${dec.created_at.slice(0, 10)}）`);
+      lines.push(`${dec.title}: ${dec.decision_content}（${dec.created_at.slice(0, 10)}）`);
+      lines.push('');
     }
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
+    lines.push('');
   }
-  lines.push('');
 
-  // 未対応リスト
+  // 未対応リスト（ネイティブチェックボックス対応: 行頭に優先度アイコン、インデントなし）
   lines.push('【未対応事項】');
   if (data.openIssues.length > 0) {
     for (const issue of data.openIssues) {
       const priorityIcon = issue.priority_level === 'critical' ? '🔴' : issue.priority_level === 'high' ? '🟠' : '⚪';
-      lines.push(`  □ ${priorityIcon} ${issue.title}（${issue.days_stagnant}日経過）`);
-      if (issue.description) lines.push(`    → ${issue.description}`);
+      lines.push(`${priorityIcon} ${issue.title}（${issue.days_stagnant}日経過）`);
+      if (issue.description) lines.push(`  → ${issue.description}`);
+      lines.push('');
     }
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
+    lines.push('');
   }
-  lines.push('');
 
   // MS進捗
   lines.push('【マイルストーン進捗】');
@@ -457,38 +459,39 @@ function buildPreMeetingAgendaContent(data: AgendaData): string {
       const dueDateStr = ms.target_date ? `期限: ${ms.target_date}` : '';
       const doneTasks = ms.tasks.filter(t => t.status === 'done').length;
       const totalTasks = ms.tasks.length;
-      lines.push(`  ${statusLabel} ${ms.title} (${doneTasks}/${totalTasks}完了) ${dueDateStr}`);
+      lines.push(`${statusLabel} ${ms.title} (${doneTasks}/${totalTasks}完了) ${dueDateStr}`);
 
       for (const task of ms.tasks) {
         const taskIcon = task.status === 'done' ? '✅' : task.status === 'in_progress' ? '🔄' : '⬜';
         const assignee = task.assignee_name ? `[${task.assignee_name}]` : '';
-        lines.push(`    ${taskIcon} ${assignee} ${task.title}`);
+        lines.push(`  ${taskIcon} ${assignee} ${task.title}`);
         if (task.progress_summary) {
-          lines.push(`      💬 ${task.progress_summary}`);
+          lines.push(`    💬 ${task.progress_summary}`);
         }
         for (const doc of task.related_docs) {
-          lines.push(`      📎 ${doc.title}: ${doc.url}`);
+          lines.push(`    📎 ${doc.title}: ${doc.url}`);
         }
       }
+      lines.push('');
     }
   } else {
-    lines.push('  （マイルストーンなし）');
+    lines.push('（マイルストーンなし）');
+    lines.push('');
   }
-  lines.push('');
 
   // 前回会議からの持ち越し議題
   lines.push('【前回からの持ち越し議題】');
   if (data.previousMeetingSummary) {
-    lines.push(`  ${data.previousMeetingSummary}`);
+    lines.push(data.previousMeetingSummary);
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
   }
   lines.push('');
 
   // 会議メモ（手動記入欄）
   lines.push('▶ 会議メモ（参加者が直接記入）');
   lines.push('');
-  lines.push('  （ここに会議中のメモを記入してください）');
+  lines.push('（ここに会議中のメモを記入してください）');
   lines.push('');
   lines.push('');
 
@@ -511,21 +514,22 @@ function buildPostMeetingContent(data: PostMeetingData): string {
   // 要約
   if (data.summary) {
     lines.push('【要約】');
-    lines.push(`  ${data.summary}`);
+    lines.push(data.summary);
     lines.push('');
   }
 
   // 決定事項
-  lines.push('【決定事項】→ decision_log保存済み');
+  lines.push('【決定事項】');
   if (data.decisions.length > 0) {
     for (const dec of data.decisions) {
-      lines.push(`  ✅ ${dec.title}: ${dec.decision_content}`);
-      if (dec.rationale) lines.push(`    理由: ${dec.rationale}`);
+      lines.push(`✅ ${dec.title}: ${dec.decision_content}`);
+      if (dec.rationale) lines.push(`  理由: ${dec.rationale}`);
+      lines.push('');
     }
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
+    lines.push('');
   }
-  lines.push('');
 
   // タスク提案
   lines.push('【タスク提案】');
@@ -534,35 +538,37 @@ function buildPostMeetingContent(data: PostMeetingData): string {
       const assignee = task.assignee ? `[${task.assignee}]` : '';
       const due = task.due_date ? `期限: ${task.due_date}` : '';
       const priority = task.priority === 'high' ? '🔴' : task.priority === 'medium' ? '🟡' : '⚪';
-      lines.push(`  ${priority} ${assignee} ${task.title} ${due}`);
+      lines.push(`${priority} ${assignee} ${task.title} ${due}`);
+      lines.push('');
     }
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
+    lines.push('');
   }
-  lines.push('');
 
   // MS提案
   if (data.milestoneSuggestions.length > 0) {
     lines.push('【マイルストーン提案】');
     for (const ms of data.milestoneSuggestions) {
-      lines.push(`  🎯 ${ms.title}${ms.target_date ? ` (${ms.target_date})` : ''}`);
-      if (ms.success_criteria) lines.push(`    達成条件: ${ms.success_criteria}`);
+      lines.push(`🎯 ${ms.title}${ms.target_date ? ` (${ms.target_date})` : ''}`);
+      if (ms.success_criteria) lines.push(`  達成条件: ${ms.success_criteria}`);
+      lines.push('');
     }
-    lines.push('');
   }
 
-  // 未確定事項
-  lines.push('【未確定事項】→ open_issues保存済み');
+  // 未確定事項（ネイティブチェックボックス対応: 行頭に優先度アイコン、インデントなし）
+  lines.push('【未確定事項】');
   if (data.openIssues.length > 0) {
     for (const issue of data.openIssues) {
       const priority = issue.priority === 'critical' ? '🔴' : issue.priority === 'high' ? '🟠' : '⚪';
-      lines.push(`  ${priority} ${issue.title}`);
-      if (issue.description) lines.push(`    ${issue.description}`);
+      lines.push(`${priority} ${issue.title}`);
+      if (issue.description) lines.push(`  ${issue.description}`);
+      lines.push('');
     }
   } else {
-    lines.push('  （なし）');
+    lines.push('（なし）');
+    lines.push('');
   }
-  lines.push('');
 
   return lines.join('\n');
 }
@@ -574,7 +580,7 @@ function buildFullMeetingSection(data: PostMeetingData): string {
   const dayName = dayNames[d.getDay()];
 
   lines.push(`━━ ${data.meetingDate}（${dayName}）${data.meetingTitle} ━━`);
-  lines.push('');
+  // buildPostMeetingContent は先頭に空行を含むため、ここでは追加不要
   lines.push(buildPostMeetingContent(data));
   lines.push('────────────────────────────────────');
   lines.push('');
@@ -592,23 +598,39 @@ function buildFullMeetingSection(data: PostMeetingData): string {
  */
 function buildFormattingRequests(insertIndex: number, text: string): Array<Record<string, unknown>> {
   const requests: Array<Record<string, unknown>> = [];
+  const checkboxRequests: Array<Record<string, unknown>> = [];
   const lines = text.split('\n');
   let currentIndex = insertIndex;
+  let inOpenIssuesSection = false;
+
+  // 見出し4 対象の行頭絵文字（未確定事項セクション以外）
+  const HEADING4_PREFIXES = ['✅', '🔴', '🟡', '⚪', '🎯'];
+  // チェックボックス対象の行頭絵文字（未確定事項セクション内）
+  const ISSUE_PREFIXES = ['🔴', '🟠', '⚪'];
 
   for (const line of lines) {
     const lineLen = line.length;
     if (lineLen > 0) {
-      // 日付ヘッダー: ━━ で始まる行 → 14pt 太字
+      const trimmed = line.trimStart();
+
+      // 未確定事項/未対応事項セクションの追跡
+      if (trimmed.startsWith('【未確定事項】') || trimmed.startsWith('【未対応事項】')) {
+        inOpenIssuesSection = true;
+      } else if (trimmed.startsWith('【') && !trimmed.startsWith('【未確定') && !trimmed.startsWith('【未対応')) {
+        inOpenIssuesSection = false;
+      }
+
+      // 日付ヘッダー: ━━ で始まる行 → 見出し1
       if (line.startsWith('━━ ')) {
         requests.push({
-          updateTextStyle: {
+          updateParagraphStyle: {
             range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
-            textStyle: { bold: true, fontSize: { magnitude: 14, unit: 'PT' } },
-            fields: 'bold,fontSize',
+            paragraphStyle: { namedStyleType: 'HEADING_1' },
+            fields: 'namedStyleType',
           },
         });
       }
-      // セクション見出し: ▶ で始まる行 → 12pt 太字
+      // セクション見出し: ▶ で始まる行 → 12pt 太字（見出しではなくテキストスタイル維持）
       else if (line.startsWith('▶ ')) {
         requests.push({
           updateTextStyle: {
@@ -618,14 +640,32 @@ function buildFormattingRequests(insertIndex: number, text: string): Array<Recor
           },
         });
       }
-      // カテゴリ見出し: 【...】で始まる行 → 太字
-      else if (line.trimStart().startsWith('【')) {
-        const trimOffset = line.length - line.trimStart().length;
+      // カテゴリ見出し: 【...】で始まる行 → 見出し2
+      else if (trimmed.startsWith('【')) {
         requests.push({
-          updateTextStyle: {
-            range: { startIndex: currentIndex + trimOffset, endIndex: currentIndex + lineLen },
-            textStyle: { bold: true },
-            fields: 'bold',
+          updateParagraphStyle: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
+            paragraphStyle: { namedStyleType: 'HEADING_2' },
+            fields: 'namedStyleType',
+          },
+        });
+      }
+      // 未確定事項セクション内: 優先度アイコンで始まるインデントなし行 → ネイティブチェックボックス
+      else if (inOpenIssuesSection && line === trimmed && ISSUE_PREFIXES.some(p => line.startsWith(p))) {
+        checkboxRequests.push({
+          createParagraphBullets: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen + 1 },
+            bulletPreset: 'BULLET_CHECKBOX',
+          },
+        });
+      }
+      // アイテム行（✅ 🔴 🟡 ⚪ 🎯）: 未確定事項以外 → 見出し4
+      else if (!inOpenIssuesSection && line === trimmed && HEADING4_PREFIXES.some(p => line.startsWith(p))) {
+        requests.push({
+          updateParagraphStyle: {
+            range: { startIndex: currentIndex, endIndex: currentIndex + lineLen },
+            paragraphStyle: { namedStyleType: 'HEADING_4' },
+            fields: 'namedStyleType',
           },
         });
       }
@@ -644,6 +684,9 @@ function buildFormattingRequests(insertIndex: number, text: string): Array<Recor
     }
     currentIndex += lineLen + 1; // +1 for \n
   }
+
+  // チェックボックスリクエストは他の書式設定の後に追加（段落スタイルとの競合回避）
+  requests.push(...checkboxRequests);
 
   return requests;
 }
