@@ -331,7 +331,7 @@ export async function sendToSlack(channelId: string, text: string): Promise<bool
 }
 
 export async function sendToChatwork(roomId: string, text: string): Promise<boolean> {
-  const token = process.env.CHATWORK_API_TOKEN;
+  const token = process.env.CHATWORK_BOT_API_TOKEN || process.env.CHATWORK_API_TOKEN;
   if (!token) return false;
 
   try {
