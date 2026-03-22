@@ -29,12 +29,16 @@ import { shouldIgnoreEcho } from '@/services/nodeai/triggerDetector.service';
 interface WebhookPayload {
   event: string;
   data: {
-    bot_id: string;
+    // Recall.ai の実際のペイロード構造
+    bot: {
+      id: string;
+      metadata?: Record<string, unknown>;
+    };
     data: {
       words: Array<{
         text: string;
-        start_timestamp: number;
-        end_timestamp: number;
+        start_timestamp: number | { relative: number; absolute: string };
+        end_timestamp: number | { relative: number; absolute: string };
       }>;
       participant: {
         id: number;
@@ -42,9 +46,13 @@ interface WebhookPayload {
         email?: string;
         is_host?: boolean;
         platform?: string;
+        extra_data?: Record<string, unknown>;
       };
       language_code?: string;
     };
+    transcript?: { id: string; metadata?: Record<string, unknown> };
+    recording?: { id: string; metadata?: Record<string, unknown> };
+    realtime_endpoint?: { id: string; metadata?: Record<string, unknown> };
   };
 }
 
@@ -68,7 +76,8 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ ok: true });
     }
 
-    const botId = payload.data?.bot_id;
+    // Recall.ai の実際の構造: data.bot.id（data.bot_id ではない）
+    const botId = payload.data?.bot?.id;
     const data = payload.data?.data;
     const words = data?.words;
     const participant = data?.participant;
@@ -87,9 +96,16 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ ok: true });
     }
 
-    // 発言テキストを結合
-    const fullText = words.map((w) => w.text).join('');
-    const timestamp = words[0]?.start_timestamp || Date.now() / 1000;
+    // 発言テキストを結合（スペース区切りで結合）
+    const fullText = words.map((w) => w.text).join(' ').trim();
+
+    // タイムスタンプ解析（数値 or オブジェクト{relative, absolute}に対応）
+    const rawTs = words[0]?.start_timestamp;
+    const timestamp = typeof rawTs === 'number'
+      ? rawTs
+      : typeof rawTs === 'object' && rawTs !== null
+        ? (rawTs as { relative: number }).relative
+        : Date.now() / 1000;
 
     // 参加者情報を更新
     let contactId: string | undefined;
