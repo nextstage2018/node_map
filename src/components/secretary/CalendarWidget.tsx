@@ -1,9 +1,9 @@
-// v9.0: カレンダーウィジェット
-// 月/週ビュー + 予定表示 + 新規作成 + 編集
+// v9.0: カレンダーウィジェット + NodeAI参加ボタン
+// 月/週ビュー + 予定表示 + 新規作成 + 編集 + NodeAI Bot起動
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, X, Loader2, Clock, AlertCircle } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, X, Loader2, Clock, AlertCircle, Bot, Square } from 'lucide-react';
 
 interface CalendarEvent {
   id: string;
@@ -14,9 +14,32 @@ interface CalendarEvent {
   location?: string;
   htmlLink?: string;
   attendees?: { email: string; responseStatus?: string }[];
+  hangoutLink?: string;
+  conferenceData?: {
+    entryPoints?: { uri?: string; entryPointType?: string }[];
+  };
 }
 
 type ViewMode = 'month' | 'week';
+
+// Google Meet URL をイベントから抽出
+function getMeetUrl(ev: CalendarEvent): string | null {
+  if (ev.hangoutLink) return ev.hangoutLink;
+  if (ev.conferenceData?.entryPoints) {
+    const videoEntry = ev.conferenceData.entryPoints.find(
+      (e) => e.entryPointType === 'video' && e.uri?.includes('meet.google.com')
+    );
+    if (videoEntry?.uri) return videoEntry.uri;
+  }
+  return null;
+}
+
+// descriptionからproject_idを抽出（定期イベント作成時に埋め込み済み）
+function extractProjectId(description?: string): string | null {
+  if (!description) return null;
+  const match = description.match(/project_id:\s*([0-9a-f-]{36})/i);
+  return match ? match[1] : null;
+}
 
 export default function CalendarWidget() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
@@ -28,6 +51,61 @@ export default function CalendarWidget() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [createForm, setCreateForm] = useState({ summary: '', date: '', startTime: '10:00', endTime: '11:00' });
+  // NodeAI状態: botId → セッション中
+  const [nodeAiBots, setNodeAiBots] = useState<Record<string, string>>({}); // eventId → botId
+  const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
+
+  // NodeAI Bot を会議に参加させる
+  const handleNodeAiJoin = async (ev: CalendarEvent) => {
+    const meetUrl = getMeetUrl(ev);
+    if (!meetUrl) return;
+
+    setJoiningEventId(ev.id);
+    try {
+      const projectId = extractProjectId(ev.description);
+      const res = await fetch('/api/nodeai/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_url: meetUrl,
+          project_id: projectId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.bot_id) {
+        setNodeAiBots((prev) => ({ ...prev, [ev.id]: data.data.bot_id }));
+      } else {
+        console.error('[NodeAI] Join failed:', data.error);
+        alert(data.error || 'NodeAIの参加に失敗しました');
+      }
+    } catch (err) {
+      console.error('[NodeAI] Join error:', err);
+      alert('NodeAIの参加に失敗しました');
+    } finally {
+      setJoiningEventId(null);
+    }
+  };
+
+  // NodeAI Bot を退出させる
+  const handleNodeAiLeave = async (eventId: string) => {
+    const botId = nodeAiBots[eventId];
+    if (!botId) return;
+
+    try {
+      await fetch('/api/nodeai/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id: botId }),
+      });
+      setNodeAiBots((prev) => {
+        const next = { ...prev };
+        delete next[eventId];
+        return next;
+      });
+    } catch (err) {
+      console.error('[NodeAI] Leave error:', err);
+    }
+  };
 
   // 月のイベント取得
   const fetchEvents = useCallback(async () => {
@@ -315,17 +393,48 @@ export default function CalendarWidget() {
             <div className="space-y-1.5">
               {selectedDateEvents
                 .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
-                .map((ev) => (
-                  <div key={ev.id} className="flex items-start gap-2 py-1.5">
-                    <Clock className="w-3 h-3 text-nm-text-muted mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-medium text-nm-text truncate">{ev.summary}</p>
-                      <p className="text-[10px] text-nm-text-muted">
-                        {formatTime(ev.start)} - {formatTime(ev.end)}
-                      </p>
+                .map((ev) => {
+                  const meetUrl = getMeetUrl(ev);
+                  const isJoined = !!nodeAiBots[ev.id];
+                  const isJoining = joiningEventId === ev.id;
+                  return (
+                    <div key={ev.id} className="flex items-start gap-2 py-1.5">
+                      <Clock className="w-3 h-3 text-nm-text-muted mt-0.5 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[11px] font-medium text-nm-text truncate">{ev.summary}</p>
+                        <p className="text-[10px] text-nm-text-muted">
+                          {formatTime(ev.start)} - {formatTime(ev.end)}
+                        </p>
+                      </div>
+                      {meetUrl && (
+                        isJoined ? (
+                          <button
+                            onClick={() => handleNodeAiLeave(ev.id)}
+                            className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-medium text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors"
+                            title="NodeAIを退出させる"
+                          >
+                            <Square className="w-2.5 h-2.5" />
+                            <span>停止</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleNodeAiJoin(ev)}
+                            disabled={isJoining}
+                            className="shrink-0 flex items-center gap-1 px-1.5 py-0.5 text-[9px] font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors disabled:opacity-50"
+                            title="NodeAIを会議に参加させる"
+                          >
+                            {isJoining ? (
+                              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                            ) : (
+                              <Bot className="w-2.5 h-2.5" />
+                            )}
+                            <span>{isJoining ? '参加中...' : 'AI参加'}</span>
+                          </button>
+                        )
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
             </div>
           )}
         </div>
