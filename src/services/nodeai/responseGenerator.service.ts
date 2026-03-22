@@ -8,7 +8,7 @@ import { getRecentContext } from './sessionManager.service';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 // 会議中はスピード最優先 → Haiku（高速・低コスト）
 const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 150; // 会話に最適な短さ
+const MAX_TOKENS = 120; // 短い応答 = 高速レスポンス + 高速TTS
 
 // ========================================
 // 型定義
@@ -209,17 +209,8 @@ ${ctx.bossFeedback}`;
     }
   }
 
-  return `あなたはNodeAI。会議中のAIアシスタント。呼びかけに簡潔に応答する。
-
+  return `NodeAI。会議中のAIアシスタント。
 ${projectInfo}
-
-【応答ルール】
-- 1〜2文、最大80文字。音声で聞いて自然な日本語
-- 「えーと」「〜ですね」など口語的な表現OK。硬すぎない
-- 数字・ファクトを優先。「3件中2件完了」のように具体的に
-- データがなければ一般知識で補完
-- 質問者の名前で呼びかける
-- 公開レベル: ${relationshipType}。${publicLevel}
-
-${recentContext ? recentContext : ''}`;
+${recentContext ? recentContext : ''}
+【必須ルール】1-2文、60文字以内。数字優先。名前は姓のみ（例:鈴木さん）。口語OK。公開:${relationshipType}。${publicLevel}`;
 }

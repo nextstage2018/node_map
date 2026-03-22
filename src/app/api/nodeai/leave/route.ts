@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { getServerUserId } from '@/lib/serverAuth';
 import { leaveBot, isRecallConfigured } from '@/services/nodeai/recallClient.service';
 import { endSession } from '@/services/nodeai/sessionManager.service';
+import { flushToDb, clearSessionCache } from '@/services/nodeai/sessionCache.service';
 
 export async function POST(request: Request): Promise<Response> {
   const userId = await getServerUserId();
@@ -37,6 +38,10 @@ export async function POST(request: Request): Promise<Response> {
       console.warn('[NodeAI] Leave bot API call failed (may already be left):', err);
       // Bot がすでに退出済みでもセッションは終了する
     }
+
+    // メモリキャッシュをDBにフラッシュしてからクリア
+    await flushToDb(bot_id);
+    clearSessionCache(bot_id);
 
     // セッションを終了
     await endSession(bot_id);
