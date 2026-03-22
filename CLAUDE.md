@@ -262,6 +262,7 @@ AI解析の改修イメージ:
 | `project_members` | プロジェクトメンバー | UUID | UNIQUE(project_id, contact_id)。チャネルから自動取り込み or 手動追加 |
 | `tasks` | タスク | UUID | milestone_id / project_id / due_date / scheduled_start/end |
 | `task_members` | グループタスクメンバー | UUID | UNIQUE(task_id, user_id) |
+| `task_assignees` | タスク担当者（複数対応） | UUID | UNIQUE(task_id, contact_id)。tasks.assigned_contact_idはメイン1人目として互換維持 |
 | `task_external_resources` | 外部AI資料 | UUID | task_id FK CASCADE |
 | `jobs` | ジョブ | UUID | project_id nullable。type / status / ai_draft |
 | `consultations` | 社内相談 | UUID | requester→responder→AI返信生成 |

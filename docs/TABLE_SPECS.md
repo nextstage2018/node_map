@@ -547,6 +547,37 @@ CREATE INDEX idx_task_members_user ON task_members(user_id);
 
 ---
 
+### task_assignees（タスク担当者 — 複数担当者対応）
+
+#### テーブル定義
+
+```sql
+CREATE TABLE task_assignees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  contact_id TEXT NOT NULL REFERENCES contact_persons(id) ON DELETE CASCADE,
+  assigned_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(task_id, contact_id)
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_task_assignees_task ON task_assignees(task_id);
+CREATE INDEX idx_task_assignees_contact ON task_assignees(contact_id);
+```
+
+#### 注意事項
+
+- 1タスクに複数の担当者を紐づけるジョインテーブル
+- tasks.assigned_contact_id はメイン担当者として互換維持（1人目が自動設定）
+- 担当者追加: POST /api/tasks/[id]/assignees { contact_id }
+- 担当者削除: DELETE /api/tasks/[id]/assignees?contact_id=xxx
+- メイン担当者削除時は次の担当者が自動昇格
+
+---
+
 ### task_conversations（タスク内AI会話）
 
 **目的**: タスク詳細ページの構想→進行→結果フェーズ別AI伴走会話

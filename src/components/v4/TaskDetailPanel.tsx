@@ -48,6 +48,7 @@ interface TaskDetail {
   source_info?: SourceInfo;
   assigned_contact_id?: string;
   assignee_name?: string;
+  task_assignees?: Array<{ contact_id: string; name: string }>;
   requester_contact_id?: string;
   requester_name?: string;
   user_id?: string;
@@ -120,6 +121,8 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange, proje
   const [isSavingDoc, setIsSavingDoc] = useState(false);
   const [checkpointScore, setCheckpointScore] = useState<number | null>(null);
   const [canComplete, setCanComplete] = useState<boolean>(true);
+  const [taskAssigneeList, setTaskAssigneeList] = useState<Array<{ contact_id: string; name: string }>>([]);
+  const [showAssigneeAdd, setShowAssigneeAdd] = useState(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -141,6 +144,24 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange, proje
     setShowChat(true);
   };
 
+  // 担当者リスト取得
+  const fetchAssignees = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/assignees`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setTaskAssigneeList(data.data.map((a: { contact_id: string; name: string }) => ({
+            contact_id: a.contact_id,
+            name: a.name,
+          })));
+        }
+      }
+    } catch (error) {
+      console.error('担当者リスト取得エラー:', error);
+    }
+  }, [taskId]);
+
   const fetchDetail = useCallback(async () => {
     try {
       const res = await fetch(`/api/tasks/${taskId}/detail`);
@@ -152,18 +173,31 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange, proje
           setEditTitle(data.data.title || '');
         }
       }
+      // 担当者リストも同時に取得
+      await fetchAssignees();
     } catch (error) {
       console.error('タスク詳細取得エラー:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [taskId]);
+  }, [taskId, fetchAssignees]);
 
   useEffect(() => {
     setIsLoading(true);
     setShowChat(false);
     fetchDetail();
   }, [fetchDetail]);
+
+  // 担当者追加ドロップダウンを外側クリックで閉じる
+  useEffect(() => {
+    if (!showAssigneeAdd) return;
+    const handler = () => setShowAssigneeAdd(false);
+    const timer = setTimeout(() => document.addEventListener('click', handler), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('click', handler);
+    };
+  }, [showAssigneeAdd]);
 
   // メモ保存
   const handleSaveDescription = async () => {
@@ -221,22 +255,57 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange, proje
     }
   };
 
-  // 担当者変更
-  const handleSaveAssignee = async (contactId: string) => {
+  // 担当者追加（multi-assignee）
+  const handleAddAssignee = async (contactId: string) => {
+    if (!task || !contactId) return;
+    // 既に追加済みか確認
+    if (taskAssigneeList.some(a => a.contact_id === contactId)) return;
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/assignees`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_id: contactId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setTaskAssigneeList(prev => [...prev, { contact_id: data.data.contact_id, name: data.data.name }]);
+          // メイン担当者も更新
+          if (!task.assigned_contact_id) {
+            setTask(prev => prev ? { ...prev, assigned_contact_id: contactId, assignee_name: data.data.name } : prev);
+          }
+          onTaskUpdate?.();
+        }
+      }
+    } catch (error) {
+      console.error('担当者追加エラー:', error);
+    }
+    setShowAssigneeAdd(false);
+  };
+
+  // 担当者削除（multi-assignee）
+  const handleRemoveAssignee = async (contactId: string) => {
     if (!task) return;
     try {
-      await fetch(`/api/tasks/${taskId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assigneeContactId: contactId || null }),
+      const res = await fetch(`/api/tasks/${taskId}/assignees?contact_id=${contactId}`, {
+        method: 'DELETE',
       });
-      const name = contactId
-        ? (assignees.find(a => a.id === contactId)?.name || '不明')
-        : undefined;
-      setTask(prev => prev ? { ...prev, assigned_contact_id: contactId || undefined, assignee_name: name } : prev);
-      onTaskUpdate?.();
+      if (res.ok) {
+        setTaskAssigneeList(prev => prev.filter(a => a.contact_id !== contactId));
+        // メイン担当者が削除された場合
+        if (task.assigned_contact_id === contactId) {
+          const remaining = taskAssigneeList.filter(a => a.contact_id !== contactId);
+          const next = remaining[0];
+          setTask(prev => prev ? {
+            ...prev,
+            assigned_contact_id: next?.contact_id || undefined,
+            assignee_name: next?.name || undefined,
+          } : prev);
+        }
+        onTaskUpdate?.();
+      }
     } catch (error) {
-      console.error('担当者更新エラー:', error);
+      console.error('担当者削除エラー:', error);
     }
   };
 
@@ -531,26 +600,56 @@ export default function TaskDetailPanel({ taskId, onClose, onStatusChange, proje
                     </div>
                   </div>
 
-                  {/* 担当（編集可能） */}
-                  <div className="flex items-center">
-                    <span className="w-20 text-xs text-slate-400 shrink-0">担当</span>
-                    <div className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-slate-400" />
-                      {assignees.length > 0 ? (
-                        <select
-                          value={task.assigned_contact_id || ''}
-                          onChange={(e) => handleSaveAssignee(e.target.value)}
-                          className="text-sm text-nm-text bg-transparent border-0 focus:outline-none cursor-pointer hover:text-blue-600 transition-colors"
-                        >
-                          <option value="">未割り当て</option>
-                          {assignees.map(a => (
-                            <option key={a.id} value={a.id}>
-                              {a.id === myContactId ? `${a.name}（自分）` : a.name}
-                            </option>
-                          ))}
-                        </select>
+                  {/* 担当（タグ方式 — 複数担当者対応） */}
+                  <div className="flex items-start">
+                    <span className="w-20 text-xs text-slate-400 shrink-0 mt-1">担当</span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {taskAssigneeList.length > 0 ? (
+                        taskAssigneeList.map(a => (
+                          <span key={a.contact_id} className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                            <User className="w-3 h-3" />
+                            {a.contact_id === myContactId ? `${a.name}（自分）` : a.name}
+                            <button
+                              onClick={() => handleRemoveAssignee(a.contact_id)}
+                              className="ml-0.5 text-blue-400 hover:text-red-500 transition-colors"
+                              title="担当者を外す"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        ))
                       ) : (
-                        <span className="text-sm text-nm-text">{task.assignee_name || '自分'}</span>
+                        <span className="text-sm text-slate-400">未割り当て</span>
+                      )}
+                      {/* 追加ボタン */}
+                      {assignees.length > 0 && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowAssigneeAdd(!showAssigneeAdd)}
+                            className="inline-flex items-center justify-center w-6 h-6 rounded-full border border-dashed border-slate-300 text-slate-400 hover:border-blue-400 hover:text-blue-500 transition-colors"
+                            title="担当者を追加"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                          {showAssigneeAdd && (
+                            <div className="absolute top-8 left-0 z-50 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[160px] max-h-48 overflow-y-auto">
+                              {assignees
+                                .filter(a => !taskAssigneeList.some(ta => ta.contact_id === a.id))
+                                .map(a => (
+                                  <button
+                                    key={a.id}
+                                    onClick={() => handleAddAssignee(a.id)}
+                                    className="w-full text-left px-3 py-1.5 text-sm text-nm-text hover:bg-blue-50 transition-colors"
+                                  >
+                                    {a.id === myContactId ? `${a.name}（自分）` : a.name}
+                                  </button>
+                                ))}
+                              {assignees.filter(a => !taskAssigneeList.some(ta => ta.contact_id === a.id)).length === 0 && (
+                                <span className="block px-3 py-1.5 text-xs text-slate-400">全員追加済み</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

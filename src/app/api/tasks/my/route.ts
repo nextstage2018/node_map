@@ -136,16 +136,57 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // 複数担当者を取得（task_assignees テーブル）
+    const taskIds = tasks.map(t => t.id);
+    let taskAssigneesMap: Record<string, Array<{ contact_id: string; name: string }>> = {};
+    if (taskIds.length > 0) {
+      const { data: allAssignees } = await supabase
+        .from('task_assignees')
+        .select('task_id, contact_id')
+        .in('task_id', taskIds);
+      if (allAssignees && allAssignees.length > 0) {
+        // task_assignees に登場する contact_id の名前を解決
+        const assigneeContactIds = [...new Set(allAssignees.map(a => a.contact_id))];
+        const missingIds = assigneeContactIds.filter(id => !contactMap[id]);
+        if (missingIds.length > 0) {
+          const { data: extraContacts } = await supabase
+            .from('contact_persons')
+            .select('id, name')
+            .in('id', missingIds);
+          if (extraContacts) {
+            extraContacts.forEach(c => { contactMap[c.id] = c.name; });
+          }
+        }
+        // タスクごとにグループ化
+        for (const a of allAssignees) {
+          if (!taskAssigneesMap[a.task_id]) taskAssigneesMap[a.task_id] = [];
+          taskAssigneesMap[a.task_id].push({
+            contact_id: a.contact_id,
+            name: contactMap[a.contact_id] || '不明',
+          });
+        }
+      }
+    }
+
     // パンくず + 担当者名付きデータに変換
-    const enrichedTasks = tasks.map(task => ({
-      ...task,
-      project_name: task.project_id ? projectMap[task.project_id] || null : null,
-      milestone_title: task.milestone_id ? milestoneMap[task.milestone_id] || null : null,
-      // 優先順: assigned_contact_id → user_id逆引き → null
-      assignee_name: task.assigned_contact_id
-        ? contactMap[task.assigned_contact_id] || null
-        : userIdToNameMap[task.user_id] || null,
-    }));
+    const enrichedTasks = tasks.map(task => {
+      const multiAssignees = taskAssigneesMap[task.id] || [];
+      return {
+        ...task,
+        project_name: task.project_id ? projectMap[task.project_id] || null : null,
+        milestone_title: task.milestone_id ? milestoneMap[task.milestone_id] || null : null,
+        // 優先順: assigned_contact_id → user_id逆引き → null
+        assignee_name: task.assigned_contact_id
+          ? contactMap[task.assigned_contact_id] || null
+          : userIdToNameMap[task.user_id] || null,
+        // 複数担当者（task_assignees）
+        assignees: multiAssignees.length > 0
+          ? multiAssignees
+          : task.assigned_contact_id
+            ? [{ contact_id: task.assigned_contact_id, name: contactMap[task.assigned_contact_id] || '不明' }]
+            : [],
+      };
+    });
 
     return NextResponse.json({ success: true, data: enrichedTasks });
   } catch (error) {
