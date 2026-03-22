@@ -6,9 +6,8 @@ const RECALL_API_KEY = process.env.RECALL_API_KEY || '';
 
 // WebhookのベースURL
 const WEBHOOK_BASE_URL = process.env.NEXT_PUBLIC_APP_URL
-  || process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://node-map-eight.vercel.app';
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
+  || 'https://node-map-eight.vercel.app';
 
 // ========================================
 // 型定義
@@ -96,6 +95,9 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
       source: 'nodemap',
     },
   };
+
+  console.log(`[NodeAI] Creating bot with webhook URL: ${webhookUrl}`);
+  console.log(`[NodeAI] Bot config:`, JSON.stringify(body, null, 2));
 
   const res = await recallFetch('/bot/', {
     method: 'POST',

@@ -54,17 +54,29 @@ interface WebhookPayload {
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const payload = (await request.json()) as WebhookPayload;
+    const rawPayload = await request.json();
 
-    // イベント種別チェック
+    // === デバッグログ: Recall.aiから送られてくる全ペイロードを記録 ===
+    console.log('[NodeAI Webhook] Received event:', rawPayload.event || 'unknown');
+    console.log('[NodeAI Webhook] Full payload:', JSON.stringify(rawPayload).substring(0, 2000));
+
+    const payload = rawPayload as WebhookPayload;
+
+    // イベント種別チェック（transcript.data以外も記録）
     if (payload.event !== 'transcript.data') {
+      console.log(`[NodeAI Webhook] Non-transcript event: ${payload.event}`);
       return NextResponse.json({ ok: true });
     }
 
-    const { bot_id: botId, data } = payload.data;
-    const { words, participant } = data;
+    const botId = payload.data?.bot_id;
+    const data = payload.data?.data;
+    const words = data?.words;
+    const participant = data?.participant;
+
+    console.log(`[NodeAI Webhook] bot_id=${botId}, words=${words?.length || 0}, participant=${participant?.name || 'unknown'}`);
 
     if (!botId || !words || words.length === 0) {
+      console.log('[NodeAI Webhook] Empty words or no botId, skipping');
       return NextResponse.json({ ok: true });
     }
 
@@ -100,6 +112,8 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     // utteranceをバッファに追加
+    console.log(`[NodeAI Webhook] Utterance: "${fullText}" by ${speakerName}`);
+
     await addUtterance(botId, {
       speakerName,
       speakerContactId: contactId,
@@ -110,7 +124,9 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     // トリガーワード検知
-    if (!detectTrigger(fullText)) {
+    const triggered = detectTrigger(fullText);
+    console.log(`[NodeAI Webhook] Trigger check: "${fullText}" => ${triggered}`);
+    if (!triggered) {
       return NextResponse.json({ ok: true });
     }
 
