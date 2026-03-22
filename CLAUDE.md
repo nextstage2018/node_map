@@ -1,9 +1,9 @@
 # NodeMap - Claude Code 作業ガイド（SSOT）
 
-最終更新: 2026-03-19
+最終更新: 2026-03-22
 
 > **ドキュメント構成**: このファイルが唯一の設計書（SSOT）。
-> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) + v9.0 + v10.0〜v10.5 + P2-3(Phase1) 実装済み。作業開始前に必ず読んでください。
+> V2全9フェーズ + v3.0〜v3.4 + v4.0〜v4.5 + v5.0 + v6.0 + v7.0 + v7.1 + v8.0(Phase1-3) + v9.0 + v10.0〜v10.5 + P2-3(Phase1) + NodeAI(MVP) 実装済み。作業開始前に必ず読んでください。
 
 | ファイル | 内容 | 必読 |
 |---|---|---|
@@ -294,6 +294,7 @@ AI解析の改修イメージ:
 | `boss_feedback_learnings` | 上長フィードバック学習 | UUID | project_id必須。会議録AI解析で上長の指摘事項を自動抽出。タスクAI会話に注入して判断基準の差を縮める |
 | `milestone_suggestions` | MS提案 | UUID | v8.0: 会議録AI解析から自動抽出→自動承認→milestones即登録。検討ツリータブで編集/削除のみ |
 | `meeting_groups` | 会議グループ | UUID | P2-3: project_id必須。1PJ内で趣旨別に会議をグループ化。color: blue/green/purple/amber/rose。sort_orderで表示順 |
+| `nodeai_sessions` | NodeAI会議セッション | UUID | bot_id UNIQUE。会話バッファ・参加者・応答履歴をJSONBで管理。status: active/ended。3時間超過で自動ended |
 
 ---
 
@@ -420,6 +421,7 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | 15 | `/api/milestones/evaluate` | チェックポイント評価 | milestones, tasks, thought_logs | **評価エージェント**（厳格） |
 | 16 | `/api/milestones/learn` | 評価自己学習 | evaluation_learnings, meeting_records | 学習型 |
 | 17 | `/api/tasks/[id]/checkpoint` | タスクチェックポイント評価 | tasks, task_conversations, projects, decision_log, boss_feedback_learnings | 1500 |
+| 18 | `/api/nodeai/webhook` | NodeAI 会議中リアルタイム応答 | tasks, decision_log, open_issues, milestones, boss_feedback_learnings | 200 |
 
 ### Webhook エンドポイント
 
@@ -428,6 +430,16 @@ sendChatworkMessage(roomId, body)                      // → Promise<boolean>
 | ~~`/api/webhooks/meetgeek`~~ | **削除済み（v7.0→v9.0クリーンアップ）** | - |
 | `/api/webhooks/slack/events` | Slack メンション応答 + タスク作成 + リアクション | Slack Events API（app_mention, message, reaction_added） |
 | `/api/webhooks/chatwork/events` | Chatwork メンション応答 + タスク作成 + タスク完了 | Chatwork Webhook（mention_to_me, message_created） |
+| `/api/nodeai/webhook` | NodeAI リアルタイム文字起こし受信 + 応答 | Recall.ai realtime_endpoints（transcript.data） |
+
+### NodeAI APIエンドポイント
+
+| エンドポイント | メソッド | 用途 |
+|---|---|---|
+| `/api/nodeai/join` | POST | Bot起動（Recall.ai Bot作成 → 会議参加） |
+| `/api/nodeai/leave` | POST | Bot停止（会議退出 + セッション終了） |
+| `/api/nodeai/session` | GET | セッション状態取得（参加者・応答数等） |
+| `/api/nodeai/session` | POST | セッションクリーンアップ（action='cleanup'） |
 
 **MeetGeek Webhook処理**: 全処理を`await`で完了してからHTTPレスポンスを返す。AI解析 → 検討ツリー生成まで一気通貫。日本語トランスクリプトのスペース除去前処理付き。
 
@@ -522,6 +534,12 @@ GMAIL_REDIRECT_URI=              # OAuth
 # MeetGeek連携
 MEETGEEK_API_KEY=                # MeetGeek APIトークン
 MEETGEEK_WEBHOOK_SECRET=         # Webhook署名検証用シークレット
+
+# NodeAI（会議中リアルタイムアシスタント）
+RECALL_API_KEY=                  # Recall.ai APIキー
+ELEVENLABS_API_KEY=              # ElevenLabs APIキー
+ELEVENLABS_VOICE_ID=             # 日本語女性ボイスのID
+NODEAI_ENABLED=true              # NodeAI機能の有効/無効
 ```
 
 ---
@@ -1035,6 +1053,7 @@ v10.3 トークン分離・BOT自動参加・アジェンダ注入改修 ← 実
 v10.4 トークン期限切れ通知（ヘルスチェックAPI + UI + Cron通知） ← 実装済み
 v10.5 BOT担当者修正・milestones.target_date修正・会議メモPJ判定強化・Meet自動ON ← 実装済み
 P2-3 会議グループ化（Phase 1: テーブル+API+UI） ← 実装済み
+NodeAI MVP（Phase 1: Webhook+Bot起動+コンテキスト+Claude応答+TTS+セッション管理） ← 実装済み
 ```
 
 ---

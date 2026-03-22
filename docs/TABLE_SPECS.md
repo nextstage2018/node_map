@@ -2051,6 +2051,85 @@ CREATE INDEX idx_boss_feedback_created ON boss_feedback_learnings(created_at DES
 
 ---
 
+## 10. NodeAI 関連テーブル
+
+### nodeai_sessions（NodeAI会議セッション）[NodeAI MVP]
+
+**目的**: Google Meet会議に参加したNodeAI Botのセッション情報・会話バッファを管理。Vercelサーバーレス環境でリクエスト間の状態共有に使用。
+
+#### CREATE TABLE
+
+```sql
+CREATE TABLE nodeai_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bot_id TEXT NOT NULL UNIQUE,
+  project_id UUID REFERENCES projects(id),
+  meeting_url TEXT NOT NULL,
+  relationship_type TEXT NOT NULL DEFAULT 'internal'
+    CHECK (relationship_type IN ('internal', 'client', 'partner')),
+  participants JSONB DEFAULT '[]',
+  utterance_buffer JSONB DEFAULT '[]',
+  response_history JSONB DEFAULT '[]',
+  response_count INTEGER NOT NULL DEFAULT 0,
+  last_response_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'active'
+    CHECK (status IN ('active', 'ended')),
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+
+#### インデックス
+
+```sql
+CREATE INDEX idx_nodeai_sessions_bot ON nodeai_sessions(bot_id);
+CREATE INDEX idx_nodeai_sessions_status ON nodeai_sessions(status);
+CREATE INDEX idx_nodeai_sessions_project ON nodeai_sessions(project_id);
+```
+
+#### participants JSONB構造
+```json
+[{
+  "id": 123,
+  "name": "鈴木伸二",
+  "email": "suzuki@next-stage.biz",
+  "contactId": "team_xxx",
+  "isHost": true
+}]
+```
+
+#### utterance_buffer JSONB構造
+```json
+[{
+  "speakerName": "鈴木伸二",
+  "speakerContactId": "team_xxx",
+  "speakerEmail": "suzuki@next-stage.biz",
+  "speakerId": 123,
+  "text": "ノードさん、タスクの状況は？",
+  "timestamp": 1711100000.5
+}]
+```
+
+#### response_history JSONB構造
+```json
+[{
+  "question": "タスクの状況は？",
+  "answer": "現在進行中のタスクは5件です。うち2件が期限超過しています。",
+  "timestamp": 1711100005.2
+}]
+```
+
+#### 注意事項
+
+- **bot_id**: Recall.ai Bot ID（UNIQUE制約）。1会議=1セッション
+- **utterance_buffer**: 直近5分間の発言のみ保持（古いものはtrim）。Claude APIに送るコンテキスト用
+- **response_history**: 直近20件の応答のみ保持。エコー防止・文脈理解用
+- **status**: `active`=会議中、`ended`=終了。3時間超過のactiveは自動ended（cleanupStaleSessions）
+- **議事録は保存しない**: NodeAIは会議中のアシストに徹する。議事録はGemini会議メモに委ねる
+
+---
+
 ## 🔑 テーブル間の主要な関係性（ER図）
 
 ```
@@ -2123,4 +2202,4 @@ users (Supabase auth)
 ---
 
 **This document serves as the single source of truth for NodeMap database schema.**
-Last updated: 2026-03-19 (P2-3 Phase 1: meeting_groups追加)
+Last updated: 2026-03-22 (NodeAI MVP: nodeai_sessions追加)
