@@ -78,7 +78,10 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
     recording_config: {
       transcript: {
         provider: {
-          meeting_captions: {},
+          deepgram: {
+            language: 'ja',
+            model: 'nova-2',
+          },
         },
       },
       realtime_endpoints: [
