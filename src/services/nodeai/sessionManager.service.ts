@@ -204,15 +204,22 @@ export async function recordResponse(
   // 直近20件のみ保持
   const trimmed = history.slice(-20);
 
-  await supabase
+  const nowIso = new Date().toISOString();
+  const { error: updateError } = await supabase
     .from('nodeai_sessions')
     .update({
       response_history: trimmed,
       response_count: (session.response_count || 0) + 1,
-      last_response_at: new Date().toISOString(),
+      last_response_at: nowIso,
     })
     .eq('bot_id', botId)
     .eq('status', 'active');
+
+  if (updateError) {
+    console.error(`[NodeAI] recordResponse update failed:`, updateError.message);
+  } else {
+    console.log(`[NodeAI] recordResponse: last_response_at set to ${nowIso} (epoch: ${(new Date(nowIso).getTime() / 1000).toFixed(1)})`);
+  }
 }
 
 /**
@@ -257,12 +264,18 @@ export async function getLastResponseTimestamp(botId: string): Promise<number | 
  */
 export async function isInConversationMode(
   botId: string,
-  windowSeconds: number = 30
+  windowSeconds: number = 60
 ): Promise<boolean> {
   const lastTs = await getLastResponseTimestamp(botId);
-  if (!lastTs) return false;
+  if (!lastTs) {
+    console.log(`[NodeAI] convMode check: no lastTs for bot ${botId}`);
+    return false;
+  }
   const now = Date.now() / 1000;
-  return (now - lastTs) < windowSeconds;
+  const elapsed = now - lastTs;
+  const result = elapsed < windowSeconds;
+  console.log(`[NodeAI] convMode check: lastTs=${lastTs.toFixed(1)} now=${now.toFixed(1)} elapsed=${elapsed.toFixed(1)}s window=${windowSeconds}s → ${result}`);
+  return result;
 }
 
 /**
@@ -329,6 +342,111 @@ export async function cleanupStaleSessions(): Promise<number> {
   }
 
   return data?.length || 0;
+}
+
+// ========================================
+// 一括取得（高速Webhook用）
+// ========================================
+
+/**
+ * bot_idでセッションの全データを1回のクエリで取得
+ * Webhook処理で個別クエリを何度も叩くのを防ぐ
+ */
+export interface SessionSnapshot {
+  session: NodeAISession;
+  lastResponseEpoch: number | null;
+  isConversationMode: boolean;
+  recentContext: string;
+}
+
+export async function getSessionSnapshot(
+  botId: string,
+  conversationWindowSeconds: number = 60
+): Promise<SessionSnapshot | null> {
+  const supabase = getDb();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .from('nodeai_sessions')
+    .select('*')
+    .eq('bot_id', botId)
+    .eq('status', 'active')
+    .single();
+
+  if (error || !data) return null;
+
+  const session = mapDbToSession(data);
+
+  // lastResponseEpoch
+  const lastResponseEpoch = data.last_response_at
+    ? new Date(data.last_response_at).getTime() / 1000
+    : null;
+
+  // conversationMode判定
+  const now = Date.now() / 1000;
+  const isConversationMode = lastResponseEpoch
+    ? (now - lastResponseEpoch) < conversationWindowSeconds
+    : false;
+
+  // recentContext構築（DB再読み取り不要）
+  const utterances: Utterance[] = data.utterance_buffer || [];
+  const responses: NodeAIResponse[] = data.response_history || [];
+
+  const recentUtterances = utterances.slice(-15);
+  const utteranceText = recentUtterances
+    .map((u: Utterance) => `${u.speakerName}: ${u.text}`)
+    .join('\n');
+
+  const recentResponses = responses.slice(-3);
+  const responseText = recentResponses
+    .map((r: NodeAIResponse) => `[質問] ${r.question}\n[NodeAI] ${r.answer}`)
+    .join('\n\n');
+
+  let recentContext = '';
+  if (utteranceText) {
+    recentContext += `【直近の議論】\n${utteranceText}\n\n`;
+  }
+  if (responseText) {
+    recentContext += `【過去の応答】\n${responseText}`;
+  }
+
+  return { session, lastResponseEpoch, isConversationMode, recentContext };
+}
+
+/**
+ * utterance追加 + participant更新を1回のDB書き込みで実行
+ * Webhook内で2回に分かれていた書き込みを統合
+ */
+export async function addUtteranceAndParticipant(
+  botId: string,
+  utterance: Utterance,
+  participant: Participant,
+  currentBuffer: Utterance[],
+  currentParticipants: Participant[]
+): Promise<void> {
+  const supabase = getDb();
+  if (!supabase) return;
+
+  // バッファに追加 + 5分間トリム
+  const buffer = [...currentBuffer, utterance];
+  const fiveMinAgo = Date.now() / 1000 - 300;
+  const trimmed = buffer.filter((u) => u.timestamp > fiveMinAgo);
+
+  // 参加者を追加/更新
+  const participants = [...currentParticipants];
+  const existing = participants.findIndex((p) => p.id === participant.id);
+  if (existing >= 0) {
+    participants[existing] = { ...participants[existing], ...participant };
+  } else {
+    participants.push(participant);
+  }
+
+  // 1回のUPDATEで両方書き込み
+  await supabase
+    .from('nodeai_sessions')
+    .update({ utterance_buffer: trimmed, participants })
+    .eq('bot_id', botId)
+    .eq('status', 'active');
 }
 
 // ========================================

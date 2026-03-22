@@ -21,6 +21,39 @@ interface ProjectContext {
 }
 
 // ========================================
+// キャッシュ（セッション中はプロジェクト情報がほぼ変わらない）
+// ========================================
+
+interface CachedContext {
+  context: ProjectContext;
+  cachedAt: number; // epoch seconds
+}
+
+// プロジェクトIDをキーにしたインメモリキャッシュ（TTL: 5分）
+const contextCache = new Map<string, CachedContext>();
+const CACHE_TTL_SECONDS = 300; // 5分
+
+/**
+ * キャッシュ付きプロジェクトコンテキスト取得
+ * セッション中に同じプロジェクト情報を何度もDBから取得するのを防ぐ
+ */
+export async function getCachedProjectContext(
+  projectId: string
+): Promise<ProjectContext | null> {
+  const now = Date.now() / 1000;
+  const cached = contextCache.get(projectId);
+  if (cached && (now - cached.cachedAt) < CACHE_TTL_SECONDS) {
+    return cached.context;
+  }
+
+  const context = await buildProjectContext(projectId);
+  if (context) {
+    contextCache.set(projectId, { context, cachedAt: now });
+  }
+  return context;
+}
+
+// ========================================
 // メイン関数
 // ========================================
 

@@ -2,7 +2,7 @@
 // 会議中の質問に対して簡潔な応答を生成する
 
 import Anthropic from '@anthropic-ai/sdk';
-import { buildProjectContext } from './contextBuilder.service';
+import { buildProjectContext, getCachedProjectContext } from './contextBuilder.service';
 import { getRecentContext } from './sessionManager.service';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
@@ -21,6 +21,10 @@ interface GenerateResponseParams {
   speakerName: string;
   speakerContactId?: string;
   relationshipType: 'internal' | 'client' | 'partner';
+}
+
+interface GenerateResponseFastParams extends GenerateResponseParams {
+  recentContext: string; // snapshotから取得済み → DB再読み不要
 }
 
 interface GenerateResponseResult {
@@ -79,6 +83,67 @@ export async function generateResponse(
     });
 
     // テキスト応答を抽出
+    const textBlock = message.content.find((b) => b.type === 'text');
+    const responseText = textBlock?.text || '申し訳ありません、回答を生成できませんでした。';
+
+    return { text: responseText, success: true };
+  } catch (err) {
+    console.error('[NodeAI] Response generation failed:', err);
+    return {
+      text: '一時的にデータの取得ができませんでした。少し経ってからもう一度お声がけください。',
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * 高速版: キャッシュ付きコンテキスト + recentContextを外部から受け取る
+ * Webhook v2で使用。DB再読みを最小化。
+ */
+export async function generateResponseFast(
+  params: GenerateResponseFastParams
+): Promise<GenerateResponseResult> {
+  const { projectId, question, speakerName, relationshipType, recentContext } = params;
+
+  if (!ANTHROPIC_API_KEY) {
+    return { text: '申し訳ありません、AI機能が設定されていません。', success: false, error: 'No API key' };
+  }
+
+  try {
+    // キャッシュ付きコンテキスト取得（5分TTL、ヒット時はDB不要）
+    const t1 = Date.now();
+    const projectContext = await getCachedProjectContext(projectId);
+    console.log(`[NodeAI:perf] getCachedProjectContext: ${Date.now() - t1}ms`);
+
+    if (!projectContext) {
+      return {
+        text: 'プロジェクト情報を取得できませんでした。',
+        success: false,
+        error: 'No project context',
+      };
+    }
+
+    // システムプロンプト構築
+    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext);
+
+    // Claude API 呼び出し
+    const t2 = Date.now();
+    const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+    const message = await client.messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: `${speakerName}さんの質問: ${question}`,
+        },
+      ],
+    });
+    console.log(`[NodeAI:perf] Claude API: ${Date.now() - t2}ms`);
+
     const textBlock = message.content.find((b) => b.type === 'text');
     const responseText = textBlock?.text || '申し訳ありません、回答を生成できませんでした。';
 
