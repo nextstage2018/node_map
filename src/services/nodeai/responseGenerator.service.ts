@@ -173,44 +173,138 @@ interface ProjectContextData {
   bossFeedback: string;
 }
 
+// ========================================
+// 名前正規化
+// ========================================
+
+/**
+ * フルネームから姓のみを抽出（音声読み上げ用）
+ * 「伸二鈴木」→「鈴木」、「鈴木 伸二」→「鈴木」、「Suzuki Shinji」→「Suzuki」
+ * 判定できない場合はそのまま返す
+ */
+export function extractFamilyName(fullName: string): string {
+  if (!fullName) return '参加者';
+  const trimmed = fullName.trim();
+
+  // スペース区切りの場合（「鈴木 伸二」or「Shinji Suzuki」）
+  const parts = trimmed.split(/[\s　]+/);
+  if (parts.length >= 2) {
+    // 日本語名: 最初が姓の可能性が高い
+    // 英語名: 最後が姓の可能性が高い
+    const firstIsJapanese = /[\u3000-\u9FFF]/.test(parts[0]);
+    return firstIsJapanese ? parts[0] : parts[parts.length - 1];
+  }
+
+  // スペースなし日本語（「伸二鈴木」「鈴木伸二」）
+  // 2文字以上の漢字が連続する場合、姓名の境界を推定
+  if (/^[\u4E00-\u9FFF]{3,}$/.test(trimmed)) {
+    // よくある日本の姓（2文字）を後方からチェック
+    const commonFamilyNames = [
+      '鈴木', '佐藤', '田中', '山田', '渡辺', '伊藤', '中村', '小林',
+      '加藤', '吉田', '山本', '松本', '井上', '木村', '斎藤', '清水',
+      '山口', '橋本', '高橋', '藤田', '谷口', '福田', '横田',
+    ];
+    // 後方に姓がある場合（「伸二鈴木」パターン）
+    for (const name of commonFamilyNames) {
+      if (trimmed.endsWith(name)) return name;
+    }
+    // 前方に姓がある場合（「鈴木伸二」パターン）
+    for (const name of commonFamilyNames) {
+      if (trimmed.startsWith(name)) return name;
+    }
+    // 判定できない場合: 先頭2文字を姓として返す
+    return trimmed.substring(0, 2);
+  }
+
+  return trimmed;
+}
+
+// ========================================
+// 応答テキストのポスト処理
+// ========================================
+
+/**
+ * AI応答テキストをTTS読み上げ用にクリーンアップ
+ * 書き言葉の記号・フォーマットを除去して自然な音声にする
+ */
+export function cleanResponseForTTS(text: string): string {
+  let cleaned = text;
+
+  // 見出し記号を除去: 【〇〇】→ 〇〇、
+  cleaned = cleaned.replace(/【([^】]*)】/g, '$1、');
+
+  // 箇条書き記号を除去
+  cleaned = cleaned.replace(/^[\s]*[-・●▶▪︎※]\s*/gm, '');
+
+  // 改行を句点に変換（複数行→1文にまとめる）
+  cleaned = cleaned.replace(/\n+/g, '。');
+
+  // 連続する句読点を整理
+  cleaned = cleaned.replace(/[。、]{2,}/g, '。');
+
+  // 先頭・末尾の句読点を整理
+  cleaned = cleaned.replace(/^[。、\s]+/, '');
+  cleaned = cleaned.replace(/[、\s]+$/, '');
+
+  // 末尾に句点がなければ追加（TTS用）
+  if (cleaned && !/[。！？!?]$/.test(cleaned)) {
+    cleaned += '。';
+  }
+
+  return cleaned.trim();
+}
+
+// ========================================
+// プロンプト構築
+// ========================================
+
 function buildSystemPrompt(
   ctx: ProjectContextData,
   relationshipType: string,
   recentContext: string
 ): string {
-  const publicLevel = relationshipType === 'internal'
-    ? '全情報を回答可能（未確定事項・上長フィードバック含む）'
-    : '未確定事項(open_issues)・上長フィードバックは非公開。決定事項・タスク進捗のみ回答';
-
   // 公開レベルに応じてコンテキストをフィルタ
-  let projectInfo = `
-【プロジェクト】${ctx.projectName}（${ctx.organizationName}）
-
-【タスク状況】
-${ctx.tasks}
-
-【決定事項】
-${ctx.decisions}
-
-【マイルストーン】
-${ctx.milestones}`;
+  let projectInfo = `PJ: ${ctx.projectName}
+タスク: ${ctx.tasks}
+決定事項: ${ctx.decisions}
+MS: ${ctx.milestones}`;
 
   if (relationshipType === 'internal') {
-    projectInfo += `
-
-【未確定事項】
-${ctx.openIssues}`;
-
+    projectInfo += `\n未確定: ${ctx.openIssues}`;
     if (ctx.bossFeedback) {
-      projectInfo += `
-
-【上長フィードバック・学習ポイント】
-${ctx.bossFeedback}`;
+      projectInfo += `\n上長FB: ${ctx.bossFeedback}`;
     }
   }
 
-  return `NodeAI。会議中のAIアシスタント。
+  const publicNote = relationshipType !== 'internal'
+    ? '※社外会議: 未確定事項・上長FBは回答しない。'
+    : '';
+
+  return `あなたはNodeAI。会議中の音声AIアシスタント。応答はそのままTTSで読み上げられる。
+
 ${projectInfo}
-${recentContext ? recentContext : ''}
-【必須ルール】1-2文、60文字以内。数字優先。名前は姓のみ（例:鈴木さん）。口語OK。公開:${relationshipType}。${publicLevel}`;
+${recentContext || ''}
+
+=== 応答ルール（厳守） ===
+- 1〜2文、50文字以内。それ以上は絶対に書かない
+- TTSで読み上げるため、書き言葉禁止: 【】・-・※・箇条書き・改行を使わない
+- 自然な話し言葉で答える。「〜ですね」「〜ですよ」等の口語OK
+- 数字・ファクトを優先。曖昧に濁さない
+- 質問者の名前は「さん」付けで呼ぶ
+${publicNote}
+
+=== OK例 ===
+Q: 予算は？
+A: 残り約15万円で、3月末までに消化する予定ですね。
+
+Q: タスクの進捗は？
+A: 全5件中3件完了してます。残り2件は今週中ですね。
+
+Q: 次の会議いつ？
+A: 来週月曜の10時からですよ。
+
+=== NG例（絶対にやらないこと） ===
+NG: 【予算配分】残予算15万円...  ← 見出し記号禁止
+NG: ・Meta広告: 10万 / ・Google: 5万  ← 箇条書き禁止
+NG: 長文で3つ以上の情報を列挙する  ← 50文字を超える`;
 }

@@ -27,7 +27,7 @@ import {
 } from '@/services/nodeai/sessionCache.service';
 import type { Utterance, Participant } from '@/services/nodeai/sessionCache.service';
 import { resolveContactFromEmail, getCachedProjectContext } from '@/services/nodeai/contextBuilder.service';
-import { generateResponseFast } from '@/services/nodeai/responseGenerator.service';
+import { generateResponseFast, extractFamilyName, cleanResponseForTTS } from '@/services/nodeai/responseGenerator.service';
 import { textToSpeech, isTTSConfigured } from '@/services/nodeai/ttsService';
 import { outputAudio } from '@/services/nodeai/recallClient.service';
 
@@ -123,12 +123,14 @@ export async function POST(request: Request): Promise<Response> {
     // ================================================================
     let contactId: string | undefined;
     let speakerName = participant.name || '参加者';
+    let speakerFamilyName = extractFamilyName(speakerName);
 
     if (participant.email) {
       const contact = await getCachedContact(participant.email, resolveContactFromEmail);
       if (contact) {
         contactId = contact.contactId;
         speakerName = contact.name;
+        speakerFamilyName = extractFamilyName(contact.name);
       }
     }
 
@@ -206,7 +208,7 @@ export async function POST(request: Request): Promise<Response> {
       botId,
       projectId: cached.projectId,
       question,
-      speakerName,
+      speakerName: speakerFamilyName, // 姓のみ渡す（TTS読み上げ用）
       speakerContactId: contactId,
       relationshipType: cached.relationshipType,
       recentContext,
@@ -216,7 +218,8 @@ export async function POST(request: Request): Promise<Response> {
     if (!aiResult.success) {
       console.error('[NodeAI] AI failed:', aiResult.error);
     }
-    const responseText = aiResult.text;
+    // ポスト処理: 書き言葉の記号を除去してTTS用にクリーンアップ
+    const responseText = cleanResponseForTTS(aiResult.text);
 
     // ================================================================
     // Step 6: TTS変換（クリティカルパス）
