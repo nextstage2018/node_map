@@ -78,8 +78,9 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
     bot_name: botName,
     recording_config: {
       transcript: {
-        provider: 'default',
-        language_code: 'ja',
+        provider: {
+          meeting_captions: {},
+        },
       },
       realtime_endpoints: [
         {
