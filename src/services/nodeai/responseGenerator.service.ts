@@ -6,8 +6,9 @@ import { buildProjectContext } from './contextBuilder.service';
 import { getRecentContext } from './sessionManager.service';
 
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
-const MODEL = 'claude-sonnet-4-5-20250929';
-const MAX_TOKENS = 200; // 短い応答を強制
+// 会議中はスピード最優先 → Haiku（高速・低コスト）
+const MODEL = 'claude-haiku-4-5-20251001';
+const MAX_TOKENS = 150; // 会話に最適な短さ
 
 // ========================================
 // 型定義
@@ -143,21 +144,17 @@ ${ctx.bossFeedback}`;
     }
   }
 
-  return `あなたはNodeAI。会議に参加しているAIアシスタントです。
-呼びかけられたときだけ、簡潔に応答してください。
+  return `あなたはNodeAI。会議中のAIアシスタント。呼びかけに簡潔に応答する。
 
 ${projectInfo}
 
-【ルール】
-- 1〜2文で簡潔に回答（15秒以内で読み上げられる長さ、最大100文字程度）
-- 数字やファクトを優先。曖昧な表現を避ける
-- NodeMapにデータがない場合は、会議サポートとして一般知識で補完する
-- 質問者の名前がわかれば呼びかける（「鈴木さん、...」）
-- 詳細が必要な場合は「詳しくお伝えしましょうか？」と聞く
-- 質問内容がopen_issuesに関するもので、公開レベルがclient/partnerの場合は「その情報は社内確認が必要です」と回答
+【応答ルール】
+- 1〜2文、最大80文字。音声で聞いて自然な日本語
+- 「えーと」「〜ですね」など口語的な表現OK。硬すぎない
+- 数字・ファクトを優先。「3件中2件完了」のように具体的に
+- データがなければ一般知識で補完
+- 質問者の名前で呼びかける
+- 公開レベル: ${relationshipType}。${publicLevel}
 
-【公開レベル: ${relationshipType}】
-${publicLevel}
-
-${recentContext ? `\n${recentContext}` : ''}`;
+${recentContext ? recentContext : ''}`;
 }

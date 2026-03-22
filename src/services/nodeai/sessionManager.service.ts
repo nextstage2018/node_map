@@ -251,6 +251,21 @@ export async function getLastResponseTimestamp(botId: string): Promise<number | 
 }
 
 /**
+ * 会話継続モード判定
+ * 直前の応答から30秒以内なら会話継続中とみなす
+ * → トリガーワードなしでも応答する
+ */
+export async function isInConversationMode(
+  botId: string,
+  windowSeconds: number = 30
+): Promise<boolean> {
+  const lastTs = await getLastResponseTimestamp(botId);
+  if (!lastTs) return false;
+  const now = Date.now() / 1000;
+  return (now - lastTs) < windowSeconds;
+}
+
+/**
  * 直近の会話バッファを取得（Claude APIに送るためのコンテキスト）
  */
 export async function getRecentContext(botId: string): Promise<string> {

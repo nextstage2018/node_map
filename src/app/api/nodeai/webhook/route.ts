@@ -1,9 +1,9 @@
 // NodeAI: Recall.ai Webhook受信エンドポイント
-// リアルタイム文字起こし → トリガー検知 → 応答生成 → TTS → 音声出力
+// リアルタイム文字起こし → トリガー検知 or 会話継続 → 応答生成 → TTS → 音声出力
 //
 // 処理フロー:
 // 1. utterance をバッファに追加
-// 2. トリガーワード検知
+// 2. トリガーワード検知 or 会話継続モード（直前応答から30秒以内）
 // 3. 検知したら → 質問抽出 → Claude応答 → TTS → Recall.ai Output
 // 4. 検知しなかったら → 200返却（バッファ蓄積のみ）
 
@@ -15,6 +15,7 @@ import {
   getLastResponseTimestamp,
   recordResponse,
   getSessionByBotId,
+  isInConversationMode,
 } from '@/services/nodeai/sessionManager.service';
 import { resolveContactFromEmail } from '@/services/nodeai/contextBuilder.service';
 import { generateResponse } from '@/services/nodeai/responseGenerator.service';
@@ -29,7 +30,6 @@ import { shouldIgnoreEcho } from '@/services/nodeai/triggerDetector.service';
 interface WebhookPayload {
   event: string;
   data: {
-    // Recall.ai の実際のペイロード構造
     bot: {
       id: string;
       metadata?: Record<string, unknown>;
@@ -56,6 +56,15 @@ interface WebhookPayload {
   };
 }
 
+// 空テキスト・フィラーを除外
+function isSubstantiveText(text: string): boolean {
+  const cleaned = text.replace(/[\s。、,.!?！？]+/g, '');
+  if (cleaned.length < 2) return false;
+  // フィラーワードのみの発言は除外
+  const fillers = /^(えー|えっと|あの|うーん|まあ|そうですね|はい|うん|ああ|おー)+$/;
+  return !fillers.test(cleaned);
+}
+
 // ========================================
 // POST /api/nodeai/webhook
 // ========================================
@@ -63,43 +72,35 @@ interface WebhookPayload {
 export async function POST(request: Request): Promise<Response> {
   try {
     const rawPayload = await request.json();
-
-    // === デバッグログ: Recall.aiから送られてくる全ペイロードを記録 ===
-    console.log('[NodeAI Webhook] Received event:', rawPayload.event || 'unknown');
-    console.log('[NodeAI Webhook] Full payload:', JSON.stringify(rawPayload).substring(0, 2000));
-
     const payload = rawPayload as WebhookPayload;
 
-    // イベント種別チェック（transcript.data以外も記録）
+    // イベント種別チェック
     if (payload.event !== 'transcript.data') {
-      console.log(`[NodeAI Webhook] Non-transcript event: ${payload.event}`);
       return NextResponse.json({ ok: true });
     }
 
-    // Recall.ai の実際の構造: data.bot.id（data.bot_id ではない）
     const botId = payload.data?.bot?.id;
     const data = payload.data?.data;
     const words = data?.words;
     const participant = data?.participant;
 
-    console.log(`[NodeAI Webhook] bot_id=${botId}, words=${words?.length || 0}, participant=${participant?.name || 'unknown'}`);
-
     if (!botId || !words || words.length === 0) {
-      console.log('[NodeAI Webhook] Empty words or no botId, skipping');
       return NextResponse.json({ ok: true });
     }
 
     // セッション取得
     const session = await getSessionByBotId(botId);
     if (!session) {
-      console.warn(`[NodeAI] No active session for bot ${botId}`);
       return NextResponse.json({ ok: true });
     }
 
-    // 発言テキストを結合（スペース区切りで結合）
-    const fullText = words.map((w) => w.text).join(' ').trim();
+    // 発言テキストを結合（空テキストを除外してから結合）
+    const fullText = words.map((w) => w.text).filter(Boolean).join(' ').trim();
+    if (!fullText) {
+      return NextResponse.json({ ok: true });
+    }
 
-    // タイムスタンプ解析（数値 or オブジェクト{relative, absolute}に対応）
+    // タイムスタンプ解析
     const rawTs = words[0]?.start_timestamp;
     const timestamp = typeof rawTs === 'number'
       ? rawTs
@@ -128,8 +129,6 @@ export async function POST(request: Request): Promise<Response> {
     });
 
     // utteranceをバッファに追加
-    console.log(`[NodeAI Webhook] Utterance: "${fullText}" by ${speakerName}`);
-
     await addUtterance(botId, {
       speakerName,
       speakerContactId: contactId,
@@ -139,34 +138,41 @@ export async function POST(request: Request): Promise<Response> {
       timestamp,
     });
 
-    // トリガーワード検知
+    // === 応答判定: トリガー検知 or 会話継続モード ===
     const triggered = detectTrigger(fullText);
-    console.log(`[NodeAI Webhook] Trigger check: "${fullText}" => ${triggered}`);
-    if (!triggered) {
+    const conversationMode = await isInConversationMode(botId, 30);
+
+    // フィラーや短すぎる発言は無視（会話継続モードでも）
+    if (!triggered && conversationMode && !isSubstantiveText(fullText)) {
       return NextResponse.json({ ok: true });
     }
 
-    // エコー防止チェック（直前の応答から10秒以内なら無視）
+    if (!triggered && !conversationMode) {
+      return NextResponse.json({ ok: true });
+    }
+
+    // エコー防止チェック（直前の応答から8秒以内なら無視）
     const lastResponseTs = await getLastResponseTimestamp(botId);
-    if (shouldIgnoreEcho(lastResponseTs, timestamp, 10)) {
-      console.log(`[NodeAI] Echo prevention: ignoring trigger within 10s`);
+    if (shouldIgnoreEcho(lastResponseTs, timestamp, 8)) {
       return NextResponse.json({ ok: true, reason: 'echo_prevention' });
     }
 
-    // 質問テキストを抽出（空の場合はデフォルト質問を使用）
-    const extractedQuestion = extractQuestion(fullText);
-    const question = extractedQuestion || '現在のプロジェクトの状況を簡潔に教えてください';
+    // 質問テキストを決定
+    let question: string;
+    if (triggered) {
+      // トリガーワード検知 → トリガー以降のテキストを質問に
+      const extracted = extractQuestion(fullText);
+      question = extracted || '現在のプロジェクトの状況を簡潔に教えてください';
+    } else {
+      // 会話継続モード → 発言全体が質問
+      question = fullText;
+    }
 
-    console.log(`[NodeAI] Trigger detected: "${question}" by ${speakerName} (extracted: "${extractedQuestion || '(empty → default)'}")`);
+    const mode = triggered ? 'trigger' : 'conversation';
+    console.log(`[NodeAI] ${mode}: "${question}" by ${speakerName}`);
 
     // プロジェクトIDが必要
     if (!session.projectId) {
-      console.warn('[NodeAI] No project associated with session');
-      // TTS未設定ならここで終了
-      if (!isTTSConfigured()) {
-        return NextResponse.json({ ok: true, reason: 'no_project' });
-      }
-      // 「プロジェクトが未設定」を音声で伝える（将来のフォールバック）
       return NextResponse.json({ ok: true, reason: 'no_project' });
     }
 
@@ -183,7 +189,6 @@ export async function POST(request: Request): Promise<Response> {
 
     if (!aiResult.success) {
       console.error('[NodeAI] AI response failed:', aiResult.error);
-      // フォールバック応答を使用
     }
 
     const responseText = aiResult.text;
@@ -191,29 +196,26 @@ export async function POST(request: Request): Promise<Response> {
     // Step 2: 応答をバッファに記録
     await recordResponse(botId, question, responseText);
 
-    // Step 3: TTS → 音声出力（設定済みの場合）
+    // Step 3: TTS → 音声出力
     if (isTTSConfigured()) {
       try {
         const mp3Base64 = await textToSpeech(responseText);
         await outputAudio(botId, mp3Base64);
-        console.log(`[NodeAI] Audio output sent for bot ${botId}`);
+        console.log(`[NodeAI] Audio sent (${mode}): "${responseText.substring(0, 50)}..."`);
       } catch (ttsErr) {
-        console.error('[NodeAI] TTS/Audio output failed:', ttsErr);
-        // TTS失敗はパイプラインをブロックしない
+        console.error('[NodeAI] TTS/Audio failed:', ttsErr);
       }
-    } else {
-      console.log(`[NodeAI] TTS not configured, response text: "${responseText}"`);
     }
 
     return NextResponse.json({
       ok: true,
       triggered: true,
+      mode,
       question,
       response: responseText,
     });
   } catch (err) {
-    console.error('[NodeAI] Webhook processing error:', err);
-    // Recall.aiにはエラーでも200を返す（リトライ防止）
+    console.error('[NodeAI] Webhook error:', err);
     return NextResponse.json({ ok: true, error: 'Internal processing error' });
   }
 }

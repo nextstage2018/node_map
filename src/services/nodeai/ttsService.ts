@@ -1,5 +1,6 @@
 // NodeAI: ElevenLabs TTS サービス
 // テキストを日本語音声（MP3）に変換し、Base64で返す
+// 低遅延エンドポイント + 会話向け音声設定
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || '';
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '';
@@ -11,13 +12,15 @@ const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
 
 /**
  * テキストをMP3音声に変換し、Base64エンコードして返す
+ * optimize_streaming_latency=3 で最速レイテンシ
  */
 export async function textToSpeech(text: string): Promise<string> {
   if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
     throw new Error('ElevenLabs API key or voice ID is not configured');
   }
 
-  const url = `${ELEVENLABS_API_BASE}/text-to-speech/${ELEVENLABS_VOICE_ID}`;
+  // 低遅延エンドポイント（latency optimization level 3 = 最速）
+  const url = `${ELEVENLABS_API_BASE}/text-to-speech/${ELEVENLABS_VOICE_ID}?optimize_streaming_latency=3&output_format=mp3_22050_32`;
 
   const res = await fetch(url, {
     method: 'POST',
@@ -28,11 +31,12 @@ export async function textToSpeech(text: string): Promise<string> {
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_multilingual_v2',
+      model_id: 'eleven_turbo_v2_5',  // 低遅延モデル（多言語対応）
       voice_settings: {
-        stability: 0.7,
-        similarity_boost: 0.8,
-        style: 0.3,
+        stability: 0.65,           // やや低め → 自然な抑揚
+        similarity_boost: 0.75,    // 声質の忠実度
+        style: 0.15,               // 低め → 落ち着いた会話調
+        use_speaker_boost: true,   // 明瞭度向上
       },
     }),
   });
