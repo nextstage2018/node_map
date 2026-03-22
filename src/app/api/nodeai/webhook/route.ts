@@ -141,9 +141,13 @@ export async function POST(request: Request): Promise<Response> {
     // === 応答判定: トリガー検知 or 会話継続モード ===
     const triggered = detectTrigger(fullText);
     const conversationMode = await isInConversationMode(botId, 30);
+    const substantive = isSubstantiveText(fullText);
+
+    console.log(`[NodeAI] "${fullText}" | trigger=${triggered} convMode=${conversationMode} substantive=${substantive}`);
 
     // フィラーや短すぎる発言は無視（会話継続モードでも）
-    if (!triggered && conversationMode && !isSubstantiveText(fullText)) {
+    if (!triggered && conversationMode && !substantive) {
+      console.log(`[NodeAI] Skipping: filler in conversation mode`);
       return NextResponse.json({ ok: true });
     }
 
@@ -151,9 +155,12 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ ok: true });
     }
 
-    // エコー防止チェック（直前の応答から8秒以内なら無視）
+    // エコー防止チェック（直前の応答からの経過時間で判定）
+    // timestampはRelative（Bot起動からの秒数）なのでepochで比較
     const lastResponseTs = await getLastResponseTimestamp(botId);
-    if (shouldIgnoreEcho(lastResponseTs, timestamp, 8)) {
+    const nowEpoch = Date.now() / 1000;
+    if (lastResponseTs && (nowEpoch - lastResponseTs) < 8) {
+      console.log(`[NodeAI] Echo prevention: ${(nowEpoch - lastResponseTs).toFixed(1)}s since last response`);
       return NextResponse.json({ ok: true, reason: 'echo_prevention' });
     }
 
