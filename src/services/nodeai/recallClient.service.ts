@@ -1,7 +1,7 @@
 // NodeAI: Recall.ai APIクライアント
 // Bot参加・音声出力・Bot停止を管理
 
-const RECALL_API_BASE = 'https://us-west-2.recall.ai/api/v1';
+const RECALL_API_BASE = 'https://ap-northeast-1.recall.ai/api/v1';
 const RECALL_API_KEY = process.env.RECALL_API_KEY || '';
 
 // WebhookのベースURL
