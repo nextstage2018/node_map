@@ -1,11 +1,12 @@
-// v9.0 + v10.4: 秘書ダッシュボード — 3カード構成 + トークンアラート
-// インボックス返信 / カレンダー / タスクリマインダー
+// v9.0 + v10.4 + v10.6: 秘書ダッシュボード — 3カード構成 + トークンアラート + 未確認議事録
+// インボックス返信 / カレンダー / タスクリマインダー / 未確認議事録（件数0なら非表示）
 'use client';
 
 import InboxReplyCard from './InboxReplyCard';
 import CalendarWidget from './CalendarWidget';
 import TaskReminderCard from './TaskReminderCard';
 import TokenAlertBanner from './TokenAlertBanner';
+import PendingMeetingCard from './PendingMeetingCard';
 
 export default function SecretaryDashboard() {
   return (
@@ -13,6 +14,11 @@ export default function SecretaryDashboard() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* v10.4: トークン期限切れ警告バナー（問題がある場合のみ表示） */}
         <TokenAlertBanner />
+
+        {/* 未確認議事録（件数0なら自動非表示） */}
+        <div className="mb-4">
+          <PendingMeetingCard />
+        </div>
 
         {/* ヘッダー */}
         <div className="mb-6">

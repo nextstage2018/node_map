@@ -135,24 +135,28 @@ export async function GET(request: NextRequest) {
             totalProcessed++;
             console.log(`[SyncMeetingNotes] 会議メモ検出: "${event.summary}" → Docs: "${noteResult.docTitle}" (user: ${userId})`);
 
-            // プロジェクト自動判定（4段階フォールバック）
-            // ① カレンダーイベントのdescriptionからproject_idを抽出（定期イベント等で埋め込み済み）
-            // ②  [NM-Meeting] タイトルからproject_recurring_rulesを逆引き
-            // ③ 参加者メールからcontact_channels → organization → projects
-            // ④ 最新プロジェクト（最終フォールバック）
-            let projectId = resolveProjectFromDescription(event.description);
+            // プロジェクト自動判定（確定判定 + 推定判定の2段階）
+            // 確定: ① description埋め込み、② recurring_rules逆引き → 自動配信OK
+            // 推定: ②.5 タイトル照合、③ 参加者メール、④ 最新PJ → 保留（ユーザー確認待ち）
+            let projectId: string | null = null;
+            let projectConfirmed = false; // true = 自動配信OK、false = ユーザー確認待ち
+            let matchedRecurringRuleId: string | null = null;
+
+            // ① カレンダーイベントのdescriptionからproject_idを抽出
+            projectId = resolveProjectFromDescription(event.description);
             if (projectId) {
-              console.log(`[SyncMeetingNotes] プロジェクト判定: description埋め込み → ${projectId}`);
+              projectConfirmed = true;
+              console.log(`[SyncMeetingNotes] プロジェクト判定【確定】: description埋め込み → ${projectId}`);
             }
 
             // ② [NM-Meeting] タイトルからrecurring_rulesを逆引き
-            let matchedRecurringRuleId: string | null = null;
             if (!projectId && event.summary) {
               const ruleMatch = await resolveProjectFromRecurringRules(supabase, event.summary);
               if (ruleMatch) {
                 projectId = ruleMatch.projectId;
                 matchedRecurringRuleId = ruleMatch.ruleId;
-                console.log(`[SyncMeetingNotes] プロジェクト判定: recurring_rules逆引き → PJ ${projectId}, rule ${matchedRecurringRuleId}`);
+                projectConfirmed = true;
+                console.log(`[SyncMeetingNotes] プロジェクト判定【確定】: recurring_rules逆引き → PJ ${projectId}, rule ${matchedRecurringRuleId}`);
               }
             }
             // ①のdescription埋め込み経由でもrecurring_rule_idを解決
@@ -163,25 +167,35 @@ export async function GET(request: NextRequest) {
               }
             }
 
+            // --- ここから推定判定（保留扱い）---
+
+            // ②.5 会議タイトルからプロジェクト名・チャネル名で照合
+            if (!projectId && event.summary) {
+              projectId = await resolveProjectFromTitle(supabase, event.summary);
+              if (projectId) {
+                console.log(`[SyncMeetingNotes] プロジェクト判定【推定】: タイトル照合 → ${projectId}`);
+              }
+            }
+
             // ③ 参加者メールから
             if (!projectId) {
               projectId = await resolveProjectFromAttendees(supabase, noteResult.attendees);
               if (projectId) {
-                console.log(`[SyncMeetingNotes] プロジェクト判定: 参加者メール → ${projectId}`);
+                console.log(`[SyncMeetingNotes] プロジェクト判定【推定】: 参加者メール → ${projectId}`);
               }
             }
 
-            // ④ 最終フォールバック: 最新プロジェクト
+            // ④ 最終フォールバック: 自社組織の最新プロジェクト
             if (!projectId) {
               projectId = await resolveLatestProject(supabase);
               if (projectId) {
-                console.log(`[SyncMeetingNotes] プロジェクト判定: 最新PJフォールバック → ${projectId}`);
+                console.log(`[SyncMeetingNotes] プロジェクト判定【推定】: 最新PJフォールバック → ${projectId}`);
               }
             }
 
             if (!projectId) {
               console.warn(`[SyncMeetingNotes] プロジェクト判定失敗: "${event.summary}" (desc=${event.description?.substring(0, 100) || 'なし'}, attendees=${noteResult.attendees?.length || 0}人) — スキップ`);
-              allSkipReasons.push({ user: userId, event: event.summary, reason: 'プロジェクト判定失敗（全4経路で不一致）' });
+              allSkipReasons.push({ user: userId, event: event.summary, reason: 'プロジェクト判定失敗（全経路で不一致）' });
               userSkipped++;
               continue;
             }
@@ -213,6 +227,8 @@ export async function GET(request: NextRequest) {
                   calendar_event_id: event.id,
                   calendar_html_link: event.htmlLink,
                   synced_by_user_id: userId,
+                  needs_project_review: !projectConfirmed,
+                  project_match_method: projectConfirmed ? 'confirmed' : 'estimated',
                 },
                 user_id: userId,
               })
@@ -225,29 +241,35 @@ export async function GET(request: NextRequest) {
               continue;
             }
 
-            // 統一パイプライン: analyze API を呼び出し
-            // Claude AI解析 → 検討ツリー生成 → チャネル通知を一括実行
+            // 統一パイプライン: analyze API を呼び出し（確定判定のみ）
+            // 推定判定（needs_project_review）の場合はユーザー確認待ち → ダッシュボードで確認後に実行
             if (newRecord) {
-              try {
-                const cronSecret = process.env.CRON_SECRET || '';
-                const analyzeUrl = `https://node-map-eight.vercel.app/api/meeting-records/${newRecord.id}/analyze?cron_secret=${encodeURIComponent(cronSecret)}`;
-                console.log(`[SyncMeetingNotes] analyze API呼び出し: recordId=${newRecord.id}`);
-                const analyzeRes = await fetch(analyzeUrl, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'x-cron-secret': cronSecret,
-                  },
-                  body: JSON.stringify({ user_id: userId }),
-                });
-                if (analyzeRes.ok) {
-                  const analyzeData = await analyzeRes.json();
-                  console.log(`[SyncMeetingNotes] analyze完了: topics=${analyzeData.data?.analysis?.topics?.length || 0}, actions=${analyzeData.data?.analysis?.action_items?.length || 0}`);
-                } else {
-                  console.error(`[SyncMeetingNotes] analyze APIエラー: ${analyzeRes.status} ${await analyzeRes.text().catch(() => '')}`);
+              if (projectConfirmed) {
+                // ①②で確定 → 自動でAI解析 + チャネル通知
+                try {
+                  const cronSecret = process.env.CRON_SECRET || '';
+                  const analyzeUrl = `https://node-map-eight.vercel.app/api/meeting-records/${newRecord.id}/analyze?cron_secret=${encodeURIComponent(cronSecret)}`;
+                  console.log(`[SyncMeetingNotes] analyze API呼び出し【確定】: recordId=${newRecord.id}`);
+                  const analyzeRes = await fetch(analyzeUrl, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'x-cron-secret': cronSecret,
+                    },
+                    body: JSON.stringify({ user_id: userId }),
+                  });
+                  if (analyzeRes.ok) {
+                    const analyzeData = await analyzeRes.json();
+                    console.log(`[SyncMeetingNotes] analyze完了: topics=${analyzeData.data?.analysis?.topics?.length || 0}, actions=${analyzeData.data?.analysis?.action_items?.length || 0}`);
+                  } else {
+                    console.error(`[SyncMeetingNotes] analyze APIエラー: ${analyzeRes.status} ${await analyzeRes.text().catch(() => '')}`);
+                  }
+                } catch (pipelineError) {
+                  console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
                 }
-              } catch (pipelineError) {
-                console.error(`[SyncMeetingNotes] 解析パイプラインエラー:`, pipelineError);
+              } else {
+                // ②.5③④で推定 → 保留（ダッシュボードでユーザーが確認してから実行）
+                console.log(`[SyncMeetingNotes] 保留【要確認】: recordId=${newRecord.id}, 推定PJ=${projectId}, title="${event.summary}"`);
               }
               userCreated++;
             }
@@ -328,6 +350,59 @@ async function resolveProjectFromRecurringRules(supabase: any, eventSummary: str
     return null;
   } catch (error) {
     console.error('[SyncMeetingNotes] recurring_rules逆引きエラー:', error);
+    return null;
+  }
+}
+
+// ========================================
+// プロジェクト自動判定②.5: 会議タイトルからプロジェクト名・チャネル名で照合
+// Googleカレンダーから直接作成された会議に対応（備考にproject_id未埋め込み）
+// ========================================
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function resolveProjectFromTitle(supabase: any, eventSummary: string): Promise<string | null> {
+  if (!eventSummary) return null;
+
+  try {
+    // [NM-Meeting] や [NM-Task] 等のプレフィックスを除去
+    const cleanTitle = eventSummary.replace(/\[NM-\w+\]\s*/, '').trim();
+    if (!cleanTitle || cleanTitle.length < 2) return null;
+
+    // 1. プロジェクト名との照合（プロジェクト名がタイトルに含まれる or タイトルがプロジェクト名に含まれる）
+    const { data: projects } = await supabase
+      .from('projects')
+      .select('id, name')
+      .order('created_at', { ascending: false });
+
+    if (projects && projects.length > 0) {
+      for (const pj of projects) {
+        if (!pj.name || pj.name.length < 2) continue;
+        // プロジェクト名がタイトルに含まれる（部分一致）
+        if (cleanTitle.includes(pj.name) || pj.name.includes(cleanTitle)) {
+          console.log(`[SyncMeetingNotes] タイトル照合: "${cleanTitle}" → PJ名 "${pj.name}" (${pj.id})`);
+          return pj.id;
+        }
+      }
+    }
+
+    // 2. プロジェクトチャネル名との照合（Slackチャネル名がタイトルに含まれる場合）
+    const { data: channels } = await supabase
+      .from('project_channels')
+      .select('project_id, channel_name')
+      .not('channel_name', 'is', null);
+
+    if (channels && channels.length > 0) {
+      for (const ch of channels) {
+        if (!ch.channel_name || ch.channel_name.length < 2) continue;
+        if (cleanTitle.toLowerCase().includes(ch.channel_name.toLowerCase())) {
+          console.log(`[SyncMeetingNotes] タイトル照合: "${cleanTitle}" → チャネル名 "${ch.channel_name}" (PJ ${ch.project_id})`);
+          return ch.project_id;
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[SyncMeetingNotes] タイトル照合エラー:', error);
     return null;
   }
 }
