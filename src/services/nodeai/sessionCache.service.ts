@@ -233,14 +233,15 @@ export async function flushToDb(botId: string): Promise<void> {
 
 /**
  * 非応答時のlazyFlush
- * 30秒以上flushしていない場合のみDB書き込み（バッファ喪失防止）
+ * 10秒以上flushしていない場合にDB書き込み（バッファ喪失防止を強化）
+ * v11.0: 30秒→10秒に短縮（文字起こしデータの永続化を優先）
  */
 export async function lazyFlush(botId: string): Promise<void> {
   const cached = sessionCache.get(botId);
   if (!cached || !cached.dirty) return;
 
   const now = Date.now() / 1000;
-  if (now - cached.lastFlushAt > 30) {
+  if (now - cached.lastFlushAt > 10) {
     await flushToDb(botId);
   }
 }
@@ -303,4 +304,38 @@ export async function getCachedContact(
  */
 export function clearSessionCache(botId: string): void {
   sessionCache.delete(botId);
+}
+
+/**
+ * 3時間超過セッションの自動終了
+ * Webhook受信時にチェックし、超過していたらDB上でendedにしてキャッシュクリア
+ * @returns true if session was ended
+ */
+export async function autoEndStaleSession(botId: string): Promise<boolean> {
+  const supabase = getDb();
+  if (!supabase) return false;
+
+  const { data } = await supabase
+    .from('nodeai_sessions')
+    .select('started_at')
+    .eq('bot_id', botId)
+    .eq('status', 'active')
+    .single();
+
+  if (!data) return false;
+
+  const startedAt = new Date(data.started_at).getTime();
+  const threeHours = 3 * 60 * 60 * 1000;
+  if (Date.now() - startedAt < threeHours) return false;
+
+  // 最終フラッシュしてから終了
+  await flushToDb(botId);
+
+  await supabase
+    .from('nodeai_sessions')
+    .update({ status: 'ended', ended_at: new Date().toISOString() })
+    .eq('bot_id', botId);
+
+  sessionCache.delete(botId);
+  return true;
 }

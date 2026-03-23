@@ -75,8 +75,12 @@ function isSubstantiveText(text: string): boolean {
 // お礼・挨拶・相槌（応答不要な発言）を検出
 function isGreetingOrThanks(text: string): boolean {
   const cleaned = text.replace(/[\s。、,.!?！？]+/g, '');
-  const patterns = /^(了解です|了解しました|ありがとう|ありがとうございます|ありがとうございました|承知しました|わかりました|かしこまりました|お疲れ様です|お疲れさまです|お疲れ様でした|よろしくお願いします|よろしくお願いいたします|お願いします|すみません|失礼します|大丈夫です|OKです|オッケーです|なるほど|そうですね|確かに)+$/;
-  return patterns.test(cleaned);
+  // 単独フレーズ（繰り返し含む）
+  const patterns = /^(はい|うん|ええ|了解|了解です|了解しました|ありがとう|ありがとうございます|ありがとうございました|承知しました|承知です|わかりました|分かりました|かしこまりました|お疲れ様です|お疲れさまです|お疲れ様でした|よろしくお願いします|よろしくお願いいたします|お願いします|すみません|失礼します|失礼しました|大丈夫です|OKです|オッケーです|なるほど|そうですね|確かに|しました|そうですか|そうなんですね|いいですね|素晴らしい|助かります|ですね)+$/;
+  if (patterns.test(cleaned)) return true;
+  // 複合パターン: 「はい、了解です」「ありがとうございます、承知しました」等
+  const compoundPattern = /^(はい|ええ|うん)?(了解です|了解しました|ありがとう|ありがとうございます|ありがとうございました|承知しました|承知です|わかりました|分かりました|かしこまりました|なるほど|そうですね|確かに|しました|ですね)$/;
+  return compoundPattern.test(cleaned);
 }
 
 // ========================================
@@ -124,6 +128,19 @@ export async function POST(request: Request): Promise<Response> {
       console.log(`[NodeAI:perf] getSession: ${sessionMs}ms (DB fallback)`);
     }
     if (!cached) return NextResponse.json({ ok: true });
+
+    // 3時間超過のセッションは自動終了
+    const sessionAgeHours = (Date.now() / 1000 - cached.loadedAt + SESSION_RELOAD_TTL) / 3600;
+    if (cached.loadedAt > 0) {
+      // loadedAtからの経過ではなくDB上のstarted_atで判定（getCachedSession再取得時にリセットされるため）
+      // → flushToDbでended化
+      const { autoEndStaleSession } = await import('@/services/nodeai/sessionCache.service');
+      const ended = await autoEndStaleSession(botId);
+      if (ended) {
+        console.log(`[NodeAI] Session auto-ended (stale)`);
+        return NextResponse.json({ ok: true, reason: 'session_auto_ended' });
+      }
+    }
 
     // ================================================================
     // Step 2: コンタクト解決（キャッシュ: 0ms / 初回のみDB）

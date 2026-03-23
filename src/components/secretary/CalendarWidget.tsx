@@ -2,8 +2,8 @@
 // 月/週ビュー + 予定表示 + 新規作成 + 編集 + NodeAI Bot起動
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, ChevronLeft, ChevronRight, Plus, X, Loader2, Clock, AlertCircle, Bot, Square } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Calendar, ChevronLeft, ChevronRight, Plus, X, Loader2, Clock, AlertCircle, Bot, Square, FolderOpen } from 'lucide-react';
 
 interface CalendarEvent {
   id: string;
@@ -41,6 +41,12 @@ function extractProjectId(description?: string): string | null {
   return match ? match[1] : null;
 }
 
+interface ProjectOption {
+  id: string;
+  name: string;
+  org_name: string;
+}
+
 export default function CalendarWidget() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -54,15 +60,48 @@ export default function CalendarWidget() {
   // NodeAI状態: botId → セッション中
   const [nodeAiBots, setNodeAiBots] = useState<Record<string, string>>({}); // eventId → botId
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
+  // PJ選択UI
+  const [projectSelectEventId, setProjectSelectEventId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const projectSelectRef = useRef<HTMLDivElement>(null);
 
-  // NodeAI Bot を会議に参加させる
-  const handleNodeAiJoin = async (ev: CalendarEvent) => {
+  // プロジェクト一覧取得
+  const fetchProjects = useCallback(async () => {
+    if (projectsLoaded) return;
+    try {
+      const res = await fetch('/api/projects/list-all');
+      const data = await res.json();
+      if (data.success && data.data) {
+        setProjects(data.data);
+        setProjectsLoaded(true);
+      }
+    } catch { /* ignore */ }
+  }, [projectsLoaded]);
+
+  // PJ選択UIの外側クリックで閉じる
+  useEffect(() => {
+    if (!projectSelectEventId) return;
+    const handleClick = (e: MouseEvent) => {
+      if (projectSelectRef.current && !projectSelectRef.current.contains(e.target as Node)) {
+        setProjectSelectEventId(null);
+        setSelectedProjectId('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [projectSelectEventId]);
+
+  // NodeAI Bot を会議に参加させる（project_id付き）
+  const executeNodeAiJoin = async (ev: CalendarEvent, projectId?: string) => {
     const meetUrl = getMeetUrl(ev);
     if (!meetUrl) return;
 
     setJoiningEventId(ev.id);
+    setProjectSelectEventId(null);
+    setSelectedProjectId('');
     try {
-      const projectId = extractProjectId(ev.description);
       const res = await fetch('/api/nodeai/join', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -83,6 +122,22 @@ export default function CalendarWidget() {
       alert('NodeAIの参加に失敗しました');
     } finally {
       setJoiningEventId(null);
+    }
+  };
+
+  // AI参加ボタン押下 → project_idチェック → あればそのまま参加、なければPJ選択表示
+  const handleNodeAiJoin = async (ev: CalendarEvent) => {
+    const meetUrl = getMeetUrl(ev);
+    if (!meetUrl) return;
+
+    const projectId = extractProjectId(ev.description);
+    if (projectId) {
+      // 定期イベント等でproject_idが埋め込まれている場合はそのまま参加
+      await executeNodeAiJoin(ev, projectId);
+    } else {
+      // project_idがない場合はプロジェクト選択UIを表示
+      setProjectSelectEventId(ev.id);
+      fetchProjects();
     }
   };
 
@@ -428,6 +483,45 @@ export default function CalendarWidget() {
                             <Square className="w-2.5 h-2.5" />
                             <span>停止</span>
                           </button>
+                        ) : projectSelectEventId === ev.id ? (
+                          <div ref={projectSelectRef} className="shrink-0 flex flex-col gap-1 bg-white border border-blue-200 rounded-lg p-2 shadow-lg min-w-[180px]">
+                            <div className="flex items-center gap-1 mb-1">
+                              <FolderOpen className="w-3 h-3 text-nm-text-secondary" />
+                              <span className="text-[9px] font-medium text-nm-text-secondary">プロジェクト選択</span>
+                            </div>
+                            <select
+                              value={selectedProjectId}
+                              onChange={(e) => setSelectedProjectId(e.target.value)}
+                              className="text-[10px] border border-nm-border rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-nm-primary w-full"
+                            >
+                              <option value="">-- 選択してください --</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.org_name ? `${p.org_name} / ` : ''}{p.name}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex gap-1 mt-1">
+                              <button
+                                onClick={() => {
+                                  if (selectedProjectId) {
+                                    executeNodeAiJoin(ev, selectedProjectId);
+                                  }
+                                }}
+                                disabled={!selectedProjectId}
+                                className="flex-1 flex items-center justify-center gap-1 px-1.5 py-1 text-[9px] font-medium text-white bg-nm-primary rounded hover:bg-nm-primary-hover disabled:opacity-40 transition-colors"
+                              >
+                                <Bot className="w-2.5 h-2.5" />
+                                参加
+                              </button>
+                              <button
+                                onClick={() => executeNodeAiJoin(ev)}
+                                className="flex-1 px-1.5 py-1 text-[9px] text-nm-text-secondary bg-slate-50 border border-nm-border rounded hover:bg-slate-100 transition-colors"
+                              >
+                                PJなしで参加
+                              </button>
+                            </div>
+                          </div>
                         ) : (
                           <button
                             onClick={() => handleNodeAiJoin(ev)}
