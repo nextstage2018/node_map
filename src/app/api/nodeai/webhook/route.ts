@@ -129,11 +129,8 @@ export async function POST(request: Request): Promise<Response> {
     }
     if (!cached) return NextResponse.json({ ok: true });
 
-    // 3時間超過のセッションは自動終了
-    const sessionAgeHours = (Date.now() / 1000 - cached.loadedAt + SESSION_RELOAD_TTL) / 3600;
-    if (cached.loadedAt > 0) {
-      // loadedAtからの経過ではなくDB上のstarted_atで判定（getCachedSession再取得時にリセットされるため）
-      // → flushToDbでended化
+    // 3時間超過のセッションは自動終了（DB上のstarted_atで判定）
+    {
       const { autoEndStaleSession } = await import('@/services/nodeai/sessionCache.service');
       const ended = await autoEndStaleSession(botId);
       if (ended) {
