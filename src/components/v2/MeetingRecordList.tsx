@@ -1,8 +1,8 @@
-// V2-D: 会議録一覧コンポーネント（日付降順、要約表示）
+// V2-D: 会議録一覧コンポーネント（日付降順、要約表示、プロジェクト変更対応）
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, Calendar, ChevronDown, ChevronRight, Trash2, CheckCircle2, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import { FileText, Calendar, ChevronDown, ChevronRight, Trash2, CheckCircle2, Clock, RefreshCw, AlertCircle, ArrowRightLeft } from 'lucide-react';
 
 interface MeetingRecord {
   id: string;
@@ -14,6 +14,12 @@ interface MeetingRecord {
   processed: boolean;
   source_type: string;
   created_at: string;
+}
+
+interface ProjectOption {
+  id: string;
+  name: string;
+  org_name?: string;
 }
 
 interface MeetingRecordListProps {
@@ -28,6 +34,10 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [reanalyzingId, setReanalyzingId] = useState<string | null>(null);
   const [reanalyzeError, setReanalyzeError] = useState<string | null>(null);
+  // プロジェクト変更UI
+  const [reassigningId, setReassigningId] = useState<string | null>(null);
+  const [allProjects, setAllProjects] = useState<ProjectOption[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     try {
@@ -80,6 +90,48 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
     } finally {
       setReanalyzingId(null);
     }
+  };
+
+  // プロジェクト一覧取得（変更ドロップダウン用）
+  const fetchProjects = useCallback(async () => {
+    if (projectsLoaded) return;
+    try {
+      const res = await fetch('/api/organizations');
+      const data = await res.json();
+      if (data.success && data.data) {
+        const options: ProjectOption[] = [];
+        for (const org of data.data) {
+          if (org.projects) {
+            for (const pj of org.projects) {
+              options.push({ id: pj.id, name: pj.name, org_name: org.name });
+            }
+          }
+        }
+        setAllProjects(options);
+        setProjectsLoaded(true);
+      }
+    } catch { /* ignore */ }
+  }, [projectsLoaded]);
+
+  // プロジェクト変更実行
+  const handleReassign = async (recordId: string, newProjectId: string) => {
+    if (newProjectId === projectId) {
+      setReassigningId(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/meeting-records/${recordId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: newProjectId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        // 移動したのでリストから除外
+        setRecords(prev => prev.filter(r => r.id !== recordId));
+        setReassigningId(null);
+      }
+    } catch { /* ignore */ }
   };
 
   const handleDelete = async (id: string) => {
@@ -168,6 +220,21 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
               <button
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (reassigningId === record.id) {
+                    setReassigningId(null);
+                  } else {
+                    setReassigningId(record.id);
+                    fetchProjects();
+                  }
+                }}
+                className={`p-1 transition-colors shrink-0 ${reassigningId === record.id ? 'text-blue-500' : 'text-slate-300 hover:text-blue-500'}`}
+                title="プロジェクトを変更"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
                   handleDelete(record.id);
                 }}
                 className="p-1 text-slate-300 hover:text-red-500 transition-colors shrink-0"
@@ -176,6 +243,37 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* プロジェクト変更ドロップダウン */}
+            {reassigningId === record.id && (
+              <div className="px-4 py-2 bg-blue-50 border-t border-blue-100" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-blue-600 font-medium shrink-0">移動先:</span>
+                  <select
+                    className="flex-1 text-xs border border-blue-200 rounded px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    defaultValue=""
+                    onChange={(e) => {
+                      if (e.target.value) handleReassign(record.id, e.target.value);
+                    }}
+                  >
+                    <option value="" disabled>プロジェクトを選択...</option>
+                    {allProjects
+                      .filter(p => p.id !== projectId)
+                      .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.org_name ? `${p.org_name} / ` : ''}{p.name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    onClick={() => setReassigningId(null)}
+                    className="text-[10px] text-slate-400 hover:text-slate-600"
+                  >
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 展開コンテンツ */}
             {isExpanded && (
