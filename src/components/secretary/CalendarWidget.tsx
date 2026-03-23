@@ -260,9 +260,16 @@ export default function CalendarWidget() {
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   };
 
+  // 終了時刻バリデーション
+  const isEndTimeValid = createForm.startTime && createForm.endTime && createForm.startTime < createForm.endTime;
+
   // 予定作成
   const handleCreate = async () => {
     if (!createForm.summary || !createForm.date) return;
+    if (!isEndTimeValid) {
+      alert('終了時刻は開始時刻より後に設定してください');
+      return;
+    }
     setIsCreating(true);
     try {
       const start = `${createForm.date}T${createForm.startTime}:00+09:00`;
@@ -278,6 +285,8 @@ export default function CalendarWidget() {
         setShowCreateForm(false);
         setCreateForm({ summary: '', date: '', startTime: '10:00', endTime: '11:00', withMeet: false });
         fetchEvents();
+      } else {
+        alert(data.error || '予定の作成に失敗しました');
       }
     } catch { /* ignore */ }
     finally { setIsCreating(false); }
@@ -382,9 +391,12 @@ export default function CalendarWidget() {
               <span className="text-[11px] text-nm-text-secondary">Google Meet付き（AI参加可能）</span>
             </div>
           </label>
+          {!isEndTimeValid && createForm.startTime && createForm.endTime && (
+            <p className="text-[10px] text-red-500">終了時刻は開始時刻より後に設定してください</p>
+          )}
           <button
             onClick={handleCreate}
-            disabled={isCreating || !createForm.summary || !createForm.date}
+            disabled={isCreating || !createForm.summary || !createForm.date || !isEndTimeValid}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-nm-primary text-white rounded text-xs font-medium hover:bg-nm-primary-hover disabled:opacity-50 transition-colors"
           >
             {isCreating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
@@ -537,6 +549,9 @@ export default function CalendarWidget() {
                             <span>{isJoining ? '参加中...' : 'AI参加'}</span>
                           </button>
                         )
+                      )}
+                      {!meetUrl && (
+                        <span className="shrink-0 text-[8px] text-nm-text-muted/60 italic">Meet無し</span>
                       )}
                     </div>
                   );
