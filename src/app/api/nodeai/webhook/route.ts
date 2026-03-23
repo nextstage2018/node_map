@@ -197,7 +197,51 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ ok: true, reason: 'echo_prevention' });
     }
 
-    // 質問テキスト抽出
+    // ================================================================
+    // Step 5: 初回トリガー判定 → 固定挨拶 or AI応答
+    // ================================================================
+    const isFirstTrigger = triggered && cached.responseHistory.length === 0;
+
+    if (isFirstTrigger) {
+      // --- 初回トリガー: AI不要。固定メッセージで即応答 ---
+      const greetingText = '起動しました。音声で指示ください。';
+      console.log(`[NodeAI] First trigger → greeting: "${greetingText}"`);
+
+      if (isTTSConfigured()) {
+        try {
+          const tG = Date.now();
+          const mp3Base64 = await textToSpeech(greetingText);
+          console.log(`[NodeAI:perf] TTS(greeting): ${Date.now() - tG}ms`);
+          recordLocalResponse(botId, '(起動)', greetingText);
+          const tA = Date.now();
+          await Promise.all([
+            outputAudio(botId, mp3Base64),
+            flushToDb(botId),
+          ]);
+          console.log(`[NodeAI:perf] audio+flush(greeting): ${Date.now() - tA}ms`);
+          console.log(`[NodeAI] Sent (greeting): "${greetingText}"`);
+        } catch (ttsErr) {
+          console.error('[NodeAI] TTS/Audio failed (greeting):', ttsErr);
+          recordLocalResponse(botId, '(起動)', greetingText);
+          await flushToDb(botId);
+        }
+      } else {
+        recordLocalResponse(botId, '(起動)', greetingText);
+        await flushToDb(botId);
+      }
+
+      const totalMs = Date.now() - t0;
+      console.log(`[NodeAI:perf] TOTAL: ${totalMs}ms (greeting)`);
+      return NextResponse.json({
+        ok: true,
+        triggered: true,
+        mode: 'greeting',
+        response: greetingText,
+        perfMs: totalMs,
+      });
+    }
+
+    // --- 2回目以降: 通常のAI応答 ---
     let question: string;
     if (triggered) {
       const extracted = extractQuestion(fullText);
@@ -214,7 +258,7 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     // ================================================================
-    // Step 5: AI応答生成（メモリからコンテキスト構築: 0ms → Claude API）
+    // Step 6: AI応答生成（メモリからコンテキスト構築: 0ms → Claude API）
     // ================================================================
     const recentContext = buildLocalRecentContext(botId);
 
@@ -223,7 +267,7 @@ export async function POST(request: Request): Promise<Response> {
       botId,
       projectId: cached.projectId,
       question,
-      speakerName: speakerFamilyName, // 姓のみ渡す（TTS読み上げ用）
+      speakerName: speakerFamilyName,
       speakerContactId: contactId,
       relationshipType: cached.relationshipType,
       recentContext,
@@ -233,11 +277,10 @@ export async function POST(request: Request): Promise<Response> {
     if (!aiResult.success) {
       console.error('[NodeAI] AI failed:', aiResult.error);
     }
-    // ポスト処理: 書き言葉の記号を除去してTTS用にクリーンアップ
     const responseText = cleanResponseForTTS(aiResult.text);
 
     // ================================================================
-    // Step 6: TTS変換（クリティカルパス）
+    // Step 7: TTS変換（クリティカルパス）
     // ================================================================
     if (isTTSConfigured()) {
       try {
@@ -245,13 +288,10 @@ export async function POST(request: Request): Promise<Response> {
         const mp3Base64 = await textToSpeech(responseText);
         console.log(`[NodeAI:perf] TTS: ${Date.now() - t6}ms`);
 
-        // 応答をメモリに記録（0ms — DBには書かない）
         recordLocalResponse(botId, question, responseText);
 
         // ============================================================
-        // Step 7: Audio出力 + DBフラッシュ を完全並列
-        // outputAudio は音声を会議に送信（ユーザー体験に直結）
-        // flushToDb は全メモリ変更をDBに一括保存（裏側の処理）
+        // Step 8: Audio出力 + DBフラッシュ を完全並列
         // ============================================================
         const t7 = Date.now();
         await Promise.all([
