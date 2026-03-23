@@ -82,14 +82,9 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
           deepgram_streaming: {
             language: 'ja',
             model: 'nova-2',
-            // endpointing: 発話の区切り判定。1200ms = 1.2秒の沈黙まで待つ
-            // 「了解です。（間）次の件ですが…」が途中で切れるのを防止
-            endpointing: 1200,
-            // smart_format: 句読点・数字の自動フォーマット
-            smart_format: 'true',  // Recall.ai OpenAPI requires string, not boolean
-            // utterance_end_ms: 発話終了の追加バッファ
-            utterance_end_ms: 1500,
             ...(DEEPGRAM_API_KEY ? { api_key: DEEPGRAM_API_KEY } : {}),
+            // NOTE: endpointing / smart_format / utterance_end_ms は
+            // Recall.ai経由のDeepgram Streamingでは未サポートのため除外
           },
         },
       },
