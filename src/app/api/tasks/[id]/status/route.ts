@@ -45,10 +45,11 @@ export async function PATCH(
           return NextResponse.json({ error: 'タスクが見つかりません' }, { status: 404 });
         }
 
-        // ステータス更新
+        // ステータス更新（v11.0: completed_at追加）
+        const now = new Date().toISOString();
         await supabase
           .from('tasks')
-          .update({ status: 'done', updated_at: new Date().toISOString() })
+          .update({ status: 'done', updated_at: now, completed_at: now })
           .eq('id', taskId);
 
         // カレンダーイベント削除
@@ -105,10 +106,10 @@ export async function PATCH(
         return NextResponse.json({ error: '完了処理に失敗' }, { status: 500 });
       }
     } else {
-      // todo / in_progress は単純更新
+      // todo / in_progress は単純更新（v11.0: completed_atクリア）
       const { data, error } = await supabase
         .from('tasks')
-        .update({ status, updated_at: new Date().toISOString() })
+        .update({ status, updated_at: new Date().toISOString(), completed_at: null })
         .eq('id', taskId)
         .select('id, title, status')
         .single();

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard, Inbox, Building2, Settings,
-  ChevronLeft, ChevronRight, BookOpen, CheckSquare,
+  ChevronLeft, ChevronRight, BookOpen, CheckSquare, BarChart3,
   CircleCheck, CircleAlert, Circle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -14,6 +14,7 @@ import { useState, useEffect } from 'react';
 const NAV_ITEMS = [
   { href: '/', label: 'ホーム', icon: LayoutDashboard },
   { href: '/tasks', label: 'タスク', icon: CheckSquare },
+  { href: '/analytics', label: '振り返り', icon: BarChart3 },
   { href: '/inbox', label: 'インボックス', icon: Inbox, hasBadge: true },
   { href: '/organizations', label: '組織・プロジェクト', icon: Building2 },
   { href: '/settings', label: '設定', icon: Settings, hasTokenAlert: true },
