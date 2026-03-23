@@ -427,31 +427,48 @@ export async function processAllRecurringRules(
           }
 
           case 'meeting': {
-            // 会議カレンダー同期（v4.1の仕組みを利用）
-            if (rule.calendar_sync) {
+            // calendar_sync=true かつ metadata.calendar_event_id が存在する場合、
+            // POST時にRRULE付きイベントが既に作成済みなので、Cronでの作成をスキップ
+            const meta = rule.metadata as Record<string, unknown> | null;
+            if (rule.calendar_sync && meta?.calendar_event_id) {
+              // RRULE付きイベント作成済み → カレンダー登録スキップ
+              console.log(`[RecurringRules Cron] カレンダーはRRULEイベント作成済み、スキップ (${rule.id})`);
+            } else if (rule.calendar_sync) {
+              // calendar_event_id がない場合（レガシーまたは手動作成）のみカレンダー登録
+              // ※ 時刻計算のJST修正も適用
               try {
                 const { CALENDAR_PREFIX } = await import('@/lib/constants');
                 const { createCalendarEventForSource } = await import('@/services/calendar/calendarSync.service');
 
-                // デフォルト会議時間: metadata から取得 or 10:00-11:00
                 const meetingHour = ((rule.metadata as Record<string, unknown>)?.start_hour as number) || 10;
+                const meetingMinute = ((rule.metadata as Record<string, unknown>)?.start_minute as number) || 0;
                 const durationMin = ((rule.metadata as Record<string, unknown>)?.duration_minutes as number) || 60;
 
-                const startTime = new Date(nextDate);
-                startTime.setHours(meetingHour, 0, 0, 0);
-                const endTime = new Date(startTime.getTime() + durationMin * 60 * 1000);
+                // JST明示（Vercel UTC環境対応）— POSTと同じ方式
+                const nd = new Date(nextDate.getTime() + 9 * 60 * 60 * 1000);
+                const y = nd.getUTCFullYear();
+                const mo = String(nd.getUTCMonth() + 1).padStart(2, '0');
+                const d = String(nd.getUTCDate()).padStart(2, '0');
+                const sh = String(meetingHour).padStart(2, '0');
+                const sm = String(meetingMinute).padStart(2, '0');
+
+                const endTotalMin = meetingHour * 60 + meetingMinute + durationMin;
+                const eh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
+                const em = String(endTotalMin % 60).padStart(2, '0');
+
+                const scheduledStart = `${y}-${mo}-${d}T${sh}:${sm}:00+09:00`;
+                const scheduledEnd = `${y}-${mo}-${d}T${eh}:${em}:00+09:00`;
 
                 await createCalendarEventForSource({
                   userId,
                   title: generatedTitle,
                   description: `定例会議: ${rule.title}`,
-                  scheduledStart: startTime.toISOString(),
-                  scheduledEnd: endTime.toISOString(),
+                  scheduledStart,
+                  scheduledEnd,
                   sourceType: 'meeting',
                   sourceId: rule.id,
                 });
 
-                // CALENDAR_PREFIX は直接使用しない（createCalendarEventForSource内で付与）
                 void CALENDAR_PREFIX;
               } catch (calErr) {
                 console.warn(`[RecurringRules Cron] カレンダー登録失敗 (${rule.id}):`, calErr);

@@ -92,7 +92,7 @@ export async function POST(
         const sm = String(startMinute).padStart(2, '0');
 
         const endTotalMin = startHour * 60 + startMinute + durationMin;
-        const eh = String(Math.floor(endTotalMin / 60)).padStart(2, '0');
+        const eh = String(Math.floor(endTotalMin / 60) % 24).padStart(2, '0');
         const em = String(endTotalMin % 60).padStart(2, '0');
 
         const scheduledStart = `${y}-${mo}-${d}T${sh}:${sm}:00+09:00`;
