@@ -31,12 +31,12 @@ export async function textToSpeech(text: string): Promise<string> {
     },
     body: JSON.stringify({
       text,
-      model_id: 'eleven_turbo_v2_5',  // 低遅延モデル（多言語対応）
+      model_id: 'eleven_flash_v2_5',   // バランス型（速度と品質の両立）
       language_code: 'ja',             // 日本語を明示指定（発音精度向上）
       voice_settings: {
-        stability: 0.5,            // 低め → 自然な会話の抑揚・間を再現
+        stability: 0.6,            // やや高め → 安定した読み上げ
         similarity_boost: 0.7,     // 声質の忠実度（やや緩めで自然に）
-        style: 0.3,                // 中程度 → 感情のある会話調
+        style: 0.2,                // 控えめ → 日本語で不自然にならない程度
         use_speaker_boost: true,   // 明瞭度向上
       },
     }),
