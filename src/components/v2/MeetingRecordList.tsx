@@ -94,24 +94,26 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
 
   // プロジェクト一覧取得（変更ドロップダウン用）
   const fetchProjects = useCallback(async () => {
-    if (projectsLoaded) return;
+    if (projectsLoaded && allProjects.length > 0) return;
     try {
-      const res = await fetch('/api/organizations');
+      // プロジェクト一覧を直接取得（組織名付き）
+      const res = await fetch('/api/projects/list-all');
       const data = await res.json();
       if (data.success && data.data) {
-        const options: ProjectOption[] = [];
-        for (const org of data.data) {
-          if (org.projects) {
-            for (const pj of org.projects) {
-              options.push({ id: pj.id, name: pj.name, org_name: org.name });
-            }
-          }
-        }
+        const options: ProjectOption[] = data.data.map((p: { id: string; name: string; org_name?: string }) => ({
+          id: p.id,
+          name: p.name,
+          org_name: p.org_name || '',
+        }));
         setAllProjects(options);
         setProjectsLoaded(true);
+      } else {
+        console.error('[MeetingRecordList] プロジェクト一覧取得失敗:', data.error);
       }
-    } catch { /* ignore */ }
-  }, [projectsLoaded]);
+    } catch (err) {
+      console.error('[MeetingRecordList] プロジェクト一覧取得エラー:', err);
+    }
+  }, [projectsLoaded, allProjects.length]);
 
   // プロジェクト変更実行（移動先で再解析も実行）
   const handleReassign = async (recordId: string, newProjectId: string) => {
@@ -119,21 +121,29 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
       setReassigningId(null);
       return;
     }
+    const targetName = allProjects.find(p => p.id === newProjectId);
+    if (!confirm(`この議事録を「${targetName?.org_name ? targetName.org_name + ' / ' : ''}${targetName?.name || ''}」に移動しますか？`)) {
+      return;
+    }
     try {
       // 1. プロジェクトを変更
+      console.log('[MeetingRecordList] プロジェクト変更開始:', { recordId, newProjectId });
       const res = await fetch(`/api/meeting-records/${recordId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ project_id: newProjectId }),
       });
       const data = await res.json();
+      console.log('[MeetingRecordList] PUT結果:', data);
       if (data.success) {
         // 2. 移動先で再解析を実行（検討ツリー再生成 + チャネル通知）
         try {
+          console.log('[MeetingRecordList] 移動先で再解析開始...');
           await fetch(`/api/meeting-records/${recordId}/analyze`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
           });
+          console.log('[MeetingRecordList] 再解析完了');
         } catch (e) {
           console.error('[MeetingRecordList] 移動先再解析エラー:', e);
         }
@@ -142,8 +152,15 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
         setReassigningId(null);
         // 4. 親に通知（検討ツリー表示のリフレッシュ用）
         onAnalyzed?.();
+        alert('議事録を移動しました。移動先で検討ツリーが再生成されます。');
+      } else {
+        console.error('[MeetingRecordList] 移動失敗:', data.error);
+        alert(`移動に失敗しました: ${data.error || '不明なエラー'}`);
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('[MeetingRecordList] 移動エラー:', err);
+      alert('移動中にエラーが発生しました');
+    }
   };
 
   const handleDelete = async (id: string) => {
