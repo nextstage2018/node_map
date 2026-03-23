@@ -1687,7 +1687,7 @@ Phase 4: アジェンダ強化
 - **⚠️ タスクページ2タブ構成**: 「タスク一覧」（カンバン）+ 「マイルストーン」（展開式カード+ネストタスク）。`include_tasks=true` パラメータでMS配下タスクを一括取得
 - **⚠️ 会議イベントのGoogle Meet自動ON（v10.5）**: `calendarSync.service.ts` の `createEventWithExtendedProps` で `sourceType='meeting'` の場合に `conferenceData.createRequest` を付与。`conferenceDataVersion=1` パラメータも必要。タスク・定期作業にはMeetを付与しない
 - **⚠️ milestones テーブルの期限カラム名は `target_date`**: `due_date` ではない。6ファイルで修正済み（v10.5）。tasksテーブルの `due_date` とは異なるので注意
-- **⚠️ sync-meeting-notes の4段階PJ判定（v10.5）**: ① description埋め込み → ② recurring_rules逆引き（[NM-Meeting]タイトルマッチ） → ③ 参加者メール → ④ 最新PJフォールバック。参加者が空でもフォールバックは必ず実行（`resolveLatestProject` 独立関数化）
+- **⚠️ sync-meeting-notes の4段階PJ判定（v10.5→修正済み）**: ① description埋め込み → ② recurring_rules逆引き（[NM-Meeting]タイトルマッチ） → ③ 参加者メール（全員自社メールの場合はinternal組織の最新PJを返す） → ④ 最新PJフォールバック（**internal組織のみに限定**。他社PJへの誤配信を防止）。参加者が空でもフォールバックは必ず実行（`resolveLatestProject` 独立関数化）
 
 ---
 

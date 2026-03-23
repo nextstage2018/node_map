@@ -340,11 +340,16 @@ async function resolveProjectFromAttendees(supabase: any, attendees: string[]): 
   if (!attendees || attendees.length === 0) return null;
 
   try {
+    let hasInternalOnly = false;
+
     // 参加者メール → contact_channels → contact_persons → organization → projects
     for (const email of attendees) {
       if (!email || !email.includes('@')) continue;
-      // 自社メール（next-stage.biz）はスキップ
-      if (email.endsWith('@next-stage.biz')) continue;
+      // 自社メール（next-stage.biz）はカウントだけして外部メンバー解決を優先
+      if (email.endsWith('@next-stage.biz')) {
+        hasInternalOnly = true;
+        continue;
+      }
 
       const { data: channels } = await supabase
         .from('contact_channels')
@@ -376,6 +381,30 @@ async function resolveProjectFromAttendees(supabase: any, attendees: string[]): 
       }
     }
 
+    // 全員が自社メール（@next-stage.biz）の場合、自社（internal）組織のプロジェクトを返す
+    // これにより他社プロジェクトへの誤配信を防止
+    if (hasInternalOnly) {
+      const { data: internalOrgs } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('relationship_type', 'internal');
+
+      if (internalOrgs && internalOrgs.length > 0) {
+        const orgIds = internalOrgs.map((o: { id: string }) => o.id);
+        const { data: projects } = await supabase
+          .from('projects')
+          .select('id')
+          .in('organization_id', orgIds)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (projects && projects.length > 0) {
+          console.log(`[SyncMeetingNotes] 全員自社メール → internal組織の最新PJ: ${projects[0].id}`);
+          return projects[0].id;
+        }
+      }
+    }
+
     return null;
   } catch (error) {
     console.error('[SyncMeetingNotes] 参加者メール判定エラー:', error);
@@ -384,11 +413,35 @@ async function resolveProjectFromAttendees(supabase: any, attendees: string[]): 
 }
 
 // ========================================
-// プロジェクト自動判定④: 最終フォールバック（最新プロジェクト）
+// プロジェクト自動判定④: 最終フォールバック（自社組織の最新プロジェクトのみ）
+// ※ 他社プロジェクトへの誤配信を防止するため、internal組織に限定
 // ========================================
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function resolveLatestProject(supabase: any): Promise<string | null> {
   try {
+    // まず自社（internal）組織のプロジェクトから検索
+    const { data: internalOrgs } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('relationship_type', 'internal');
+
+    if (internalOrgs && internalOrgs.length > 0) {
+      const orgIds = internalOrgs.map((o: { id: string }) => o.id);
+      const { data: project } = await supabase
+        .from('projects')
+        .select('id')
+        .in('organization_id', orgIds)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (project?.id) {
+        console.log(`[SyncMeetingNotes] フォールバック: internal組織の最新PJ → ${project.id}`);
+        return project.id;
+      }
+    }
+
+    // internal組織がない場合のみ全体から（通常到達しない）
     const { data: latestProject } = await supabase
       .from('projects')
       .select('id')
