@@ -86,7 +86,7 @@ export async function createBot(params: CreateBotParams): Promise<CreateBotRespo
             // 「了解です。（間）次の件ですが…」が途中で切れるのを防止
             endpointing: 1200,
             // smart_format: 句読点・数字の自動フォーマット
-            smart_format: true,
+            smart_format: 'true',  // Recall.ai OpenAPI requires string, not boolean
             // utterance_end_ms: 発話終了の追加バッファ
             utterance_end_ms: 1500,
             ...(DEEPGRAM_API_KEY ? { api_key: DEEPGRAM_API_KEY } : {}),
