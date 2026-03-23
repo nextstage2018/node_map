@@ -25,9 +25,10 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
 
     // マルチユーザー対応: user_idフィルタを削除（チーム共有データ）
+    // プロジェクト一覧も含めて取得（検討ツリーの議事録移動UI等で使用）
     let query = supabase
       .from('organizations')
-      .select('*')
+      .select('*, projects(id, name)')
       .order('name', { ascending: true });
 
     if (search) {
