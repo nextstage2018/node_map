@@ -84,6 +84,36 @@ function isGreetingOrThanks(text: string): boolean {
 }
 
 // ========================================
+// 暗黙的リクエスト変換
+// 会話継続モードで短い発言（名詞句・体言止め）を
+// 明示的なリクエストに変換する
+// ========================================
+
+function resolveImplicitRequest(text: string): string {
+  const cleaned = text.replace(/[\s。、,.!?！？]+/g, '').trim();
+
+  // 「未確定事項」「未確定情報」系 → 未確定事項を教えて
+  if (/^未確定/.test(cleaned)) return '未確定事項を教えてください';
+
+  // 「決定事項」系 → 決定事項を教えて
+  if (/^決定事項/.test(cleaned) || /^決定/.test(cleaned)) return '決定事項を教えてください';
+
+  // 「タスク」系 → タスクの状況を教えて
+  if (/^タスク/.test(cleaned)) return 'タスクの状況を教えてください';
+
+  // 「マイルストーン」「目標」系
+  if (/^(マイルストーン|MS|目標|ゴール)/.test(cleaned)) return 'マイルストーンの状況を教えてください';
+
+  // 「進捗」系
+  if (/^進捗/.test(cleaned)) return 'プロジェクトの進捗を教えてください';
+
+  // 「それは何」「それって何」系 — そのまま渡す（multi-turnで解決）
+  // 「詳しく」系 — そのまま渡す
+  // その他 — そのまま渡す（AIが文脈から推測）
+  return text;
+}
+
+// ========================================
 // POST /api/nodeai/webhook
 // ========================================
 
@@ -261,7 +291,8 @@ export async function POST(request: Request): Promise<Response> {
       const extracted = extractQuestion(fullText);
       question = extracted || '現在のプロジェクトの状況を簡潔に教えてください';
     } else {
-      question = fullText;
+      // 会話継続モード: 短い発言をリクエストに変換
+      question = resolveImplicitRequest(fullText);
     }
 
     const mode = triggered ? 'trigger' : 'conversation';
@@ -270,8 +301,15 @@ export async function POST(request: Request): Promise<Response> {
     // ================================================================
     // Step 6: AI応答生成（メモリからコンテキスト構築: 0ms → Claude API）
     // PJなしでもフォールバック応答する（buildFallbackSystemPrompt使用）
+    // 会話履歴をmulti-turnメッセージとして渡し、文脈理解を大幅向上
     // ================================================================
     const recentContext = buildLocalRecentContext(botId);
+
+    // 直近の応答履歴をmulti-turn messages用に取得
+    const conversationHistory = cached.responseHistory.slice(-3).map((r) => ({
+      question: r.question,
+      answer: r.answer,
+    }));
 
     const t5 = Date.now();
     const aiResult = await generateResponseFast({
@@ -282,6 +320,8 @@ export async function POST(request: Request): Promise<Response> {
       speakerContactId: contactId,
       relationshipType: cached.relationshipType,
       recentContext,
+      conversationHistory,
+      isConversationMode: conversationMode,
     });
     console.log(`[NodeAI:perf] AI: ${Date.now() - t5}ms`);
 

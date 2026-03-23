@@ -253,6 +253,10 @@ export async function lazyFlush(botId: string): Promise<void> {
 /**
  * メモリバッファからrecentContextを構築（DB不要: 0ms）
  */
+/**
+ * メモリバッファからrecentContextを構築（DB不要: 0ms）
+ * 注意: 過去のQ&Aペアはmulti-turn messagesで渡すため、ここでは議論のみ
+ */
 export function buildLocalRecentContext(botId: string): string {
   const cached = sessionCache.get(botId);
   if (!cached) return '';
@@ -262,14 +266,10 @@ export function buildLocalRecentContext(botId: string): string {
     .map((u) => `${u.speakerName}: ${u.text}`)
     .join('\n');
 
-  const recentResponses = cached.responseHistory.slice(-3);
-  const responseText = recentResponses
-    .map((r) => `[質問] ${r.question}\n[NodeAI] ${r.answer}`)
-    .join('\n\n');
-
+  // 過去の応答はmulti-turn messagesとして直接Claude APIに渡すため、
+  // システムプロンプトには議論コンテキストのみ含める
   let context = '';
-  if (utteranceText) context += `【直近の議論】\n${utteranceText}\n\n`;
-  if (responseText) context += `【過去の応答】\n${responseText}`;
+  if (utteranceText) context += `=== 直近の議論（会議の生の発言） ===\n${utteranceText}\n`;
   return context;
 }
 

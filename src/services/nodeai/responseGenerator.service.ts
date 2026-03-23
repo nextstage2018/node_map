@@ -8,8 +8,9 @@ import { getRecentContext } from './sessionManager.service';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 // 会議中はスピード最優先 → Haiku（高速・低コスト）
 const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS_SHORT = 120;  // 事実質問（進捗・日程等）
-const MAX_TOKENS_LONG = 300;   // 分析質問（タスク整理・矛盾確認・未確定事項整理）
+const MAX_TOKENS_SHORT = 150;  // 事実質問（進捗・日程等）— 文脈応答に余裕を持たせる
+const MAX_TOKENS_LONG = 350;   // 分析質問（タスク整理・矛盾確認・未確定事項整理）
+const MAX_TOKENS_CONVERSATION = 200; // 会話継続モード（文脈を踏まえた応答）
 
 // ========================================
 // 型定義
@@ -26,6 +27,8 @@ interface GenerateResponseParams {
 
 interface GenerateResponseFastParams extends GenerateResponseParams {
   recentContext: string; // snapshotから取得済み → DB再読み不要
+  conversationHistory?: Array<{ question: string; answer: string }>; // 直近のQ&Aペア
+  isConversationMode?: boolean; // 会話継続モードか
 }
 
 interface GenerateResponseResult {
@@ -45,14 +48,19 @@ interface GenerateResponseResult {
 function isAnalyticalQuestion(question: string): boolean {
   const patterns = [
     /タスク.*(整理|確認|まとめ|洗い出|振り返)/,
+    /タスク.*(状況|進捗|一覧|教えて|どう)/,
     /矛盾|食い違|ずれ|変わっ/,
     /未確定|未確認|未解決|宿題|持ち越し/,
-    /決定.*(変わ|違|矛盾|確認)/,
+    /決定.*(変わ|違|矛盾|確認|事項|一覧)/,
+    /決定事項/,
     /整理して|まとめて|リストアップ|洗い出して/,
     /何がタスク|タスクになりそう|やること/,
     /前回.*比べ|前.*違い|変更点/,
     /問題点|課題|リスク/,
     /確認.*事項|チェック/,
+    /マイルストーン|目標|ゴール/,
+    /全体.*状況|プロジェクト.*状況|進捗.*報告/,
+    /詳しく|もっと教えて|具体的に/,
   ];
   return patterns.some((p) => p.test(question));
 }
@@ -126,7 +134,7 @@ export async function generateResponse(
 export async function generateResponseFast(
   params: GenerateResponseFastParams
 ): Promise<GenerateResponseResult> {
-  const { projectId, question, speakerName, relationshipType, recentContext } = params;
+  const { projectId, question, speakerName, relationshipType, recentContext, conversationHistory, isConversationMode } = params;
 
   if (!ANTHROPIC_API_KEY) {
     return { text: '申し訳ありません、AI機能が設定されていません。', success: false, error: 'No API key' };
@@ -140,29 +148,46 @@ export async function generateResponseFast(
 
     // 質問タイプ判定 → max_tokens動的切り替え
     const analytical = isAnalyticalQuestion(question);
-    const maxTokens = analytical ? MAX_TOKENS_LONG : MAX_TOKENS_SHORT;
+    let maxTokens: number;
+    if (analytical) {
+      maxTokens = MAX_TOKENS_LONG;
+    } else if (isConversationMode) {
+      maxTokens = MAX_TOKENS_CONVERSATION; // 会話継続モードは文脈応答に余裕を
+    } else {
+      maxTokens = MAX_TOKENS_SHORT;
+    }
 
     // システムプロンプト構築（PJなしでも汎用アシスタントとして応答）
     const systemPrompt = projectContext
       ? buildSystemPrompt(projectContext, relationshipType, recentContext, analytical)
       : buildFallbackSystemPrompt(recentContext);
 
-    // Claude API 呼び出し
+    // Claude API 呼び出し — 会話履歴をmessages配列で渡す（文脈理解を大幅向上）
     const t2 = Date.now();
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+
+    // 会話履歴がある場合、multi-turn messages として構築
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (conversationHistory && conversationHistory.length > 0) {
+      // 直近3ペアまでのQ&Aを実際のmessageターンとして追加
+      for (const qa of conversationHistory.slice(-3)) {
+        messages.push({ role: 'user', content: qa.question });
+        messages.push({ role: 'assistant', content: qa.answer });
+      }
+    }
+    // 最新の質問を追加
+    messages.push({
+      role: 'user',
+      content: `${speakerName}さん: ${question}`,
+    });
 
     const message = await client.messages.create({
       model: MODEL,
       max_tokens: maxTokens,
       system: systemPrompt,
-      messages: [
-        {
-          role: 'user',
-          content: `${speakerName}さんの質問: ${question}`,
-        },
-      ],
+      messages,
     });
-    console.log(`[NodeAI:perf] Claude API: ${Date.now() - t2}ms (analytical=${analytical}, maxTokens=${maxTokens})`);
+    console.log(`[NodeAI:perf] Claude API: ${Date.now() - t2}ms (analytical=${analytical}, convMode=${!!isConversationMode}, maxTokens=${maxTokens}, turns=${messages.length})`);
 
     const textBlock = message.content.find((b) => b.type === 'text');
     const responseText = textBlock?.text || '申し訳ありません、回答を生成できませんでした。';
@@ -349,6 +374,14 @@ ${pronGuide}
 ${projectInfo}
 ${recentContext || ''}
 
+=== 最重要: 会話の文脈を常に意識すること ===
+- 「それ」「この件」「あれ」「さっきの」等の代名詞は、直前の会話や議論の内容を指す。必ず文脈から推測して具体的に答える
+- 直前の自分の応答で話した内容について聞かれている可能性を常に考える
+- 短い発言（「未確定事項は？」「タスクの状況」「決定事項教えて」等）はプロジェクト情報からの回答を求めている
+- 「〜です」「〜について」のような体言止め・名詞句も質問として扱う。例:「未確定情報です」=「未確定事項を教えて」、「タスクです」=「タスクの状況を教えて」
+- 何について聞いているか不明な場合でも、「何についてですか？」とは聞き返さず、直前の議論で一番関連しそうな話題について答える
+- 聞き返すのは最後の手段。まず推測して答えること
+
 ${responseRule}
 - 日本人ネイティブが会議で話すような自然な日本語で答える
 - 質問者の名前は「さん」付け
@@ -356,10 +389,24 @@ ${responseRule}
 ${publicNote}
 ${analyticalExamples}
 
+=== 会話継続の例（直前の応答を踏まえた受け答え） ===
+前の応答: 「統合要件シートの社長承認が3月30日の目標です。」
+Q: それは何ですか。
+A: 統合要件シートは、広告代理メニューの統合仕様をまとめたドキュメントで、社長の承認を得て進める予定のものです。
+
+前の応答: 「タスクは5件進行中です。」
+Q: 詳しく教えて。
+A: 1つ目は要件定義の最終化で田中さん担当、期限は今週金曜です。2つ目は...
+
+Q: 未確定情報です。
+A:（プロジェクトの未確定事項を一覧で回答する）
+
 Q: ありがとうございます。
 A:（応答しない）
 
 === NG例（絶対にやらないこと） ===
+NG: 「何についての質問か教えてもらえますか？」← 聞き返し禁止。文脈から推測する
+NG: 「もう少し具体的にお願いします」← 聞き返し禁止
 NG: 「お気軽にどうぞですね」← 不自然な日本語
 NG: 「ございますですね」← 二重敬語
 NG: 【見出し】← 見出し記号禁止
@@ -376,6 +423,10 @@ function buildFallbackSystemPrompt(recentContext: string): string {
 ※ 現在プロジェクト情報は未設定です。一般的な質問に答えてください。
 ${recentContext || ''}
 
+=== 最重要: 会話の文脈を常に意識すること ===
+- 「それ」「この件」等の代名詞は直前の会話内容を指す。必ず文脈から推測して答える
+- 聞き返すのは最後の手段。まず推測して答えること
+
 === 応答ルール ===
 - 1〜3文、100文字以内で簡潔に
 - 書き言葉禁止: 【】・-・※・箇条書き・改行を絶対に使わない
@@ -385,6 +436,7 @@ ${recentContext || ''}
 - プロジェクト固有の情報を聞かれた場合は「プロジェクト情報が設定されていないので、お答えできません。カレンダーからプロジェクトを選択してAI参加すると、詳しくお答えできます。」と返す
 
 === NG例（絶対にやらないこと） ===
+NG: 「何についての質問か教えてもらえますか？」← 聞き返し禁止
 NG: 「お気軽にどうぞですね」← 不自然な日本語
 NG: 「ございますですね」← 二重敬語
 NG: 【見出し】← 見出し記号禁止
