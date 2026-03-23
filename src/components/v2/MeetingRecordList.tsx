@@ -113,13 +113,14 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
     } catch { /* ignore */ }
   }, [projectsLoaded]);
 
-  // プロジェクト変更実行
+  // プロジェクト変更実行（移動先で再解析も実行）
   const handleReassign = async (recordId: string, newProjectId: string) => {
     if (newProjectId === projectId) {
       setReassigningId(null);
       return;
     }
     try {
+      // 1. プロジェクトを変更
       const res = await fetch(`/api/meeting-records/${recordId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -127,9 +128,20 @@ export default function MeetingRecordList({ projectId, refreshKey, onAnalyzed }:
       });
       const data = await res.json();
       if (data.success) {
-        // 移動したのでリストから除外
+        // 2. 移動先で再解析を実行（検討ツリー再生成 + チャネル通知）
+        try {
+          await fetch(`/api/meeting-records/${recordId}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+        } catch (e) {
+          console.error('[MeetingRecordList] 移動先再解析エラー:', e);
+        }
+        // 3. 移動したのでリストから除外
         setRecords(prev => prev.filter(r => r.id !== recordId));
         setReassigningId(null);
+        // 4. 親に通知（検討ツリー表示のリフレッシュ用）
+        onAnalyzed?.();
       }
     } catch { /* ignore */ }
   };
