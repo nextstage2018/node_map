@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, description, status, organizationId } = body;
+    const { name, description, status, organizationId, nameReading } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -111,6 +111,13 @@ export async function POST(request: NextRequest) {
 
     if (organizationId) {
       insertData.organization_id = organizationId;
+    }
+
+    // プロジェクト名の読み仮名をmetadata.pronunciation_guideに格納
+    if (nameReading) {
+      insertData.metadata = {
+        pronunciation_guide: [{ text: name.trim(), reading: nameReading.trim() }],
+      };
     }
 
     const { data, error } = await supabase

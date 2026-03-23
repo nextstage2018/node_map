@@ -73,7 +73,7 @@ export async function buildProjectContext(
 
   try {
     // プロジェクト + 組織情報を並列取得
-    const [projectResult, tasksResult, decisionsResult, issuesResult, msResult, feedbackResult] =
+    const [projectResult, tasksResult, decisionsResult, issuesResult, msResult, feedbackResult, membersResult] =
       await Promise.all([
         // プロジェクト情報（metadata含む: 読み方ガイド等）
         supabase
@@ -121,6 +121,11 @@ export async function buildProjectContext(
           .eq('is_active', true)
           .order('created_at', { ascending: false })
           .limit(5),
+        // プロジェクトメンバーの読み仮名（TTS用）
+        supabase
+          .from('project_members')
+          .select('contact_id, contact_persons:contact_id(name, name_reading)')
+          .eq('project_id', projectId),
       ]);
 
     const project = projectResult.data;
@@ -166,17 +171,31 @@ export async function buildProjectContext(
           .join('\n') || 'なし'
       : '';
 
-    // 読み方ガイド（projects.metadata.pronunciation_guide）
-    // 形式: [{ text: "NextStage", reading: "ネクストステージ" }, ...]
-    let pronunciationGuide = '';
+    // 読み方ガイド構築（プロジェクト設定 + メンバーのname_readingを統合）
+    const allGuides: Array<{ text: string; reading: string }> = [];
+
+    // ① projects.metadata.pronunciation_guide（プロジェクト名・専門用語等）
     const metadata = project.metadata as Record<string, unknown> | null;
     if (metadata?.pronunciation_guide && Array.isArray(metadata.pronunciation_guide)) {
       const guides = metadata.pronunciation_guide as Array<{ text: string; reading: string }>;
-      pronunciationGuide = guides
-        .filter((g) => g.text && g.reading)
-        .map((g) => `${g.text} → ${g.reading}`)
-        .join('\n');
+      for (const g of guides) {
+        if (g.text && g.reading) allGuides.push(g);
+      }
     }
+
+    // ② メンバーのname_reading（個人プロフィールで登録された読み仮名）
+    if (membersResult.data) {
+      for (const m of membersResult.data) {
+        const cp = m.contact_persons as { name: string; name_reading: string | null } | null;
+        if (cp?.name && cp?.name_reading) {
+          allGuides.push({ text: cp.name, reading: cp.name_reading });
+        }
+      }
+    }
+
+    const pronunciationGuide = allGuides
+      .map((g) => `${g.text} → ${g.reading}`)
+      .join('\n');
 
     return {
       projectName: project.name,

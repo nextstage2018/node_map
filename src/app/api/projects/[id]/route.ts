@@ -29,7 +29,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { name, description, status } = body;
+    const { name, description, status, pronunciationGuide } = body;
 
     if (!name || !name.trim()) {
       return NextResponse.json(
@@ -38,14 +38,27 @@ export async function PUT(
       );
     }
 
+    const updateData: Record<string, unknown> = {
+      name: name.trim(),
+      description: description?.trim() || null,
+      status: status || 'active',
+      updated_at: new Date().toISOString(),
+    };
+
+    // pronunciation_guide更新: 既存metadataとマージ
+    if (pronunciationGuide !== undefined) {
+      const { data: current } = await supabase
+        .from('projects')
+        .select('metadata')
+        .eq('id', id)
+        .single();
+      const existingMeta = (current?.metadata as Record<string, unknown>) || {};
+      updateData.metadata = { ...existingMeta, pronunciation_guide: pronunciationGuide };
+    }
+
     const { data, error } = await supabase
       .from('projects')
-      .update({
-        name: name.trim(),
-        description: description?.trim() || null,
-        status: status || 'active',
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', id)
       .select()
       .single();

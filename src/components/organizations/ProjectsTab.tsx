@@ -56,19 +56,21 @@ function ProjectList({
   projects: Project[];
   isLoading: boolean;
   onSelectProject: (project: Project) => void;
-  onCreateProject: (name: string, description: string) => void;
+  onCreateProject: (name: string, description: string, nameReading?: string) => void;
   unlinkedChannels: UnlinkedChannel[];
   onLinkChannel: (channel: UnlinkedChannel, projectId: string) => void;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newNameReading, setNewNameReading] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [showLinkPanel, setShowLinkPanel] = useState<UnlinkedChannel | null>(null);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
-    onCreateProject(newName.trim(), newDesc.trim());
+    onCreateProject(newName.trim(), newDesc.trim(), newNameReading.trim() || undefined);
     setNewName('');
+    setNewNameReading('');
     setNewDesc('');
     setShowForm(false);
   };
@@ -153,6 +155,13 @@ function ProjectList({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="プロジェクト名"
+            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <input
+            type="text"
+            value={newNameReading}
+            onChange={(e) => setNewNameReading(e.target.value)}
+            placeholder="読み仮名（TTS用・任意）例: ネクストステージ"
             className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <textarea
@@ -700,12 +709,12 @@ export default function ProjectsTab({ orgId, orgName }: ProjectsTabProps) {
   }, [fetchProjects, fetchUnlinkedChannels]);
 
   // プロジェクト作成
-  const handleCreateProject = async (name: string, description: string) => {
+  const handleCreateProject = async (name: string, description: string, nameReading?: string) => {
     try {
       const res = await fetch('/api/projects', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description: description || null, organizationId: orgId }),
+        body: JSON.stringify({ name, description: description || null, organizationId: orgId, nameReading: nameReading || undefined }),
       });
       const data = await res.json();
       if (data.success) fetchProjects();

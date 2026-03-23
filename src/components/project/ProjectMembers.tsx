@@ -68,6 +68,7 @@ interface Contact {
 
 interface EditForm {
   name: string;
+  name_reading: string;
   company_name: string;
   department: string;
   relationship_type: string;
@@ -133,7 +134,7 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
 
   // 展開・編集
   const [expandedContactId, setExpandedContactId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>({ name: '', company_name: '', department: '', relationship_type: 'internal', notes: '' });
+  const [editForm, setEditForm] = useState<EditForm>({ name: '', name_reading: '', company_name: '', department: '', relationship_type: 'internal', notes: '' });
   const [contactChannels, setContactChannels] = useState<ContactChannel[]>([]);
   const [loadingContactChannels, setLoadingContactChannels] = useState(false);
   const [savingContact, setSavingContact] = useState(false);
@@ -343,6 +344,7 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
     setExpandedContactId(cId);
     setEditForm({
       name: member.contact.name || '',
+      name_reading: '',
       company_name: member.contact.company_name || '',
       department: '',
       relationship_type: member.contact.relationship_type || 'internal',
@@ -366,6 +368,7 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
             department: (c.department as string) || '',
             notes: (c.notes as string) || '',
             name: (c.name as string) || prev.name,
+            name_reading: (c.nameReading as string) || (c.name_reading as string) || '',
             company_name: (c.companyName as string) || (c.company_name as string) || prev.company_name,
             relationship_type: (c.relationshipType as string) || (c.relationship_type as string) || prev.relationship_type,
           }));
@@ -393,6 +396,7 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
         body: JSON.stringify({
           id: contactId,
           name: editForm.name.trim() || undefined,
+          nameReading: editForm.name_reading.trim() || undefined,
           relationshipType: editForm.relationship_type || undefined,
           companyName: editForm.company_name.trim() || undefined,
           department: editForm.department.trim() || undefined,
@@ -798,6 +802,13 @@ export default function ProjectMembers({ projectId, projectName }: Props) {
                             <label className="text-[10px] text-slate-500 mb-1 block">名前</label>
                             <input type="text" value={editForm.name}
                               onChange={(e) => setEditForm(p => ({ ...p, name: e.target.value }))}
+                              className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 mb-1 block">読み仮名（TTS用）</label>
+                            <input type="text" value={editForm.name_reading}
+                              onChange={(e) => setEditForm(p => ({ ...p, name_reading: e.target.value }))}
+                              placeholder="例: すずき しんじ"
                               className="w-full px-2.5 py-1.5 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
                           </div>
                           <div>
