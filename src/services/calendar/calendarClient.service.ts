@@ -55,6 +55,7 @@ export interface CreateEventParams {
   location?: string;
   attendees?: string[];     // メールアドレス配列
   timeZone?: string;
+  withMeet?: boolean;       // Google Meet自動生成
 }
 
 // ========================================
@@ -664,10 +665,21 @@ export async function createEvent(
     if (params.location) eventBody.location = params.location;
     if (params.attendees && params.attendees.length > 0) {
       eventBody.attendees = params.attendees.map(email => ({ email }));
-      eventBody.conferenceData = undefined; // 必要に応じてGoogle Meetリンク生成
     }
 
-    const res = await calendarFetch(userId, `/calendars/${encodeURIComponent(calendarId)}/events`, {
+    // Google Meet自動生成
+    if (params.withMeet) {
+      eventBody.conferenceData = {
+        createRequest: {
+          requestId: `nm-meet-manual-${Date.now()}`,
+          conferenceSolutionKey: { type: 'hangoutsMeet' },
+        },
+      };
+    }
+
+    // conferenceDataVersion=1 が必要（Google Meet自動生成のため）
+    const queryParam = params.withMeet ? '?conferenceDataVersion=1' : '';
+    const res = await calendarFetch(userId, `/calendars/${encodeURIComponent(calendarId)}/events${queryParam}`, {
       method: 'POST',
       body: JSON.stringify(eventBody),
     });
@@ -691,6 +703,8 @@ export async function createEvent(
       attendees: data.attendees || [],
       htmlLink: data.htmlLink,
       status: data.status,
+      hangoutLink: data.hangoutLink,
+      conferenceData: data.conferenceData,
     };
   } catch (error) {
     console.error('[Calendar] 予定作成エラー:', error);

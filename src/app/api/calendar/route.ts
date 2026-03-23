@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { summary, description, start, end, location, attendees } = body;
+    const { summary, description, start, end, location, attendees, withMeet } = body;
 
     if (!summary || !start || !end) {
       return NextResponse.json({ error: 'summary, start, end は必須です' }, { status: 400 });
@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
       end,
       location,
       attendees,
+      withMeet: !!withMeet,
     });
 
     if (!event) {

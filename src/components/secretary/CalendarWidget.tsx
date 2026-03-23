@@ -50,7 +50,7 @@ export default function CalendarWidget() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [createForm, setCreateForm] = useState({ summary: '', date: '', startTime: '10:00', endTime: '11:00' });
+  const [createForm, setCreateForm] = useState({ summary: '', date: '', startTime: '10:00', endTime: '11:00', withMeet: false });
   // NodeAI状態: botId → セッション中
   const [nodeAiBots, setNodeAiBots] = useState<Record<string, string>>({}); // eventId → botId
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
@@ -216,12 +216,12 @@ export default function CalendarWidget() {
       const res = await fetch('/api/calendar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ summary: createForm.summary, start, end }),
+        body: JSON.stringify({ summary: createForm.summary, start, end, withMeet: createForm.withMeet }),
       });
       const data = await res.json();
       if (data.success) {
         setShowCreateForm(false);
-        setCreateForm({ summary: '', date: '', startTime: '10:00', endTime: '11:00' });
+        setCreateForm({ summary: '', date: '', startTime: '10:00', endTime: '11:00', withMeet: false });
         fetchEvents();
       }
     } catch { /* ignore */ }
@@ -315,6 +315,18 @@ export default function CalendarWidget() {
               className="flex-1 text-xs border border-nm-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-nm-primary"
             />
           </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={createForm.withMeet}
+              onChange={(e) => setCreateForm({ ...createForm, withMeet: e.target.checked })}
+              className="w-3.5 h-3.5 rounded border-nm-border text-nm-primary focus:ring-nm-primary"
+            />
+            <div className="flex items-center gap-1">
+              <Bot className="w-3 h-3 text-nm-text-secondary" />
+              <span className="text-[11px] text-nm-text-secondary">Google Meet付き（AI参加可能）</span>
+            </div>
+          </label>
           <button
             onClick={handleCreate}
             disabled={isCreating || !createForm.summary || !createForm.date}
