@@ -32,10 +32,11 @@ export async function textToSpeech(text: string): Promise<string> {
     body: JSON.stringify({
       text,
       model_id: 'eleven_turbo_v2_5',  // 低遅延モデル（多言語対応）
+      language_code: 'ja',             // 日本語を明示指定（発音精度向上）
       voice_settings: {
-        stability: 0.65,           // やや低め → 自然な抑揚
-        similarity_boost: 0.75,    // 声質の忠実度
-        style: 0.15,               // 低め → 落ち着いた会話調
+        stability: 0.5,            // 低め → 自然な会話の抑揚・間を再現
+        similarity_boost: 0.7,     // 声質の忠実度（やや緩めで自然に）
+        style: 0.3,                // 中程度 → 感情のある会話調
         use_speaker_boost: true,   // 明瞭度向上
       },
     }),

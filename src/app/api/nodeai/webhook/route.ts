@@ -72,6 +72,13 @@ function isSubstantiveText(text: string): boolean {
   return !fillers.test(cleaned);
 }
 
+// お礼・挨拶・相槌（応答不要な発言）を検出
+function isGreetingOrThanks(text: string): boolean {
+  const cleaned = text.replace(/[\s。、,.!?！？]+/g, '');
+  const patterns = /^(了解です|了解しました|ありがとう|ありがとうございます|ありがとうございました|承知しました|わかりました|かしこまりました|お疲れ様です|お疲れさまです|お疲れ様でした|よろしくお願いします|よろしくお願いいたします|お願いします|すみません|失礼します|大丈夫です|OKです|オッケーです|なるほど|そうですね|確かに)+$/;
+  return patterns.test(cleaned);
+}
+
 // ========================================
 // POST /api/nodeai/webhook
 // ========================================
@@ -164,9 +171,17 @@ export async function POST(request: Request): Promise<Response> {
       : false;
     const substantive = isSubstantiveText(fullText);
 
-    console.log(`[NodeAI] "${fullText}" | trigger=${triggered} convMode=${conversationMode} sub=${substantive}`);
+    const greeting = isGreetingOrThanks(fullText);
+
+    console.log(`[NodeAI] "${fullText}" | trigger=${triggered} convMode=${conversationMode} sub=${substantive} greet=${greeting}`);
 
     // --- 非応答パス: メモリ更新のみ。30秒ごとにlazyFlush ---
+    // お礼・挨拶には応答しない（会話継続モードでも）
+    if (greeting && !triggered) {
+      console.log(`[NodeAI] Skip: greeting/thanks`);
+      await lazyFlush(botId);
+      return NextResponse.json({ ok: true });
+    }
     if (!triggered && conversationMode && !substantive) {
       await lazyFlush(botId);
       return NextResponse.json({ ok: true });
