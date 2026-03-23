@@ -50,6 +50,8 @@ export async function getCachedProjectContext(
   const context = await buildProjectContext(projectId);
   if (context) {
     contextCache.set(projectId, { context, cachedAt: now });
+  } else {
+    console.error('[NodeAI:context] buildProjectContext returned null for:', projectId);
   }
   return context;
 }
@@ -59,7 +61,11 @@ export async function getCachedProjectContext(
 // ========================================
 
 function getDb() {
-  return getServerSupabase() || getSupabase();
+  const sb = getServerSupabase();
+  if (!sb) {
+    console.warn('[NodeAI:context] getServerSupabase() returned null, falling back to getSupabase()');
+  }
+  return sb || getSupabase();
 }
 
 /**
@@ -129,7 +135,10 @@ export async function buildProjectContext(
       ]);
 
     const project = projectResult.data;
-    if (!project) return null;
+    if (!project) {
+      console.error('[NodeAI:context] Project not found:', projectId, 'error:', projectResult.error?.message);
+      return null;
+    }
 
     const org = project.organizations as { name: string; relationship_type: string } | null;
     const relType = (org?.relationship_type || 'internal') as RelationshipType;
