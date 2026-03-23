@@ -146,9 +146,9 @@ export function addLocalUtterance(botId: string, utterance: Utterance): void {
 
   cached.utteranceBuffer.push(utterance);
 
-  // 5分間のウィンドウでトリム
-  const fiveMinAgo = Date.now() / 1000 - 300;
-  cached.utteranceBuffer = cached.utteranceBuffer.filter((u) => u.timestamp > fiveMinAgo);
+  // 60分間のウィンドウでトリム（会議全体の議論をカバー）
+  const sixtyMinAgo = Date.now() / 1000 - 3600;
+  cached.utteranceBuffer = cached.utteranceBuffer.filter((u) => u.timestamp > sixtyMinAgo);
 
   cached.dirty = true;
 }
@@ -256,7 +256,7 @@ export function buildLocalRecentContext(botId: string): string {
   const cached = sessionCache.get(botId);
   if (!cached) return '';
 
-  const recentUtterances = cached.utteranceBuffer.slice(-15);
+  const recentUtterances = cached.utteranceBuffer.slice(-40);
   const utteranceText = recentUtterances
     .map((u) => `${u.speakerName}: ${u.text}`)
     .join('\n');

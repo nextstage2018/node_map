@@ -8,7 +8,8 @@ import { getRecentContext } from './sessionManager.service';
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
 // 会議中はスピード最優先 → Haiku（高速・低コスト）
 const MODEL = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 120; // 短い応答 = 高速レスポンス + 高速TTS
+const MAX_TOKENS_SHORT = 120;  // 事実質問（進捗・日程等）
+const MAX_TOKENS_LONG = 300;   // 分析質問（タスク整理・矛盾確認・未確定事項整理）
 
 // ========================================
 // 型定義
@@ -31,6 +32,29 @@ interface GenerateResponseResult {
   text: string;
   success: boolean;
   error?: string;
+}
+
+// ========================================
+// 質問タイプ判定（分析系は長文許可）
+// ========================================
+
+/**
+ * 質問が分析・整理系かを判定（長文応答が必要なケース）
+ * タスク整理、矛盾確認、未確定事項の整理など
+ */
+function isAnalyticalQuestion(question: string): boolean {
+  const patterns = [
+    /タスク.*(整理|確認|まとめ|洗い出|振り返)/,
+    /矛盾|食い違|ずれ|変わっ/,
+    /未確定|未確認|未解決|宿題|持ち越し/,
+    /決定.*(変わ|違|矛盾|確認)/,
+    /整理して|まとめて|リストアップ|洗い出して/,
+    /何がタスク|タスクになりそう|やること/,
+    /前回.*比べ|前.*違い|変更点/,
+    /問題点|課題|リスク/,
+    /確認.*事項|チェック/,
+  ];
+  return patterns.some((p) => p.test(question));
 }
 
 // ========================================
@@ -64,15 +88,19 @@ export async function generateResponse(
       };
     }
 
+    // 質問タイプ判定
+    const analytical = isAnalyticalQuestion(question);
+    const maxTokens = analytical ? MAX_TOKENS_LONG : MAX_TOKENS_SHORT;
+
     // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext);
+    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext, analytical);
 
     // Claude API 呼び出し
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: MAX_TOKENS,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
         {
@@ -124,8 +152,12 @@ export async function generateResponseFast(
       };
     }
 
+    // 質問タイプ判定 → max_tokens動的切り替え
+    const analytical = isAnalyticalQuestion(question);
+    const maxTokens = analytical ? MAX_TOKENS_LONG : MAX_TOKENS_SHORT;
+
     // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext);
+    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext, analytical);
 
     // Claude API 呼び出し
     const t2 = Date.now();
@@ -133,7 +165,7 @@ export async function generateResponseFast(
 
     const message = await client.messages.create({
       model: MODEL,
-      max_tokens: MAX_TOKENS,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [
         {
@@ -142,7 +174,7 @@ export async function generateResponseFast(
         },
       ],
     });
-    console.log(`[NodeAI:perf] Claude API: ${Date.now() - t2}ms`);
+    console.log(`[NodeAI:perf] Claude API: ${Date.now() - t2}ms (analytical=${analytical}, maxTokens=${maxTokens})`);
 
     const textBlock = message.content.find((b) => b.type === 'text');
     const responseText = textBlock?.text || '申し訳ありません、回答を生成できませんでした。';
@@ -171,6 +203,7 @@ interface ProjectContextData {
   openIssues: string;
   milestones: string;
   bossFeedback: string;
+  pronunciationGuide: string;
 }
 
 // ========================================
@@ -261,7 +294,8 @@ export function cleanResponseForTTS(text: string): string {
 function buildSystemPrompt(
   ctx: ProjectContextData,
   relationshipType: string,
-  recentContext: string
+  recentContext: string,
+  analytical: boolean = false
 ): string {
   // 公開レベルに応じてコンテキストをフィルタ
   let projectInfo = `PJ: ${ctx.projectName}
@@ -280,22 +314,32 @@ MS: ${ctx.milestones}`;
     ? '※社外会議: 未確定事項・上長FBは回答しない。'
     : '';
 
-  return `あなたはNodeAI。会議中に声で呼ばれて声で答えるAIアシスタント。
-あなたの応答テキストはそのままTTSエンジンで読み上げられる。日本人の同僚として自然に会話すること。
-
-${projectInfo}
-${recentContext || ''}
-
-=== 応答ルール（厳守） ===
+  // 分析系と事実質問で応答ルールを分岐
+  const responseRule = analytical
+    ? `=== 応答ルール（分析・整理系） ===
+- 会議の内容を「直近の議論」から振り返り、過去の決定事項・未確定事項と照合して回答する
+- 3〜5文、150文字程度まで許容。要点を絞って簡潔に
+- 項目が複数ある場合は「1つ目は〜、2つ目は〜」と口頭で数えて伝える
+- 書き言葉禁止: 【】・-・※・箇条書き・改行を絶対に使わない
+- 数字やファクトを具体的に。曖昧に濁さない`
+    : `=== 応答ルール（事実質問） ===
 - 1〜2文、50文字以内
 - 書き言葉禁止: 【】・-・※・箇条書き・改行を絶対に使わない
-- 日本人ネイティブが会議で話すような自然な日本語で答える
-- 数字やファクトを具体的に。曖昧に濁さない
-- 質問者の名前は「さん」付け
-- 「了解です」「ありがとう」等のお礼・挨拶には応答しない。沈黙する
-${publicNote}
+- 数字やファクトを具体的に。曖昧に濁さない`;
 
-=== 自然な日本語のOK例 ===
+  const analyticalExamples = analytical
+    ? `
+=== 分析系のOK例 ===
+Q: さっきの話でタスクになりそうなものある？
+A: 2つありそうです。1つ目は田中さんが言ってた見積もりの再計算で、来週水曜までに必要ですね。2つ目はクライアントへの中間報告の準備です。
+
+Q: 今の議論、前回の決定と矛盾してない？
+A: 少し気になる点があります。前回「外注は使わない」と決めましたが、さっきの話だとデザイン部分を外注に出す方向になってますね。確認した方がいいかもしれません。
+
+Q: 未確定のまま残ってる件、整理してもらえる？
+A: 現在3件残っています。1つ目は予算配分の最終承認で12日間止まってます。2つ目はリリース日の確定、3つ目はテスト環境の選定です。1つ目が一番長く放置されてますね。`
+    : `
+=== 事実質問のOK例 ===
 Q: 予算どのくらい残ってる？
 A: 残り約15万で、月末までに使い切る予定です。
 
@@ -303,16 +347,33 @@ Q: タスクの進捗教えて。
 A: 5件中3件終わってます。残りは今週中に片付く見込みですね。
 
 Q: 次の会議いつだっけ？
-A: 来週月曜の10時からです。
+A: 来週月曜の10時からです。`;
+
+  // 読み方ガイド（登録されている場合のみ表示）
+  const pronGuide = ctx.pronunciationGuide
+    ? `\n=== 読み方ガイド（TTSで正しく読むために必ずこの表記を使うこと） ===\n${ctx.pronunciationGuide}\n`
+    : '';
+
+  return `あなたはNodeAI。会議中のアシスタント。声で呼ばれて声で答える。
+あなたの応答テキストはそのままTTSエンジンで読み上げられる。日本人の同僚として自然に会話すること。
+役割: 会議中の議論を聞いて、タスクの洗い出し・過去の決定事項との矛盾検出・未確定事項の整理を支援する。
+${pronGuide}
+${projectInfo}
+${recentContext || ''}
+
+${responseRule}
+- 日本人ネイティブが会議で話すような自然な日本語で答える
+- 質問者の名前は「さん」付け
+- 「了解です」「ありがとう」等のお礼・挨拶には応答しない。沈黙する
+${publicNote}
+${analyticalExamples}
 
 Q: ありがとうございます。
 A:（応答しない）
 
 === NG例（絶対にやらないこと） ===
-NG: 「お気軽にどうぞですね」← 不自然な日本語。「ですね」の乱用禁止
-NG: 「ございますですね」「になりますね」← 二重敬語・不自然な語尾
-NG: 「何かあればいつでもお声がけください」← 定型的すぎ。会議の同僚はこう話さない
-NG: 【予算配分】残予算15万円...  ← 見出し記号禁止
-NG: ・Meta広告: 10万 / ・Google: 5万  ← 箇条書き禁止
-NG: 3つ以上の情報を列挙する長文  ← 50文字を超える`;
+NG: 「お気軽にどうぞですね」← 不自然な日本語
+NG: 「ございますですね」← 二重敬語
+NG: 【見出し】← 見出し記号禁止
+NG: ・箇条書き ← 禁止。口頭で「1つ目は〜、2つ目は〜」と数える`;
 }

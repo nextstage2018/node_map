@@ -18,6 +18,7 @@ interface ProjectContext {
   openIssues: string;
   milestones: string;
   bossFeedback: string;
+  pronunciationGuide: string; // 読み方ガイド（TTS用）
 }
 
 // ========================================
@@ -74,10 +75,10 @@ export async function buildProjectContext(
     // プロジェクト + 組織情報を並列取得
     const [projectResult, tasksResult, decisionsResult, issuesResult, msResult, feedbackResult] =
       await Promise.all([
-        // プロジェクト情報
+        // プロジェクト情報（metadata含む: 読み方ガイド等）
         supabase
           .from('projects')
-          .select('name, organization_id, organizations(name, relationship_type)')
+          .select('name, organization_id, metadata, organizations(name, relationship_type)')
           .eq('id', projectId)
           .single(),
         // タスク（進行中 + 着手前）
@@ -165,6 +166,18 @@ export async function buildProjectContext(
           .join('\n') || 'なし'
       : '';
 
+    // 読み方ガイド（projects.metadata.pronunciation_guide）
+    // 形式: [{ text: "NextStage", reading: "ネクストステージ" }, ...]
+    let pronunciationGuide = '';
+    const metadata = project.metadata as Record<string, unknown> | null;
+    if (metadata?.pronunciation_guide && Array.isArray(metadata.pronunciation_guide)) {
+      const guides = metadata.pronunciation_guide as Array<{ text: string; reading: string }>;
+      pronunciationGuide = guides
+        .filter((g) => g.text && g.reading)
+        .map((g) => `${g.text} → ${g.reading}`)
+        .join('\n');
+    }
+
     return {
       projectName: project.name,
       organizationName: org?.name || '',
@@ -174,6 +187,7 @@ export async function buildProjectContext(
       openIssues,
       milestones,
       bossFeedback,
+      pronunciationGuide,
     };
   } catch (err) {
     console.error('[NodeAI] Failed to build context:', err);
