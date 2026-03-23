@@ -69,6 +69,8 @@ export async function POST(request: Request): Promise<Response> {
       relationshipType,
     });
 
+    console.log(`[NodeAI] Join success: botId=${botId}, projectId=${project_id || 'none'}, relationship=${relationshipType}`);
+
     return NextResponse.json({
       success: true,
       data: {

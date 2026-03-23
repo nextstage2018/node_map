@@ -80,20 +80,14 @@ export async function generateResponse(
       getRecentContext(botId),
     ]);
 
-    if (!projectContext) {
-      return {
-        text: 'プロジェクト情報を取得できませんでした。',
-        success: false,
-        error: 'No project context',
-      };
-    }
-
     // 質問タイプ判定
     const analytical = isAnalyticalQuestion(question);
     const maxTokens = analytical ? MAX_TOKENS_LONG : MAX_TOKENS_SHORT;
 
-    // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext, analytical);
+    // システムプロンプト構築（PJなしでも汎用アシスタントとして応答）
+    const systemPrompt = projectContext
+      ? buildSystemPrompt(projectContext, relationshipType, recentContext, analytical)
+      : buildFallbackSystemPrompt(recentContext);
 
     // Claude API 呼び出し
     const client = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
@@ -144,20 +138,14 @@ export async function generateResponseFast(
     const projectContext = await getCachedProjectContext(projectId);
     console.log(`[NodeAI:perf] getCachedProjectContext: ${Date.now() - t1}ms`);
 
-    if (!projectContext) {
-      return {
-        text: 'プロジェクト情報を取得できませんでした。',
-        success: false,
-        error: 'No project context',
-      };
-    }
-
     // 質問タイプ判定 → max_tokens動的切り替え
     const analytical = isAnalyticalQuestion(question);
     const maxTokens = analytical ? MAX_TOKENS_LONG : MAX_TOKENS_SHORT;
 
-    // システムプロンプト構築
-    const systemPrompt = buildSystemPrompt(projectContext, relationshipType, recentContext, analytical);
+    // システムプロンプト構築（PJなしでも汎用アシスタントとして応答）
+    const systemPrompt = projectContext
+      ? buildSystemPrompt(projectContext, relationshipType, recentContext, analytical)
+      : buildFallbackSystemPrompt(recentContext);
 
     // Claude API 呼び出し
     const t2 = Date.now();
@@ -370,6 +358,31 @@ ${analyticalExamples}
 
 Q: ありがとうございます。
 A:（応答しない）
+
+=== NG例（絶対にやらないこと） ===
+NG: 「お気軽にどうぞですね」← 不自然な日本語
+NG: 「ございますですね」← 二重敬語
+NG: 【見出し】← 見出し記号禁止
+NG: ・箇条書き ← 禁止。口頭で「1つ目は〜、2つ目は〜」と数える`;
+}
+
+/**
+ * PJなしセッション用のフォールバックシステムプロンプト
+ * プロジェクト情報なしでも汎用アシスタントとして応答する
+ */
+function buildFallbackSystemPrompt(recentContext: string): string {
+  return `あなたはNodeAI。会議中のアシスタント。声で呼ばれて声で答える。
+あなたの応答テキストはそのままTTSエンジンで読み上げられる。日本人の同僚として自然に会話すること。
+※ 現在プロジェクト情報は未設定です。一般的な質問に答えてください。
+${recentContext || ''}
+
+=== 応答ルール ===
+- 1〜3文、100文字以内で簡潔に
+- 書き言葉禁止: 【】・-・※・箇条書き・改行を絶対に使わない
+- 日本人ネイティブが会議で話すような自然な日本語で答える
+- 質問者の名前は「さん」付け
+- 「了解です」「ありがとう」等のお礼・挨拶には応答しない。沈黙する
+- プロジェクト固有の情報を聞かれた場合は「プロジェクト情報が設定されていないので、お答えできません。カレンダーからプロジェクトを選択してAI参加すると、詳しくお答えできます。」と返す
 
 === NG例（絶対にやらないこと） ===
 NG: 「お気軽にどうぞですね」← 不自然な日本語

@@ -265,21 +265,18 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     const mode = triggered ? 'trigger' : 'conversation';
-    console.log(`[NodeAI] ${mode}: "${question}" by ${speakerName}`);
-
-    if (!cached.projectId) {
-      return NextResponse.json({ ok: true, reason: 'no_project' });
-    }
+    console.log(`[NodeAI] ${mode}: "${question}" by ${speakerName} (projectId=${cached.projectId || 'none'})`);
 
     // ================================================================
     // Step 6: AI応答生成（メモリからコンテキスト構築: 0ms → Claude API）
+    // PJなしでもフォールバック応答する（buildFallbackSystemPrompt使用）
     // ================================================================
     const recentContext = buildLocalRecentContext(botId);
 
     const t5 = Date.now();
     const aiResult = await generateResponseFast({
       botId,
-      projectId: cached.projectId,
+      projectId: cached.projectId || '',
       question,
       speakerName: speakerFamilyName,
       speakerContactId: contactId,
