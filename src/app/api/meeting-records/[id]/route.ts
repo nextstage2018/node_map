@@ -59,7 +59,7 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { title, content, meeting_date, ai_summary, processed } = body;
+    const { title, content, meeting_date, ai_summary, processed, project_id } = body;
 
     const updateData: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -69,6 +69,7 @@ export async function PUT(
     if (meeting_date !== undefined) updateData.meeting_date = meeting_date;
     if (ai_summary !== undefined) updateData.ai_summary = ai_summary;
     if (processed !== undefined) updateData.processed = processed;
+    if (project_id !== undefined) updateData.project_id = project_id;
 
     const { data, error } = await supabase
       .from('meeting_records')
