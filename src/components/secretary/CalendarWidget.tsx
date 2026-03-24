@@ -66,6 +66,12 @@ export default function CalendarWidget() {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const projectSelectRef = useRef<HTMLDivElement>(null);
+  // URL直接入力
+  const [showDirectJoin, setShowDirectJoin] = useState(false);
+  const [directMeetUrl, setDirectMeetUrl] = useState('');
+  const [directProjectId, setDirectProjectId] = useState('');
+  const [isDirectJoining, setIsDirectJoining] = useState(false);
+  const [directBotId, setDirectBotId] = useState<string | null>(null);
 
   // プロジェクト一覧取得
   const fetchProjects = useCallback(async () => {
@@ -139,6 +145,53 @@ export default function CalendarWidget() {
       setProjectSelectEventId(ev.id);
       fetchProjects();
     }
+  };
+
+  // URL直接入力でNodeAIを参加させる
+  const handleDirectJoin = async () => {
+    if (!directMeetUrl) return;
+    // meet.google.com URLかチェック
+    if (!directMeetUrl.includes('meet.google.com')) {
+      alert('Google MeetのURLを入力してください（例: https://meet.google.com/xxx-xxxx-xxx）');
+      return;
+    }
+    setIsDirectJoining(true);
+    try {
+      const res = await fetch('/api/nodeai/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meeting_url: directMeetUrl.trim(),
+          project_id: directProjectId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data?.bot_id) {
+        setDirectBotId(data.data.bot_id);
+      } else {
+        alert(data.error || 'NodeAIの参加に失敗しました');
+      }
+    } catch {
+      alert('NodeAIの参加に失敗しました');
+    } finally {
+      setIsDirectJoining(false);
+    }
+  };
+
+  // URL直接入力のBotを退出させる
+  const handleDirectLeave = async () => {
+    if (!directBotId) return;
+    try {
+      await fetch('/api/nodeai/leave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot_id: directBotId }),
+      });
+      setDirectBotId(null);
+      setDirectMeetUrl('');
+      setDirectProjectId('');
+      setShowDirectJoin(false);
+    } catch { /* ignore */ }
   };
 
   // NodeAI Bot を退出させる
@@ -325,7 +378,14 @@ export default function CalendarWidget() {
             今日
           </button>
           <button
-            onClick={() => setShowCreateForm(!showCreateForm)}
+            onClick={() => { setShowDirectJoin(!showDirectJoin); if (showDirectJoin) { setShowCreateForm(false); } else { setShowCreateForm(false); fetchProjects(); } }}
+            className={`p-1 rounded transition-colors ${showDirectJoin ? 'text-white bg-nm-primary' : directBotId ? 'text-green-600 bg-green-50 border border-green-200' : 'text-nm-primary hover:bg-nm-primary-light'}`}
+            title={directBotId ? 'NodeAI参加中' : 'Meet URLでAI参加'}
+          >
+            <Bot className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => { setShowCreateForm(!showCreateForm); if (!showCreateForm) setShowDirectJoin(false); }}
             className="p-1 text-nm-primary hover:bg-nm-primary-light rounded transition-colors"
           >
             {showCreateForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
@@ -345,6 +405,61 @@ export default function CalendarWidget() {
           <ChevronRight className="w-4 h-4 text-nm-text-secondary" />
         </button>
       </div>
+
+      {/* URL直接入力でAI参加 */}
+      {showDirectJoin && (
+        <div className="px-4 pb-3 space-y-2 border-b border-nm-border">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Bot className="w-3.5 h-3.5 text-nm-primary" />
+            <span className="text-[11px] font-medium text-nm-text">Meet URLでAI参加</span>
+          </div>
+          {directBotId ? (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-[11px] text-green-700 font-medium">NodeAI 参加中</span>
+              </div>
+              <button
+                onClick={handleDirectLeave}
+                className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors"
+              >
+                <Square className="w-2.5 h-2.5" />
+                停止
+              </button>
+            </div>
+          ) : (
+            <>
+              <input
+                type="text"
+                placeholder="https://meet.google.com/xxx-xxxx-xxx"
+                value={directMeetUrl}
+                onChange={(e) => setDirectMeetUrl(e.target.value)}
+                className="w-full text-xs border border-nm-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-nm-primary"
+              />
+              <select
+                value={directProjectId}
+                onChange={(e) => setDirectProjectId(e.target.value)}
+                className="w-full text-[11px] border border-nm-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-nm-primary text-nm-text"
+              >
+                <option value="">プロジェクト選択（任意）</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.org_name ? `${p.org_name} / ` : ''}{p.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleDirectJoin}
+                disabled={isDirectJoining || !directMeetUrl}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-nm-primary text-white rounded text-xs font-medium hover:bg-nm-primary-hover disabled:opacity-50 transition-colors"
+              >
+                {isDirectJoining ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3" />}
+                {isDirectJoining ? '参加中...' : 'AI参加'}
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 予定作成フォーム */}
       {showCreateForm && (
